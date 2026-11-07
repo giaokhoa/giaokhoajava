@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -167,6 +168,129 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     }
 
     @Test
+    void inviteByEmailReturnsPendingOperation() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("invite-owner-email");
+        KeycloakLogin inviteeLogin = createVerifiedUser("invite-invitee-email");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID invitee =
+                    seedAccount(
+                            inviteeLogin.subject(), "SELF_REGISTERED", inviteeLogin.email(), true);
+            UUID center = seedCenter(owner);
+
+            try (var session = openSession(ownerLogin)) {
+                MockHttpServletResponse response =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/invitations")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "invite-email-" + UUID.randomUUID())
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"email\":\""
+                                                                + inviteeLogin.email()
+                                                                + "\",\"roles\":[\"STUDENT\"]}"))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(202, response.getStatus());
+                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals("PENDING", body.get("state").stringValue());
+                assertFalse(body.get("completed").booleanValue());
+                UUID operationId = UUID.fromString(body.get("operationId").stringValue());
+                awaitOperationSucceeded(session, operationId);
+            }
+
+            assertEquals(
+                    "SELF_REGISTERED",
+                    jdbc.queryForObject(
+                            "SELECT origin FROM user_account WHERE id = ?", String.class, invitee),
+                    "Mời bằng email không đổi origin của danh tính đó");
+            assertEquals(
+                    0,
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM center_membership"
+                                    + " WHERE workspace_id = ? AND user_id = ?",
+                            Integer.class,
+                            center,
+                            invitee),
+                    "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời chấp nhận");
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(inviteeLogin.subject());
+        }
+    }
+
+    @Test
+    void inviteWithBothOrNeitherIdentifierIsRejected() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("invite-owner-both");
+        KeycloakLogin inviteeLogin = createVerifiedUser("invite-invitee-both");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID invitee =
+                    seedAccount(
+                            inviteeLogin.subject(), "SELF_REGISTERED", inviteeLogin.email(), true);
+            UUID center = seedCenter(owner);
+
+            try (var session = openSession(ownerLogin)) {
+                MockHttpServletResponse both =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/invitations")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "invite-both-" + UUID.randomUUID())
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"userId\":\""
+                                                                + invitee
+                                                                + "\",\"email\":\""
+                                                                + inviteeLogin.email()
+                                                                + "\",\"roles\":[\"STUDENT\"]}"))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(
+                        400, both.getStatus(), "Lời mời phải có đúng một trong email hoặc userId");
+
+                MockHttpServletResponse neither =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/invitations")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "invite-neither-" + UUID.randomUUID())
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"roles\":[\"STUDENT\"]}"))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(
+                        400,
+                        neither.getStatus(),
+                        "Lời mời thiếu cả email lẫn userId phải bị từ chối");
+            }
+
+            assertEquals(
+                    Set.of(),
+                    activeRoles(center, invitee),
+                    "Lời mời bị từ chối không được gắn quyền gì");
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(inviteeLogin.subject());
+        }
+    }
+
+    @Test
     void inviteCannotGrantOwnerRole() throws Exception {
         KeycloakLogin ownerLogin = createVerifiedUser("invite-owner-two");
         KeycloakLogin inviteeLogin = createVerifiedUser("invite-invitee-two");
@@ -298,6 +422,108 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     }
 
     @Test
+    void sameIdempotencyKeyWithDifferentPayloadIsConflict() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("invite-owner-key");
+        KeycloakLogin inviteeLogin = createVerifiedUser("invite-invitee-key");
+        KeycloakLogin inviteeTwoLogin = createVerifiedUser("invite-invitee-key-two");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID invitee =
+                    seedAccount(
+                            inviteeLogin.subject(), "SELF_REGISTERED", inviteeLogin.email(), true);
+            UUID inviteeTwo =
+                    seedAccount(
+                            inviteeTwoLogin.subject(),
+                            "SELF_REGISTERED",
+                            inviteeTwoLogin.email(),
+                            true);
+            UUID center = seedCenter(owner);
+            String key = "invite-replay-" + UUID.randomUUID();
+            String firstBody = "{\"userId\":\"" + invitee + "\",\"roles\":[\"STUDENT\"]}";
+
+            try (var session = openSession(ownerLogin)) {
+                MockHttpServletResponse first =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/invitations")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header("Idempotency-Key", key)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(firstBody))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(202, first.getStatus());
+                UUID operationId =
+                        UUID.fromString(
+                                JSON.readTree(first.getContentAsString())
+                                        .get("operationId")
+                                        .stringValue());
+                awaitOperationSucceeded(session, operationId);
+
+                // Cùng key, cùng payload → trả lại kết quả đã ghi, không tạo operation mới.
+                MockHttpServletResponse replay =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/invitations")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header("Idempotency-Key", key)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(firstBody))
+                                .andReturn()
+                                .getResponse();
+
+                assertTrue(
+                        replay.getStatus() == 200 || replay.getStatus() == 202,
+                        "Phát lại cùng key phải trả lại kết quả đã ghi"
+                                + " (200 khi xong, 202 khi chưa xong)");
+                assertEquals(
+                        operationId.toString(),
+                        JSON.readTree(replay.getContentAsString()).get("operationId").stringValue(),
+                        "Phát lại cùng key không được tạo operation mới");
+
+                // Cùng key, payload khác → 409.
+                MockHttpServletResponse conflict =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/invitations")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header("Idempotency-Key", key)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"userId\":\""
+                                                                + inviteeTwo
+                                                                + "\",\"roles\":[\"STUDENT\"]}"))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(
+                        409,
+                        conflict.getStatus(),
+                        "Cùng Idempotency-Key với yêu cầu khác phải bị từ chối 409");
+            }
+
+            assertEquals(
+                    0,
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM center_membership"
+                                    + " WHERE workspace_id = ? AND user_id = ?",
+                            Integer.class,
+                            center,
+                            inviteeTwo),
+                    "Lời mời xung đột key không được tạo membership");
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(inviteeLogin.subject());
+            deleteUser(inviteeTwoLogin.subject());
+        }
+    }
+
+    @Test
     void acceptWithUnknownTokenIsNotFound() throws Exception {
         KeycloakLogin user = createVerifiedUser("invite-accepter");
         try {
@@ -364,13 +590,16 @@ class MembershipInvitationIT extends IntegrationEnvironment {
 
                 assertEquals(202, response.getStatus());
                 JsonNode body = JSON.readTree(response.getContentAsString());
-                assertFalse(body.get("completed").booleanValue());
+                JsonNode operation = body.get("operation");
+                assertNotNull(operation, "StudentIssueView bọc biên nhận trong operation");
+                assertFalse(operation.get("completed").booleanValue());
+                assertEquals("PENDING", operation.get("state").stringValue());
                 JsonNode handoff = body.get("handoff");
                 assertNotNull(handoff, "Response CREATE đầu tiên phải mang handoff");
                 assertEquals(username, handoff.get("username").stringValue());
                 temporaryPassword = handoff.get("temporaryPassword").stringValue();
                 assertFalse(temporaryPassword.isBlank(), "Handoff phải có mật khẩu tạm");
-                operationId = UUID.fromString(body.get("operation").get("id").stringValue());
+                operationId = UUID.fromString(operation.get("id").stringValue());
                 awaitOperationSucceeded(session, operationId);
 
                 MockHttpServletResponse poll =

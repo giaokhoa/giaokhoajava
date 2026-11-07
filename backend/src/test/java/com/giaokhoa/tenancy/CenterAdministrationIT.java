@@ -389,6 +389,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             addMembership(centerB, member, "STUDENT");
 
             try (var session = openSession(ownerLogin)) {
+                long version = membershipVersion(session, centerA, membershipA);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -402,6 +403,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                                                 .header(
                                                         "Idempotency-Key",
                                                         "center-role-" + UUID.randomUUID())
+                                                .header("If-Match", "\"" + version + "\"")
                                                 .contentType(MediaType.APPLICATION_JSON)
                                                 .content("{\"roles\":[\"MANAGER\"]}"))
                                 .andReturn()
@@ -447,6 +449,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, member, "STUDENT");
 
             try (var session = openSession(managerLogin)) {
+                long version = membershipVersion(session, center, membership);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -460,6 +463,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                                                 .header(
                                                         "Idempotency-Key",
                                                         "center-role-mgr-" + UUID.randomUUID())
+                                                .header("If-Match", "\"" + version + "\"")
                                                 .contentType(MediaType.APPLICATION_JSON)
                                                 .content("{\"roles\":[\"MANAGER\"]}"))
                                 .andReturn()
@@ -492,6 +496,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, manager, "MANAGER");
 
             try (var session = openSession(managerLogin)) {
+                long version = membershipVersion(session, center, membership);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -505,6 +510,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                                                 .header(
                                                         "Idempotency-Key",
                                                         "center-role-self-" + UUID.randomUUID())
+                                                .header("If-Match", "\"" + version + "\"")
                                                 .contentType(MediaType.APPLICATION_JSON)
                                                 .content("{\"roles\":[\"OWNER\"]}"))
                                 .andReturn()
@@ -576,6 +582,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, member, "STUDENT");
 
             try (var session = openSession(ownerLogin)) {
+                long version = membershipVersion(session, center, membership);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -589,6 +596,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                                                 .header(
                                                         "Idempotency-Key",
                                                         "center-batch-" + UUID.randomUUID())
+                                                .header("If-Match", "\"" + version + "\"")
                                                 .contentType(MediaType.APPLICATION_JSON)
                                                 .content("{\"roles\":[\"TEACHER\"]}"))
                                 .andReturn()
@@ -615,10 +623,177 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     @Test
+    void cannotRemoveLastOwner() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("center-owner-last");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID center = seedCenter(owner);
+            UUID ownerMembership =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT id FROM center_membership"
+                                            + " WHERE workspace_id = ? AND user_id = ?",
+                                    UUID.class,
+                                    center,
+                                    owner),
+                            "membership của owner");
+            try (var session = openSession(ownerLogin)) {
+                MockHttpServletResponse response =
+                        mockMvc()
+                                .perform(
+                                        delete(
+                                                        "/api/workspaces/"
+                                                                + center
+                                                                + "/memberships/"
+                                                                + ownerMembership)
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "center-last-owner-" + UUID.randomUUID()))
+                                .andReturn()
+                                .getResponse();
+
+                // Từ chối vì vi phạm quy tắc nghiệp vụ (giống invite OWNER → 400),
+                // không phải xung đột version hay danh tính trùng (những trường hợp đó mới 409).
+                assertEquals(400, response.getStatus(), "Không được gỡ owner cuối cùng của center");
+                assertEquals(
+                        Set.of("OWNER"),
+                        activeRoles(center, owner),
+                        "Owner cuối cùng vẫn còn quyền sau lời gọi bị từ chối");
+            }
+        } finally {
+            deleteUser(ownerLogin.subject());
+        }
+    }
+
+    @Test
+    void roleChangeWithoutIfMatchIsPreconditionRequired() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("center-owner-no-ifmatch");
+        KeycloakLogin memberLogin = createVerifiedUser("center-member-no-ifmatch");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID member =
+                    seedAccount(
+                            memberLogin.subject(), "SELF_REGISTERED", memberLogin.email(), true);
+            UUID center = seedCenter(owner);
+            UUID membership = addMembership(center, member, "STUDENT");
+
+            try (var session = openSession(ownerLogin)) {
+                MockHttpServletResponse response =
+                        mockMvc()
+                                .perform(
+                                        put("/api/workspaces/"
+                                                        + center
+                                                        + "/memberships/"
+                                                        + membership
+                                                        + "/roles")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "center-no-ifmatch-" + UUID.randomUUID())
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"roles\":[\"TEACHER\"]}"))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(
+                        428, response.getStatus(), "Đổi role thiếu If-Match phải bị từ chối 428");
+                assertEquals(
+                        Set.of("STUDENT"),
+                        activeRoles(center, member),
+                        "Lời gọi thiếu precondition không được đổi role");
+            }
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(memberLogin.subject());
+        }
+    }
+
+    @Test
+    void roleChangeWithStaleVersionIsConflict() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("center-owner-stale");
+        KeycloakLogin memberLogin = createVerifiedUser("center-member-stale");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID member =
+                    seedAccount(
+                            memberLogin.subject(), "SELF_REGISTERED", memberLogin.email(), true);
+            UUID center = seedCenter(owner);
+            UUID membership = addMembership(center, member, "STUDENT");
+
+            try (var session = openSession(ownerLogin)) {
+                long version = membershipVersion(session, center, membership);
+                MockHttpServletResponse first =
+                        mockMvc()
+                                .perform(
+                                        put("/api/workspaces/"
+                                                        + center
+                                                        + "/memberships/"
+                                                        + membership
+                                                        + "/roles")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "center-stale-first-" + UUID.randomUUID())
+                                                .header("If-Match", "\"" + version + "\"")
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"roles\":[\"TEACHER\"]}"))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(202, first.getStatus());
+                UUID operationId =
+                        UUID.fromString(
+                                JSON.readTree(first.getContentAsString())
+                                        .get("operationId")
+                                        .stringValue());
+                awaitOperationSucceeded(session, operationId);
+
+                // Đổi role lần đầu đã cập nhật row membership nên version tăng; version cũ không
+                // còn khớp.
+                MockHttpServletResponse stale =
+                        mockMvc()
+                                .perform(
+                                        put("/api/workspaces/"
+                                                        + center
+                                                        + "/memberships/"
+                                                        + membership
+                                                        + "/roles")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "center-stale-second-" + UUID.randomUUID())
+                                                .header("If-Match", "\"" + version + "\"")
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content("{\"roles\":[\"MANAGER\"]}"))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(409, stale.getStatus(), "Đổi role với version cũ phải bị từ chối 409");
+                assertEquals(
+                        Set.of("TEACHER"),
+                        activeRoles(center, member),
+                        "Lời gọi lỗi version không được đổi role");
+            }
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(memberLogin.subject());
+        }
+    }
+
+    @Test
     void expiredSubscriptionBlocksInviteButNotRevoke() throws Exception {
         KeycloakLogin ownerLogin = createVerifiedUser("center-owner-six");
         KeycloakLogin managerLogin = createVerifiedUser("center-manager-three");
         KeycloakLogin memberLogin = createVerifiedUser("center-member-four");
+        KeycloakLogin inviteeLogin = createVerifiedUser("center-invitee-four");
         try {
             UUID owner =
                     seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
@@ -628,6 +803,9 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID member =
                     seedAccount(
                             memberLogin.subject(), "SELF_REGISTERED", memberLogin.email(), true);
+            UUID invitee =
+                    seedAccount(
+                            inviteeLogin.subject(), "SELF_REGISTERED", inviteeLogin.email(), true);
             UUID center = seedCenter(owner);
             addMembership(center, manager, "MANAGER");
             UUID membership = addMembership(center, member, "STUDENT");
@@ -646,7 +824,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                                                 .contentType(MediaType.APPLICATION_JSON)
                                                 .content(
                                                         "{\"userId\":\""
-                                                                + member
+                                                                + invitee
                                                                 + "\",\"roles\":[\"STUDENT\"]}"))
                                 .andReturn()
                                 .getResponse();
@@ -684,6 +862,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             deleteUser(ownerLogin.subject());
             deleteUser(managerLogin.subject());
             deleteUser(memberLogin.subject());
+            deleteUser(inviteeLogin.subject());
         }
     }
 
@@ -982,6 +1161,31 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                         String.class,
                         workspaceId,
                         userId));
+    }
+
+    // Row version của membership để gửi If-Match khi đổi role; hợp đồng bắt buộc
+    // precondition này, thiếu thì server trả 428.
+    private long membershipVersion(RealSession session, UUID workspaceId, UUID membershipId)
+            throws Exception {
+        MockHttpServletResponse response =
+                mockMvc()
+                        .perform(
+                                get("/api/workspaces/" + workspaceId + "/memberships")
+                                        .cookie(session.cookie()))
+                        .andReturn()
+                        .getResponse();
+        assertEquals(200, response.getStatus(), "Đọc danh sách thành viên để lấy row version");
+        JsonNode found = null;
+        for (JsonNode item : JSON.readTree(response.getContentAsString()).get("items")) {
+            if (membershipId.toString().equals(item.get("id").stringValue())) {
+                found = item;
+                break;
+            }
+        }
+        return Objects.requireNonNull(
+                        found, "Không thấy membership trong danh sách: " + membershipId)
+                .get("version")
+                .longValue();
     }
 
     private void seedSubscription(
