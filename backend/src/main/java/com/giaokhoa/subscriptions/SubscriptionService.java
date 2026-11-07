@@ -1,0 +1,249 @@
+package com.giaokhoa.subscriptions;
+
+import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.operation.AuthorizationOperationService;
+import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.shared.http.HttpProblemException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Xác nhận kỳ gói thủ công bởi platform operator: operator là người thật xác nhận ngoài hệ thống
+ * (không có payment gateway, không có giá gói trong bản đầu), service chỉ ghi nhận kỳ đã xác nhận
+ * kèm confirmationRef và audit người xác nhận/thời điểm, rồi đưa hiệu lực của kỳ vào desired native
+ * graph qua authorization operation như mọi thay đổi quyền khác. Kỳ chỉ có hiệu lực khi operation
+ * đã SUCCEEDED; service không tự tính allow thay Keycloak PDP và không báo đồng bộ khi operation
+ * còn PENDING.
+ *
+ * <p>Idempotency theo hợp đồng operation: replay cùng key và cùng payload trả lại đúng operation đã
+ * ghi — không ghi kỳ hay audit thứ hai — còn cùng key khác payload là 409. Vì dữ kiện nguồn nằm
+ * ngoài callback của operation, mutation tự tuần tự hoá trên (actor, idempotency key) bằng advisory
+ * lock trong chính transaction rồi mới kiểm tra replay, nên hai lời gọi đồng thời cùng key không
+ * thể cùng đi qua điểm kiểm tra. Kỳ gói là lịch sử bất biến: chỉ INSERT, không sửa hay xoá; gia hạn
+ * là một kỳ mới, không mở lại kỳ cũ và không phục hồi nguồn đã thu hồi.
+ */
+@Service
+public class SubscriptionService {
+    /** Khớp độ dài cột confirmation_ref VARCHAR(255) ở migration. */
+    private static final int MAX_CONFIRMATION_REF_LENGTH = 255;
+
+    /** Giá trị cột workspace.kind cho không gian trung tâm. */
+    private static final String CENTER_KIND = "CENTER";
+
+    /** Giá trị cột workspace.kind cho không gian cá nhân. */
+    private static final String PERSONAL_KIND = "PERSONAL";
+
+    private final JdbcTemplate jdbc;
+    private final IdempotencyService idempotency;
+    private final AuthorizationOperationService operations;
+    private final SubscriptionPolicyProjector projector;
+
+    public SubscriptionService(
+            JdbcTemplate jdbc,
+            IdempotencyService idempotency,
+            AuthorizationOperationService operations,
+            SubscriptionPolicyProjector projector) {
+        this.jdbc = jdbc;
+        this.idempotency = idempotency;
+        this.operations = operations;
+        this.projector = projector;
+    }
+
+    /**
+     * Xác nhận một kỳ gói cho workspace personal/center. Mốc thời gian được cắt về tròn giây trước
+     * khi kiểm tra và ghi: time policy native của Keycloak chỉ có độ chính xác tới giây và cột lưu
+     * trữ là TIMESTAMPTZ(0), nên giá trị đã kiểm tra phải là đúng giá trị sẽ được chiếu, không để
+     * phép làm tròn ở tầng lưu trữ đổi thứ tự hai mốc.
+     */
+    @Transactional
+    public AuthorizationOperation confirm(
+            UUID operatorUserId,
+            UUID workspaceId,
+            Instant validFrom,
+            Instant expiresAt,
+            @Nullable String confirmationRef,
+            String idempotencyKey,
+            String payloadHash) {
+        Objects.requireNonNull(operatorUserId, "operatorUserId");
+        Objects.requireNonNull(workspaceId, "workspaceId");
+        Objects.requireNonNull(validFrom, "validFrom");
+        Objects.requireNonNull(expiresAt, "expiresAt");
+        idempotency.requireKey(idempotencyKey);
+        lockOn("subscription-confirm:" + operatorUserId + ":" + idempotencyKey);
+        Optional<AuthorizationOperation> existing =
+                idempotency.findExisting(operatorUserId, idempotencyKey, payloadHash);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        requireAccount(operatorUserId);
+        String kind = workspaceKind(workspaceId);
+        String ref = normalizeConfirmationRef(confirmationRef);
+        Instant from = validFrom.truncatedTo(ChronoUnit.SECONDS);
+        Instant until = expiresAt.truncatedTo(ChronoUnit.SECONDS);
+        if (!until.isAfter(from)) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_SUBSCRIPTION_PERIOD",
+                    "Kỳ gói phải có mốc kết thúc sau bắt đầu.");
+        }
+        // confirmation_ref là neo audit duy nhất theo cột UNIQUE: chặn trùng ở tầng service để
+        // trả 409 rõ ràng thay vì lỗi constraint thô, và một ref không bao giờ trỏ hai kỳ.
+        if (!jdbc.queryForList(
+                        "SELECT id FROM subscription_period WHERE confirmation_ref = ?",
+                        UUID.class,
+                        ref)
+                .isEmpty()) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT,
+                    "SUBSCRIPTION_CONFIRMATION_REF_USED",
+                    "Confirmation ref đã được ghi cho một kỳ gói khác.");
+        }
+        jdbc.update(
+                "INSERT INTO subscription_period"
+                        + " (id, workspace_id, valid_from, expires_at, confirmation_ref,"
+                        + " confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?, ?, now())",
+                UUID.randomUUID(),
+                workspaceId,
+                Timestamp.from(from),
+                Timestamp.from(until),
+                ref,
+                operatorUserId);
+        Optional<AuthorizationOperationService.PartitionChange> change =
+                projector.partitionChange(workspaceId);
+        if (change.isPresent()) {
+            return operations.applyDesiredState(
+                    operatorUserId,
+                    workspaceId,
+                    idempotencyKey,
+                    payloadHash,
+                    List.of(change.get()));
+        }
+        if (CENTER_KIND.equals(kind)) {
+            // Trigger của DB luôn tạo partition cho mọi workspace; thiếu là dữ liệu hỏng,
+            // không được âm thầm ghi kỳ mà không chiếu hiệu lực.
+            throw new IllegalStateException(
+                    "Workspace authorization partition is missing: " + workspaceId);
+        }
+        // Workspace personal chưa có bundle projection ở projector này: kỳ là dữ kiện nguồn bền,
+        // nguồn entitlement cá nhân dựng lên nó thuộc về projector riêng của personal. Nhưng bất
+        // biến DB (V002) bắt operation phải tham chiếu ít nhất một partition, với desired_revision
+        // bằng revision đầu tiên của vector, nên không thể ghi operation rỗng partition: operation
+        // neo vào partition của chính workspace ở revision hiện tại — không bump revision, không
+        // ghi desired mới. Worker đối chiếu như no-op khi partition đã READY; nếu một mutation
+        // mới hơn bump revision trước, operation này bị superseded (kỳ đã ghi không ảnh hưởng).
+        PartitionAnchor anchor = workspacePartition(workspaceId);
+        AuthorizationOperation operation =
+                new AuthorizationOperation(
+                        UUID.randomUUID(),
+                        operatorUserId,
+                        workspaceId,
+                        idempotencyKey,
+                        payloadHash,
+                        new UUID[] {anchor.id()},
+                        new Long[] {anchor.desiredRevision()},
+                        anchor.desiredRevision());
+        return idempotency.executeOnce(operation, () -> {});
+    }
+
+    private record PartitionAnchor(UUID id, long desiredRevision) {}
+
+    /** Partition WORKSPACE của workspace, khóa dòng để đọc revision hiện tại. */
+    private PartitionAnchor workspacePartition(UUID workspaceId) {
+        List<PartitionAnchor> rows =
+                jdbc.query(
+                        "SELECT id, desired_revision FROM authz_partition"
+                                + " WHERE kind = 'WORKSPACE' AND owner_key = ? FOR UPDATE",
+                        (rs, _) ->
+                                new PartitionAnchor(
+                                        rs.getObject("id", UUID.class),
+                                        rs.getLong("desired_revision")),
+                        "workspace:" + workspaceId);
+        if (rows.isEmpty()) {
+            // Trigger của DB luôn tạo partition cho mọi workspace; thiếu là dữ liệu hỏng.
+            throw new IllegalStateException(
+                    "Workspace authorization partition is missing: " + workspaceId);
+        }
+        return rows.getFirst();
+    }
+
+    private void requireAccount(UUID userId) {
+        List<UUID> accounts =
+                jdbc.queryForList("SELECT id FROM user_account WHERE id = ?", UUID.class, userId);
+        if (accounts.isEmpty()) {
+            throw new HttpProblemException(
+                    HttpStatus.NOT_FOUND,
+                    "ACCOUNT_NOT_FOUND",
+                    "Chưa có tài khoản cho danh tính này.");
+        }
+    }
+
+    private String workspaceKind(UUID workspaceId) {
+        List<String> kinds =
+                jdbc.queryForList(
+                        "SELECT kind FROM workspace WHERE id = ?", String.class, workspaceId);
+        if (kinds.isEmpty()) {
+            throw new HttpProblemException(
+                    HttpStatus.NOT_FOUND, "WORKSPACE_NOT_FOUND", "Không tìm thấy workspace.");
+        }
+        String kind = kinds.getFirst();
+        if (!CENTER_KIND.equals(kind) && !PERSONAL_KIND.equals(kind)) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    "SUBSCRIPTION_WORKSPACE_KIND",
+                    "Kỳ gói chỉ áp dụng cho workspace cá nhân hoặc trung tâm.");
+        }
+        return kind;
+    }
+
+    private static String normalizeConfirmationRef(@Nullable String confirmationRef) {
+        if (confirmationRef == null || confirmationRef.isBlank()) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_CONFIRMATION_REF",
+                    "Cần mã tham chiếu xác nhận của operator.");
+        }
+        String trimmed = confirmationRef.trim();
+        if (trimmed.length() > MAX_CONFIRMATION_REF_LENGTH) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_CONFIRMATION_REF",
+                    "Mã tham chiếu xác nhận tối đa 255 ký tự.");
+        }
+        return trimmed;
+    }
+
+    /**
+     * Tuần tự hoá trong phạm vi transaction hiện hành bằng advisory lock của PostgreSQL, cùng cách
+     * ResourceMutationCoordinator khoá: lock tự nhả khi transaction kết thúc nên không cần đường mở
+     * khoá riêng, và hai instance của ứng dụng vẫn tôn trọng nhau.
+     */
+    private void lockOn(String key) {
+        jdbc.query("SELECT pg_advisory_xact_lock(?)", _ -> {}, lockId(key));
+    }
+
+    private static long lockId(String key) {
+        try {
+            byte[] digest =
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(
+                                    ("giaokhoa:subscription-service:" + key)
+                                            .getBytes(StandardCharsets.UTF_8));
+            return java.nio.ByteBuffer.wrap(digest).getLong();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is required", ex);
+        }
+    }
+}
