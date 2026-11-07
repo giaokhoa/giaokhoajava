@@ -2,6 +2,7 @@ package com.giaokhoa.identity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -457,7 +458,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                         break;
                     }
                 }
-                assertTrue(item != null, "Hàng đợi platform phải chứa yêu cầu vừa gửi");
+                assertNotNull(item, "Hàng đợi platform phải chứa yêu cầu vừa gửi");
                 assertEquals("REQUESTED", item.get("state").stringValue());
 
                 String path = "/api/platform/recovery-requests/" + created.id() + "/resolve";
