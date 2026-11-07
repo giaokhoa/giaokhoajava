@@ -10,6 +10,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
+import com.giaokhoa.tenancy.CenterPolicyProjector;
 import java.sql.Array;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -61,7 +62,7 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired SubscriptionService service;
-    @Autowired SubscriptionPolicyProjector projector;
+    @Autowired CenterPolicyProjector projector;
 
     @Test
     void confirmCenterRecordsPeriodAuditAndDesiredBundle() {

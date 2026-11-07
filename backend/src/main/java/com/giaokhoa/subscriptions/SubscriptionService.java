@@ -3,7 +3,10 @@ package com.giaokhoa.subscriptions;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.authorization.permission.PermissionCatalog;
+import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.tenancy.CenterPolicyProjector;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -49,17 +52,17 @@ public class SubscriptionService {
     private final JdbcTemplate jdbc;
     private final IdempotencyService idempotency;
     private final AuthorizationOperationService operations;
-    private final SubscriptionPolicyProjector projector;
+    private final CenterPolicyProjector centerProjector;
 
     public SubscriptionService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             AuthorizationOperationService operations,
-            SubscriptionPolicyProjector projector) {
+            CenterPolicyProjector centerProjector) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
-        this.projector = projector;
+        this.centerProjector = centerProjector;
     }
 
     /**
@@ -122,7 +125,7 @@ public class SubscriptionService {
                 ref,
                 operatorUserId);
         Optional<AuthorizationOperationService.PartitionChange> change =
-                projector.partitionChange(workspaceId);
+                centerPartitionChange(workspaceId, kind);
         if (change.isPresent()) {
             return operations.applyDesiredState(
                     operatorUserId,
@@ -137,8 +140,9 @@ public class SubscriptionService {
             throw new IllegalStateException(
                     "Workspace authorization partition is missing: " + workspaceId);
         }
-        // Workspace personal chưa có bundle projection ở projector này: kỳ là dữ kiện nguồn bền,
-        // nguồn entitlement cá nhân dựng lên nó thuộc về projector riêng của personal. Nhưng bất
+        // Workspace personal chưa có bundle projection ở CenterPolicyProjector: kỳ là dữ kiện
+        // nguồn bền, nguồn entitlement cá nhân dựng lên nó thuộc về projector riêng của
+        // personal. Nhưng bất
         // biến DB (V002) bắt operation phải tham chiếu ít nhất một partition, với desired_revision
         // bằng revision đầu tiên của vector, nên không thể ghi operation rỗng partition: operation
         // neo vào partition của chính workspace ở revision hiện tại — không bump revision, không
@@ -156,6 +160,36 @@ public class SubscriptionService {
                         new Long[] {anchor.desiredRevision()},
                         anchor.desiredRevision());
         return idempotency.executeOnce(operation, () -> {});
+    }
+
+    /**
+     * Thay đổi partition cần ghi cho một thay đổi gói trên workspace này: bundle trọn vẹn của
+     * {@link CenterPolicyProjector} trên WORKSPACE partition của chính workspace. Rỗng khi
+     * workspace không phải CENTER hoặc khi partition chưa tồn tại.
+     */
+    private Optional<AuthorizationOperationService.PartitionChange> centerPartitionChange(
+            UUID workspaceId, String kind) {
+        if (!CENTER_KIND.equals(kind)) {
+            return Optional.empty();
+        }
+        List<UUID> partitions =
+                jdbc.queryForList(
+                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
+                                + " AND owner_key = ?",
+                        UUID.class,
+                        "workspace:" + workspaceId);
+        if (partitions.isEmpty()) {
+            return Optional.empty();
+        }
+        var projection =
+                new AuthorizationOperationService.DesiredProjection(
+                        NativePolicyTemplates.workspaceKey(workspaceId),
+                        PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
+                        centerProjector.bundleDescriptors(workspaceId),
+                        List.of());
+        return Optional.of(
+                new AuthorizationOperationService.PartitionChange(
+                        partitions.getFirst(), List.of(projection)));
     }
 
     private record PartitionAnchor(UUID id, long desiredRevision) {}
