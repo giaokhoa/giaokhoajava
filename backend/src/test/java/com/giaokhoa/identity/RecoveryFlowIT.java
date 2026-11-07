@@ -4,15 +4,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.projection.PlatformProjectionSeeder;
+import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.servlet.http.Cookie;
 import java.net.URI;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +26,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -67,6 +74,11 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     private static final String WEB_CLIENT = "giaokhoa-it-web";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_MAP =
+            new ParameterizedTypeReference<>() {};
+    private static final String DEFAULT_PERMISSION = "Default Permission";
+    private static final String DEFAULT_RESOURCE = "Default Resource";
+    private static final String DEFAULT_POLICY = "Default Policy";
 
     private static final RestClient HTTP = RestClient.create();
     private static final String BASE =
@@ -77,6 +89,13 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
         isolatedSchema(registry, SCHEMA);
+    }
+
+    @BeforeAll
+    static void seedPlatformRealmPrerequisites() {
+        ensureGroupPath(NativePolicyTemplates.ELIGIBILITY_GROUP);
+        ensureGroupPath(NativePolicyTemplates.PLATFORM_OPERATORS_GROUP);
+        ensureApiClient();
     }
 
     @AfterAll
@@ -106,6 +125,8 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired RecoveryService recoveryService;
+    @Autowired PlatformProjectionSeeder platformSeeder;
+    @Autowired ProjectionReconciler projectionReconciler;
     @Autowired WebApplicationContext webContext;
     @Autowired SessionRepositoryFilter<?> sessionFilter;
     @Autowired OAuth2AuthorizedClientRepository authorizedClients;
@@ -395,6 +416,99 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     }
 
     @Test
+    void platformOperatorListsAndResolvesRecoveryRequestOverHttp() throws Exception {
+        publishPlatform();
+        String requesterName = "recovery-queue-requester-" + UUID.randomUUID();
+        String operatorName = "recovery-queue-operator-" + UUID.randomUUID();
+        String password = "recovery-password-" + UUID.randomUUID();
+        String requesterSubject =
+                createUser(
+                        keycloakUser(
+                                requesterName, requesterName + "@example.test", true, password));
+        String operatorSubject =
+                createUser(
+                        keycloakUser(operatorName, operatorName + "@example.test", true, password));
+        try {
+            joinGroup(operatorSubject, NativePolicyTemplates.ELIGIBILITY_GROUP);
+            joinGroup(operatorSubject, NativePolicyTemplates.PLATFORM_OPERATORS_GROUP);
+            UUID requester = seedActor(requesterSubject);
+            seedActor(operatorSubject);
+            RecoveryService.RequestView created =
+                    recoveryService.submit(requester, requester, null, "Quên mật khẩu");
+
+            try (var session = openSession(operatorName, password, operatorSubject)) {
+                // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
+                // của operator trước khi chạm endpoint platform.
+                MockHttpServletResponse workspaces = getWorkspacesWhenReady(session);
+                assertEquals(200, workspaces.getStatus(), workspaces.getContentAsString());
+
+                MockHttpServletResponse list =
+                        mockMvc()
+                                .perform(
+                                        get("/api/platform/recovery-requests")
+                                                .cookie(session.cookie()))
+                                .andReturn()
+                                .getResponse();
+                assertEquals(200, list.getStatus(), list.getContentAsString());
+                JsonNode item = null;
+                for (JsonNode candidate : JSON.readTree(list.getContentAsString())) {
+                    if (created.id().toString().equals(candidate.get("id").stringValue())) {
+                        item = candidate;
+                        break;
+                    }
+                }
+                assertTrue(item != null, "Hàng đợi platform phải chứa yêu cầu vừa gửi");
+                assertEquals("REQUESTED", item.get("state").stringValue());
+
+                String path = "/api/platform/recovery-requests/" + created.id() + "/resolve";
+                MockHttpServletResponse approved =
+                        mockMvc()
+                                .perform(
+                                        post(path)
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "recovery-approve-" + UUID.randomUUID())
+                                                .header("If-Match", "\"0\"")
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"decision\":\"APPROVE\",\"verificationNote\":\"Đã xác minh đúng chủ tài khoản\"}"))
+                                .andReturn()
+                                .getResponse();
+                assertEquals(202, approved.getStatus(), approved.getContentAsString());
+                JsonNode approval = JSON.readTree(approved.getContentAsString());
+                assertEquals("PENDING", approval.get("state").stringValue());
+                assertFalse(approval.get("completed").booleanValue());
+
+                MockHttpServletResponse completed =
+                        mockMvc()
+                                .perform(
+                                        post(path)
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "recovery-complete-" + UUID.randomUUID())
+                                                .header("If-Match", "\"1\"")
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã khôi phục và bàn giao qua kênh riêng\"}"))
+                                .andReturn()
+                                .getResponse();
+                assertEquals(200, completed.getStatus(), completed.getContentAsString());
+                JsonNode receipt = JSON.readTree(completed.getContentAsString());
+                assertEquals("SUCCEEDED", receipt.get("state").stringValue());
+                assertTrue(receipt.get("completed").booleanValue());
+                assertEquals(requester.toString(), receipt.get("targetId").stringValue());
+            }
+        } finally {
+            deleteUser(requesterSubject);
+            deleteUser(operatorSubject);
+        }
+    }
+
+    @Test
     void anonymousRecoveryRequestIsRedirectedToLogin() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
@@ -482,6 +596,216 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                 .addFilters(sessionFilter)
                 .apply(springSecurity())
                 .build();
+    }
+
+    // ---------- Graph platform và group nền trên realm dùng chung ----------
+
+    private void publishPlatform() {
+        platformSeeder.seed();
+        UUID partitionId =
+                Objects.requireNonNull(
+                        jdbc.queryForObject(
+                                "SELECT id FROM authz_partition WHERE kind = 'PLATFORM'"
+                                        + " AND owner_key = 'platform'",
+                                UUID.class),
+                        "platform partition");
+        projectionReconciler.reconcilePartition(partitionId);
+        assertEquals(
+                "READY",
+                jdbc.queryForObject(
+                        "SELECT state FROM authz_partition WHERE id = ?",
+                        String.class,
+                        partitionId));
+    }
+
+    /**
+     * Account seed trực tiếp bằng JDBC chưa từng bootstrap nên các lời gọi đầu có thể nhận 503
+     * AUTHORIZATION_NOT_READY trong lúc eligibility đang đồng bộ — hành vi fail-closed đúng của sản
+     * phẩm; thử lại có giới hạn với đúng mã lỗi đó rồi mới khẳng định.
+     */
+    private MockHttpServletResponse getWorkspacesWhenReady(IdentityFlowIT.RealSession session)
+            throws Exception {
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
+        while (true) {
+            MockHttpServletResponse response =
+                    mockMvc()
+                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
+                            .andReturn()
+                            .getResponse();
+            boolean syncing =
+                    response.getStatus() == 503
+                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
+            if (!syncing || Instant.now().isAfter(deadline)) {
+                return response;
+            }
+            sleep();
+        }
+    }
+
+    private static void sleep() {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            fail("Bị ngắt trong lúc chờ đồng bộ eligibility");
+        }
+    }
+
+    private void joinGroup(String subject, String groupPath) {
+        HTTP.put()
+                .uri(admin("/users/" + subject + "/groups/" + groupId(groupPath)))
+                .headers(headers -> headers.setBearerAuth(masterToken()))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    private static String groupId(String path) {
+        Map<String, Object> group =
+                HTTP.get()
+                        .uri(adminStatic("/group-by-path" + path))
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .retrieve()
+                        .body(MAP);
+        if (group == null || group.get("id") == null) {
+            throw new IllegalStateException("Realm group is not provisioned: " + path);
+        }
+        return String.valueOf(group.get("id"));
+    }
+
+    /**
+     * Các group nền của hợp đồng là object realm dùng chung: chỉ tạo khi thiếu và không bao giờ xóa
+     * ở teardown, để một class test không phá graph của class khác đang chiếu lên cùng group.
+     */
+    private static void ensureGroupPath(String groupPath) {
+        String parentId = null;
+        StringBuilder path = new StringBuilder();
+        for (String segment : groupPath.split("/")) {
+            if (segment.isBlank()) {
+                continue;
+            }
+            path.append('/').append(segment);
+            String currentPath = path.toString();
+            String found = null;
+            try {
+                Map<String, Object> group =
+                        HTTP.get()
+                                .uri(adminStatic("/group-by-path" + currentPath))
+                                .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                                .retrieve()
+                                .body(MAP);
+                if (group != null && currentPath.equals(group.get("path"))) {
+                    found = String.valueOf(group.get("id"));
+                }
+            } catch (RestClientResponseException ex) {
+                if (!ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                    throw ex;
+                }
+            }
+            if (found == null) {
+                String endpoint =
+                        parentId == null ? "/groups" : "/groups/" + parentId + "/children";
+                found = createResource(adminStatic(endpoint), Map.of("name", segment));
+            }
+            parentId = found;
+        }
+    }
+
+    /**
+     * Resource server client mà policy graph writer resolve theo audience: test-realm.json không
+     * khai client này, các integration test tự tạo khi thiếu (theo mẫu PlatformProjectionIT) để
+     * class chạy độc lập; client là object realm dùng chung nên tạo xong để lại, không xóa.
+     */
+    private static void ensureApiClient() {
+        String audience = IdentityFlowIT.fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
+        List<Map<String, Object>> matches =
+                HTTP.get()
+                        .uri(adminStatic("/clients?clientId=" + audience))
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .retrieve()
+                        .body(LIST_MAP);
+        if (matches != null && !matches.isEmpty()) {
+            return;
+        }
+        String clientId =
+                createResource(
+                        adminStatic("/clients"),
+                        Map.of(
+                                "clientId",
+                                audience,
+                                "protocol",
+                                "openid-connect",
+                                "enabled",
+                                true,
+                                "publicClient",
+                                false,
+                                "standardFlowEnabled",
+                                false,
+                                "directAccessGrantsEnabled",
+                                false,
+                                "authorizationServicesEnabled",
+                                true,
+                                "serviceAccountsEnabled",
+                                true,
+                                "fullScopeAllowed",
+                                false,
+                                "authorizationSettings",
+                                Map.of(
+                                        "policyEnforcementMode",
+                                        "ENFORCING",
+                                        "allowRemoteResourceManagement",
+                                        true,
+                                        "decisionStrategy",
+                                        "UNANIMOUS")));
+        removeClientDefaults(clientId);
+    }
+
+    private static void removeClientDefaults(String clientId) {
+        String root = "/clients/" + clientId + "/authz/resource-server";
+        for (Map<String, Object> permission : getList(adminStatic(root + "/permission/resource"))) {
+            if (DEFAULT_PERMISSION.equals(permission.get("name"))) {
+                deleteStatic(adminStatic(root + "/permission/resource/" + permission.get("id")));
+            }
+        }
+        for (Map<String, Object> resource : getList(adminStatic(root + "/resource"))) {
+            if (DEFAULT_RESOURCE.equals(resource.get("name"))) {
+                deleteStatic(adminStatic(root + "/resource/" + resource.get("_id")));
+            }
+        }
+        for (Map<String, Object> policy : getList(adminStatic(root + "/policy"))) {
+            if (DEFAULT_POLICY.equals(policy.get("name"))) {
+                deleteStatic(adminStatic(root + "/policy/" + policy.get("id")));
+            }
+        }
+    }
+
+    private static List<Map<String, Object>> getList(String uri) {
+        List<Map<String, Object>> result =
+                HTTP.get()
+                        .uri(uri)
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .retrieve()
+                        .body(LIST_MAP);
+        if (result == null) {
+            throw new IllegalStateException("Keycloak list not readable: " + uri);
+        }
+        return result;
+    }
+
+    private static String createResource(String uri, Map<String, ?> body) {
+        var response =
+                HTTP.post()
+                        .uri(uri)
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .toEntity(String.class);
+        URI location = response.getHeaders().getLocation();
+        if (location == null) {
+            throw new IllegalStateException("Keycloak did not return a location for " + uri);
+        }
+        String path = location.getPath();
+        return path.substring(path.lastIndexOf('/') + 1);
     }
 
     // ---------- Keycloak TEST realm qua Admin API ----------
