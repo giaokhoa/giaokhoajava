@@ -22,6 +22,7 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -195,38 +196,36 @@ public class InvitationService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        List<Map<String, Object>> rows =
-                jdbc.queryForList(
+        List<InvitationRow> rows =
+                jdbc.query(
                         "SELECT id, workspace_id, target_email, target_user_id, intended_roles,"
                                 + " expires_at, state FROM invitation WHERE token_hash = ?"
                                 + " FOR UPDATE",
+                        INVITATION_MAPPER,
                         hash);
         if (rows.isEmpty()) {
             // Token lạ và token không tồn tại trả cùng một 404: không lộ lời mời nào.
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "Không tìm thấy lời mời.");
         }
-        Map<String, Object> invitation = rows.getFirst();
-        UUID invitationId = (UUID) Objects.requireNonNull(invitation.get("id"), "id");
-        UUID workspaceId =
-                (UUID) Objects.requireNonNull(invitation.get("workspace_id"), "workspace_id");
-        if (!PENDING_STATE.equals(invitation.get("state"))) {
+        InvitationRow invitation = rows.getFirst();
+        if (!PENDING_STATE.equals(invitation.state())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "INVITATION_NOT_PENDING",
                     "Lời mời không còn chờ chấp nhận.");
         }
-        Instant expiresAt = expiresAtOf(invitation.get("expires_at"));
-        if (!expiresAt.isAfter(Instant.now())) {
+        if (!invitation.expiresAt().isAfter(Instant.now())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "INVITATION_EXPIRED", "Lời mời đã hết hạn.");
         }
         requireTargetMatch(invitation, acceptorUserId);
 
-        MembershipActivation activation = activateMembership(workspaceId, acceptorUserId);
+        MembershipActivation activation =
+                activateMembership(invitation.workspaceId(), acceptorUserId);
         UUID membershipId = activation.membershipId();
         boolean addedNewRole = false;
-        for (String role : stringArray(invitation.get("intended_roles"))) {
+        for (String role : invitation.intendedRoles()) {
             addedNewRole |=
                     jdbc.update(
                                     "INSERT INTO membership_role (membership_id, role)"
@@ -248,7 +247,7 @@ public class InvitationService {
                 jdbc.update(
                         "UPDATE invitation SET state = 'ACCEPTED', version = version + 1"
                                 + " WHERE id = ? AND state = 'PENDING'",
-                        invitationId);
+                        invitation.id());
         if (accepted != SINGLE_ROW) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
@@ -256,32 +255,42 @@ public class InvitationService {
                     "Lời mời không còn chờ chấp nhận.");
         }
         return projector.recordMembershipChange(
-                acceptorUserId, workspaceId, idempotencyKey, payloadHash);
+                acceptorUserId, invitation.workspaceId(), idempotencyKey, payloadHash);
     }
 
-    // pgjdbc trả java.sql.Timestamp cho cột timestamptz khi đọc qua Map của JdbcTemplate,
-    // không phải OffsetDateTime: ép kiểu thẳng sẽ vỡ mọi lần chấp nhận.
-    private static Instant expiresAtOf(@Nullable Object value) {
-        Objects.requireNonNull(value, "expires_at");
-        if (value instanceof OffsetDateTime offsetDateTime) {
-            return offsetDateTime.toInstant();
-        }
-        if (value instanceof java.sql.Timestamp timestamp) {
-            return timestamp.toInstant();
-        }
-        throw new IllegalStateException("Unexpected expires_at value: " + value.getClass());
-    }
+    /** Một dòng lời mời như accept cần dùng, mọi cột đã đọc theo kiểu đích. */
+    private record InvitationRow(
+            UUID id,
+            UUID workspaceId,
+            @Nullable String targetEmail,
+            @Nullable UUID targetUserId,
+            List<String> intendedRoles,
+            Instant expiresAt,
+            String state) {}
 
-    private void requireTargetMatch(Map<String, Object> invitation, UUID acceptorUserId) {
-        UUID targetUserId = (UUID) invitation.get("target_user_id");
+    // Đọc thẳng theo kiểu đích để pgjdbc tự chuyển cột TIMESTAMPTZ và mảng, thay vì nhận
+    // java.sql.Timestamp/Array qua Map rồi quy đổi thủ công.
+    private static final RowMapper<InvitationRow> INVITATION_MAPPER =
+            (rs, _) ->
+                    new InvitationRow(
+                            rs.getObject("id", UUID.class),
+                            rs.getObject("workspace_id", UUID.class),
+                            rs.getString("target_email"),
+                            rs.getObject("target_user_id", UUID.class),
+                            stringArray(rs.getArray("intended_roles")),
+                            Objects.requireNonNull(rs.getObject("expires_at", OffsetDateTime.class))
+                                    .toInstant(),
+                            rs.getString("state"));
+
+    private void requireTargetMatch(InvitationRow invitation, UUID acceptorUserId) {
+        UUID targetUserId = invitation.targetUserId();
         if (targetUserId != null) {
             if (!targetUserId.equals(acceptorUserId)) {
                 throw targetMismatch();
             }
             return;
         }
-        String targetEmail =
-                Objects.requireNonNull((String) invitation.get("target_email"), "target_email");
+        String targetEmail = Objects.requireNonNull(invitation.targetEmail(), "target_email");
         List<Map<String, Object>> accounts =
                 jdbc.queryForList(
                         "SELECT email, email_verified FROM user_account WHERE id = ?",
