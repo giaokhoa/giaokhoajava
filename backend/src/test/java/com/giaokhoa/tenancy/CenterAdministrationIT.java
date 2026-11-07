@@ -158,6 +158,9 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID owner = seedAccount(operator.subject(), "SELF_REGISTERED", null, false);
 
             try (var session = openSession(operator)) {
+                // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
+                // của operator, điều kiện để PDP cho qua scope platform.
+                getWorkspacesWhenReady(session);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -262,6 +265,9 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             seedAccount(operator.subject(), "SELF_REGISTERED", null, false);
 
             try (var session = openSession(operator)) {
+                // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
+                // của operator, điều kiện để PDP cho qua scope platform.
+                getWorkspacesWhenReady(session);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(get("/api/platform/centers").cookie(session.cookie()))
@@ -314,6 +320,9 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(operator)) {
+                // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
+                // của operator, điều kiện để PDP cho qua scope platform.
+                getWorkspacesWhenReady(session);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -356,6 +365,9 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(operator)) {
+                // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
+                // của operator, điều kiện để PDP cho qua scope platform.
+                getWorkspacesWhenReady(session);
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
