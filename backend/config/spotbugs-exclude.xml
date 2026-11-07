@@ -135,6 +135,24 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdempotencyService, MembershipPolicyProjector); không sao chép khi inject vào service lời mời. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.InvitationService"/>
+        <Field name="~(jdbc|idempotency|projector)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CenterPolicyProjector, AuthorizationOperationService); không sao chép khi inject vào projector membership. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.MembershipPolicyProjector"/>
+        <Field name="~(jdbc|centerProjector|operations)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdempotencyService, InitialCredentialHandoff, MembershipPolicyProjector, ResourceMutationCoordinator); không sao chép khi inject vào service membership. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.MembershipService"/>
+        <Field name="~(jdbc|idempotency|handoff|projector|coordinator)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- JPA cần entity không final; các constructor này chỉ gán field, không giữ tài nguyên hay gọi code ngoài. -->
     <Match>
         <Class name="~com\.giaokhoa\.authorization\.model\.Authorization(Operation|Projection)"/>
