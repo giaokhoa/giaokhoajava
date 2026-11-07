@@ -114,7 +114,6 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
     private static @Nullable String operatorGroupId;
-    private static @Nullable String ownedApiClientId;
 
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
@@ -133,9 +132,6 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
     @AfterAll
     static void removeOperatorGroup() {
-        if (ownedApiClientId != null) {
-            deleteResource(adminStatic("/clients/" + ownedApiClientId));
-        }
         for (int i = OWNED_GROUP_IDS.size() - 1; i >= 0; i--) {
             deleteResource(adminStatic("/groups/" + OWNED_GROUP_IDS.get(i)));
         }
@@ -1397,9 +1393,9 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
     /**
      * Resource server client mà policy graph writer resolve theo audience: test-realm.json không
-     * khai client này, các integration test tự tạo khi thiếu (theo mẫu IdentityFlowIT) để class
-     * chạy độc lập; client đã có sẵn (do class khác tạo trước trong cùng lượt toàn suite) thì dùng
-     * chung và không xóa ở cuối.
+     * khai client này nên class tự tạo khi thiếu (theo mẫu IdentityFlowIT) để chạy độc lập. Client
+     * là object realm theo tên cố định dùng chung toàn suite nên không bao giờ xóa ở teardown, kể
+     * cả khi chính class này tạo ra.
      */
     private static void ensureApiClient() {
         String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
@@ -1442,7 +1438,6 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                                         true,
                                         "decisionStrategy",
                                         "UNANIMOUS")));
-        ownedApiClientId = clientId;
         removeClientDefaults(clientId);
     }
 
