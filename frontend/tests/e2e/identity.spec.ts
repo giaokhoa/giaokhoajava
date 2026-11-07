@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { TestEnvironment } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
 
 // E2E danh tính US1 ở biên trình duyệt: Code login, verify mail, đổi mật khẩu tạm,
 // workspace switch, logout và back-channel logout qua ứng dụng thật trên stack TEST.
@@ -29,10 +29,7 @@ async function dangNhapQuaUngDung(
   origin: string,
   user: { username: string; password: string },
 ): Promise<void> {
-  await page.goto(`${origin}/oauth2/authorization/keycloak`);
-  await page.locator("#username").fill(user.username);
-  await page.locator("#password").fill(user.password);
-  await page.locator("#kc-login").click();
+  await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
 }
 
@@ -84,10 +81,7 @@ test("email chưa xác minh: đăng nhập bị chặn ở bước verify email 
   const env = new TestEnvironment();
   const user = await env.createUser(false);
   try {
-    await page.goto(`${origin}/oauth2/authorization/keycloak`);
-    await page.locator("#username").fill(user.username);
-    await page.locator("#password").fill(user.password);
-    await page.locator("#kc-login").click();
+    await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
 
     // Required action VERIFY_EMAIL giữ người dùng ở phía Keycloak, không quay về ứng dụng.
     await page.waitForURL((url) => url.origin === env.keycloak.origin);
@@ -137,10 +131,7 @@ test("mật khẩu tạm: lần đăng nhập đầu bị ép đổi mật khẩ
   const user = await env.createUserWithTemporaryPassword();
   const newPassword = `${user.password}Moi1!`;
   try {
-    await page.goto(`${origin}/oauth2/authorization/keycloak`);
-    await page.locator("#username").fill(user.username);
-    await page.locator("#password").fill(user.password);
-    await page.locator("#kc-login").click();
+    await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
 
     // Credential tạm kéo theo required action UPDATE_PASSWORD trước khi vào ứng dụng.
     await page.locator("#password-new").fill(newPassword);
@@ -153,12 +144,12 @@ test("mật khẩu tạm: lần đăng nhập đầu bị ép đổi mật khẩ
 
     // Mật khẩu tạm cũ bị từ chối; mật khẩu mới vào thẳng, không bị ép đổi lần hai.
     await page.context().clearCookies();
-    await page.goto(`${origin}/oauth2/authorization/keycloak`);
-    await page.locator("#username").fill(user.username);
-    await page.locator("#password").fill(user.password);
-    await page.locator("#kc-login").click();
-    await expect(page.locator("#username")).toBeVisible();
+    await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
+    // Sau lần đăng nhập bị từ chối, trang vẫn ở bước 2 (chỉ có #password, kèm lỗi),
+    // không quay về bước 1 nên #username không còn trong DOM.
+    await expect(page.locator("#input-error-password")).toBeVisible();
 
+    // Đang ở bước 2 sau lần đăng nhập bị từ chối: chỉ cần điền mật khẩu mới.
     await page.locator("#password").fill(newPassword);
     await page.locator("#kc-login").click();
     await page.waitForURL(

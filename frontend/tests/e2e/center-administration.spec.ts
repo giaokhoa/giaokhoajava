@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
-import { TestEnvironment } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
 
 // E2E quản trị center ở biên trình duyệt: operator tạo center/xác nhận gói, owner bổ nhiệm
 // manager, manager mời/cấp student, mutation 202 và bí mật handoff chỉ ở response CREATE
@@ -79,10 +79,7 @@ async function dangNhapQuaUngDung(
   origin: string,
   user: { username: string; password: string },
 ): Promise<void> {
-  await page.goto(`${origin}/oauth2/authorization/keycloak`);
-  await page.locator("#username").fill(user.username);
-  await page.locator("#password").fill(user.password);
-  await page.locator("#kc-login").click();
+  await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
 }
 
@@ -402,10 +399,10 @@ async function kiemTraMatKhauTam(
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(`${origin}/oauth2/authorization/keycloak`);
-    await page.locator("#username").fill(username);
-    await page.locator("#password").fill(matKhauTam);
-    await page.locator("#kc-login").click();
+    await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, {
+      username,
+      password: matKhauTam,
+    });
     await expect(page.locator("#password-new")).toBeVisible();
   } finally {
     await context.close();
