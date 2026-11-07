@@ -67,8 +67,9 @@ public class CenterService {
 
     /**
      * Tạo center cho một owner đã có danh tính. Organization được provision đồng bộ trước khi ghi
-     * dữ kiện nguồn (tên ổn định theo workspace nên retry không tạo hai Organization), còn graph
-     * quyền đi qua operation bất đồng bộ như mọi mutation authorization khác.
+     * dữ kiện nguồn; workspaceId sinh ngẫu nhiên ở mỗi lần gọi nên nếu transaction rollback sau
+     * bước provision, lần retry tạo Organization khác và Organization cũ thành mồ côi vô hại trên
+     * Keycloak. Graph quyền đi qua operation bất đồng bộ như mọi mutation authorization khác.
      */
     @Transactional
     public AuthorizationOperation createCenter(

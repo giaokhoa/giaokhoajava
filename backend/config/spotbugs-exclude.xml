@@ -99,6 +99,18 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient); không sao chép khi inject vào service quản trị center. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.CenterService"/>
+        <Field name="~(jdbc|directory)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient); không sao chép khi inject vào projector của center. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.CenterPolicyProjector"/>
+        <Field name="~(jdbc|directory)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, PolicyGraphWriter); không sao chép khi inject vào executor. -->
     <Match>
         <Class name="com.giaokhoa.authorization.decision.ProtectedActionExecutor"/>

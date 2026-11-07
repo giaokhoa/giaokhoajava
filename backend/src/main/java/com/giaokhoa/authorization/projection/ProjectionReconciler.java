@@ -404,7 +404,7 @@ public class ProjectionReconciler {
                                 projection.targetKey(),
                                 entry.getKey(),
                                 projection.keycloakResourceId(),
-                                entry.getValue().policyNames())) {
+                                entry.getValue().rootPolicyNames())) {
                             intact = false;
                             break;
                         }

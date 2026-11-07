@@ -43,6 +43,45 @@ class PolicyGraphTest {
     }
 
     @Test
+    void rootPolicyNamesMatchWhatTheWriterLinksToTheRootPermission() {
+        Gate owners = new Gate.GroupMembership(NativePolicyTemplates.ownersGroup(WORKSPACE));
+        Gate managers = new Gate.GroupMembership(NativePolicyTemplates.managersGroup(WORKSPACE));
+        Gate validity = new Gate.Validity(FROM, UNTIL);
+        String eligible =
+                NativePolicyTemplates.groupPolicyName(NativePolicyTemplates.ELIGIBILITY_GROUP);
+        String target = NativePolicyTemplates.workspaceKey(WORKSPACE);
+
+        PolicyGraph singleLeaf =
+                new PolicyGraph(
+                        target,
+                        "enter",
+                        List.of(
+                                Source.of(
+                                        new Gate.GroupMembership(
+                                                NativePolicyTemplates.membersGroup(WORKSPACE)))));
+        assertEquals(singleLeaf.policyNames(), singleLeaf.rootPolicyNames());
+
+        Source gatedOwners = Source.of(owners, validity);
+        PolicyGraph gated = new PolicyGraph(target, "class.create", List.of(gatedOwners));
+        assertEquals(
+                List.of(
+                        eligible,
+                        NativePolicyTemplates.sourcePolicyName(gatedOwners.descriptorHash())),
+                gated.rootPolicyNames());
+
+        PolicyGraph multiSource =
+                new PolicyGraph(
+                        target,
+                        "class.create",
+                        List.of(Source.of(owners), Source.of(managers, validity)));
+        assertEquals(
+                List.of(
+                        NativePolicyTemplates.anySourcePolicyName(target, "class.create"),
+                        eligible),
+                multiSource.rootPolicyNames());
+    }
+
+    @Test
     void differentScopeOrSourceChangesTheHash() {
         Gate owners = new Gate.GroupMembership(NativePolicyTemplates.ownersGroup(WORKSPACE));
         PolicyGraph create =

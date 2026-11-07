@@ -122,6 +122,40 @@ public record PolicyGraph(
         return List.copyOf(names);
     }
 
+    /**
+     * Các tên policy native mà một lần áp graph này liên kết trực tiếp vào root permission: leaf
+     * của từng common gate, và với mỗi source hoặc leaf duy nhất của nó hoặc aggregate của nó khi
+     * source cho nhiều leaf; khi có nhiều source, các nút source được thay bằng aggregate OR của
+     * cặp target/scope. Khác {@link #policyNames()} ở các source nhiều leaf — leaf bên trong một
+     * aggregate không liên kết trực tiếp vào root — nên kiểm chứng drift của root permission phải
+     * đối chiếu bằng đúng tập này.
+     */
+    public List<String> rootPolicyNames() {
+        Set<String> names = new TreeSet<>();
+        for (Gate gate : commonGates) {
+            addGatePolicyNames(names, gate);
+        }
+        List<String> sourceNodes = new ArrayList<>();
+        for (Source source : sources) {
+            List<String> leaves = new ArrayList<>();
+            for (Gate gate : source.gates()) {
+                leaves.addAll(gatePolicyNames(gate));
+            }
+            boolean singleLeaf = leaves.size() == 1;
+            sourceNodes.add(
+                    singleLeaf
+                            ? leaves.getFirst()
+                            : NativePolicyTemplates.sourcePolicyName(source.descriptorHash()));
+        }
+        boolean multiSource = sourceNodes.size() > 1;
+        if (multiSource) {
+            names.add(NativePolicyTemplates.anySourcePolicyName(targetKey, scope));
+        } else {
+            names.add(sourceNodes.getFirst());
+        }
+        return List.copyOf(names);
+    }
+
     private static void addGatePolicyNames(Set<String> names, Gate gate) {
         names.addAll(gatePolicyNames(gate));
     }

@@ -9,14 +9,20 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -46,9 +52,10 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Kiểm chứng tầng service của quản trị center: tạo tenant qua operation tới SUCCEEDED mới có
  * center, Organization và group membership thật trên Keycloak TEST; replay không nhân bản tenant;
- * đổi role chạm row membership và chiếu lại group; owner cuối cùng không bị gỡ; thu hồi giữ lịch sử
- * và gỡ user khỏi mọi group của workspace. Endpoint HTTP thuộc task controller riêng nên test này
- * gọi thẳng service, không qua MockMvc.
+ * đổi role chạm row membership và chiếu lại group; tiền điều kiện của đổi role; owner cuối cùng
+ * không bị gỡ; thu hồi giữ lịch sử và gỡ user khỏi mọi group của workspace; kỳ gói còn hiệu lực
+ * chiếu thành time policy trên các scope bị gate và bundle đã áp được verify là nguyên vẹn.
+ * Endpoint HTTP thuộc task controller riêng nên test này gọi thẳng service, không qua MockMvc.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -100,6 +107,7 @@ class CenterServiceIT extends IntegrationEnvironment {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired CenterService centers;
     @Autowired IdempotencyService idempotency;
+    @Autowired ProjectionReconciler reconciler;
 
     @Test
     void createCenterProvisionsTenantOwnerAndProjection() throws Exception {
@@ -412,6 +420,258 @@ class CenterServiceIT extends IntegrationEnvironment {
         }
     }
 
+    @Test
+    void replaceRolesRejectsBrokenPreconditions() throws Exception {
+        Fixture operator = newAccount("centersvc-precond-op");
+        Fixture owner = newAccount("centersvc-precond-owner");
+        Fixture member = newAccount("centersvc-precond-member");
+        try {
+            UUID workspaceId = createCenterAndAwait(operator, owner);
+            UUID membershipId = addMembership(workspaceId, member.userId(), "STUDENT");
+            long version =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT version FROM center_membership WHERE id = ?",
+                                    Long.class,
+                                    membershipId));
+            String payload = "{\"roles\":[\"TEACHER\"]}";
+
+            HttpProblemException missingIfMatch =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    centers.replaceRoles(
+                                            owner.userId(),
+                                            workspaceId,
+                                            membershipId,
+                                            Set.of(MembershipRole.Role.TEACHER),
+                                            null,
+                                            "precond-missing-" + UUID.randomUUID(),
+                                            hash(payload)));
+            assertEquals(428, missingIfMatch.getStatus().value(), "Thiếu If-Match là 428");
+            assertEquals("PRECONDITION_REQUIRED", missingIfMatch.getCode());
+
+            HttpProblemException staleVersion =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    centers.replaceRoles(
+                                            owner.userId(),
+                                            workspaceId,
+                                            membershipId,
+                                            Set.of(MembershipRole.Role.TEACHER),
+                                            "\"" + (version + 100) + "\"",
+                                            "precond-stale-" + UUID.randomUUID(),
+                                            hash(payload)));
+            assertEquals(409, staleVersion.getStatus().value(), "Version cũ là 409");
+            assertEquals("VERSION_CONFLICT", staleVersion.getCode());
+
+            HttpProblemException wrongWorkspace =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    centers.replaceRoles(
+                                            owner.userId(),
+                                            UUID.randomUUID(),
+                                            membershipId,
+                                            Set.of(MembershipRole.Role.TEACHER),
+                                            "\"" + version + "\"",
+                                            "precond-wrongws-" + UUID.randomUUID(),
+                                            hash(payload)));
+            assertEquals(404, wrongWorkspace.getStatus().value(), "Sai workspace là 404");
+            assertEquals("MEMBERSHIP_NOT_FOUND", wrongWorkspace.getCode());
+
+            HttpProblemException missingMembership =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    centers.replaceRoles(
+                                            owner.userId(),
+                                            workspaceId,
+                                            UUID.randomUUID(),
+                                            Set.of(MembershipRole.Role.TEACHER),
+                                            "\"" + version + "\"",
+                                            "precond-missingm-" + UUID.randomUUID(),
+                                            hash(payload)));
+            assertEquals(
+                    404, missingMembership.getStatus().value(), "Membership không tồn tại là 404");
+            assertEquals("MEMBERSHIP_NOT_FOUND", missingMembership.getCode());
+
+            HttpProblemException grantOwner =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    centers.replaceRoles(
+                                            owner.userId(),
+                                            workspaceId,
+                                            membershipId,
+                                            Set.of(MembershipRole.Role.OWNER),
+                                            "\"" + version + "\"",
+                                            "precond-owner-" + UUID.randomUUID(),
+                                            hash("{\"roles\":[\"OWNER\"]}")));
+            assertEquals(400, grantOwner.getStatus().value(), "Cấp mới OWNER qua đổi role là 400");
+            assertEquals("OWNER_ROLE_NOT_ASSIGNABLE", grantOwner.getCode());
+
+            assertEquals(
+                    Set.of("STUDENT"),
+                    activeRoles(workspaceId, member.userId()),
+                    "Mọi lời gọi bị từ chối đều không đổi role");
+            String organizationId =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT keycloak_organization_id FROM center"
+                                            + " WHERE workspace_id = ?",
+                                    String.class,
+                                    workspaceId));
+            cleanupWorkspaceDirectory(workspaceId, organizationId);
+        } finally {
+            operator.delete();
+            owner.delete();
+            member.delete();
+        }
+    }
+
+    @Test
+    void subscriptionPeriodAddsNativeTimePoliciesToGatedScopes() throws Exception {
+        Fixture operator = newAccount("centersvc-period-op");
+        Fixture owner = newAccount("centersvc-period-owner");
+        Fixture member = newAccount("centersvc-period-member");
+        try {
+            UUID workspaceId = createCenterAndAwait(operator, owner);
+            UUID membershipId = addMembership(workspaceId, member.userId(), "STUDENT");
+            Instant validFrom =
+                    Instant.now().minus(Duration.ofDays(1)).truncatedTo(ChronoUnit.SECONDS);
+            Instant expiresAt = validFrom.plus(Duration.ofDays(30));
+            addSubscriptionPeriod(workspaceId, operator.userId(), validFrom, expiresAt);
+            long version =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT version FROM center_membership WHERE id = ?",
+                                    Long.class,
+                                    membershipId));
+
+            AuthorizationOperation operation =
+                    centers.replaceRoles(
+                            owner.userId(),
+                            workspaceId,
+                            membershipId,
+                            Set.of(MembershipRole.Role.MANAGER),
+                            "\"" + version + "\"",
+                            "period-roles-" + UUID.randomUUID(),
+                            hash("{\"roles\":[\"MANAGER\"]}"));
+            awaitOperationSucceeded(operation.getId());
+
+            String root = resourceServerRoot();
+            Map<String, Map<String, Object>> policiesByName = new HashMap<>();
+            for (Map<String, Object> policy : getListFrom(root + "/policy?first=0&max=1000")) {
+                policiesByName.put(String.valueOf(policy.get("name")), policy);
+            }
+            Map<String, Object> fromPolicy =
+                    policiesByName.get(NativePolicyTemplates.validFromPolicyName(validFrom));
+            Map<String, Object> untilPolicy =
+                    policiesByName.get(NativePolicyTemplates.validUntilPolicyName(expiresAt));
+            assertNotNull(fromPolicy, "Graph phải có time policy mở cửa sổ của kỳ gói");
+            assertNotNull(untilPolicy, "Graph phải có time policy đóng cửa sổ của kỳ gói");
+            String fromId = String.valueOf(fromPolicy.get("id"));
+            String untilId = String.valueOf(untilPolicy.get("id"));
+            Map<String, Object> fromDetail = getMapFrom(root + "/policy/time/" + fromId);
+            assertEquals("POSITIVE", fromDetail.get("logic"));
+            assertEquals(
+                    NativePolicyTemplates.KEYCLOAK_UTC.format(validFrom),
+                    fromDetail.get("notBefore"),
+                    "Biên mở là not-before POSITIVE tại valid_from");
+            Map<String, Object> untilDetail = getMapFrom(root + "/policy/time/" + untilId);
+            assertEquals("NEGATIVE", untilDetail.get("logic"));
+            assertEquals(
+                    NativePolicyTemplates.KEYCLOAK_UTC.format(expiresAt),
+                    untilDetail.get("notBefore"),
+                    "Biên đóng là not-before NEGATIVE tại expires_at: cửa sổ là [from, until)");
+
+            String permissionName =
+                    NativePolicyTemplates.rootPermissionName(
+                            NativePolicyTemplates.workspaceKey(workspaceId), "membership.invite");
+            String permissionId = null;
+            for (Map<String, Object> permission :
+                    getListFrom(root + "/permission/scope?first=0&max=1000")) {
+                if (permissionName.equals(permission.get("name"))) {
+                    permissionId = String.valueOf(permission.get("id"));
+                }
+            }
+            assertNotNull(permissionId, "Root permission của scope bị gate kỳ gói phải tồn tại");
+            Set<String> reachable = reachablePolicyIds(root, permissionId);
+            assertTrue(reachable.contains(fromId), "Time policy mở phải tới được từ root");
+            assertTrue(reachable.contains(untilId), "Time policy đóng phải tới được từ root");
+            String organizationId =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT keycloak_organization_id FROM center"
+                                            + " WHERE workspace_id = ?",
+                                    String.class,
+                                    workspaceId));
+            cleanupWorkspaceDirectory(workspaceId, organizationId);
+        } finally {
+            operator.delete();
+            owner.delete();
+            member.delete();
+        }
+    }
+
+    @Test
+    void storedBundleVerifiesIntactWithManagerAndActivePeriod() throws Exception {
+        Fixture operator = newAccount("centersvc-verify-op");
+        Fixture owner = newAccount("centersvc-verify-owner");
+        Fixture member = newAccount("centersvc-verify-member");
+        try {
+            UUID workspaceId = createCenterAndAwait(operator, owner);
+            UUID membershipId = addMembership(workspaceId, member.userId(), "MANAGER");
+            Instant validFrom =
+                    Instant.now().minus(Duration.ofDays(1)).truncatedTo(ChronoUnit.SECONDS);
+            addSubscriptionPeriod(
+                    workspaceId, operator.userId(), validFrom, validFrom.plus(Duration.ofDays(30)));
+            long version =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT version FROM center_membership WHERE id = ?",
+                                    Long.class,
+                                    membershipId));
+
+            AuthorizationOperation operation =
+                    centers.replaceRoles(
+                            owner.userId(),
+                            workspaceId,
+                            membershipId,
+                            Set.of(MembershipRole.Role.MANAGER),
+                            "\"" + version + "\"",
+                            "verify-roles-" + UUID.randomUUID(),
+                            hash("{\"roles\":[\"MANAGER\"]}"));
+            awaitOperationSucceeded(operation.getId());
+
+            UUID partitionId =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
+                                            + " AND owner_key = ?",
+                                    UUID.class,
+                                    "workspace:" + workspaceId));
+            assertTrue(
+                    reconciler.verifyStoredGraph(partitionId),
+                    "Bundle vừa áp ở trạng thái có manager và kỳ gói còn hiệu lực phải được"
+                            + " verify là nguyên vẹn, không phải drift");
+            String organizationId =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT keycloak_organization_id FROM center"
+                                            + " WHERE workspace_id = ?",
+                                    String.class,
+                                    workspaceId));
+            cleanupWorkspaceDirectory(workspaceId, organizationId);
+        } finally {
+            operator.delete();
+            owner.delete();
+            member.delete();
+        }
+    }
+
     // ---------- Dữ kiện ----------
 
     private record Fixture(UUID userId, String subject) {
@@ -507,6 +767,75 @@ class CenterServiceIT extends IntegrationEnvironment {
             return null;
         });
         return membership;
+    }
+
+    private void addSubscriptionPeriod(
+            UUID workspaceId, UUID confirmedBy, Instant validFrom, Instant expiresAt) {
+        tx(() -> {
+            jdbc.update(
+                    "INSERT INTO subscription_period(id,workspace_id,valid_from,expires_at,"
+                            + "confirmation_ref,confirmed_by,confirmed_at)"
+                            + " VALUES (?,?,?,?,?,?,now())",
+                    UUID.randomUUID(),
+                    workspaceId,
+                    java.sql.Timestamp.from(validFrom),
+                    java.sql.Timestamp.from(expiresAt),
+                    "it-period-" + UUID.randomUUID(),
+                    confirmedBy);
+            return null;
+        });
+    }
+
+    private String resourceServerRoot() {
+        List<Map<String, Object>> matches =
+                getListFrom(admin("/clients?clientId=" + fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE")));
+        if (matches.isEmpty()) {
+            throw new IllegalStateException("Resource server client is missing");
+        }
+        return admin("/clients/" + matches.getFirst().get("id") + "/authz/resource-server");
+    }
+
+    private List<Map<String, Object>> getListFrom(String uri) {
+        List<Map<String, Object>> result =
+                HTTP.get()
+                        .uri(uri)
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
+                        .retrieve()
+                        .body(LIST_MAP);
+        if (result == null) {
+            throw new IllegalStateException("Keycloak list not readable: " + uri);
+        }
+        return result;
+    }
+
+    private Map<String, Object> getMapFrom(String uri) {
+        Map<String, Object> result =
+                HTTP.get()
+                        .uri(uri)
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
+                        .retrieve()
+                        .body(MAP);
+        if (result == null) {
+            throw new IllegalStateException("Keycloak object not readable: " + uri);
+        }
+        return result;
+    }
+
+    /** Mọi policy tới được từ một policy qua associatedPolicies, gồm chính policy đó. */
+    private Set<String> reachablePolicyIds(String root, String policyId) {
+        Set<String> seen = new HashSet<>();
+        Deque<String> pending = new ArrayDeque<>(List.of(policyId));
+        while (!pending.isEmpty()) {
+            String current = pending.removeFirst();
+            if (!seen.add(current)) {
+                continue;
+            }
+            for (Map<String, Object> linked :
+                    getListFrom(root + "/policy/" + current + "/associatedPolicies")) {
+                pending.addLast(String.valueOf(linked.get("id")));
+            }
+        }
+        return seen;
     }
 
     private Set<String> activeRoles(UUID workspaceId, UUID userId) {
