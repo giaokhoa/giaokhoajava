@@ -46,8 +46,10 @@ export class TestEnvironment {
       throw new Error("Chỉ cho phép realm giaokhoa-it để kiểm thử");
     }
     // shortcut: Chỉ Compose TEST cục bộ; chỉ thêm target bên ngoài sau khi TEST độc lập được kiểm chứng.
-    if (this.keycloak.href !== "http://127.0.0.1:18081/" ||
-        this.mailpit.href !== "http://127.0.0.1:18025/") {
+    // Hai làn TEST local đều được phép: làn 1 Keycloak 18081, làn 2 Keycloak 18082.
+    if ((this.keycloak.href !== "http://127.0.0.1:18081/"
+        && this.keycloak.href !== "http://127.0.0.1:18082/")
+        || this.mailpit.href !== "http://127.0.0.1:18025/") {
       throw new Error("Chỉ dùng Keycloak/Mailpit TEST; không được kết nối DEV");
     }
   }
