@@ -507,8 +507,8 @@ class PlatformProjectionIT extends IntegrationEnvironment {
     }
 
     /**
-     * Client riêng của class này chỉ để lấy token user bằng password grant cho quyết định PDP:
-     * chỉ tạo khi thiếu và không bao giờ xóa ở teardown, để lần chạy sau dùng lại cùng client.
+     * Client riêng của class này chỉ để lấy token user bằng password grant cho quyết định PDP: chỉ
+     * tạo khi thiếu và không bao giờ xóa ở teardown, để lần chạy sau dùng lại cùng client.
      */
     private static void ensureGrantClient() {
         List<Map<String, Object>> matches =
