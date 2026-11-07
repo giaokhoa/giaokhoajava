@@ -14,7 +14,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.PlatformProjectionSeeder;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
-import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.servlet.http.Cookie;
 import java.net.URI;
@@ -31,6 +30,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -44,7 +44,6 @@ import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -113,15 +112,12 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     }
 
     @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+    static void removeSchema(@Autowired ApplicationContext context) {
+        // Test platform operator của class này chờ đồng bộ eligibility do worker thật xử lý
+        // (getWorkspacesWhenReady) nên không mock được như trước; teardown dừng scheduler
+        // trước để không còn actor đồng thời nào chạm schema khi DROP.
+        stopSchedulerAndDropSchema(context, SCHEMA);
     }
-
-    // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua service/HTTP
-    // đồng bộ), nhưng worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong
-    // khi @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và
-    // PostgreSQL hủy DROP bằng deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
-    @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
