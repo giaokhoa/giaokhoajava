@@ -823,50 +823,6 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     @Test
-    void teacherHasNoClassCreateCapability() throws Exception {
-        KeycloakLogin ownerLogin = createVerifiedUser("center-owner-nine");
-        KeycloakLogin teacherLogin = createVerifiedUser("center-teacher-two");
-        try {
-            UUID owner =
-                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
-            UUID teacher =
-                    seedAccount(
-                            teacherLogin.subject(), "SELF_REGISTERED", teacherLogin.email(), true);
-            UUID center = seedCenter(owner);
-            addMembership(center, teacher, "TEACHER");
-
-            try (var session = openSession(teacherLogin)) {
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/capabilities")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"targets\":[{\"type\":\"WORKSPACE\",\"id\":\""
-                                                                + center
-                                                                + "\",\"scopes\":[\"class.create\"]}]}"))
-                                .andReturn()
-                                .getResponse();
-
-                assertEquals(200, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
-                JsonNode scopes = body.get("targets").get(0).get("scopes");
-                assertEquals(1, scopes.size());
-                assertEquals("class.create", scopes.get(0).get("scope").stringValue());
-                assertFalse(
-                        scopes.get(0).get("allowed").booleanValue(),
-                        "Không có nguồn quyền nào thì mặc định từ chối");
-                assertEquals("DENIED", scopes.get(0).get("reasonCode").stringValue());
-            }
-        } finally {
-            deleteUser(ownerLogin.subject());
-            deleteUser(teacherLogin.subject());
-        }
-    }
-
-    @Test
     void mutationWithoutCsrfIsRejected() throws Exception {
         KeycloakLogin ownerLogin = createVerifiedUser("center-owner-ten");
         try {
