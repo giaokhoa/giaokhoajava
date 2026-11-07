@@ -56,14 +56,15 @@ public class PlatformProjectionSeeder {
         boolean created = false;
         if (partitionId == null) {
             UUID candidate = UUID.randomUUID();
-            int inserted =
+            boolean insertedByThisInstance =
                     jdbc.update(
-                            "INSERT INTO authz_partition(id, kind, owner_key)"
-                                    + " VALUES (?, 'PLATFORM', ?) ON CONFLICT (kind, owner_key)"
-                                    + " DO NOTHING",
-                            candidate,
-                            OWNER_KEY);
-            if (inserted == 1) {
+                                    "INSERT INTO authz_partition(id, kind, owner_key)"
+                                            + " VALUES (?, 'PLATFORM', ?) ON CONFLICT"
+                                            + " (kind, owner_key) DO NOTHING",
+                                    candidate,
+                                    OWNER_KEY)
+                            == 1;
+            if (insertedByThisInstance) {
                 partitionId = candidate;
                 created = true;
             } else {
