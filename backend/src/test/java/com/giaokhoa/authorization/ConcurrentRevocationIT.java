@@ -757,9 +757,12 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             actor.account(),
                             desiredHash);
                     idempotency.executeOnce(operation, () -> {});
+                    // Giữ retry ở tương lai gần để worker không claim operation trước khi
+                    // test khẳng định trạng thái chưa reconcile; test mở lại ngay trước
+                    // khi chờ worker.
                     jdbc.update(
                             "UPDATE authorization_operation SET state='RETRYABLE_FAILURE',"
-                                    + " attempt_count=1,next_attempt_at=now(),"
+                                    + " attempt_count=1,next_attempt_at = now() + interval '5 minutes',"
                                     + " last_error_code='PARTIAL_KEYCLOAK_PROVISION'"
                                     + " WHERE id=?",
                             operation.getId());
@@ -767,7 +770,6 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                 });
                 graph.cleanupProjectedPolicies(() -> projectionPolicies(projection));
                 assertEquals(1, graph.resourceCount(), "Native workspace resource exists already");
-                long policiesBefore = graph.policyCount();
                 assertEquals(0, graph.permissionCount(), "Permission absent at crash point");
                 assertFalse(
                         graph.allowed(
@@ -794,6 +796,14 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                         webContext.containsBean("projectionWorker"),
                         "REVOCATION_CONTRACT_WORKER_NOT_INSTALLED: the reconciliation worker must resume owner source through"
                                 + " production PolicyGraphWriter/ProjectionReconciler");
+                // Trạng thái trước reconcile đã khẳng định xong: mở retry để worker claim.
+                tx(() -> {
+                    jdbc.update(
+                            "UPDATE authorization_operation SET next_attempt_at = now()"
+                                    + " WHERE id=?",
+                            operation.getId());
+                    return null;
+                });
                 awaitCondition(() ->
                         "READY".equals(state(actor.workspacePartition()))
                                 && "SUCCEEDED"
@@ -835,7 +845,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                         1, graph.resourceCount(), "Retry may not clone resource"),
                         () ->
                                 assertTrue(
-                                        graph.policyCount() > policiesBefore,
+                                        graph.scopedPolicyCount() > 0,
                                         "Retry must install the missing native owner policy"),
                         () ->
                                 assertEquals(

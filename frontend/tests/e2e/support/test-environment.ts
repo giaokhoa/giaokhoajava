@@ -12,6 +12,26 @@ function required(name: string): string {
   return value;
 }
 
+// Đăng nhập form Keycloak, linh hoạt một/hai bước: Keycloak 26 chuyển sang
+// identity-first (bước 1 chỉ hỏi username, bước 2 mới hỏi password) ngay khi realm có
+// ≥1 organization — ứng dụng tạo 1 organization cho mỗi center nên form hai bước là
+// hành vi production thật, không phải realm hỏng. Điền username rồi kiểm tra #password:
+// chưa có thì sang bước 2 bằng nút #kc-login rồi mới điền password.
+export async function loginViaKeycloakForm(
+  page: Page,
+  loginUrl: string,
+  user: { username: string; password: string },
+): Promise<void> {
+  await page.goto(loginUrl);
+  await page.locator("#username").fill(user.username);
+  if ((await page.locator("#password").count()) === 0) {
+    await page.locator("#kc-login").click();
+    await page.locator("#password").waitFor({ state: "visible" });
+  }
+  await page.locator("#password").fill(user.password);
+  await page.locator("#kc-login").click();
+}
+
 /** Chỉ các lời gọi từ Node test runner; không token hay credential nào tới Next/trình duyệt. */
 export class TestEnvironment {
   readonly keycloak = new URL(required("TEST_KEYCLOAK_BASE_URL"));
@@ -215,11 +235,8 @@ export class TestEnvironment {
       callbackServer.listen(18888, "127.0.0.1", resolve);
     });
     try {
-      await page.goto(authorize.toString());
-    await page.locator("#username").fill(user.username);
-    await page.locator("#password").fill(user.password);
-    await page.locator("#kc-login").click();
-    await page.waitForURL((url) => url.origin === "http://127.0.0.1:18888");
+      await loginViaKeycloakForm(page, authorize.toString(), user);
+      await page.waitForURL((url) => url.origin === "http://127.0.0.1:18888");
     const callback = new URL(page.url());
     expect(callback.searchParams.get("state")).toBe(state);
     const code = callback.searchParams.get("code");

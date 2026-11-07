@@ -89,7 +89,7 @@ Không phân phối revision qua cookie hoặc tin revision frontend gửi. Mọ
 
 | Đối tượng | Chuyển trạng thái | Điều kiện/kết quả |
 | --- | --- | --- |
-| Invitation | `PENDING → ACCEPTED / EXPIRED / CANCELLED` | Một lần, đúng danh tính/email; không tạo membership trùng |
+| Invitation | `PENDING → ACCEPTED / EXPIRED / REVOKED` | Một lần, đúng danh tính/email; không tạo membership trùng |
 | Membership/assignment/enrollment | `PENDING → ACTIVE → REVOKED` | ACTIVE sau sync; revoke fence trước sync; cấp lại là thao tác mới, không phục hồi ngầm từ gia hạn gói |
 | Guardian link | `REQUESTED → APPROVED / REJECTED → REVOKED` | APPROVED chỉ sau owner/manager; một request bị từ chối cần yêu cầu mới |
 | Resource version | `DRAFT → APPROVED → LOCKED` | Lưu/chia sẻ/giao khóa version; cập nhật nguồn bằng version mới; bản chỉnh sửa của người nhận là resource mới |

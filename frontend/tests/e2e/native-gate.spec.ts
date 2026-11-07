@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { TestEnvironment } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
 
 // Gate native ở biên trình duyệt cho GET operation status. Spec cần origin ứng dụng của môi
 // trường gate/review (backend chạy cùng stack TEST) qua NATIVE_GATE_APP_ORIGIN; khi biến chưa
@@ -46,10 +46,7 @@ test("đăng nhập thật qua Keycloak: identity chưa có thư mục thì fail
   const env = new TestEnvironment();
   const user = await env.createUser();
   try {
-    await page.goto(`${origin}/oauth2/authorization/keycloak`);
-    await page.locator("#username").fill(user.username);
-    await page.locator("#password").fill(user.password);
-    await page.locator("#kc-login").click();
+    await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
     await page.waitForURL(
       (url) => url.origin === new URL(origin).origin && url.pathname === "/",
     );

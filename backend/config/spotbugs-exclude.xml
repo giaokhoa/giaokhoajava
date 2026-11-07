@@ -24,6 +24,12 @@
         <Field name="~(jdbc|writer|directory)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào seeder ghi desired state lúc khởi động. -->
+    <Match>
+        <Class name="com.giaokhoa.authorization.projection.PlatformProjectionSeeder"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CurrentIdentityClient, AuthorizationOperationService); không sao chép khi inject vào synchronizer. -->
     <Match>
         <Class name="com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer"/>
@@ -99,6 +105,18 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient); không sao chép khi inject vào service quản trị center. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.CenterService"/>
+        <Field name="~(jdbc|directory)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient); không sao chép khi inject vào projector của center. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.CenterPolicyProjector"/>
+        <Field name="~(jdbc|directory)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, PolicyGraphWriter); không sao chép khi inject vào executor. -->
     <Match>
         <Class name="com.giaokhoa.authorization.decision.ProtectedActionExecutor"/>
@@ -123,11 +141,59 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdempotencyService, MembershipPolicyProjector); không sao chép khi inject vào service lời mời. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.InvitationService"/>
+        <Field name="~(jdbc|idempotency|projector)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CenterPolicyProjector, AuthorizationOperationService); không sao chép khi inject vào projector membership. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.MembershipPolicyProjector"/>
+        <Field name="~(jdbc|centerProjector|operations)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdempotencyService, InitialCredentialHandoff, MembershipPolicyProjector, ResourceMutationCoordinator); không sao chép khi inject vào service membership. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.MembershipService"/>
+        <Field name="~(jdbc|idempotency|handoff|projector|coordinator)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate); không sao chép khi inject vào service xác nhận kỳ gói. -->
+    <Match>
+        <Class name="com.giaokhoa.subscriptions.SubscriptionService"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- JPA cần entity không final; các constructor này chỉ gán field, không giữ tài nguyên hay gọi code ngoài. -->
     <Match>
         <Class name="~com\.giaokhoa\.authorization\.model\.Authorization(Operation|Projection)"/>
         <Method name="&lt;init&gt;"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <!-- Entity Invitation chỉ gán field trong constructor (kèm requireNonNull cho mảng role, theo mẫu AuthorizationOperation); không giữ tài nguyên hay gọi code ngoài. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.model.Invitation"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (CenterService, PolicyGraphWriter); không sao chép khi inject vào controller nền tảng. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.CenterController"/>
+        <Field name="~(centers|policyWriter)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (CenterService, JdbcTemplate); không sao chép khi inject vào controller thành viên. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.MembershipController"/>
+        <Field name="~(centers|jdbc)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (PolicyGraphWriter); không sao chép khi inject vào controller gói. -->
+    <Match>
+        <Class name="com.giaokhoa.subscriptions.SubscriptionController"/>
+        <Field name="policyWriter"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Test cố ý truyền null trong assertThrows để xác nhận validation của constructor. -->
     <Match>

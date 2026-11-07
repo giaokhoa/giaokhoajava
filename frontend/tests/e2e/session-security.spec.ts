@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { TestEnvironment } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
 
 // Kiểm chứng bảo mật phiên ở biên trình duyệt: không token trong DOM/network/SSR,
 // Cache-Control no-store trên phản hồi bảo vệ, CSRF cho mọi mutation (back-channel là
@@ -25,10 +25,7 @@ async function dangNhapQuaUngDung(
   origin: string,
   user: { username: string; password: string },
 ): Promise<void> {
-  await page.goto(`${origin}/oauth2/authorization/keycloak`);
-  await page.locator("#username").fill(user.username);
-  await page.locator("#password").fill(user.password);
-  await page.locator("#kc-login").click();
+  await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
 }
 
