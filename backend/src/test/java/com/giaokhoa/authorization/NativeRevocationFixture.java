@@ -407,6 +407,17 @@ final class NativeRevocationFixture implements AutoCloseable {
                     .count();
         }
 
+        /**
+         * Chỉ đếm policy mà permission của chính resource này tham chiếu. Client dùng chung nên đếm
+         * toàn cục nhạy lịch sử realm: writer upsert policy theo tên xác định nên retry có thể
+         * không tạo thêm policy nào mà vẫn đúng (xem Sổ B13).
+         */
+        long scopedPolicyCount() {
+            List<Map<String, Object>> permissions =
+                    getList(root() + "/resource/" + resource + "/permissions");
+            return referencedPolicyIds(List.of(), permissions).size();
+        }
+
         long permissionCount() {
             // Representation của permission không mang association; các permission của một
             // resource được đọc từ association endpoint của chính resource đó.
