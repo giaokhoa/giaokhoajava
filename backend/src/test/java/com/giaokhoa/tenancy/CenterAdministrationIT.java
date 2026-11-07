@@ -110,7 +110,11 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
     private static final List<String> OWNED_GROUP_IDS = new ArrayList<>();
+    private static final String DEFAULT_PERMISSION = "Default Permission";
+    private static final String DEFAULT_RESOURCE = "Default Resource";
+    private static final String DEFAULT_POLICY = "Default Policy";
     private static @Nullable String operatorGroupId;
+    private static @Nullable String ownedApiClientId;
 
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
@@ -124,10 +128,14 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     @BeforeAll
     static void seedOperatorGroup() {
         operatorGroupId = ensureGroup(OPERATOR_GROUP);
+        ensureApiClient();
     }
 
     @AfterAll
     static void removeOperatorGroup() {
+        if (ownedApiClientId != null) {
+            deleteResource(adminStatic("/clients/" + ownedApiClientId));
+        }
         for (int i = OWNED_GROUP_IDS.size() - 1; i >= 0; i--) {
             deleteResource(adminStatic("/groups/" + OWNED_GROUP_IDS.get(i)));
         }
@@ -940,11 +948,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             addMembership(centerA, member, "STUDENT");
 
             try (var session = openSession(memberLogin)) {
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
+                MockHttpServletResponse response = getWorkspacesWhenReady(session);
 
                 assertEquals(200, response.getStatus());
                 JsonNode body = JSON.readTree(response.getContentAsString());
@@ -1165,6 +1169,31 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
     // Row version của membership để gửi If-Match khi đổi role; hợp đồng bắt buộc
     // precondition này, thiếu thì server trả 428.
+    /**
+     * Đọc danh sách workspace của actor seed trực tiếp bằng JDBC: account chưa từng bootstrap nên
+     * các lời gọi đầu có thể nhận 503 AUTHORIZATION_NOT_READY trong lúc eligibility và projection
+     * của tài khoản đang đồng bộ — hành vi fail-closed đúng của sản phẩm. Client thật thử lại có
+     * giới hạn với đúng mã lỗi đó (mẫu retry của E2E US1) rồi mới khẳng định; ngữ nghĩa khẳng định
+     * của test không đổi.
+     */
+    private MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
+        while (true) {
+            MockHttpServletResponse response =
+                    mockMvc()
+                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
+                            .andReturn()
+                            .getResponse();
+            boolean syncing =
+                    response.getStatus() == 503
+                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
+            if (!syncing || Instant.now().isAfter(deadline)) {
+                return response;
+            }
+            sleep();
+        }
+    }
+
     private long membershipVersion(RealSession session, UUID workspaceId, UUID membershipId)
             throws Exception {
         MockHttpServletResponse response =
@@ -1364,6 +1393,89 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             parentId = found;
         }
         return Objects.requireNonNull(parentId, "operator group");
+    }
+
+    /**
+     * Resource server client mà policy graph writer resolve theo audience: test-realm.json không
+     * khai client này, các integration test tự tạo khi thiếu (theo mẫu IdentityFlowIT) để class
+     * chạy độc lập; client đã có sẵn (do class khác tạo trước trong cùng lượt toàn suite) thì dùng
+     * chung và không xóa ở cuối.
+     */
+    private static void ensureApiClient() {
+        String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
+        List<Map<String, Object>> matches =
+                HTTP.get()
+                        .uri(adminStatic("/clients?clientId=" + audience))
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .retrieve()
+                        .body(LIST);
+        if (matches != null && !matches.isEmpty()) {
+            return;
+        }
+        String clientId =
+                createResource(
+                        adminStatic("/clients"),
+                        Map.of(
+                                "clientId",
+                                audience,
+                                "protocol",
+                                "openid-connect",
+                                "enabled",
+                                true,
+                                "publicClient",
+                                false,
+                                "standardFlowEnabled",
+                                false,
+                                "directAccessGrantsEnabled",
+                                false,
+                                "authorizationServicesEnabled",
+                                true,
+                                "serviceAccountsEnabled",
+                                true,
+                                "fullScopeAllowed",
+                                false,
+                                "authorizationSettings",
+                                Map.of(
+                                        "policyEnforcementMode",
+                                        "ENFORCING",
+                                        "allowRemoteResourceManagement",
+                                        true,
+                                        "decisionStrategy",
+                                        "UNANIMOUS")));
+        ownedApiClientId = clientId;
+        removeClientDefaults(clientId);
+    }
+
+    private static void removeClientDefaults(String clientId) {
+        String root = "/clients/" + clientId + "/authz/resource-server";
+        for (Map<String, Object> permission : getList(adminStatic(root + "/permission/resource"))) {
+            if (DEFAULT_PERMISSION.equals(permission.get("name"))) {
+                deleteResource(adminStatic(root + "/permission/resource/" + permission.get("id")));
+            }
+        }
+        for (Map<String, Object> resource : getList(adminStatic(root + "/resource"))) {
+            if (DEFAULT_RESOURCE.equals(resource.get("name"))) {
+                deleteResource(adminStatic(root + "/resource/" + resource.get("_id")));
+            }
+        }
+        for (Map<String, Object> policy : getList(adminStatic(root + "/policy"))) {
+            if (DEFAULT_POLICY.equals(policy.get("name"))) {
+                deleteResource(adminStatic(root + "/policy/" + policy.get("id")));
+            }
+        }
+    }
+
+    private static List<Map<String, Object>> getList(String uri) {
+        List<Map<String, Object>> result =
+                HTTP.get()
+                        .uri(uri)
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .retrieve()
+                        .body(LIST);
+        if (result == null) {
+            throw new IllegalStateException("Keycloak list not readable: " + uri);
+        }
+        return result;
     }
 
     private static String createResource(String uri, Map<String, ?> body) {

@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -79,6 +80,10 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     private static final String BASE =
             CenterAdministrationIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = CenterAdministrationIT.fixture("TEST_KEYCLOAK_REALM");
+    private static final String DEFAULT_PERMISSION = "Default Permission";
+    private static final String DEFAULT_RESOURCE = "Default Resource";
+    private static final String DEFAULT_POLICY = "Default Policy";
+    private static @Nullable String ownedApiClientId;
 
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
@@ -89,8 +94,16 @@ class MembershipInvitationIT extends IntegrationEnvironment {
                 () -> "SET search_path TO " + SCHEMA + ",public");
     }
 
+    @BeforeAll
+    static void seedApiClient() {
+        ensureApiClient();
+    }
+
     @AfterAll
     static void removeSchema(@Autowired JdbcTemplate jdbc) {
+        if (ownedApiClientId != null) {
+            deleteResource(adminStatic("/clients/" + ownedApiClientId));
+        }
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
@@ -662,6 +675,15 @@ class MembershipInvitationIT extends IntegrationEnvironment {
                             "SELF_REGISTERED",
                             existingLogin.email(),
                             true);
+            // seedAccount dùng username tổng hợp; test này cần account đã có mang đúng username
+            // Keycloak đang bị trùng để khẳng định việc cấp học sinh bị chặn và không tạo thêm.
+            tx(() -> {
+                jdbc.update(
+                        "UPDATE user_account SET username = ? WHERE id = ?",
+                        existingLogin.username(),
+                        existing);
+                return null;
+            });
             UUID center = seedCenter(owner);
             addMembership(center, manager, "MANAGER");
 
@@ -1114,5 +1136,136 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             throw new IllegalStateException("Master token not readable");
         }
         return Objects.requireNonNull((String) response.get("access_token"), "access_token");
+    }
+
+    private static String adminStatic(String path) {
+        return BASE + "/admin/realms/" + REALM + path;
+    }
+
+    private static String masterTokenStatic() {
+        var form = new LinkedMultiValueMap<String, String>();
+        form.add("grant_type", "password");
+        form.add("client_id", "admin-cli");
+        form.add("username", CenterAdministrationIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
+        form.add("password", CenterAdministrationIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
+        Map<String, Object> response =
+                HTTP.post()
+                        .uri(BASE + "/realms/master/protocol/openid-connect/token")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .body(form)
+                        .retrieve()
+                        .body(MAP);
+        if (response == null) {
+            throw new IllegalStateException("Master token not readable");
+        }
+        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
+    }
+
+    private static String createResource(String uri, Map<String, ?> body) {
+        var response =
+                HTTP.post()
+                        .uri(uri)
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .toEntity(String.class);
+        URI location = response.getHeaders().getLocation();
+        if (location == null) {
+            throw new IllegalStateException("Keycloak did not return a location for " + uri);
+        }
+        String path = location.getPath();
+        return path.substring(path.lastIndexOf('/') + 1);
+    }
+
+    private static void deleteResource(String uri) {
+        HTTP.delete()
+                .uri(uri)
+                .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    private static List<Map<String, Object>> getList(String uri) {
+        List<Map<String, Object>> result =
+                HTTP.get()
+                        .uri(uri)
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .retrieve()
+                        .body(LIST);
+        if (result == null) {
+            throw new IllegalStateException("Keycloak list not readable: " + uri);
+        }
+        return result;
+    }
+
+    /**
+     * Resource server client mà policy graph writer resolve theo audience: test-realm.json không
+     * khai client này, các integration test tự tạo khi thiếu (theo mẫu IdentityFlowIT) để class
+     * chạy độc lập; client đã có sẵn (do class khác tạo trước trong cùng lượt toàn suite) thì dùng
+     * chung và không xóa ở cuối.
+     */
+    private static void ensureApiClient() {
+        String audience = CenterAdministrationIT.fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
+        List<Map<String, Object>> matches =
+                HTTP.get()
+                        .uri(adminStatic("/clients?clientId=" + audience))
+                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
+                        .retrieve()
+                        .body(LIST);
+        if (matches != null && !matches.isEmpty()) {
+            return;
+        }
+        String clientId =
+                createResource(
+                        adminStatic("/clients"),
+                        Map.of(
+                                "clientId",
+                                audience,
+                                "protocol",
+                                "openid-connect",
+                                "enabled",
+                                true,
+                                "publicClient",
+                                false,
+                                "standardFlowEnabled",
+                                false,
+                                "directAccessGrantsEnabled",
+                                false,
+                                "authorizationServicesEnabled",
+                                true,
+                                "serviceAccountsEnabled",
+                                true,
+                                "fullScopeAllowed",
+                                false,
+                                "authorizationSettings",
+                                Map.of(
+                                        "policyEnforcementMode",
+                                        "ENFORCING",
+                                        "allowRemoteResourceManagement",
+                                        true,
+                                        "decisionStrategy",
+                                        "UNANIMOUS")));
+        ownedApiClientId = clientId;
+        removeClientDefaults(clientId);
+    }
+
+    private static void removeClientDefaults(String clientId) {
+        String root = "/clients/" + clientId + "/authz/resource-server";
+        for (Map<String, Object> permission : getList(adminStatic(root + "/permission/resource"))) {
+            if (DEFAULT_PERMISSION.equals(permission.get("name"))) {
+                deleteResource(adminStatic(root + "/permission/resource/" + permission.get("id")));
+            }
+        }
+        for (Map<String, Object> resource : getList(adminStatic(root + "/resource"))) {
+            if (DEFAULT_RESOURCE.equals(resource.get("name"))) {
+                deleteResource(adminStatic(root + "/resource/" + resource.get("_id")));
+            }
+        }
+        for (Map<String, Object> policy : getList(adminStatic(root + "/policy"))) {
+            if (DEFAULT_POLICY.equals(policy.get("name"))) {
+                deleteResource(adminStatic(root + "/policy/" + policy.get("id")));
+            }
+        }
     }
 }

@@ -171,6 +171,24 @@
         <Method name="&lt;init&gt;"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (CenterService, PolicyGraphWriter); không sao chép khi inject vào controller nền tảng. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.CenterController"/>
+        <Field name="~(centers|policyWriter)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (CenterService, JdbcTemplate); không sao chép khi inject vào controller thành viên. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.MembershipController"/>
+        <Field name="~(centers|jdbc)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (PolicyGraphWriter); không sao chép khi inject vào controller gói. -->
+    <Match>
+        <Class name="com.giaokhoa.subscriptions.SubscriptionController"/>
+        <Field name="policyWriter"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Test cố ý truyền null trong assertThrows để xác nhận validation của constructor. -->
     <Match>
         <Class name="com.giaokhoa.authorization.model.AuthorizationModelTest"/>
