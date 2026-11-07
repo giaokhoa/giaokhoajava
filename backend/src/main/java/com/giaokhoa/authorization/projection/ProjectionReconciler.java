@@ -139,14 +139,23 @@ public class ProjectionReconciler {
 
         record Retract(String scope) implements Resolved {}
 
-        /** Toàn bộ graph của một CENTER workspace: một graph cho mỗi scope còn nguồn hiệu lực. */
-        record ApplyBundle(Map<String, PolicyGraph> graphs) implements Resolved {
+        /**
+         * Toàn bộ graph của một target dạng bundle: một graph cho mỗi scope còn nguồn hiệu lực,
+         * trên tập scope mà projector của target quản lý.
+         */
+        record ApplyBundle(Map<String, PolicyGraph> graphs, List<String> managedScopes)
+                implements Resolved {
             public ApplyBundle {
                 graphs = Map.copyOf(graphs);
+                managedScopes = List.copyOf(managedScopes);
             }
         }
 
-        record RetractBundle() implements Resolved {}
+        record RetractBundle(List<String> managedScopes) implements Resolved {
+            public RetractBundle {
+                managedScopes = List.copyOf(managedScopes);
+            }
+        }
     }
 
     private record Outcome(
@@ -268,8 +277,8 @@ public class ProjectionReconciler {
             } else if (step instanceof Resolved.ApplyBundle bundle) {
                 outcomes.add(
                         new Outcome(projection, step, applyBundle(projection.targetKey(), bundle)));
-            } else if (step instanceof Resolved.RetractBundle) {
-                for (String scope : CenterPolicyProjector.managedScopes()) {
+            } else if (step instanceof Resolved.RetractBundle retractBundle) {
+                for (String scope : retractBundle.managedScopes()) {
                     writer.retractRoot(projection.targetKey(), scope);
                 }
                 outcomes.add(new Outcome(projection, step, null));
@@ -280,14 +289,14 @@ public class ProjectionReconciler {
     }
 
     /**
-     * Áp bundle của một CENTER workspace: mọi scope còn nguồn được áp graph của nó trên cùng một
-     * native resource của target, scope không còn nguồn thì root permission của nó bị thu hồi. Tập
-     * policy đã ghi của bundle là hợp của mọi scope đã áp.
+     * Áp bundle của một target: mọi scope còn nguồn được áp graph của nó trên cùng một native
+     * resource của target, scope không còn nguồn thì root permission của nó bị thu hồi. Tập policy
+     * đã ghi của bundle là hợp của mọi scope đã áp.
      */
     private AppliedGraph applyBundle(String targetKey, Resolved.ApplyBundle bundle) {
         AppliedGraph applied = null;
         java.util.Set<String> policyNames = new TreeSet<>();
-        for (String scope : CenterPolicyProjector.managedScopes()) {
+        for (String scope : bundle.managedScopes()) {
             PolicyGraph graph = bundle.graphs().get(scope);
             if (graph == null) {
                 writer.retractRoot(targetKey, scope);
@@ -297,13 +306,13 @@ public class ProjectionReconciler {
             if (applied != null && !applied.resourceId().equals(next.resourceId())) {
                 throw new ReconciliationException(
                         ERROR_DESIRED_SOURCE_MISMATCH,
-                        "Workspace scopes must share one native resource: " + targetKey);
+                        "Bundle scopes must share one native resource: " + targetKey);
             }
             applied = next;
             policyNames.addAll(next.policyNames());
         }
         return new AppliedGraph(
-                Objects.requireNonNull(applied, "center bundle without any scope").resourceId(),
+                Objects.requireNonNull(applied, "bundle without any scope").resourceId(),
                 List.copyOf(policyNames));
     }
 
@@ -526,6 +535,9 @@ public class ProjectionReconciler {
                 && isCenterWorkspace(projection.targetKey())) {
             return resolveCenterBundle(projection);
         }
+        if (type == NativePolicyTemplates.TargetType.PLATFORM) {
+            return resolvePlatformBundle(projection);
+        }
         for (String scope : type.scopes()) {
             if (desiredHash(projection.targetKey(), scope, List.of())
                     .equals(projection.desiredHash())) {
@@ -556,7 +568,7 @@ public class ProjectionReconciler {
         UUID workspaceId = UUID.fromString(projection.targetKey().substring("workspace:".length()));
         List<String> bundle = centerProjector.bundleDescriptors(workspaceId);
         if (bundle.isEmpty()) {
-            return new Resolved.RetractBundle();
+            return new Resolved.RetractBundle(CenterPolicyProjector.managedScopes());
         }
         String bundleScope = PermissionCatalog.WorkspaceScope.ENTER.scopeName();
         if (!desiredHash(projection.targetKey(), bundleScope, bundle)
@@ -573,7 +585,33 @@ public class ProjectionReconciler {
                 graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
             }
         }
-        return new Resolved.ApplyBundle(graphs);
+        return new Resolved.ApplyBundle(graphs, CenterPolicyProjector.managedScopes());
+    }
+
+    /**
+     * Bundle của target platform: nguồn là hằng số hợp đồng nên tập descriptor dựng lại không cần
+     * dữ kiện bền nào; desired hash đã ghi phải khớp đúng tập đó với scope danh nghĩa của
+     * projector, hoặc là hash của tập rỗng khi hợp đồng đã rút toàn bộ grant.
+     */
+    private Resolved resolvePlatformBundle(ProjectionRow projection) {
+        String targetKey = projection.targetKey();
+        String bundleScope = PlatformPolicyProjector.bundleScope();
+        List<String> managedScopes = PlatformPolicyProjector.managedScopes();
+        if (desiredHash(targetKey, bundleScope, List.of()).equals(projection.desiredHash())) {
+            return new Resolved.RetractBundle(managedScopes);
+        }
+        List<String> bundle = PlatformPolicyProjector.bundleDescriptors();
+        if (!desiredHash(targetKey, bundleScope, bundle).equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the platform contract sources: " + targetKey);
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : managedScopes) {
+            graphs.put(
+                    scope, graphFor(targetKey, scope, PlatformPolicyProjector.sourcesFor(scope)));
+        }
+        return new Resolved.ApplyBundle(graphs, managedScopes);
     }
 
     private boolean isCenterWorkspace(String targetKey) {
@@ -692,12 +730,25 @@ public class ProjectionReconciler {
         for (String descriptor : sourceDescriptors) {
             sources.add(sourceFor(descriptor));
         }
+        NativePolicyTemplates.TargetType type =
+                NativePolicyTemplates.targetTypeOf(targetKey)
+                        .orElseThrow(() ->
+                                new IllegalArgumentException(
+                                        "Target key matches no fixed template: " + targetKey));
+        // Các scope hợp đồng miễn trừ eligibility (như account.recover) không được gắn gate đó:
+        // constructor tiện ích luôn gắn sẽ thu hẹp quyền so với hợp đồng dù hash vẫn tự nhất quán.
+        if (!NativePolicyTemplates.requiresEligibility(type, scope)) {
+            return new PolicyGraph(targetKey, scope, List.of(), sources);
+        }
         return new PolicyGraph(targetKey, scope, sources);
     }
 
     private static PolicyGraph.Source sourceFor(String descriptor) {
         if (descriptor.startsWith("CENTER_GROUP")) {
             return new PolicyGraph.Source(CenterPolicyProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("PLATFORM_OPERATOR")) {
+            return new PolicyGraph.Source(PlatformPolicyProjector.gatesFor(descriptor));
         }
         return new PolicyGraph.Source(List.of(actorGate(descriptor)));
     }

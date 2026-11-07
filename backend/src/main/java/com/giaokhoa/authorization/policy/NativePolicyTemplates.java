@@ -171,7 +171,7 @@ public final class NativePolicyTemplates {
     }
 
     /** Chỉ các endpoint profile/onboarding/recovery mới được bỏ qua eligibility gate nghiệp vụ. */
-    static boolean requiresEligibility(TargetType type, String scope) {
+    public static boolean requiresEligibility(TargetType type, String scope) {
         return switch (type) {
             case PROFILE ->
                     !PermissionCatalog.ProfileScope.PROFILE_READ.scopeName().equals(scope)
