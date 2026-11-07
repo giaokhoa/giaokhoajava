@@ -159,3 +159,50 @@ Các test integration phải chạy đúng Keycloak 26.8.1 và PostgreSQL thật
 9. User self-register chưa verified không có nghiệp vụ; center-issued không email vẫn login được mà không bị ép bổ sung email bởi required actions/profile.
 
 Nếu một gate thất bại, không mở rộng CRUD và không báo đạt spec; ghi bằng chứng rồi điều chỉnh thiết kế native. Đổi PDP hoặc giảm yêu cầu thu hồi phải là thay đổi quyết định riêng, không phải fallback trong code.
+
+## 10. Ngoại lệ có chủ đích: route thành viên quyết quyền bằng SQL
+
+Ngoại lệ này là một thay đổi quyết định riêng theo mục 9 ("Đổi PDP hoặc giảm yêu cầu thu hồi phải
+là thay đổi quyết định riêng, không phải fallback trong code"), không phải đường tắt trong code:
+`MembershipController` quyết quyền cho các route thành viên bằng dữ kiện SQL thay vì hỏi PDP, và
+hành vi đó đã được chốt bằng đặc tả test hợp đồng của #36.
+
+### Phạm vi
+
+Chỉ các route sau của `MembershipController` (backend `tenancy/MembershipController.java`):
+
+- `GET /api/workspaces/{workspaceId}/memberships` — cho phép khi actor có bất kỳ role ACTIVE nào
+  của workspace (`actorRoles()`).
+- `POST /api/workspaces/{workspaceId}/invitations`, `POST /api/workspaces/{workspaceId}/students`,
+  `PATCH /api/workspaces/{workspaceId}/memberships/{membershipId}/roles`,
+  `DELETE /api/workspaces/{workspaceId}/memberships/{membershipId}`,
+  `POST /api/workspaces/{workspaceId}/classes` — yêu cầu actor là OWNER hoặc MANAGER của workspace
+  (`requireAdmin()`) và gói của center còn hiệu lực (`requireSubscriptionCurrent()`).
+
+`requireSubscriptionCurrent()` cho phép khi center chưa từng có kỳ gói nào (`subscription_period`
+chưa có row); chỉ từ chối (`SUBSCRIPTION_INACTIVE`) khi đã có kỳ gói nhưng không kỳ nào còn hiệu
+lực tại thời điểm gọi.
+
+### Điểm lệch đã biết so với hợp đồng PDP
+
+Với cùng dữ kiện (center chưa từng có kỳ gói), PDP sẽ DENY vì `CenterPolicyProjector` không có
+nguồn nào cho scope tương ứng (không nguồn → deny), trong khi các route trên CHO PHÉP. Hai đường
+cho hai đáp án trên cùng dữ kiện — đây là lệch có chủ đích trong phạm vi này, không phải lỗi chưa
+phát hiện.
+
+### Lý do
+
+Cài PDP + fence cho các route này trong phạm vi T040 là không thể: fence đòi projection READY,
+trong khi đặc tả test hợp đồng của #36 seed center thẳng bằng JDBC (không đi qua operation/worker
+nên không bao giờ có projection READY cho các center đó), và đặc tả đó chốt hành vi cho phép cho
+center chưa có gói. Ép PDP vào sẽ phá vỡ hợp đồng test đã chốt mà không thêm được đảm bảo nào
+trong phạm vi này.
+
+### Giới hạn
+
+- Ngoại lệ chỉ áp dụng cho đúng các route liệt kê ở trên. Route khác (kể cả
+  `POST /api/invitations/{token}/accept`, vốn quyết theo token chứ không theo role) không thuộc
+  phạm vi này và vẫn tuân đầy đủ mục 5–7.
+- Không mở rộng ngoại lệ sang route mới mà không ghi thêm quyết định riêng tại đây.
+- Bên đánh giá rà lại quyết định này trước khi đóng parent issue; khi nào các route này chuyển
+  sang PDP thì gỡ mục này và ghi rõ commit gỡ.
