@@ -129,6 +129,12 @@
         <Method name="&lt;init&gt;"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+    <!-- Entity Invitation chỉ gán field trong constructor (kèm requireNonNull cho mảng role, theo mẫu AuthorizationOperation); không giữ tài nguyên hay gọi code ngoài. -->
+    <Match>
+        <Class name="com.giaokhoa.tenancy.model.Invitation"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
     <!-- Test cố ý truyền null trong assertThrows để xác nhận validation của constructor. -->
     <Match>
         <Class name="com.giaokhoa.authorization.model.AuthorizationModelTest"/>
