@@ -106,9 +106,10 @@ jobs:
           docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename manage-users
           # Policy graph writer production chạy trong integration context bằng credential
           # của fixtures: cấp cho writer các role mà bootstrap.sh cấp cho provisioner
-          # production (đọc client, đọc/ghi authorization, tra cứu group-by-path),
+          # production (đọc client, đọc/ghi authorization, tra cứu group-by-path,
+          # đọc/ghi organizations để tạo Organization cho center),
           # nếu không các lời gọi của writer bị từ chối với 403.
-          for role in view-clients view-authorization manage-authorization query-groups; do
+          for role in view-clients view-authorization manage-authorization query-groups manage-organizations view-organizations query-organizations; do
             docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename "$role"
           done
       - name: Verify implemented Spring integration tests

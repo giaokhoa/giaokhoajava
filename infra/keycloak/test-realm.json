@@ -1,6 +1,7 @@
 {
   "realm": "giaokhoa-it",
   "enabled": true,
+  "organizationsEnabled": true,
   "sslRequired": "none",
   "verifyEmail": true,
   "registrationAllowed": false,

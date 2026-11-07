@@ -4,8 +4,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -88,6 +91,59 @@ public record PolicyGraph(
     /** SHA-256 của canonical descriptor, như được ghi trên authorization projection. */
     public String desiredHash() {
         return sha256(descriptor());
+    }
+
+    /**
+     * Các tên policy native xác định mà một lần áp graph này tạo ra hoặc dùng lại, tính thuần tuý
+     * từ graph: tên leaf theo từng gate, tên aggregate của source nhiều gate và tên aggregate OR
+     * khi có nhiều source. Cùng quy tắc đặt tên mà writer áp khi ghi, để đường kiểm chứng chỉ đọc
+     * đối chiếu được tập policy đã ghi mà không phải áp lại graph.
+     */
+    public List<String> policyNames() {
+        Set<String> names = new TreeSet<>();
+        for (Gate gate : commonGates) {
+            addGatePolicyNames(names, gate);
+        }
+        for (Source source : sources) {
+            List<String> leaves = new ArrayList<>();
+            for (Gate gate : source.gates()) {
+                addGatePolicyNames(names, gate);
+                leaves.addAll(gatePolicyNames(gate));
+            }
+            boolean multiGateSource = leaves.size() > 1;
+            if (multiGateSource) {
+                names.add(NativePolicyTemplates.sourcePolicyName(source.descriptorHash()));
+            }
+        }
+        boolean multiSource = sources.size() > 1;
+        if (multiSource) {
+            names.add(NativePolicyTemplates.anySourcePolicyName(targetKey, scope));
+        }
+        return List.copyOf(names);
+    }
+
+    private static void addGatePolicyNames(Set<String> names, Gate gate) {
+        names.addAll(gatePolicyNames(gate));
+    }
+
+    private static List<String> gatePolicyNames(Gate gate) {
+        if (gate instanceof Gate.GroupMembership group) {
+            return List.of(NativePolicyTemplates.groupPolicyName(group.groupPath()));
+        }
+        if (gate instanceof Gate.Actor actor) {
+            return List.of(NativePolicyTemplates.userPolicyName(actor.keycloakUserId()));
+        }
+        if (gate instanceof Gate.Validity validity) {
+            List<String> names = new ArrayList<>();
+            if (validity.validFrom() != null) {
+                names.add(NativePolicyTemplates.validFromPolicyName(validity.validFrom()));
+            }
+            if (validity.expiresAt() != null) {
+                names.add(NativePolicyTemplates.validUntilPolicyName(validity.expiresAt()));
+            }
+            return names;
+        }
+        throw new IllegalStateException("Unsupported gate: " + gate);
     }
 
     /** Một điều kiện bắt buộc của một source hoặc của chính graph. */
