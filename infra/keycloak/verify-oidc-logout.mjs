@@ -174,12 +174,29 @@ async function login(appOrigin) {
     assert.ok(form, "Keycloak test login form was not found");
     const action = form[0].match(/action="([^"]+)"/);
     assert.ok(action, "Keycloak test login action was not found");
-    const loginUrl = action[1].replaceAll("&amp;", "&");
-    const loggedIn = await browserFetch(loginUrl, {
+    let loginUrl = action[1].replaceAll("&amp;", "&");
+    const postLogin = (url, params) => browserFetch(url, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ username, password }).toString(),
+        body: new URLSearchParams(params).toString(),
     });
+    // Keycloak 26 bật identity-first khi realm có ≥1 organization (app tạo một
+    // organization cho mỗi center): bước 1 chỉ hỏi username, password ở bước sau.
+    // Form một bước vẫn có sẵn field password nên giữ nguyên POST gộp.
+    let loggedIn;
+    if (html.includes('name="password"')) {
+        loggedIn = await postLogin(loginUrl, { username, password });
+    } else {
+        const usernameStep = await postLogin(loginUrl, { username });
+        assert.equal(usernameStep.status, 200, "Keycloak identity-first username step");
+        const stepTwoHtml = await usernameStep.text();
+        const stepTwoForm = stepTwoHtml.match(/<form\b[^>]*id="kc-form-login"[^>]*>/);
+        assert.ok(stepTwoForm, "Keycloak test login form was not found");
+        const stepTwoAction = stepTwoForm[0].match(/action="([^"]+)"/);
+        assert.ok(stepTwoAction, "Keycloak test login action was not found");
+        loginUrl = stepTwoAction[1].replaceAll("&amp;", "&");
+        loggedIn = await postLogin(loginUrl, { password });
+    }
     const returned = await followRedirects(loginUrl, loggedIn);
     assert.equal(new URL(returned.url).origin, appOrigin, "OIDC Code callback must return to Spring");
     const cookie = jars.get(appOrigin)?.get("SESSION");
