@@ -24,6 +24,12 @@
         <Field name="~(jdbc|writer|directory)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào seeder ghi desired state lúc khởi động. -->
+    <Match>
+        <Class name="com.giaokhoa.authorization.projection.PlatformProjectionSeeder"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CurrentIdentityClient, AuthorizationOperationService); không sao chép khi inject vào synchronizer. -->
     <Match>
         <Class name="com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer"/>
