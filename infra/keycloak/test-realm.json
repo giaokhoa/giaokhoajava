@@ -26,8 +26,15 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
-      "attributes": { "pkce.code.challenge.method": "S256" },
-      "redirectUris": ["http://127.0.0.1:18888/callback", "http://127.0.0.1:8080/login/oauth2/code/keycloak", "http://localhost:8080/login/oauth2/code/keycloak"]
+      "attributes": {
+        "backchannel.logout.session.required": "true",
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://127.0.0.1:18888/callback",
+        "http://127.0.0.1:8080/login/oauth2/code/keycloak",
+        "http://localhost:8080/login/oauth2/code/keycloak"
+      ]
     },
     {
       "clientId": "giaokhoa-it-fixtures",
@@ -40,6 +47,51 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "giaokhoa-it-api",
+      "name": "Integration TEST protected resources",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": true,
+      "fullScopeAllowed": false,
+      "clientAuthenticatorType": "client-secret",
+      "authorizationSettings": {
+        "allowRemoteResourceManagement": true,
+        "decisionStrategy": "UNANIMOUS",
+        "policyEnforcementMode": "ENFORCING"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "gk",
+      "subGroups": [
+        {
+          "name": "identity",
+          "subGroups": [
+            {
+              "name": "eligible"
+            }
+          ]
+        },
+        {
+          "name": "platform",
+          "subGroups": [
+            {
+              "name": "operators"
+            }
+          ]
+        },
+        {
+          "name": "workspaces"
+        }
+      ]
     }
   ]
 }
