@@ -216,22 +216,33 @@ public class InvitationService {
                     "INVITATION_NOT_PENDING",
                     "Lời mời không còn chờ chấp nhận.");
         }
-        Instant expiresAt =
-                Objects.requireNonNull((OffsetDateTime) invitation.get("expires_at"), "expires_at")
-                        .toInstant();
+        Instant expiresAt = expiresAtOf(invitation.get("expires_at"));
         if (!expiresAt.isAfter(Instant.now())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "INVITATION_EXPIRED", "Lời mời đã hết hạn.");
         }
         requireTargetMatch(invitation, acceptorUserId);
 
-        UUID membershipId = activateMembership(workspaceId, acceptorUserId);
+        MembershipActivation activation = activateMembership(workspaceId, acceptorUserId);
+        UUID membershipId = activation.membershipId();
+        boolean addedNewRole = false;
         for (String role : stringArray(invitation.get("intended_roles"))) {
+            addedNewRole |=
+                    jdbc.update(
+                                    "INSERT INTO membership_role (membership_id, role)"
+                                            + " VALUES (?, ?)"
+                                            + " ON CONFLICT (membership_id, role) DO NOTHING",
+                                    membershipId,
+                                    role)
+                            > 0;
+        }
+        if (activation.preExisting() && addedNewRole) {
+            // Role nằm ở bảng riêng nên phải chạm row membership thì version mới tăng: nếu
+            // không, một writer khác giữ If-Match cũ vẫn ghi đè được và làm mất role vừa cộng.
             jdbc.update(
-                    "INSERT INTO membership_role (membership_id, role) VALUES (?, ?)"
-                            + " ON CONFLICT (membership_id, role) DO NOTHING",
-                    membershipId,
-                    role);
+                    "UPDATE center_membership SET version = version + 1, updated_at = now()"
+                            + " WHERE id = ?",
+                    membershipId);
         }
         int accepted =
                 jdbc.update(
@@ -246,6 +257,19 @@ public class InvitationService {
         }
         return projector.recordMembershipChange(
                 acceptorUserId, workspaceId, idempotencyKey, payloadHash);
+    }
+
+    // pgjdbc trả java.sql.Timestamp cho cột timestamptz khi đọc qua Map của JdbcTemplate,
+    // không phải OffsetDateTime: ép kiểu thẳng sẽ vỡ mọi lần chấp nhận.
+    private static Instant expiresAtOf(@Nullable Object value) {
+        Objects.requireNonNull(value, "expires_at");
+        if (value instanceof OffsetDateTime offsetDateTime) {
+            return offsetDateTime.toInstant();
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toInstant();
+        }
+        throw new IllegalStateException("Unexpected expires_at value: " + value.getClass());
     }
 
     private void requireTargetMatch(Map<String, Object> invitation, UUID acceptorUserId) {
@@ -278,7 +302,10 @@ public class InvitationService {
         }
     }
 
-    private UUID activateMembership(UUID workspaceId, UUID userId) {
+    /** Membership sau bước kích hoạt: id của row và cờ cho biết row đã tồn tại từ trước. */
+    private record MembershipActivation(UUID membershipId, boolean preExisting) {}
+
+    private MembershipActivation activateMembership(UUID workspaceId, UUID userId) {
         List<Map<String, Object>> current =
                 jdbc.queryForList(
                         "SELECT id, state FROM center_membership WHERE workspace_id = ?"
@@ -296,7 +323,7 @@ public class InvitationService {
                                 + " updated_at = now() WHERE id = ? AND state = 'PENDING'",
                         membershipId);
             }
-            return membershipId;
+            return new MembershipActivation(membershipId, true);
         }
         UUID membershipId = UUID.randomUUID();
         jdbc.update(
@@ -305,7 +332,7 @@ public class InvitationService {
                 membershipId,
                 workspaceId,
                 userId);
-        return membershipId;
+        return new MembershipActivation(membershipId, false);
     }
 
     private void requireCenter(UUID workspaceId) {
