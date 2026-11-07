@@ -174,10 +174,13 @@ Chỉ các route sau của `MembershipController` (backend `tenancy/MembershipCo
 - `GET /api/workspaces/{workspaceId}/memberships` — cho phép khi actor có bất kỳ role ACTIVE nào
   của workspace (`actorRoles()`).
 - `POST /api/workspaces/{workspaceId}/invitations`, `POST /api/workspaces/{workspaceId}/students`,
-  `PATCH /api/workspaces/{workspaceId}/memberships/{membershipId}/roles`,
-  `DELETE /api/workspaces/{workspaceId}/memberships/{membershipId}`,
   `POST /api/workspaces/{workspaceId}/classes` — yêu cầu actor là OWNER hoặc MANAGER của workspace
   (`requireAdmin()`) và gói của center còn hiệu lực (`requireSubscriptionCurrent()`).
+- `PUT /api/workspaces/{workspaceId}/memberships/{membershipId}/roles` — yêu cầu actor là OWNER
+  hoặc MANAGER (`requireAdmin()`); chỉ kiểm tra gói (`requireSubscriptionCurrent()`) khi yêu cầu
+  thêm role mới, không kiểm tra khi chỉ gỡ role.
+- `DELETE /api/workspaces/{workspaceId}/memberships/{membershipId}` — yêu cầu actor là OWNER hoặc
+  MANAGER (`requireAdmin()`); không kiểm tra gói.
 
 `requireSubscriptionCurrent()` cho phép khi center chưa từng có kỳ gói nào (`subscription_period`
 chưa có row); chỉ từ chối (`SUBSCRIPTION_INACTIVE`) khi đã có kỳ gói nhưng không kỳ nào còn hiệu
@@ -186,9 +189,11 @@ lực tại thời điểm gọi.
 ### Điểm lệch đã biết so với hợp đồng PDP
 
 Với cùng dữ kiện (center chưa từng có kỳ gói), PDP sẽ DENY vì `CenterPolicyProjector` không có
-nguồn nào cho scope tương ứng (không nguồn → deny), trong khi các route trên CHO PHÉP. Hai đường
-cho hai đáp án trên cùng dữ kiện — đây là lệch có chủ đích trong phạm vi này, không phải lỗi chưa
-phát hiện.
+nguồn nào cho scope tương ứng (không nguồn → deny), trong khi các route trên CHO PHÉP. Riêng
+`DELETE .../memberships/{membershipId}` (và `PUT .../roles` khi chỉ gỡ role mà không thêm role):
+đường SQL không xét gói nên cho phép bất kể trạng thái gói — kể cả khi kỳ gói đã hết hiệu lực —
+trong khi PDP từ chối khi không có kỳ gói còn hiệu lực. Hai đường cho hai đáp án trên cùng dữ
+kiện — đây là lệch có chủ đích trong phạm vi này, không phải lỗi chưa phát hiện.
 
 ### Lý do
 
