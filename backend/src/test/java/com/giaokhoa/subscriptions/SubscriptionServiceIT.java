@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
@@ -310,6 +311,41 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
     }
 
     @Test
+    void confirmForCenterDoesNotRestoreGroupsWhoseOnlyMemberIsRevoked() {
+        UUID operator = seedAccount();
+        UUID owner = seedAccount();
+        UUID workspace = seedCenter(owner);
+        UUID revokedUser = seedAccount();
+        seedRevokedManagerAndParent(workspace, revokedUser);
+        Instant from = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        service.confirm(
+                operator,
+                workspace,
+                from,
+                from.plus(365, ChronoUnit.DAYS),
+                "ref-revoked-member",
+                "sub-key-revoked-member-" + UUID.randomUUID(),
+                HASH_A);
+
+        List<String> bundle = projector.bundleDescriptors(workspace);
+        String managersGroup = NativePolicyTemplates.managersGroup(workspace);
+        String parentsGroup =
+                NativePolicyTemplates.prerequisiteRoleGroup(
+                        workspace, NativePolicyTemplates.PrerequisiteRole.PARENTS);
+        String ownersGroup = NativePolicyTemplates.ownersGroup(workspace);
+        assertTrue(
+                bundle.stream().noneMatch(d -> d.contains("group=" + managersGroup)),
+                "Manager duy nhất đã bị thu hồi thì group managers không được có nguồn trong bundle");
+        assertTrue(
+                bundle.stream().noneMatch(d -> d.contains("group=" + parentsGroup)),
+                "Phụ huynh duy nhất đã bị thu hồi thì group parents không được có nguồn trong bundle");
+        assertTrue(
+                bundle.stream().anyMatch(d -> d.contains("group=" + ownersGroup)),
+                "Owner còn ACTIVE thì group owners vẫn phải có nguồn trong bundle");
+    }
+
+    @Test
     void confirmPersonalWorkspaceRecordsPeriodAnchoredAtCurrentRevision() {
         UUID operator = seedAccount();
         UUID user = seedAccount();
@@ -453,6 +489,25 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
             return null;
         });
         return workspace;
+    }
+
+    private void seedRevokedManagerAndParent(UUID workspaceId, UUID userId) {
+        UUID membership = UUID.randomUUID();
+        tx(() -> {
+            jdbc.update(
+                    "INSERT INTO center_membership(id,workspace_id,user_id,state,joined_at,"
+                            + "revoked_at) VALUES (?,?,?,'REVOKED',now() - interval '1 day',now())",
+                    membership,
+                    workspaceId,
+                    userId);
+            jdbc.update(
+                    "INSERT INTO membership_role(membership_id,role) VALUES (?,'MANAGER')",
+                    membership);
+            jdbc.update(
+                    "INSERT INTO membership_role(membership_id,role) VALUES (?,'PARENT')",
+                    membership);
+            return null;
+        });
     }
 
     private <T> T tx(java.util.function.Supplier<T> action) {
