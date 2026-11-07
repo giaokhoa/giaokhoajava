@@ -18,7 +18,8 @@ public class AuthorizationPartition {
     public enum Kind {
         WORKSPACE,
         GRANT,
-        ACCOUNT
+        ACCOUNT,
+        PLATFORM
     }
 
     public enum State {
