@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -25,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
@@ -57,16 +57,9 @@ class PlatformProjectionIT extends IntegrationEnvironment {
     private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
 
-    private static @Nullable String ownedApiClientId;
-    private static @Nullable String ownedGrantClientId;
-
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
-        registry.add("spring.flyway.schemas", () -> SCHEMA);
-        registry.add("spring.flyway.default-schema", () -> SCHEMA);
-        registry.add(
-                "spring.datasource.hikari.connection-init-sql",
-                () -> "SET search_path TO " + SCHEMA + ",public");
+        isolatedSchema(registry, SCHEMA);
     }
 
     @BeforeAll
@@ -79,14 +72,14 @@ class PlatformProjectionIT extends IntegrationEnvironment {
 
     @AfterAll
     static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        if (ownedApiClientId != null) {
-            deleteResource(admin("/clients/" + ownedApiClientId));
-        }
-        if (ownedGrantClientId != null) {
-            deleteResource(admin("/clients/" + ownedGrantClientId));
-        }
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
+
+    // Class này tự lái reconciler đồng bộ (seeder + reconcilePartition) nên không cần worker thật;
+    // worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong khi @AfterAll DROP
+    // SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL hủy DROP bằng
+    // deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
+    @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired JdbcTemplate jdbc;
     @Autowired ProjectionReconciler reconciler;
@@ -464,9 +457,10 @@ class PlatformProjectionIT extends IntegrationEnvironment {
     }
 
     /**
-     * Resource server client mà policy graph writer resolve theo audience: test-realm.json không
-     * khai client này, các integration test tự tạo khi thiếu (theo mẫu IdentityFlowIT) để class
-     * chạy độc lập; client đã có sẵn thì dùng chung và không xóa ở cuối.
+     * Resource server client mà policy graph writer resolve theo audience: test-realm.json đã khai
+     * client này nên bình thường chỉ cần dùng chung; giữ đường tạo khi thiếu làm lưới an toàn cho
+     * realm dựng từ file cũ. Client là object realm theo tên cố định dùng chung toàn suite nên
+     * không bao giờ xóa ở teardown, kể cả khi chính class này tạo ra.
      */
     private static void ensureApiClient() {
         String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
@@ -509,11 +503,13 @@ class PlatformProjectionIT extends IntegrationEnvironment {
                                         true,
                                         "decisionStrategy",
                                         "UNANIMOUS")));
-        ownedApiClientId = clientId;
         removeClientDefaults(clientId);
     }
 
-    /** Client riêng của class này chỉ để lấy token user bằng password grant cho quyết định PDP. */
+    /**
+     * Client riêng của class này chỉ để lấy token user bằng password grant cho quyết định PDP:
+     * chỉ tạo khi thiếu và không bao giờ xóa ở teardown, để lần chạy sau dùng lại cùng client.
+     */
     private static void ensureGrantClient() {
         List<Map<String, Object>> matches =
                 HTTP.get()
@@ -524,28 +520,27 @@ class PlatformProjectionIT extends IntegrationEnvironment {
         if (matches != null && !matches.isEmpty()) {
             return;
         }
-        ownedGrantClientId =
-                createResource(
-                        admin("/clients"),
-                        Map.of(
-                                "clientId",
-                                GRANT_CLIENT,
-                                "secret",
-                                GRANT_SECRET,
-                                "protocol",
-                                "openid-connect",
-                                "enabled",
-                                true,
-                                "publicClient",
-                                false,
-                                "standardFlowEnabled",
-                                false,
-                                "directAccessGrantsEnabled",
-                                true,
-                                "serviceAccountsEnabled",
-                                false,
-                                "fullScopeAllowed",
-                                false));
+        createResource(
+                admin("/clients"),
+                Map.of(
+                        "clientId",
+                        GRANT_CLIENT,
+                        "secret",
+                        GRANT_SECRET,
+                        "protocol",
+                        "openid-connect",
+                        "enabled",
+                        true,
+                        "publicClient",
+                        false,
+                        "standardFlowEnabled",
+                        false,
+                        "directAccessGrantsEnabled",
+                        true,
+                        "serviceAccountsEnabled",
+                        false,
+                        "fullScopeAllowed",
+                        false));
     }
 
     private static void removeClientDefaults(String clientId) {

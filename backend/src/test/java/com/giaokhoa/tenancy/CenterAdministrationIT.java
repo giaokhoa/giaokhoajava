@@ -50,6 +50,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -110,7 +111,6 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     private static final RestClient HTTP = RestClient.create();
     private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
-    private static final List<String> OWNED_GROUP_IDS = new ArrayList<>();
     private static final String DEFAULT_PERMISSION = "Default Permission";
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
@@ -118,11 +118,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
-        registry.add("spring.flyway.schemas", () -> SCHEMA);
-        registry.add("spring.flyway.default-schema", () -> SCHEMA);
-        registry.add(
-                "spring.datasource.hikari.connection-init-sql",
-                () -> "SET search_path TO " + SCHEMA + ",public");
+        isolatedSchema(registry, SCHEMA);
     }
 
     @BeforeAll
@@ -132,16 +128,11 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     @AfterAll
-    static void removeOperatorGroup() {
-        for (int i = OWNED_GROUP_IDS.size() - 1; i >= 0; i--) {
-            deleteResource(adminStatic("/groups/" + OWNED_GROUP_IDS.get(i)));
-        }
-        OWNED_GROUP_IDS.clear();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+    static void removeSchema(@Autowired ApplicationContext context) {
+        // Class này chờ operation do worker thật xử lý (awaitOperationSucceeded tự poll) nên
+        // không mock được như BootstrapProfileIT; teardown dừng scheduler trước để không còn
+        // actor đồng thời nào chạm schema khi DROP.
+        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;
@@ -1396,8 +1387,9 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             if (found == null) {
                 String endpoint =
                         parentId == null ? "/groups" : "/groups/" + parentId + "/children";
+                // Cây /gk là object nền của realm (test-realm.json đã khai): chỉ tạo khi thiếu,
+                // không bao giờ xóa ở teardown — nhiều class dùng chung đường dẫn cố định này.
                 found = createResource(adminStatic(endpoint), Map.of("name", segment));
-                OWNED_GROUP_IDS.add(found);
             }
             parentId = found;
         }
@@ -1405,10 +1397,10 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     /**
-     * Resource server client mà policy graph writer resolve theo audience: test-realm.json không
-     * khai client này nên class tự tạo khi thiếu (theo mẫu IdentityFlowIT) để chạy độc lập. Client
-     * là object realm theo tên cố định dùng chung toàn suite nên không bao giờ xóa ở teardown, kể
-     * cả khi chính class này tạo ra.
+     * Resource server client mà policy graph writer resolve theo audience: test-realm.json đã khai
+     * client này nên bình thường chỉ cần dùng chung; giữ đường tạo khi thiếu làm lưới an toàn cho
+     * realm dựng từ file cũ. Client là object realm theo tên cố định dùng chung toàn suite nên
+     * không bao giờ xóa ở teardown, kể cả khi chính class này tạo ra.
      */
     private static void ensureApiClient() {
         String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");

@@ -31,6 +31,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -86,11 +87,7 @@ class MembershipInvitationIT extends IntegrationEnvironment {
 
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
-        registry.add("spring.flyway.schemas", () -> SCHEMA);
-        registry.add("spring.flyway.default-schema", () -> SCHEMA);
-        registry.add(
-                "spring.datasource.hikari.connection-init-sql",
-                () -> "SET search_path TO " + SCHEMA + ",public");
+        isolatedSchema(registry, SCHEMA);
     }
 
     @BeforeAll
@@ -99,8 +96,11 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     }
 
     @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+    static void removeSchema(@Autowired ApplicationContext context) {
+        // Class này chờ operation do worker thật xử lý (awaitOperationSucceeded tự poll) nên
+        // không mock được như BootstrapProfileIT; teardown dừng scheduler trước để không còn
+        // actor đồng thời nào chạm schema khi DROP.
+        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;
