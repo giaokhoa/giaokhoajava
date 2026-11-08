@@ -137,6 +137,26 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   return readApiResponse<T>(response, method === "HEAD");
 }
 
+// Chỉ tự thử lại fence chưa sẵn sàng; giữ nguyên request/key và không thử lại 403 hay lỗi dịch vụ khác.
+const FENCE_RETRY_LIMIT_MS = 60_000;
+const FENCE_RETRY_INTERVAL_MS = 1_000;
+
+export async function requestWhenReady<T = unknown>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      return await apiRequest<T>(path, init);
+    } catch (error) {
+      const retryable = error instanceof ApiError
+        && error.status === 503
+        && error.code === "AUTHORIZATION_NOT_READY"
+        && Date.now() - startedAt < FENCE_RETRY_LIMIT_MS;
+      if (!retryable) throw error;
+      await new Promise((resolve) => setTimeout(resolve, FENCE_RETRY_INTERVAL_MS));
+    }
+  }
+}
+
 // Điều hướng bằng HTML form là bắt buộc cho RP-Initiated OIDC logout redirect của Spring.
 export async function submitLogout(): Promise<void> {
   const [, token] = await getCsrf();

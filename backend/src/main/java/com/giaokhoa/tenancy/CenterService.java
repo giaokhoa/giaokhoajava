@@ -6,6 +6,7 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.nio.charset.StandardCharsets;
@@ -48,17 +49,21 @@ public class CenterService {
     private final CenterPolicyProjector projector;
     private final KeycloakProvisioningClient directory;
 
+    private final ResourceMutationCoordinator coordinator;
+
     public CenterService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             AuthorizationOperationService operations,
             CenterPolicyProjector projector,
-            KeycloakProvisioningClient directory) {
+            KeycloakProvisioningClient directory,
+            ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
         this.projector = projector;
         this.directory = directory;
+        this.coordinator = coordinator;
     }
 
     /** Metadata tối thiểu của một center cho danh sách của platform operator. */
@@ -92,6 +97,7 @@ public class CenterService {
 
         UUID workspaceId = UUID.randomUUID();
         UUID centerId = UUID.randomUUID();
+        coordinator.lockWorkspace(workspaceId);
         String organizationId = directory.ensureOrganization(workspaceId, trimmed);
         jdbc.update(
                 "INSERT INTO workspace (id, kind, owner_user_id, center_id, state)"
@@ -154,6 +160,7 @@ public class CenterService {
         Objects.requireNonNull(membershipId, "membershipId");
         Objects.requireNonNull(desiredRoles, "desiredRoles");
         idempotency.requireKey(idempotencyKey);
+        coordinator.lockWorkspace(workspaceId);
         lockOn("center-membership:" + membershipId);
         Optional<AuthorizationOperation> existing =
                 idempotency.findExisting(initiatorUserId, idempotencyKey, payloadHash);
@@ -209,6 +216,7 @@ public class CenterService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(membershipId, "membershipId");
         idempotency.requireKey(idempotencyKey);
+        coordinator.lockWorkspace(workspaceId);
         lockOn("center-membership:" + membershipId);
         Optional<AuthorizationOperation> existing =
                 idempotency.findExisting(initiatorUserId, idempotencyKey, payloadHash);

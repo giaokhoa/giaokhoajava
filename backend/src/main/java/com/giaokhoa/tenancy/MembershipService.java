@@ -88,6 +88,7 @@ public class MembershipService {
      * Cấp danh tính học sinh mới trong một center. Người cấp phải là OWNER hoặc MANAGER ACTIVE của
      * center đó. Trả operation chưa hoàn tất; handoff đi kèm chỉ ở lần tạo này.
      */
+    @Transactional
     public StudentIssueResult issueStudent(
             UUID initiatorUserId,
             UUID workspaceId,
@@ -101,23 +102,20 @@ public class MembershipService {
         Objects.requireNonNull(username, "username");
         Objects.requireNonNull(displayName, "displayName");
         idempotency.requireKey(idempotencyKey);
-        return coordinator.withResourceLock(
-                "student-issue:" + initiatorUserId + ":" + idempotencyKey,
-                () -> {
-                    Optional<AuthorizationOperation> existing =
-                            idempotency.findExisting(initiatorUserId, idempotencyKey, payloadHash);
-                    if (existing.isPresent()) {
-                        return new StudentIssueResult(existing.get(), null);
-                    }
-                    requireCenterOperator(initiatorUserId, workspaceId);
-                    InitialCredentialHandoff.Handoff issued =
-                            handoff.issueNewStudent(
-                                    initiatorUserId, workspaceId, username, displayName, email);
-                    AuthorizationOperation operation =
-                            projector.recordMembershipChange(
-                                    initiatorUserId, workspaceId, idempotencyKey, payloadHash);
-                    return new StudentIssueResult(operation, issued);
-                });
+        coordinator.lockWorkspace(workspaceId);
+        coordinator.lockForTransaction("student-issue:" + initiatorUserId + ":" + idempotencyKey);
+        Optional<AuthorizationOperation> existing =
+                idempotency.findExisting(initiatorUserId, idempotencyKey, payloadHash);
+        if (existing.isPresent()) {
+            return new StudentIssueResult(existing.get(), null);
+        }
+        requireCenterOperator(initiatorUserId, workspaceId);
+        InitialCredentialHandoff.Handoff issued =
+                handoff.issueNewStudent(initiatorUserId, workspaceId, username, displayName, email);
+        AuthorizationOperation operation =
+                projector.recordMembershipChange(
+                        initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        return new StudentIssueResult(operation, issued);
     }
 
     /**

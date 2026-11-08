@@ -395,7 +395,7 @@ class PlatformProjectionIT extends IntegrationEnvironment {
     private void deleteRootPermission(String permissionName) {
         String root = "/clients/" + apiClientId() + "/authz/resource-server";
         for (Map<String, Object> permission :
-                getList(admin(root + "/permission/scope?first=0&max=1000"))) {
+                getList(admin(root + "/permission/scope?name=" + permissionName))) {
             if (permissionName.equals(permission.get("name"))) {
                 deleteResource(admin(root + "/permission/scope/" + permission.get("id")));
                 return;

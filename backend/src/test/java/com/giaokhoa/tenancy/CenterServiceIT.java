@@ -98,6 +98,47 @@ class CenterServiceIT extends IntegrationEnvironment {
     @Autowired IdempotencyService idempotency;
     @Autowired ProjectionReconciler reconciler;
 
+    @Autowired CenterPolicyProjector centerProjector;
+
+    @Test
+    void rejoinedMemberKeepsGroupsRegardlessOfHistoryRowOrder() throws Exception {
+        Fixture operator = newAccount("review-rejoin-op");
+        Fixture owner = newAccount("review-rejoin-owner");
+        Fixture member = newAccount("review-rejoin-member");
+        try {
+            UUID workspace = createCenterAndAwait(operator, owner);
+            UUID oldMembership = addMembership(workspace, member.userId(), "STUDENT");
+            AuthorizationOperation revoked =
+                    centers.revokeMembership(
+                            owner.userId(),
+                            workspace,
+                            oldMembership,
+                            "review-revoke-" + UUID.randomUUID(),
+                            hash("{}"));
+            awaitOperationSucceeded(revoked.getId());
+            addMembership(workspace, member.userId(), "STUDENT");
+            jdbc.execute(
+                    "CREATE INDEX review_membership_order ON center_membership (joined_at DESC, id)");
+            jdbc.execute("CLUSTER center_membership USING review_membership_order");
+            assertEquals(
+                    List.of("ACTIVE", "REVOKED"),
+                    jdbc.queryForList(
+                            "SELECT state FROM center_membership WHERE workspace_id = ? AND user_id = ?",
+                            String.class,
+                            workspace,
+                            member.userId()));
+            centerProjector.syncGroupMemberships(workspace);
+            assertTrue(
+                    groupPathsOf(member.subject())
+                            .contains("/gk/workspaces/" + workspace + "/members"),
+                    "Row REVOKED lịch sử không được xóa group của membership ACTIVE mới");
+        } finally {
+            operator.delete();
+            owner.delete();
+            member.delete();
+        }
+    }
+
     @Test
     void createCenterProvisionsTenantOwnerAndProjection() throws Exception {
         Fixture operator = newAccount("centersvc-operator");
@@ -551,16 +592,10 @@ class CenterServiceIT extends IntegrationEnvironment {
             awaitOperationSucceeded(operation.getId());
 
             String root = resourceServerRoot();
-            Map<String, Map<String, Object>> policiesByName = new HashMap<>();
-            for (Map<String, Object> policy : getListFrom(root + "/policy?first=0&max=1000")) {
-                policiesByName.put(String.valueOf(policy.get("name")), policy);
-            }
             Map<String, Object> fromPolicy =
-                    policiesByName.get(NativePolicyTemplates.validFromPolicyName(validFrom));
+                    policyByName(root, NativePolicyTemplates.validFromPolicyName(validFrom));
             Map<String, Object> untilPolicy =
-                    policiesByName.get(NativePolicyTemplates.validUntilPolicyName(expiresAt));
-            assertNotNull(fromPolicy, "Graph phải có time policy mở cửa sổ của kỳ gói");
-            assertNotNull(untilPolicy, "Graph phải có time policy đóng cửa sổ của kỳ gói");
+                    policyByName(root, NativePolicyTemplates.validUntilPolicyName(expiresAt));
             String fromId = String.valueOf(fromPolicy.get("id"));
             String untilId = String.valueOf(untilPolicy.get("id"));
             Map<String, Object> fromDetail = getMapFrom(root + "/policy/time/" + fromId);
@@ -581,7 +616,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                             NativePolicyTemplates.workspaceKey(workspaceId), "membership.invite");
             String permissionId = null;
             for (Map<String, Object> permission :
-                    getListFrom(root + "/permission/scope?first=0&max=1000")) {
+                    getListFrom(root + "/permission/scope?name=" + permissionName)) {
                 if (permissionName.equals(permission.get("name"))) {
                     permissionId = String.valueOf(permission.get("id"));
                 }
@@ -659,6 +694,13 @@ class CenterServiceIT extends IntegrationEnvironment {
             owner.delete();
             member.delete();
         }
+    }
+
+    private Map<String, Object> policyByName(String root, String name) {
+        return getListFrom(root + "/policy?name=" + name).stream()
+                .filter(policy -> name.equals(policy.get("name")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Thiếu native policy: " + name));
     }
 
     // ---------- Dữ kiện ----------

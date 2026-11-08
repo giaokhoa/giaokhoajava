@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
@@ -102,7 +103,7 @@ public class ProtectedActionExecutor {
     public <T> T execute(
             Authentication authentication,
             HttpServletRequest request,
-            UUID workspaceId,
+            @Nullable UUID workspaceId,
             List<Target> targets,
             Supplier<T> action) {
         return run(
@@ -121,10 +122,19 @@ public class ProtectedActionExecutor {
                 });
     }
 
+    /** Action theo actor/target, không kéo một workspace nghiệp vụ không liên quan vào fence. */
+    public <T> T executeForActor(
+            Authentication authentication,
+            HttpServletRequest request,
+            List<Target> targets,
+            Supplier<T> action) {
+        return execute(authentication, request, null, targets, action);
+    }
+
     private <T> T run(
             Authentication authentication,
             HttpServletRequest request,
-            UUID workspaceId,
+            @Nullable UUID workspaceId,
             List<Target> targets,
             java.util.function.BiFunction<AuthorizationFence.Snapshot, Decisions, T> finisher) {
         if (targets == null || targets.isEmpty()) {

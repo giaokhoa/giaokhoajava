@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, apiRequest } from "../../lib/api-client";
+import { apiRequest, requestWhenReady } from "../../lib/api-client";
 import { operationStatus } from "../operations/operation-status";
 import {
   parseTrackedOperation,
@@ -206,36 +206,16 @@ export function memberPermissions(
   };
 }
 
-const FENCE_RETRY_LIMIT_MS = 60_000;
-const FENCE_RETRY_INTERVAL_MS = 1_000;
-
-// Mutation đầu tiên của actor mới có thể bị fence trả 503 AUTHORIZATION_NOT_READY trước
-// khi backend ghi operation. Giữ nguyên Idempotency-Key khi thử lại là an toàn vì key
-// chưa từng được ghi, và bắt buộc để lần gửi lại tường minh sau đó tra đúng biên nhận.
-// Tuyệt đối không thử lại 400/403/409 hay 503 với mã khác.
 async function submitMutation(
   path: string,
   init: { method: string; body?: string; headers?: Record<string, string> },
   idempotencyKey: string,
 ): Promise<unknown> {
-  const startedAt = Date.now();
-  for (;;) {
-    try {
-      const result = await apiRequest<unknown>(path, {
-        method: init.method,
-        body: init.body,
-        headers: { ...init.headers, "Idempotency-Key": idempotencyKey },
-      });
-      return result.data;
-    } catch (error) {
-      const retryable = error instanceof ApiError
-        && error.status === 503
-        && error.code === "AUTHORIZATION_NOT_READY"
-        && Date.now() - startedAt < FENCE_RETRY_LIMIT_MS;
-      if (!retryable) throw error;
-      await new Promise((resolve) => setTimeout(resolve, FENCE_RETRY_INTERVAL_MS));
-    }
-  }
+  const result = await requestWhenReady(path, {
+    ...init,
+    headers: { ...init.headers, "Idempotency-Key": idempotencyKey },
+  });
+  return result.data;
 }
 
 // Cùng một payload (kèm version đích) luôn dùng lại một key giữa các lần gửi lại sau lỗi,
@@ -335,7 +315,7 @@ export function PlatformCentersContent() {
   async function loadCenters() {
     setListError(null);
     try {
-      const result = await apiRequest<unknown>("/api/platform/centers");
+      const result = await requestWhenReady("/api/platform/centers");
       if (result.kind !== "data") throw new Error("Phản hồi danh sách trung tâm không hợp lệ.");
       setCenters(parseCenters(result.data));
     } catch (error) {
@@ -347,7 +327,8 @@ export function PlatformCentersContent() {
   useEffect(() => {
     if (!userId) return;
     let ignore = false;
-    apiRequest<unknown>("/api/platform/centers")
+    const controller = new AbortController();
+    requestWhenReady("/api/platform/centers", { signal: controller.signal })
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setCenters(parseCenters(result.data));
@@ -358,7 +339,7 @@ export function PlatformCentersContent() {
         setCenters([]);
         setListError(error instanceof Error ? error.message : "Không tải được danh sách trung tâm.");
       });
-    apiRequest<unknown>("/api/me/workspaces")
+    requestWhenReady("/api/me/workspaces", { signal: controller.signal })
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setOwnWorkspaces(parseWorkspaces(result.data));
@@ -368,6 +349,7 @@ export function PlatformCentersContent() {
       });
     return () => {
       ignore = true;
+      controller.abort();
     };
   }, [userId]);
 
@@ -670,7 +652,7 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
   async function loadMemberships() {
     setListError(null);
     try {
-      const result = await apiRequest<unknown>(membersPath);
+      const result = await requestWhenReady(membersPath);
       if (result.kind !== "data") throw new Error("Phản hồi danh sách thành viên không hợp lệ.");
       setMemberships(parseMemberships(result.data));
     } catch (error) {
@@ -682,7 +664,8 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     if (!userId) return;
     let ignore = false;
-    apiRequest<unknown>(membersPath)
+    const controller = new AbortController();
+    requestWhenReady(membersPath, { signal: controller.signal })
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setMemberships(parseMemberships(result.data));
@@ -693,7 +676,7 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
         setMemberships([]);
         setListError(error instanceof Error ? error.message : "Không tải được danh sách thành viên.");
       });
-    apiRequest<unknown>("/api/me/workspaces")
+    requestWhenReady("/api/me/workspaces", { signal: controller.signal })
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         const found = parseWorkspaces(result.data).find((item) => item.id === workspaceId);
@@ -704,6 +687,7 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
       });
     return () => {
       ignore = true;
+      controller.abort();
     };
   }, [userId, workspaceId, membersPath]);
 

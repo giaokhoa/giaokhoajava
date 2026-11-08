@@ -144,12 +144,55 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     @Autowired SessionRepository<?> sessions;
 
     @Test
+    void operatorDeepLinkSynchronizesEligibilityWithoutWorkspaceRequest() throws Exception {
+        KeycloakLogin operator = createOperator();
+        try {
+            seedAccount(operator.subject(), "SELF_REGISTERED", operator.email(), true);
+            try (var session = openSession(operator)) {
+                org.awaitility.Awaitility.await()
+                        .atMost(Duration.ofSeconds(60))
+                        .until(() ->
+                                Objects.requireNonNull(
+                                                jdbc.queryForObject(
+                                                        "SELECT count(*) FROM authz_projection WHERE target_key = 'platform' AND state = 'READY'",
+                                                        Integer.class))
+                                        == 1);
+                assertEquals(
+                        200,
+                        mockMvc()
+                                .perform(get("/api/session").cookie(session.cookie()))
+                                .andReturn()
+                                .getResponse()
+                                .getStatus());
+                int before =
+                        mockMvc()
+                                .perform(get("/api/platform/centers").cookie(session.cookie()))
+                                .andReturn()
+                                .getResponse()
+                                .getStatus();
+                assertTrue(
+                        before == 200 || before == 503,
+                        "Operator hợp lệ chỉ có thể chờ đồng bộ, không nhận 403");
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/platform/centers").cookie(session.cookie()))
+                                .getStatus());
+            }
+        } finally {
+            deleteUser(operator.subject());
+        }
+    }
+
+    @Test
     void operatorCreateCenterReturnsPendingOperation() throws Exception {
         KeycloakLogin operator = createOperator();
         try {
             UUID owner = seedAccount(operator.subject(), "SELF_REGISTERED", null, false);
 
             try (var session = openSession(operator)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
                 // của operator, điều kiện để PDP cho qua scope platform.
                 getWorkspacesWhenReady(session);
@@ -200,6 +243,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             seedAccount(user.subject(), "SELF_REGISTERED", user.email(), true);
 
             try (var session = openSession(user)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -237,6 +281,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             seedAccount(user.subject(), "SELF_REGISTERED", user.email(), true);
 
             try (var session = openSession(user)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(get("/api/platform/centers").cookie(session.cookie()))
@@ -257,6 +302,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             seedAccount(operator.subject(), "SELF_REGISTERED", null, false);
 
             try (var session = openSession(operator)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
                 // của operator, điều kiện để PDP cho qua scope platform.
                 getWorkspacesWhenReady(session);
@@ -283,6 +329,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID center = seedCenter(actor);
 
             try (var session = openSession(user)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -312,6 +359,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(operator)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
                 // của operator, điều kiện để PDP cho qua scope platform.
                 getWorkspacesWhenReady(session);
@@ -357,6 +405,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(operator)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
                 // của operator, điều kiện để PDP cho qua scope platform.
                 getWorkspacesWhenReady(session);
@@ -397,6 +446,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             addMembership(centerB, member, "STUDENT");
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 long version = membershipVersion(session, centerA, membershipA);
                 MockHttpServletResponse response =
                         mockMvc()
@@ -457,6 +507,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, member, "STUDENT");
 
             try (var session = openSession(managerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 long version = membershipVersion(session, center, membership);
                 MockHttpServletResponse response =
                         mockMvc()
@@ -504,6 +555,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, manager, "MANAGER");
 
             try (var session = openSession(managerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 long version = membershipVersion(session, center, membership);
                 MockHttpServletResponse response =
                         mockMvc()
@@ -551,6 +603,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             seedSubscription(personalWorkspaceOf(teacher), -1, 365, owner);
 
             try (var session = openSession(teacherLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -590,6 +643,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, member, "STUDENT");
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 long version = membershipVersion(session, center, membership);
                 MockHttpServletResponse response =
                         mockMvc()
@@ -647,6 +701,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                                     owner),
                             "membership của owner");
             try (var session = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -690,6 +745,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, member, "STUDENT");
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -735,6 +791,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID membership = addMembership(center, member, "STUDENT");
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 long version = membershipVersion(session, center, membership);
                 MockHttpServletResponse first =
                         mockMvc()
@@ -820,6 +877,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             seedSubscription(center, -60, -1, owner);
 
             try (var session = openSession(managerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse invite =
                         mockMvc()
                                 .perform(
@@ -889,6 +947,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
             UUID requestId;
             try (var session = openSession(requesterLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse created =
                         mockMvc()
                                 .perform(
@@ -914,6 +973,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             }
 
             try (var session = openSession(otherLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -948,6 +1008,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             addMembership(centerA, member, "STUDENT");
 
             try (var session = openSession(memberLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response = getWorkspacesWhenReady(session);
 
                 assertEquals(200, response.getStatus());
@@ -980,6 +1041,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             addMembership(center, member, "STUDENT");
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -1014,6 +1076,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReady(session).getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
