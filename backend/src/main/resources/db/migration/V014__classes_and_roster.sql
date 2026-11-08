@@ -38,8 +38,8 @@ CREATE TABLE class_student (
         (state IN ('PENDING', 'ACTIVE') AND revoked_at IS NULL)
         OR (state = 'REVOKED' AND revoked_at IS NOT NULL))
 );
-CREATE UNIQUE INDEX ix_class_student_active_unique
-    ON class_student (workspace_id, class_id, student_user_id) WHERE state = 'ACTIVE';
+CREATE UNIQUE INDEX ix_class_student_current_unique
+    ON class_student (workspace_id, class_id, student_user_id) WHERE state IN ('PENDING', 'ACTIVE');
 CREATE INDEX ix_class_student_workspace_state ON class_student (workspace_id, state);
 
 ALTER TABLE class_student ENABLE ROW LEVEL SECURITY;
