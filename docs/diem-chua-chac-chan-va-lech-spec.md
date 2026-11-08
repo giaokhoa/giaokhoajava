@@ -60,6 +60,8 @@ Bắt đầu lập: 2026-11-08 (theo lệnh của chủ dự án). Nguồn: báo
 
 - **B26 — Stub `POST /api/workspaces/{wid}/classes` và `GET` classes trả 405 trên main.** `MembershipController.createClass` đã có sẵn: chỉ thực thi biên quyền (owner/manager + gói còn hiệu lực) rồi trả 404 `NOT_FOUND` "chưa có lớp để tạo" — lát cắt giảng dạy chưa cài đặt (xem A3). `GET /api/workspaces/{wid}/classes` chưa có route nên Spring trả 405 (chỉ POST được map). E2E T044 khẳng định đỏ đúng ở các mã này qua probe local; T045/T046 sẽ đổi hành vi khi cài đặt (POST 202, GET 200).
 
+- **B27 — Hợp đồng không đặt tên ba môn seed của danh mục subject.** `data-model.md`/`http-api.md` chỉ nói "Danh mục môn tham chiếu tối thiểu", quickstart chỉ gọi K ba môn M1/M2/M3. T046 tự quyết seed đúng ba môn mã M1/M2/M3, tên "Môn 1"/"Môn 2"/"Môn 3", trạng thái ACTIVE trong V015 (id ngẫu nhiên theo tiền lệ V002). Nếu đội catalog sau này chốt tên thật thì đổi tên bằng migration mới, không sửa V015 đã apply; test T043/T044 chỉ dùng id trả về từ `GET /api/subjects` nên không phụ thuộc tên.
+
 ## C. Điểm đã có quyết định xử lý trong pipeline (ghi để bên đánh giá đối chiếu)
 
 - **C1** — A1/M2: ghi ngoại lệ vào `authorization.md` tại gate #44 thay vì cài PDP + fence (lý do ở A1). **ĐÃ LÀM tại gate #44:** ngoại lệ ghi ở mục 10 mới của `specs/001-multitenant-access/contracts/authorization.md` (phạm vi 6 route của `MembershipController`, điểm lệch đã biết, lý do, giới hạn) — là thay đổi quyết định riêng theo cơ chế mục 9 của chính spec.
