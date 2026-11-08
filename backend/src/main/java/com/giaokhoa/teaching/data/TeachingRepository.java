@@ -718,6 +718,19 @@ public class TeachingRepository {
                 classId);
     }
 
+    /**
+     * Các môn–khóa mà một dòng roster đang có ghi danh hiện hành — phạm vi bundle bị ảnh hưởng khi
+     * thu hồi dòng roster đó.
+     */
+    public List<UUID> courseSubjectIdsOfRosterEntry(UUID workspaceId, UUID classStudentId) {
+        return jdbc.queryForList(
+                "SELECT course_subject_id FROM enrollment WHERE workspace_id = ?"
+                        + " AND class_student_id = ? AND state IN ('PENDING', 'ACTIVE')",
+                UUID.class,
+                workspaceId,
+                classStudentId);
+    }
+
     /** Mọi môn–khóa thuộc một khóa trong workspace. */
     public List<UUID> courseSubjectIdsOfCourse(UUID workspaceId, UUID courseId) {
         return jdbc.queryForList(

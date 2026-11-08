@@ -39,9 +39,10 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Eligibility của actor luôn qua PDP profile và ACCOUNT fence. Quyết định role ở tầng này tính
  * từ đúng dữ kiện nguồn mà CenterPolicyProjector chiếu lên native graph: role của membership ACTIVE
  * của chính actor trong workspace và cửa sổ hiệu lực của các kỳ gói đã xác nhận. Bảng nguồn áp dụng
- * theo projector: xem danh sách chỉ cần là thành viên hiện hành; mời, đổi role (phần thêm), cấp học
- * sinh và tạo lớp cần owner/manager cộng gói chưa hết hiệu lực; bổ nhiệm hoặc gỡ manager chỉ thuộc
- * owner; thu hồi không bị gate bởi gói. Gói chỉ chặn khi center đã từng có kỳ gói mà không kỳ nào
+ * theo projector: xem danh sách chỉ cần là thành viên hiện hành; mời, đổi role (phần thêm) và cấp
+ * học sinh cần owner/manager cộng gói chưa hết hiệu lực; bổ nhiệm hoặc gỡ manager chỉ thuộc owner;
+ * thu hồi không bị gate bởi gói. Route tạo lớp đã chuyển sang controller giảng dạy với cùng biên
+ * quyết quyền bằng dữ kiện nguồn này. Gói chỉ chặn khi center đã từng có kỳ gói mà không kỳ nào
  * còn hiệu lực — center chưa từng được xác nhận gói vẫn do owner/manager quản trị, đúng hành vi hợp
  * đồng US2 yêu cầu. Các service giữ tiền điều kiện dữ kiện riêng của thao tác ghi (đúng một đích
  * mời, OWNER không mời được, học sinh trùng username) và trả lỗi nghiệp vụ của chúng.
@@ -125,8 +126,6 @@ public class MembershipController {
             roles = roles == null ? List.of() : List.copyOf(roles);
         }
     }
-
-    public record ClassCreateRequest(@Nullable String name) {}
 
     @GetMapping("/api/workspaces/{workspaceId}/memberships")
     public ResponseEntity<MembershipPage> listMemberships(
@@ -409,29 +408,6 @@ public class MembershipController {
                                                     + membershipId,
                                             JSON.createObjectNode()));
                     return idempotency.responseFor(operation);
-                });
-    }
-
-    @PostMapping("/api/workspaces/{workspaceId}/classes")
-    public ResponseEntity<IdempotencyService.OperationReceipt> createClass(
-            @PathVariable UUID workspaceId,
-            @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication,
-            HttpServletRequest request) {
-        return withEligibleActor(
-                authentication,
-                request,
-                workspaceId,
-                actor -> {
-                    idempotency.requireKey(key);
-                    requireAdmin(actor, workspaceId);
-                    requireSubscriptionCurrent(workspaceId);
-                    // Aggregate lớp thuộc lát cắt giảng dạy sau; route này hiện chỉ thực thi biên
-                    // quyền của
-                    // hợp đồng (owner/manager của center và gói chưa hết hiệu lực) và chưa có lớp
-                    // để tạo.
-                    throw new HttpProblemException(
-                            HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy tài nguyên.");
                 });
     }
 
