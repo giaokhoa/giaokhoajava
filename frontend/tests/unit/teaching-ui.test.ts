@@ -3,7 +3,9 @@ import { ApiError } from "../../src/lib/api-client";
 import {
   ifMatchValue,
   nameBody,
+  operationSucceeded,
   parseClasses,
+  parseHomeroomAssignments,
   parsePage,
   parseRoster,
   parseSubjects,
@@ -13,6 +15,7 @@ import {
 import {
   courseCreateBody,
   parseCourses,
+  parseTeacherAssignments,
   subjectAddBody,
   teacherAssignBody,
 } from "../../src/features/teaching/course-subject-editor";
@@ -89,6 +92,33 @@ describe("parse dữ liệu giảng dạy theo DTO của backend", () => {
       },
       { id: "e-2", classStudentId: "r-2", courseSubjectId: "cs-1", state: "ACTIVE", version: 0 },
     ] })).toHaveLength(1);
+  });
+
+  it("chỉ giữ phân công giáo viên/chủ nhiệm đúng DTO, bỏ bản ghi thiếu trường bắt buộc", () => {
+    expect(parseTeacherAssignments({ items: [
+      { id: "a-1", courseSubjectId: "cs-1", teacherUserId: "gv-1", state: "ACTIVE", version: 0 },
+      { id: "a-2", courseSubjectId: "cs-1", state: "ACTIVE", version: 0 },
+      { id: "a-3", courseSubjectId: "cs-1", teacherUserId: "gv-2", state: "ACTIVE", version: -1 },
+    ] })).toEqual([
+      { id: "a-1", courseSubjectId: "cs-1", teacherUserId: "gv-1", state: "ACTIVE", version: 0 },
+    ]);
+    expect(parseHomeroomAssignments({ items: [
+      { id: "h-1", classId: "c-1", teacherUserId: "gv-1", state: "ACTIVE", version: 3 },
+      { id: "h-2", classId: "c-1", teacherUserId: "gv-2", state: "ACTIVE" },
+    ] })).toEqual([
+      { id: "h-1", classId: "c-1", teacherUserId: "gv-1", state: "ACTIVE", version: 3 },
+    ]);
+  });
+});
+
+describe("chỉ dọn draft sau thao tác thành công", () => {
+  it("operation hoàn tất nhưng FAILED thì không tính là thành công", () => {
+    expect(operationSucceeded({ id: "op-1", state: "SUCCEEDED", completed: true })).toBe(true);
+    expect(operationSucceeded({ id: "op-1", state: "FAILED", completed: true })).toBe(false);
+    expect(operationSucceeded({ id: "op-1", state: "RETRYABLE_FAILURE", completed: true })).toBe(false);
+    expect(operationSucceeded({ id: "op-1", state: "SUCCEEDED", completed: false })).toBe(false);
+    expect(operationSucceeded(null)).toBe(false);
+    expect(operationSucceeded("khong-phai-operation")).toBe(false);
   });
 });
 

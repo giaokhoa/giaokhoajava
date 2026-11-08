@@ -134,6 +134,45 @@ export function ifMatchValue(version: number): string {
   return `"${version}"`;
 }
 
+// Chỉ dọn draft/nạp lại sau thao tác THÀNH CÔNG: operation hoàn tất nhưng FAILED thì
+// giữ nguyên dữ kiện người dùng đã nhập để họ sửa rồi gửi lại, thay vì xoá mất.
+export function operationSucceeded(data: unknown): boolean {
+  const operation = parseTrackedOperation(data);
+  return operation !== null && operation.completed && operation.state === "SUCCEEDED";
+}
+
+export type HomeroomAssignment = {
+  id: string;
+  classId: string;
+  teacherUserId: string;
+  state: string;
+  version: number;
+};
+
+// Chỉ giữ phân công chủ nhiệm đúng HomeroomAssignmentView của backend; backend chỉ
+// trả phân công hiện hành, kèm id dòng để route thu hồi dùng.
+export function parseHomeroomAssignments(data: unknown): HomeroomAssignment[] {
+  const assignments: HomeroomAssignment[] = [];
+  for (const item of parsePage(data).items) {
+    if (!isRecord(item)
+        || typeof item.id !== "string" || !item.id
+        || typeof item.classId !== "string" || !item.classId
+        || typeof item.teacherUserId !== "string" || !item.teacherUserId
+        || typeof item.state !== "string" || !item.state
+        || !isVersion(item.version)) {
+      continue;
+    }
+    assignments.push({
+      id: item.id,
+      classId: item.classId,
+      teacherUserId: item.teacherUserId,
+      state: item.state,
+      version: item.version,
+    });
+  }
+  return assignments;
+}
+
 export function toggleSelection(
   current: readonly string[],
   id: string,
@@ -279,6 +318,113 @@ function SessionGate({
     );
   }
   return <>{children}</>;
+}
+
+function HomeroomAssignmentList({
+  workspaceId,
+  classId,
+  teachers,
+  canManage,
+  busy,
+  refreshTick,
+  userId,
+  mutate,
+}: {
+  workspaceId: string;
+  classId: string;
+  teachers: Membership[];
+  canManage: boolean;
+  busy: boolean;
+  refreshTick: number;
+  userId: string | null;
+  mutate: TeachingMutate;
+}) {
+  const [assignments, setAssignments] = useState<HomeroomAssignment[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const wid = encodeURIComponent(workspaceId);
+  const assignmentsPath = `/api/workspaces/${wid}/classes/${encodeURIComponent(classId)}/homeroom-assignments`;
+  const nameOf = new Map(
+    teachers.map((member) => [member.user.id, member.user.displayName ?? member.user.username]),
+  );
+
+  async function loadAssignments() {
+    setLoadError(null);
+    try {
+      const result = await apiRequest<unknown>(assignmentsPath);
+      if (result.kind !== "data") throw new Error("Phản hồi danh sách chủ nhiệm không hợp lệ.");
+      setAssignments(parseHomeroomAssignments(result.data));
+    } catch (error) {
+      setAssignments([]);
+      setLoadError(teachingErrorMessage(error, "Không tải được danh sách chủ nhiệm."));
+    }
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    apiRequest<unknown>(assignmentsPath)
+      .then((result) => {
+        if (ignore || result.kind !== "data") return;
+        setAssignments(parseHomeroomAssignments(result.data));
+        setLoadError(null);
+      })
+      .catch((error: unknown) => {
+        if (ignore) return;
+        setAssignments([]);
+        setLoadError(teachingErrorMessage(error, "Không tải được danh sách chủ nhiệm."));
+      });
+    return () => {
+      ignore = true;
+    };
+    // refreshTick tăng sau mỗi thao tác hoàn tất ở trang cha để nạp lại đúng lớp đang mở.
+  }, [assignmentsPath, refreshTick]);
+
+  async function revokeAssignment(item: HomeroomAssignment) {
+    const data = await mutate(
+      `revoke-homeroom:${item.id}`,
+      JSON.stringify([userId, workspaceId, "revoke-homeroom", classId, item.id, item.version]),
+      `${assignmentsPath}/${encodeURIComponent(item.id)}`,
+      { method: "DELETE" },
+    );
+    if (operationSucceeded(data)) await loadAssignments();
+  }
+
+  return (
+    <section aria-labelledby="homeroom-assignments-title">
+      <h3 id="homeroom-assignments-title">Chủ nhiệm hiện hành của lớp</h3>
+      {assignments === null ? <p role="status">Đang tải danh sách chủ nhiệm…</p> : null}
+      {loadError ? <p role="alert">{loadError}</p> : null}
+      {assignments !== null && assignments.length === 0 && !loadError ? (
+        <p>Lớp chưa có chủ nhiệm hiện hành.</p>
+      ) : null}
+      {assignments !== null && assignments.length > 0 ? (
+        <ul>
+          {assignments.map((item) => (
+            <li key={item.id}>
+              {nameOf.get(item.teacherUserId) ?? item.teacherUserId} ({stateLabel(item.state)})
+              {canManage && item.state !== "REVOKED" ? (
+                <>
+                  {" "}
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void revokeAssignment(item)}
+                  >
+                    Thu hồi chủ nhiệm
+                  </button>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p>
+        Thu hồi chỉ dừng phân công chủ nhiệm hiện hành của giáo viên đó, không xoá giáo
+        viên khỏi trung tâm.
+      </p>
+    </section>
+  );
 }
 
 export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
@@ -477,7 +623,7 @@ export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
       classesPath,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (data !== null && operationSucceeded(data)) {
       setCreateName("");
     }
   }
@@ -524,7 +670,7 @@ export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
       `${classesPath}/${encodeURIComponent(selectedClass.id)}/students`,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (data !== null && operationSucceeded(data)) {
       setRosterDraft([]);
     }
   }
@@ -801,6 +947,17 @@ export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
                   </>
                 ) : null}
               </section>
+
+              <HomeroomAssignmentList
+                workspaceId={workspaceId}
+                classId={selectedClass.id}
+                teachers={memberships ?? []}
+                canManage={canManage}
+                busy={busy}
+                refreshTick={refreshTick}
+                userId={userId}
+                mutate={mutate}
+              />
 
               <CourseSubjectEditor
                 workspaceId={workspaceId}

@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../lib/api-client";
-import { parseTrackedOperation } from "../identity/recovery-request-form";
 import type { Membership } from "../tenancy/center-administration";
 import {
   ifMatchValue,
   nameBody,
+  operationSucceeded,
   parsePage,
   teachingErrorMessage,
   toggleSelection,
@@ -94,6 +94,38 @@ export function subjectAddBody(
   return { subjectIds: [...subjectIds] };
 }
 
+export type TeacherAssignment = {
+  id: string;
+  courseSubjectId: string;
+  teacherUserId: string;
+  state: string;
+  version: number;
+};
+
+// Chỉ giữ phân công giáo viên đúng TeachingAssignmentView của backend; backend chỉ
+// trả phân công hiện hành, kèm id dòng để route thu hồi dùng.
+export function parseTeacherAssignments(data: unknown): TeacherAssignment[] {
+  const assignments: TeacherAssignment[] = [];
+  for (const item of parsePage(data).items) {
+    if (!isRecord(item)
+        || typeof item.id !== "string" || !item.id
+        || typeof item.courseSubjectId !== "string" || !item.courseSubjectId
+        || typeof item.teacherUserId !== "string" || !item.teacherUserId
+        || typeof item.state !== "string" || !item.state
+        || !isVersion(item.version)) {
+      continue;
+    }
+    assignments.push({
+      id: item.id,
+      courseSubjectId: item.courseSubjectId,
+      teacherUserId: item.teacherUserId,
+      state: item.state,
+      version: item.version,
+    });
+  }
+  return assignments;
+}
+
 // Phân công giáo viên theo hợp tập: lô rỗng không có ý nghĩa gửi đi.
 export function teacherAssignBody(
   teacherUserIds: readonly string[],
@@ -101,6 +133,109 @@ export function teacherAssignBody(
   if (teacherUserIds.length === 0) return null;
   if (new Set(teacherUserIds).size !== teacherUserIds.length) return null;
   return { teacherUserIds: [...teacherUserIds] };
+}
+
+function TeacherAssignmentList({
+  workspaceId,
+  courseSubjectId,
+  teachers,
+  canManage,
+  busy,
+  refreshTick,
+  userId,
+  mutate,
+}: {
+  workspaceId: string;
+  courseSubjectId: string;
+  teachers: Membership[];
+  canManage: boolean;
+  busy: boolean;
+  refreshTick: number;
+  userId: string | null;
+  mutate: TeachingMutate;
+}) {
+  const [assignments, setAssignments] = useState<TeacherAssignment[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const wid = encodeURIComponent(workspaceId);
+  const assignmentsPath = `/api/workspaces/${wid}/course-subjects/${encodeURIComponent(courseSubjectId)}/teachers`;
+  const nameOf = new Map(
+    teachers.map((member) => [member.user.id, member.user.displayName ?? member.user.username]),
+  );
+
+  async function loadAssignments() {
+    setLoadError(null);
+    try {
+      const result = await apiRequest<unknown>(assignmentsPath);
+      if (result.kind !== "data") throw new Error("Phản hồi danh sách phân công không hợp lệ.");
+      setAssignments(parseTeacherAssignments(result.data));
+    } catch (error) {
+      setAssignments([]);
+      setLoadError(teachingErrorMessage(error, "Không tải được danh sách phân công."));
+    }
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    apiRequest<unknown>(assignmentsPath)
+      .then((result) => {
+        if (ignore || result.kind !== "data") return;
+        setAssignments(parseTeacherAssignments(result.data));
+        setLoadError(null);
+      })
+      .catch((error: unknown) => {
+        if (ignore) return;
+        setAssignments([]);
+        setLoadError(teachingErrorMessage(error, "Không tải được danh sách phân công."));
+      });
+    return () => {
+      ignore = true;
+    };
+    // refreshTick tăng sau mỗi thao tác hoàn tất ở trang cha để nạp lại đúng môn–khóa đang mở.
+  }, [assignmentsPath, refreshTick]);
+
+  async function revokeAssignment(item: TeacherAssignment) {
+    const data = await mutate(
+      `revoke-teacher:${item.id}`,
+      JSON.stringify([userId, workspaceId, "revoke-teacher", courseSubjectId, item.id, item.version]),
+      `${assignmentsPath}/${encodeURIComponent(item.id)}`,
+      { method: "DELETE" },
+    );
+    if (operationSucceeded(data)) await loadAssignments();
+  }
+
+  return (
+    <div className="section">
+      <h5>Giáo viên đang phân công cho môn này</h5>
+      {assignments === null ? <p role="status">Đang tải danh sách phân công…</p> : null}
+      {loadError ? <p role="alert">{loadError}</p> : null}
+      {assignments !== null && assignments.length === 0 && !loadError ? (
+        <p>Chưa có giáo viên nào đang phân công môn này.</p>
+      ) : null}
+      {assignments !== null && assignments.length > 0 ? (
+        <ul>
+          {assignments.map((item) => (
+            <li key={item.id}>
+              {nameOf.get(item.teacherUserId) ?? item.teacherUserId}
+              {canManage && item.state !== "REVOKED" ? (
+                <>
+                  {" "}
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void revokeAssignment(item)}
+                  >
+                    Thu hồi phân công
+                  </button>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 export function CourseSubjectEditor({
@@ -207,7 +342,7 @@ export function CourseSubjectEditor({
       coursesPath,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       setCreateName("");
       setCreateSubjects([]);
       await loadCourses();
@@ -230,7 +365,7 @@ export function CourseSubjectEditor({
         headers: { "If-Match": ifMatchValue(course.version) },
       },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       await loadCourses();
     }
   }
@@ -242,7 +377,7 @@ export function CourseSubjectEditor({
       `/api/workspaces/${wid}/courses/${encodeURIComponent(course.id)}`,
       { method: "DELETE" },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       await loadCourses();
     }
   }
@@ -259,7 +394,7 @@ export function CourseSubjectEditor({
       `/api/workspaces/${wid}/courses/${encodeURIComponent(course.id)}/subjects`,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       setAddDrafts((current) => ({ ...current, [course.id]: [] }));
       await loadCourses();
     }
@@ -272,7 +407,7 @@ export function CourseSubjectEditor({
       `/api/workspaces/${wid}/courses/${encodeURIComponent(course.id)}/subjects/${encodeURIComponent(entry.id)}`,
       { method: "DELETE" },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       if (openSubjectId === entry.id) setOpenSubjectId(null);
       await loadCourses();
     }
@@ -291,7 +426,7 @@ export function CourseSubjectEditor({
       `/api/workspaces/${wid}/course-subjects/${encodeURIComponent(entry.id)}/teachers`,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       setTeacherDrafts((current) => ({ ...current, [entry.id]: [] }));
     }
   }
@@ -420,11 +555,22 @@ export function CourseSubjectEditor({
                           </button>
                           <p>
                             Phân công theo hợp tập: giáo viên đã phân công trước đó được giữ
-                            nguyên; muốn dừng phân công của một giáo viên cần thao tác thu
-                            hồi riêng theo mã phân công.
+                            nguyên. Để dừng phân công của một giáo viên, thu hồi đúng phân
+                            công hiện hành của giáo viên đó trong danh sách bên dưới — chỉ
+                            dừng phân công, không xoá giáo viên khỏi trung tâm.
                           </p>
                         </div>
                       ) : null}
+                      <TeacherAssignmentList
+                        workspaceId={workspaceId}
+                        courseSubjectId={entry.id}
+                        teachers={teachers}
+                        canManage={canManage}
+                        busy={busy}
+                        refreshTick={refreshTick}
+                        userId={userId}
+                        mutate={mutate}
+                      />
                       <EnrollmentEditor
                         workspaceId={workspaceId}
                         classId={classId}

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { apiRequest } from "../../lib/api-client";
-import { parseTrackedOperation } from "../identity/recovery-request-form";
 import {
+  operationSucceeded,
   parsePage,
   teachingErrorMessage,
   toggleSelection,
@@ -158,7 +158,7 @@ export function EnrollmentEditor({
       `/api/workspaces/${wid}/enrollments`,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       setSelectedStudents([]);
       await loadEnrollments();
     }
@@ -171,7 +171,7 @@ export function EnrollmentEditor({
       `/api/workspaces/${wid}/enrollments/${encodeURIComponent(enrollment.id)}`,
       { method: "DELETE" },
     );
-    if (data !== null && parseTrackedOperation(data)?.completed) {
+    if (operationSucceeded(data)) {
       await loadEnrollments();
     }
   }
