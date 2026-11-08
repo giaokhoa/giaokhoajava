@@ -1,5 +1,6 @@
 package com.giaokhoa.teaching;
 
+import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
@@ -12,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,9 +98,12 @@ public class ClassService {
 
     /**
      * Đổi tên lớp hiện hành; lớp đã thu hồi bị trigger giữ lịch sử khóa mọi thay đổi nên trả 409.
+     * Là cập nhật đối tượng hiện có nên bắt buộc If-Match khớp row version hiện tại (thiếu trả 428,
+     * lệch trả 409), kiểm tra sau khi khóa row và trước mọi ghi — cùng mẫu đổi role membership.
      */
     @Transactional
-    public ClassView renameClass(UUID workspaceId, UUID classId, String name) {
+    public ClassView renameClass(
+            UUID workspaceId, UUID classId, String name, @Nullable String ifMatch) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
@@ -111,6 +116,7 @@ public class ClassService {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "CLASS_ALREADY_REVOKED", "Lớp đã bị thu hồi trước đó.");
         }
+        IdempotencyService.requireIfMatch(ifMatch, row.version());
         requireSubscriptionCurrent(workspaceId);
         repository.renameClass(classId, trimmed);
         return new ClassView(row.id(), row.workspaceId(), trimmed, row.state(), row.version() + 1);
