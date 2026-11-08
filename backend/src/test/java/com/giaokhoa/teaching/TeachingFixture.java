@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -55,6 +56,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -556,13 +558,14 @@ abstract class TeachingFixture extends IntegrationEnvironment {
 
     protected String createUser(Map<String, Object> body) {
         var response =
-                HTTP.post()
-                        .uri(admin("/users"))
-                        .headers(headers -> headers.setBearerAuth(masterToken()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(body)
-                        .retrieve()
-                        .toEntity(String.class);
+                withMasterToken(token ->
+                        HTTP.post()
+                                .uri(admin("/users"))
+                                .headers(headers -> headers.setBearerAuth(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .body(body)
+                                .retrieve()
+                                .toEntity(String.class));
         URI location = response.getHeaders().getLocation();
         if (location == null) {
             throw new IllegalStateException("Keycloak did not return the created user location");
@@ -576,14 +579,33 @@ abstract class TeachingFixture extends IntegrationEnvironment {
     }
 
     protected void deleteResource(String uri) {
-        HTTP.delete()
-                .uri(uri)
-                .headers(headers -> headers.setBearerAuth(masterToken()))
-                .retrieve()
-                .toBodilessEntity();
+        withMasterToken(token -> {
+            HTTP.delete()
+                    .uri(uri)
+                    .headers(headers -> headers.setBearerAuth(token))
+                    .retrieve()
+                    .toBodilessEntity();
+            return null;
+        });
     }
 
+    // Token master được giữ trong bộ nhớ tới gần hết hạn thay vì xin mới cho mỗi lần gọi
+    // Admin API: mỗi lần xin token là một lượt Keycloak xác thực mật khẩu của tài khoản master.
+    // Hiệu lực chỉ căn theo masterTokenValidUntil: hạ hạn về EPOCH là token cũ hết được dùng.
+    private static String cachedMasterToken = "";
+    private static Instant masterTokenValidUntil = Instant.EPOCH;
+
     protected String masterToken() {
+        if (Instant.now().isBefore(masterTokenValidUntil)) {
+            return cachedMasterToken;
+        }
+        return fetchMasterToken();
+    }
+
+    private static synchronized String fetchMasterToken() {
+        if (Instant.now().isBefore(masterTokenValidUntil)) {
+            return cachedMasterToken;
+        }
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", "password");
         form.add("client_id", "admin-cli");
@@ -599,7 +621,34 @@ abstract class TeachingFixture extends IntegrationEnvironment {
         if (response == null) {
             throw new IllegalStateException("Master token not readable");
         }
-        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
+        String token =
+                Objects.requireNonNull((String) response.get("access_token"), "access_token");
+        long expiresIn =
+                response.get("expires_in") instanceof Number number ? number.longValue() : 60;
+        cachedMasterToken = token;
+        // Chừa biên 10 giây để không cầm token sắp hết hạn vào một lời gọi Admin API.
+        masterTokenValidUntil = Instant.now().plusSeconds(Math.max(5, expiresIn - 10));
+        return token;
+    }
+
+    private static synchronized void invalidateMasterToken() {
+        masterTokenValidUntil = Instant.EPOCH;
+    }
+
+    /**
+     * Chạy một lời gọi Admin API bằng token đã cache; gặp 401 (token bị thu hồi phía Keycloak dù
+     * hạn theo đồng hồ local chưa tới) thì bỏ cache, xin token mới và thử lại đúng một lần.
+     */
+    private <T> T withMasterToken(java.util.function.Function<String, T> call) {
+        try {
+            return call.apply(masterToken());
+        } catch (RestClientResponseException ex) {
+            if (!ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
+                throw ex;
+            }
+            invalidateMasterToken();
+            return call.apply(masterToken());
+        }
     }
 
     protected String admin(String path) {
