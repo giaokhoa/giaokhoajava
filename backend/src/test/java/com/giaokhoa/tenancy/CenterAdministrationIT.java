@@ -1390,13 +1390,14 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
     private String createUser(Map<String, Object> body) {
         var response =
-                HTTP.post()
-                        .uri(admin("/users"))
-                        .headers(headers -> headers.setBearerAuth(masterToken()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(body)
-                        .retrieve()
-                        .toEntity(String.class);
+                withMasterToken(token ->
+                        HTTP.post()
+                                .uri(admin("/users"))
+                                .headers(headers -> headers.setBearerAuth(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .body(body)
+                                .retrieve()
+                                .toEntity(String.class));
         URI location = response.getHeaders().getLocation();
         if (location == null) {
             throw new IllegalStateException("Keycloak did not return the created user location");
@@ -1410,11 +1411,14 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     private void joinGroup(String userId, String groupId) {
-        HTTP.put()
-                .uri(admin("/users/" + userId + "/groups/" + groupId))
-                .headers(headers -> headers.setBearerAuth(masterToken()))
-                .retrieve()
-                .toBodilessEntity();
+        withMasterToken(token -> {
+            HTTP.put()
+                    .uri(admin("/users/" + userId + "/groups/" + groupId))
+                    .headers(headers -> headers.setBearerAuth(token))
+                    .retrieve()
+                    .toBodilessEntity();
+            return null;
+        });
     }
 
     private String admin(String path) {
@@ -1434,11 +1438,12 @@ class CenterAdministrationIT extends IntegrationEnvironment {
             String found = null;
             try {
                 Map<String, Object> group =
-                        HTTP.get()
-                                .uri(adminStatic("/group-by-path" + currentPath))
-                                .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
-                                .retrieve()
-                                .body(MAP);
+                        withMasterToken(token ->
+                                HTTP.get()
+                                        .uri(adminStatic("/group-by-path" + currentPath))
+                                        .headers(headers -> headers.setBearerAuth(token))
+                                        .retrieve()
+                                        .body(MAP));
                 if (group != null && currentPath.equals(group.get("path"))) {
                     found = String.valueOf(group.get("id"));
                 }
@@ -1468,11 +1473,12 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     private static void ensureApiClient() {
         String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
         List<Map<String, Object>> matches =
-                HTTP.get()
-                        .uri(adminStatic("/clients?clientId=" + audience))
-                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
-                        .retrieve()
-                        .body(LIST);
+                withMasterToken(token ->
+                        HTTP.get()
+                                .uri(adminStatic("/clients?clientId=" + audience))
+                                .headers(headers -> headers.setBearerAuth(token))
+                                .retrieve()
+                                .body(LIST));
         if (matches != null && !matches.isEmpty()) {
             return;
         }
@@ -1530,11 +1536,12 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
     private static List<Map<String, Object>> getList(String uri) {
         List<Map<String, Object>> result =
-                HTTP.get()
-                        .uri(uri)
-                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
-                        .retrieve()
-                        .body(LIST);
+                withMasterToken(token ->
+                        HTTP.get()
+                                .uri(uri)
+                                .headers(headers -> headers.setBearerAuth(token))
+                                .retrieve()
+                                .body(LIST));
         if (result == null) {
             throw new IllegalStateException("Keycloak list not readable: " + uri);
         }
@@ -1543,13 +1550,14 @@ class CenterAdministrationIT extends IntegrationEnvironment {
 
     private static String createResource(String uri, Map<String, ?> body) {
         var response =
-                HTTP.post()
-                        .uri(uri)
-                        .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(body)
-                        .retrieve()
-                        .toEntity(String.class);
+                withMasterToken(token ->
+                        HTTP.post()
+                                .uri(uri)
+                                .headers(headers -> headers.setBearerAuth(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .body(body)
+                                .retrieve()
+                                .toEntity(String.class));
         URI location = response.getHeaders().getLocation();
         if (location == null) {
             throw new IllegalStateException("Keycloak did not return a location for " + uri);
@@ -1559,18 +1567,33 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     private static void deleteResource(String uri) {
-        HTTP.delete()
-                .uri(uri)
-                .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
-                .retrieve()
-                .toBodilessEntity();
+        withMasterToken(token -> {
+            HTTP.delete()
+                    .uri(uri)
+                    .headers(headers -> headers.setBearerAuth(token))
+                    .retrieve()
+                    .toBodilessEntity();
+            return null;
+        });
     }
 
-    private String masterToken() {
-        return masterTokenStatic();
-    }
+    // Token master được giữ trong bộ nhớ tới gần hết hạn thay vì xin mới cho mỗi lần gọi
+    // Admin API: mỗi lần xin token là một lượt Keycloak xác thực mật khẩu của tài khoản master.
+    // Hiệu lực chỉ căn theo masterTokenValidUntil: hạ hạn về EPOCH là token cũ hết được dùng.
+    private static String cachedMasterToken = "";
+    private static Instant masterTokenValidUntil = Instant.EPOCH;
 
     private static String masterTokenStatic() {
+        if (Instant.now().isBefore(masterTokenValidUntil)) {
+            return cachedMasterToken;
+        }
+        return fetchMasterTokenStatic();
+    }
+
+    private static synchronized String fetchMasterTokenStatic() {
+        if (Instant.now().isBefore(masterTokenValidUntil)) {
+            return cachedMasterToken;
+        }
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", "password");
         form.add("client_id", "admin-cli");
@@ -1586,7 +1609,34 @@ class CenterAdministrationIT extends IntegrationEnvironment {
         if (response == null) {
             throw new IllegalStateException("Master token not readable");
         }
-        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
+        String token =
+                Objects.requireNonNull((String) response.get("access_token"), "access_token");
+        long expiresIn =
+                response.get("expires_in") instanceof Number number ? number.longValue() : 60;
+        cachedMasterToken = token;
+        // Chừa biên 10 giây để không cầm token sắp hết hạn vào một lời gọi Admin API.
+        masterTokenValidUntil = Instant.now().plusSeconds(Math.max(5, expiresIn - 10));
+        return token;
+    }
+
+    private static synchronized void invalidateMasterToken() {
+        masterTokenValidUntil = Instant.EPOCH;
+    }
+
+    /**
+     * Chạy một lời gọi Admin API bằng token đã cache; gặp 401 (token bị thu hồi phía Keycloak dù
+     * hạn theo đồng hồ local chưa tới) thì bỏ cache, xin token mới và thử lại đúng một lần.
+     */
+    private static <T> T withMasterToken(java.util.function.Function<String, T> call) {
+        try {
+            return call.apply(masterTokenStatic());
+        } catch (RestClientResponseException ex) {
+            if (!ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
+                throw ex;
+            }
+            invalidateMasterToken();
+            return call.apply(masterTokenStatic());
+        }
     }
 
     static String fixture(String key) {

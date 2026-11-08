@@ -2,6 +2,7 @@
   "realm": "giaokhoa-it",
   "enabled": true,
   "organizationsEnabled": true,
+  "passwordPolicy": "hashIterations(1000)",
   "sslRequired": "none",
   "verifyEmail": true,
   "registrationAllowed": false,
