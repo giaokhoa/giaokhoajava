@@ -30,10 +30,12 @@ import tools.jackson.databind.JsonNode;
  * vọng 404 cho đối tượng ngoài phạm vi được viết kèm một luồng hợp lệ chạy trước để không xanh giả
  * khi route chưa tồn tại.
  *
- * <p>Hai điểm hợp đồng test này chốt theo tài liệu hiện có và cần đối chiếu khi triển khai: item
- * của danh sách liên kết lộ {@code version} vì {@code GuardianDecision} bắt buộc mang {@code
+ * <p>Ba điểm hợp đồng test này chốt theo tài liệu hiện có và cần đối chiếu khi triển khai: item của
+ * danh sách liên kết lộ {@code version} vì {@code GuardianDecision} bắt buộc mang {@code
  * expectedVersion}; học sinh ngoài phạm vi center trả 404 theo quy tắc không tiết lộ sự tồn tại
- * ngoài phạm vi của hợp đồng HTTP.
+ * ngoài phạm vi của hợp đồng HTTP; body mang {@code parentUserId} của người khác chưa được hợp đồng
+ * chốt là từ chối (400) hay bỏ qua trường lạ (202) nên test chấp nhận cả hai, chỉ chốt chặt không
+ * bao giờ tạo liên kết cho phụ huynh khác.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
