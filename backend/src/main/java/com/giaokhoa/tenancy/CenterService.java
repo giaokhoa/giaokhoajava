@@ -7,6 +7,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.guardians.GuardianRevocationContributor;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingRevocationContributor;
@@ -54,6 +55,7 @@ public class CenterService {
     private final KeycloakProvisioningClient directory;
     private final TeachingRevocationContributor teachingRevocations;
     private final TeachingPolicyProjector teachingProjector;
+    private final GuardianRevocationContributor guardianRevocations;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -65,7 +67,8 @@ public class CenterService {
             KeycloakProvisioningClient directory,
             ResourceMutationCoordinator coordinator,
             TeachingRevocationContributor teachingRevocations,
-            TeachingPolicyProjector teachingProjector) {
+            TeachingPolicyProjector teachingProjector,
+            GuardianRevocationContributor guardianRevocations) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
@@ -74,6 +77,7 @@ public class CenterService {
         this.coordinator = coordinator;
         this.teachingRevocations = teachingRevocations;
         this.teachingProjector = teachingProjector;
+        this.guardianRevocations = guardianRevocations;
     }
 
     /** Metadata tối thiểu của một center cho danh sách của platform operator. */
@@ -219,6 +223,14 @@ public class CenterService {
         if (removed.contains(MembershipRole.Role.STUDENT)) {
             teachingRevocations.revokeEnrollmentsOfStudent(workspaceId, row.userId());
         }
+        // Cùng bất biến cho liên kết phụ huynh: gỡ PARENT đóng link đã duyệt của parent đó,
+        // gỡ STUDENT đóng link đã duyệt của học sinh đó, trong đúng revision này.
+        if (removed.contains(MembershipRole.Role.PARENT)) {
+            guardianRevocations.revokeLinksOfParent(workspaceId, row.userId());
+        }
+        if (removed.contains(MembershipRole.Role.STUDENT)) {
+            guardianRevocations.revokeLinksOfStudent(workspaceId, row.userId());
+        }
         return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
     }
 
@@ -264,6 +276,8 @@ public class CenterService {
         // trong center ở cùng transaction/revision, để phân công/ghi danh không sống lại ngầm
         // nếu người đó tham gia lại sau này.
         teachingRevocations.revokeAllRelationsOfMember(workspaceId, row.userId());
+        // Liên kết phụ huynh cũng là nguồn theo membership: đóng link đã duyệt ở cả hai phía.
+        guardianRevocations.revokeAllLinksOfMember(workspaceId, row.userId());
         return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
     }
 

@@ -9,6 +9,7 @@ import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter.AppliedGraph;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.guardians.GuardianPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import java.nio.charset.StandardCharsets;
@@ -80,6 +81,7 @@ public class ProjectionReconciler {
     private final KeycloakProvisioningClient directory;
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
+    private final GuardianPolicyProjector guardianProjector;
     private final TransactionTemplate transactions;
     private final ResourceMutationCoordinator coordinator;
 
@@ -89,6 +91,7 @@ public class ProjectionReconciler {
             KeycloakProvisioningClient directory,
             CenterPolicyProjector centerProjector,
             TeachingPolicyProjector teachingProjector,
+            GuardianPolicyProjector guardianProjector,
             PlatformTransactionManager transactionManager,
             ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
@@ -96,6 +99,7 @@ public class ProjectionReconciler {
         this.directory = directory;
         this.centerProjector = centerProjector;
         this.teachingProjector = teachingProjector;
+        this.guardianProjector = guardianProjector;
         this.transactions = new TransactionTemplate(transactionManager);
         this.coordinator = coordinator;
     }
@@ -371,6 +375,9 @@ public class ProjectionReconciler {
             // Cùng một vòng đối chiếu: group nguồn giảng dạy (giáo viên/chủ nhiệm/học sinh theo
             // môn–khóa) cũng phải khớp membership hiện hành trước khi writer áp bundle.
             teachingProjector.syncGroupMemberships(centers.getFirst());
+            // Và guardian group theo student: phép chiếu duy nhất biến một guardian link đã
+            // duyệt thành tư cách thành viên group mà policy của kết quả tham chiếu.
+            guardianProjector.syncGroupMemberships(centers.getFirst());
         }
     }
 
@@ -804,6 +811,9 @@ public class ProjectionReconciler {
         }
         if (descriptor.startsWith("TEACHING_GROUP")) {
             return new PolicyGraph.Source(TeachingPolicyProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("GUARDIAN_GROUP")) {
+            return new PolicyGraph.Source(GuardianPolicyProjector.gatesFor(descriptor));
         }
         if (descriptor.startsWith("PLATFORM_OPERATOR")) {
             return new PolicyGraph.Source(PlatformPolicyProjector.gatesFor(descriptor));
