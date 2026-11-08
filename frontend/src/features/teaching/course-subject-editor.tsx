@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiRequest } from "../../lib/api-client";
 import type { Membership } from "../tenancy/center-administration";
 import {
@@ -163,24 +163,18 @@ function TeacherAssignmentList({
     teachers.map((member) => [member.user.id, member.user.displayName ?? member.user.username]),
   );
 
-  async function loadAssignments() {
-    setLoadError(null);
-    try {
-      const result = await apiRequest<unknown>(assignmentsPath);
-      if (result.kind !== "data") throw new Error("Phản hồi danh sách phân công không hợp lệ.");
-      setAssignments(parseTeacherAssignments(result.data));
-    } catch (error) {
-      setAssignments([]);
-      setLoadError(teachingErrorMessage(error, "Không tải được danh sách phân công."));
-    }
-  }
+  const loadAssignments = useCallback(async (): Promise<TeacherAssignment[]> => {
+    const result = await apiRequest<unknown>(assignmentsPath);
+    if (result.kind !== "data") throw new Error("Phản hồi danh sách phân công không hợp lệ.");
+    return parseTeacherAssignments(result.data);
+  }, [assignmentsPath]);
 
   useEffect(() => {
     let ignore = false;
-    apiRequest<unknown>(assignmentsPath)
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setAssignments(parseTeacherAssignments(result.data));
+    loadAssignments()
+      .then((items) => {
+        if (ignore) return;
+        setAssignments(items);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -192,7 +186,7 @@ function TeacherAssignmentList({
       ignore = true;
     };
     // refreshTick tăng sau mỗi thao tác hoàn tất ở trang cha để nạp lại đúng môn–khóa đang mở.
-  }, [assignmentsPath, refreshTick]);
+  }, [loadAssignments, refreshTick]);
 
   async function revokeAssignment(item: TeacherAssignment) {
     const data = await mutate(
@@ -201,7 +195,15 @@ function TeacherAssignmentList({
       `${assignmentsPath}/${encodeURIComponent(item.id)}`,
       { method: "DELETE" },
     );
-    if (operationSucceeded(data)) await loadAssignments();
+    if (operationSucceeded(data)) {
+      try {
+        setAssignments(await loadAssignments());
+        setLoadError(null);
+      } catch (error) {
+        setAssignments([]);
+        setLoadError(teachingErrorMessage(error, "Không tải được danh sách phân công."));
+      }
+    }
   }
 
   return (

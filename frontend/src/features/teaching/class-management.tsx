@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, apiRequest } from "../../lib/api-client";
 import { operationStatus } from "../operations/operation-status";
 import {
@@ -348,24 +348,18 @@ function HomeroomAssignmentList({
     teachers.map((member) => [member.user.id, member.user.displayName ?? member.user.username]),
   );
 
-  async function loadAssignments() {
-    setLoadError(null);
-    try {
-      const result = await apiRequest<unknown>(assignmentsPath);
-      if (result.kind !== "data") throw new Error("Phản hồi danh sách chủ nhiệm không hợp lệ.");
-      setAssignments(parseHomeroomAssignments(result.data));
-    } catch (error) {
-      setAssignments([]);
-      setLoadError(teachingErrorMessage(error, "Không tải được danh sách chủ nhiệm."));
-    }
-  }
+  const loadAssignments = useCallback(async (): Promise<HomeroomAssignment[]> => {
+    const result = await apiRequest<unknown>(assignmentsPath);
+    if (result.kind !== "data") throw new Error("Phản hồi danh sách chủ nhiệm không hợp lệ.");
+    return parseHomeroomAssignments(result.data);
+  }, [assignmentsPath]);
 
   useEffect(() => {
     let ignore = false;
-    apiRequest<unknown>(assignmentsPath)
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setAssignments(parseHomeroomAssignments(result.data));
+    loadAssignments()
+      .then((items) => {
+        if (ignore) return;
+        setAssignments(items);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -377,7 +371,7 @@ function HomeroomAssignmentList({
       ignore = true;
     };
     // refreshTick tăng sau mỗi thao tác hoàn tất ở trang cha để nạp lại đúng lớp đang mở.
-  }, [assignmentsPath, refreshTick]);
+  }, [loadAssignments, refreshTick]);
 
   async function revokeAssignment(item: HomeroomAssignment) {
     const data = await mutate(
@@ -386,7 +380,15 @@ function HomeroomAssignmentList({
       `${assignmentsPath}/${encodeURIComponent(item.id)}`,
       { method: "DELETE" },
     );
-    if (operationSucceeded(data)) await loadAssignments();
+    if (operationSucceeded(data)) {
+      try {
+        setAssignments(await loadAssignments());
+        setLoadError(null);
+      } catch (error) {
+        setAssignments([]);
+        setLoadError(teachingErrorMessage(error, "Không tải được danh sách chủ nhiệm."));
+      }
+    }
   }
 
   return (
