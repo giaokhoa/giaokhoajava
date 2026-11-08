@@ -206,7 +206,7 @@ class TeachingStructureIT extends TeachingFixture {
             for (JsonNode subject : body.get("subjects")) {
                 assertTrue(
                         subjects.stream()
-                                .map(UUID::toString)
+                                .map(id -> id.toString())
                                 .anyMatch(id -> id.equals(subject.get("subjectId").stringValue())),
                         "Môn trong khóa là môn đã chọn");
             }

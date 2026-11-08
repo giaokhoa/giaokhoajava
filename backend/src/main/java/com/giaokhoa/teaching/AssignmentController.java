@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
  * nên route chỉ quyết quyền và trả biên nhận.
  */
 @RestController
+@RequestMapping("/api/workspaces/{workspaceId}")
 public class AssignmentController {
     private final AssignmentService assignments;
     private final TeachingRepository repository;
@@ -52,7 +54,7 @@ public class AssignmentController {
 
     public record HomeroomAssignRequest(@Nullable UUID teacherUserId) {}
 
-    @GetMapping("/api/workspaces/{workspaceId}/course-subjects/{courseSubjectId}/teachers")
+    @GetMapping("/course-subjects/{courseSubjectId}/teachers")
     public ResponseEntity<TeachingRouteSupport.Page<AssignmentService.TeachingAssignmentView>>
             listTeacherAssignments(
                     @PathVariable UUID workspaceId,
@@ -82,11 +84,11 @@ public class AssignmentController {
                                             workspaceId, courseSubjectId),
                                     cursor,
                                     limit,
-                                    AssignmentService.TeachingAssignmentView::id));
+                                    item -> item.id()));
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/course-subjects/{courseSubjectId}/teachers")
+    @PostMapping("/course-subjects/{courseSubjectId}/teachers")
     public ResponseEntity<IdempotencyService.OperationReceipt> assignTeachers(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseSubjectId,
@@ -119,8 +121,7 @@ public class AssignmentController {
                 });
     }
 
-    @DeleteMapping(
-            "/api/workspaces/{workspaceId}/course-subjects/{courseSubjectId}/teachers/{assignmentId}")
+    @DeleteMapping("/course-subjects/{courseSubjectId}/teachers/{assignmentId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeTeacherAssignment(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseSubjectId,
@@ -148,7 +149,7 @@ public class AssignmentController {
                 });
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/classes/{classId}/homeroom-assignments")
+    @GetMapping("/classes/{classId}/homeroom-assignments")
     public ResponseEntity<TeachingRouteSupport.Page<AssignmentService.HomeroomAssignmentView>>
             listHomeroomAssignments(
                     @PathVariable UUID workspaceId,
@@ -178,11 +179,11 @@ public class AssignmentController {
                                     assignments.listHomeroomAssignments(workspaceId, classId),
                                     cursor,
                                     limit,
-                                    AssignmentService.HomeroomAssignmentView::id));
+                                    item -> item.id()));
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/classes/{classId}/homeroom-assignments")
+    @PostMapping("/classes/{classId}/homeroom-assignments")
     public ResponseEntity<IdempotencyService.OperationReceipt> assignHomeroom(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -213,8 +214,7 @@ public class AssignmentController {
                 });
     }
 
-    @DeleteMapping(
-            "/api/workspaces/{workspaceId}/classes/{classId}/homeroom-assignments/{assignmentId}")
+    @DeleteMapping("/classes/{classId}/homeroom-assignments/{assignmentId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeHomeroomAssignment(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,

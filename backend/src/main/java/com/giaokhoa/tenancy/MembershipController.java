@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
@@ -48,6 +49,7 @@ import tools.jackson.databind.json.JsonMapper;
  * mời, OWNER không mời được, học sinh trùng username) và trả lỗi nghiệp vụ của chúng.
  */
 @RestController
+@RequestMapping("/api")
 public class MembershipController {
     private static final JsonMapper JSON = new JsonMapper();
 
@@ -127,7 +129,7 @@ public class MembershipController {
         }
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/memberships")
+    @GetMapping("/workspaces/{workspaceId}/memberships")
     public ResponseEntity<MembershipPage> listMemberships(
             @PathVariable UUID workspaceId,
             @RequestParam(value = "cursor", required = false) @Nullable String cursor,
@@ -170,7 +172,7 @@ public class MembershipController {
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/invitations")
+    @PostMapping("/workspaces/{workspaceId}/invitations")
     public ResponseEntity<InvitationCreatedView> invite(
             @PathVariable UUID workspaceId,
             @RequestBody @Nullable InvitationCreateRequest body,
@@ -219,7 +221,7 @@ public class MembershipController {
                 });
     }
 
-    @PostMapping("/api/invitations/{token}/accept")
+    @PostMapping("/invitations/{token}/accept")
     public ResponseEntity<IdempotencyService.OperationReceipt> acceptInvitation(
             @PathVariable String token,
             @RequestBody @Nullable AcceptRequest body,
@@ -245,7 +247,7 @@ public class MembershipController {
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/students")
+    @PostMapping("/workspaces/{workspaceId}/students")
     public ResponseEntity<StudentIssueView> issueStudent(
             @PathVariable UUID workspaceId,
             @RequestBody @Nullable StudentIssueRequest body,
@@ -314,7 +316,7 @@ public class MembershipController {
                 });
     }
 
-    @PutMapping("/api/workspaces/{workspaceId}/memberships/{membershipId}/roles")
+    @PutMapping("/workspaces/{workspaceId}/memberships/{membershipId}/roles")
     public ResponseEntity<IdempotencyService.OperationReceipt> replaceRoles(
             @PathVariable UUID workspaceId,
             @PathVariable UUID membershipId,
@@ -375,7 +377,7 @@ public class MembershipController {
                 });
     }
 
-    @DeleteMapping("/api/workspaces/{workspaceId}/memberships/{membershipId}")
+    @DeleteMapping("/workspaces/{workspaceId}/memberships/{membershipId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeMembership(
             @PathVariable UUID workspaceId,
             @PathVariable UUID membershipId,

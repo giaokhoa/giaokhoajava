@@ -26,6 +26,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  * bearer token hay secret; mọi response mang Cache-Control private, no-store theo hợp đồng.
  */
 @RestController
+@RequestMapping("/api")
 public class SessionController {
     private final IdentityService identities;
     private final WorkspaceDirectory directory;
@@ -89,7 +91,7 @@ public class SessionController {
 
     public record OperationReceipt(UUID id, String state, boolean completed) {}
 
-    @GetMapping("/api/session")
+    @GetMapping("/session")
     public ResponseEntity<SessionView> session(
             @Nullable Authentication authentication, HttpServletRequest request) {
         CsrfView csrf = csrfOf(request);
@@ -112,7 +114,7 @@ public class SessionController {
         return protectedOk(new SessionView(true, csrf, user));
     }
 
-    @GetMapping("/api/me/workspaces")
+    @GetMapping("/me/workspaces")
     public ResponseEntity<List<WorkspaceView>> workspaces(
             Authentication authentication, HttpServletRequest request) {
         UUID actor = executor.actorUserId(authentication);
@@ -134,7 +136,7 @@ public class SessionController {
                                         .toList()));
     }
 
-    @GetMapping("/api/me/practice-history")
+    @GetMapping("/me/practice-history")
     public ResponseEntity<List<PracticeEntry>> practiceHistory(
             Authentication authentication, HttpServletRequest request) {
         UUID actor = executor.actorUserId(authentication);
@@ -153,7 +155,7 @@ public class SessionController {
                         () -> practice.historyFor(actor)));
     }
 
-    @PostMapping("/api/identity/verification")
+    @PostMapping("/identity/verification")
     public ResponseEntity<OperationReceipt> requestVerification(Authentication authentication) {
         UUID actor = executor.actorUserId(authentication);
         List<String> subjects =
