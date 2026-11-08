@@ -5,6 +5,7 @@ import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.ClassRow;
 import com.giaokhoa.teaching.data.TeachingRepository.RosterRow;
 import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
+import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,7 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Nghiệp vụ lớp và roster ở tầng dữ kiện nguồn: tạo/đổi tên/thu hồi lớp, thêm/thu hồi học sinh
  * trong roster của đúng một lớp thuộc đúng một workspace. Mọi thao tác đi qua {@link
  * TeachingRepository} đã khóa phạm vi theo workspace nên dữ kiện của workspace khác không tồn tại
- * đối với service này.
+ * đối với service này. Mỗi phương thức đặt context workspace cho transaction qua {@link
+ * WorkspaceTransaction} ngay khi bắt đầu: các bảng giảng dạy nằm dưới RLS theo đúng context đó,
+ * thiếu nó thì runtime role không BYPASSRLS không thấy và không ghi được hàng nào.
  *
  * <p>Service chỉ giữ bất biến dữ kiện và trạng thái, không tự quyết quyền thay Keycloak PDP và
  * không ghi authorization operation: quyết định cho phép ở route (PDP/fence hay biên SQL) và việc
@@ -33,9 +36,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ClassService {
     private final TeachingRepository repository;
+    private final WorkspaceTransaction workspaceTransaction;
 
-    public ClassService(TeachingRepository repository) {
+    public ClassService(TeachingRepository repository, WorkspaceTransaction workspaceTransaction) {
         this.repository = repository;
+        this.workspaceTransaction = workspaceTransaction;
     }
 
     /** Metadata của một lớp; đọc lớp chỉ trả metadata này, không kèm roster. */
@@ -49,6 +54,7 @@ public class ClassService {
     @Transactional
     public ClassView createClass(UUID workspaceId, String name) {
         Objects.requireNonNull(workspaceId, "workspaceId");
+        workspaceTransaction.applyContext(workspaceId);
         String trimmed = normalizeName(name);
         requireTeachingWorkspace(workspaceId);
         requireSubscriptionCurrent(workspaceId);
@@ -62,6 +68,7 @@ public class ClassService {
     public ClassView getClass(UUID workspaceId, UUID classId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
+        workspaceTransaction.applyContext(workspaceId);
         return toView(
                 repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound()));
     }
@@ -70,6 +77,7 @@ public class ClassService {
     @Transactional(readOnly = true)
     public List<ClassView> listClasses(UUID workspaceId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
+        workspaceTransaction.applyContext(workspaceId);
         return repository.listClasses(workspaceId).stream().map(ClassService::toView).toList();
     }
 
@@ -80,6 +88,7 @@ public class ClassService {
     public ClassView renameClass(UUID workspaceId, UUID classId, String name) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
+        workspaceTransaction.applyContext(workspaceId);
         String trimmed = normalizeName(name);
         ClassRow row =
                 repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
@@ -102,6 +111,7 @@ public class ClassService {
     public ClassView revokeClass(UUID workspaceId, UUID classId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
+        workspaceTransaction.applyContext(workspaceId);
         ClassRow row =
                 repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
         boolean alreadyRevoked = "REVOKED".equals(row.state());
@@ -125,6 +135,7 @@ public class ClassService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
         Objects.requireNonNull(studentUserIds, "studentUserIds");
+        workspaceTransaction.applyContext(workspaceId);
         List<UUID> students = List.copyOf(new LinkedHashSet<>(studentUserIds));
         if (students.isEmpty()) {
             throw new HttpProblemException(
@@ -172,6 +183,7 @@ public class ClassService {
     public List<RosterEntryView> listStudents(UUID workspaceId, UUID classId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
+        workspaceTransaction.applyContext(workspaceId);
         repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
         return repository.listRoster(workspaceId, classId).stream()
                 .map(ClassService::toView)
@@ -187,6 +199,7 @@ public class ClassService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
         Objects.requireNonNull(classStudentId, "classStudentId");
+        workspaceTransaction.applyContext(workspaceId);
         RosterRow row =
                 repository
                         .lockRosterEntry(workspaceId, classId, classStudentId)

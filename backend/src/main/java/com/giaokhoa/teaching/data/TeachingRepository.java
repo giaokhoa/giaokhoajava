@@ -9,9 +9,15 @@ import org.springframework.stereotype.Repository;
 /**
  * Truy cập dữ liệu giảng dạy theo phạm vi: mọi câu truy vấn đều khóa theo {@code workspace_id} (và
  * khóa cha {@code class_id}/{@code course_id} khi áp dụng) nên không có đường đọc hay ghi nào vượt
- * scope của workspace đang thao tác. RLS ở tầng DB là chốt chặn cuối; repository này là lớp khóa
- * phạm vi chính, theo cùng cách các service hiện có lọc tường minh theo workspace thay vì trông vào
- * context của transaction.
+ * scope của workspace đang thao tác. Lọc tường minh ở đây và RLS ở tầng DB là hai lớp khóa phạm vi
+ * cùng giữ: policy RLS khóa theo context workspace của transaction, nên service gọi repository này
+ * phải đặt context qua {@code WorkspaceTransaction.applyContext} trước lời gọi đầu tiên trong
+ * transaction (theo tiền lệ SystemPracticeService) — thiếu context thì runtime role không BYPASSRLS
+ * không thấy và không ghi được hàng nào.
+ *
+ * <p>Các UPDATE theo id trần (đổi tên, thu hồi) chỉ an toàn khi lời gọi đã lấy lock có phạm vi
+ * {@code FOR UPDATE} trên chính hàng đó trong cùng transaction trước đó (tiền lệ CenterService); ai
+ * gọi thẳng repository này phải giữ đúng kỷ luật khóa-trước đó.
  *
  * <p>Dòng "hiện hành" của roster, môn–khóa, ghi danh là dòng ở state PENDING hoặc ACTIVE; dòng
  * REVOKED là lịch sử, chỉ đọc khi cần đối chiếu, không nằm trong danh sách hiện hành. Thu hồi chỉ
