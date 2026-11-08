@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -29,6 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  * RecoveryController, có ACCOUNT/target fence và đồng bộ eligibility trước mỗi quyết định.
  */
 @RestController
+@RequestMapping("/api/platform/centers")
 public class CenterController {
     private static final JsonMapper JSON = new JsonMapper();
     private final CenterService centers;
@@ -46,7 +48,7 @@ public class CenterController {
 
     public record CenterCreateRequest(@Nullable String name, @Nullable UUID ownerUserId) {}
 
-    @PostMapping("/api/platform/centers")
+    @PostMapping
     public ResponseEntity<IdempotencyService.OperationReceipt> createCenter(
             Authentication authentication,
             HttpServletRequest request,
@@ -98,7 +100,7 @@ public class CenterController {
                 });
     }
 
-    @GetMapping("/api/platform/centers")
+    @GetMapping
     public ResponseEntity<List<CenterService.CenterView>> listCenters(
             Authentication authentication, HttpServletRequest request) {
         return executor.executeForActor(

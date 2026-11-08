@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
  * operation: nghiệp vụ chỉ hoàn tất khi operation SUCCEEDED.
  */
 @RestController
+@RequestMapping("/api/workspaces/{workspaceId}/classes")
 public class ClassController {
     private final ClassService classes;
     private final TeachingRepository repository;
@@ -58,7 +60,7 @@ public class ClassController {
         }
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/classes")
+    @GetMapping
     public ResponseEntity<TeachingRouteSupport.Page<ClassService.ClassView>> listClasses(
             @PathVariable UUID workspaceId,
             @RequestParam(value = "cursor", required = false) @Nullable String cursor,
@@ -81,11 +83,11 @@ public class ClassController {
                             throw TeachingRouteSupport.denied();
                         }
                     }
-                    return support.ok(support.page(all, cursor, limit, ClassService.ClassView::id));
+                    return support.ok(support.page(all, cursor, limit, item -> item.id()));
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/classes")
+    @PostMapping
     public ResponseEntity<IdempotencyService.OperationReceipt> createClass(
             @PathVariable UUID workspaceId,
             @RequestBody @Nullable NameRequest body,
@@ -118,7 +120,7 @@ public class ClassController {
                 });
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/classes/{classId}")
+    @GetMapping("/{classId}")
     public ResponseEntity<ClassService.ClassView> getClass(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -137,7 +139,7 @@ public class ClassController {
                 });
     }
 
-    @PatchMapping("/api/workspaces/{workspaceId}/classes/{classId}")
+    @PatchMapping("/{classId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> renameClass(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -172,7 +174,7 @@ public class ClassController {
                 });
     }
 
-    @DeleteMapping("/api/workspaces/{workspaceId}/classes/{classId}")
+    @DeleteMapping("/{classId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeClass(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -213,7 +215,7 @@ public class ClassController {
                 });
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/classes/{classId}/students")
+    @GetMapping("/{classId}/students")
     public ResponseEntity<TeachingRouteSupport.Page<ClassService.RosterEntryView>> listStudents(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -236,11 +238,11 @@ public class ClassController {
                                     classes.listStudents(workspaceId, classId),
                                     cursor,
                                     limit,
-                                    ClassService.RosterEntryView::id));
+                                    item -> item.id()));
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/classes/{classId}/students")
+    @PostMapping("/{classId}/students")
     public ResponseEntity<IdempotencyService.OperationReceipt> addStudents(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -274,7 +276,7 @@ public class ClassController {
                 });
     }
 
-    @DeleteMapping("/api/workspaces/{workspaceId}/classes/{classId}/students/{classStudentId}")
+    @DeleteMapping("/{classId}/students/{classStudentId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeStudent(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,

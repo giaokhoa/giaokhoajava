@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
  * khoản hợp lệ.
  */
 @RestController
+@RequestMapping("/api")
 public class CourseController {
     private final CourseService courses;
     private final TeachingRepository repository;
@@ -63,14 +65,14 @@ public class CourseController {
         }
     }
 
-    @GetMapping("/api/subjects")
+    @GetMapping("/subjects")
     public ResponseEntity<TeachingRouteSupport.Page<CourseService.SubjectView>> listSubjects(
             Authentication authentication) {
         support.actor(authentication);
         return support.ok(new TeachingRouteSupport.Page<>(courses.listSubjects(), null));
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/classes/{classId}/courses")
+    @GetMapping("/workspaces/{workspaceId}/classes/{classId}/courses")
     public ResponseEntity<TeachingRouteSupport.Page<CourseService.CourseView>> listCourses(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -95,11 +97,11 @@ public class CourseController {
                                     courses.listCourses(workspaceId, classId),
                                     cursor,
                                     limit,
-                                    CourseService.CourseView::id));
+                                    item -> item.id()));
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/classes/{classId}/courses")
+    @PostMapping("/workspaces/{workspaceId}/classes/{classId}/courses")
     public ResponseEntity<IdempotencyService.OperationReceipt> createCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
@@ -133,7 +135,7 @@ public class CourseController {
                 });
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/courses/{courseId}")
+    @GetMapping("/workspaces/{workspaceId}/courses/{courseId}")
     public ResponseEntity<CourseService.CourseView> getCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
@@ -152,7 +154,7 @@ public class CourseController {
                 });
     }
 
-    @PatchMapping("/api/workspaces/{workspaceId}/courses/{courseId}")
+    @PatchMapping("/workspaces/{workspaceId}/courses/{courseId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> renameCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
@@ -187,7 +189,7 @@ public class CourseController {
                 });
     }
 
-    @DeleteMapping("/api/workspaces/{workspaceId}/courses/{courseId}")
+    @DeleteMapping("/workspaces/{workspaceId}/courses/{courseId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
@@ -222,7 +224,7 @@ public class CourseController {
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/courses/{courseId}/subjects")
+    @PostMapping("/workspaces/{workspaceId}/courses/{courseId}/subjects")
     public ResponseEntity<IdempotencyService.OperationReceipt> addSubjects(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
@@ -255,7 +257,7 @@ public class CourseController {
                 });
     }
 
-    @DeleteMapping("/api/workspaces/{workspaceId}/courses/{courseId}/subjects/{courseSubjectId}")
+    @DeleteMapping("/workspaces/{workspaceId}/courses/{courseId}/subjects/{courseSubjectId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeCourseSubject(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,

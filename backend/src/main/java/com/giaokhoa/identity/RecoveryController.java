@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -33,6 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
  * ACCOUNT/target fence và đồng bộ eligibility trước mỗi quyết định.
  */
 @RestController
+@RequestMapping("/api")
 public class RecoveryController {
     private static final JsonMapper JSON = new JsonMapper();
     private final IdempotencyService idempotency;
@@ -72,7 +74,7 @@ public class RecoveryController {
             Instant createdAt,
             long version) {}
 
-    @PostMapping("/api/me/recovery-requests")
+    @PostMapping("/me/recovery-requests")
     public ResponseEntity<SubmitReceipt> submit(
             Authentication authentication,
             @RequestBody @Nullable SubmitRequest body,
@@ -114,7 +116,7 @@ public class RecoveryController {
                 .body(receipt);
     }
 
-    @GetMapping("/api/platform/recovery-requests")
+    @GetMapping("/platform/recovery-requests")
     public ResponseEntity<List<RequestItem>> list(
             Authentication authentication, HttpServletRequest request) {
         return executor.executeForActor(
@@ -133,7 +135,7 @@ public class RecoveryController {
                 });
     }
 
-    @PostMapping("/api/platform/recovery-requests/{requestId}/resolve")
+    @PostMapping("/platform/recovery-requests/{requestId}/resolve")
     public ResponseEntity<?> resolve(
             Authentication authentication,
             HttpServletRequest request,

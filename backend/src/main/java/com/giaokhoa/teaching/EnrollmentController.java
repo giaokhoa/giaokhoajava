@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
  * authorization operation cho các mutation của nó nên route chỉ quyết quyền và trả biên nhận.
  */
 @RestController
+@RequestMapping("/api/workspaces/{workspaceId}")
 public class EnrollmentController {
     private final EnrollmentService enrollments;
     private final TeachingRepository repository;
@@ -52,7 +54,7 @@ public class EnrollmentController {
         }
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/course-subjects/{courseSubjectId}/enrollments")
+    @GetMapping("/course-subjects/{courseSubjectId}/enrollments")
     public ResponseEntity<TeachingRouteSupport.Page<EnrollmentService.EnrollmentView>>
             listEnrollments(
                     @PathVariable UUID workspaceId,
@@ -81,11 +83,11 @@ public class EnrollmentController {
                                     enrollments.listEnrollments(workspaceId, courseSubjectId),
                                     cursor,
                                     limit,
-                                    EnrollmentService.EnrollmentView::id));
+                                    item -> item.id()));
                 });
     }
 
-    @PostMapping("/api/workspaces/{workspaceId}/enrollments")
+    @PostMapping("/enrollments")
     public ResponseEntity<IdempotencyService.OperationReceipt> enrollBatch(
             @PathVariable UUID workspaceId,
             @RequestBody @Nullable EnrollmentBatchRequest body,
@@ -115,7 +117,7 @@ public class EnrollmentController {
                 });
     }
 
-    @DeleteMapping("/api/workspaces/{workspaceId}/enrollments/{enrollmentId}")
+    @DeleteMapping("/enrollments/{enrollmentId}")
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeEnrollment(
             @PathVariable UUID workspaceId,
             @PathVariable UUID enrollmentId,
