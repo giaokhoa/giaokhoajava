@@ -4,6 +4,8 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.teaching.TeachingPolicyProjector;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,14 +33,17 @@ public class MembershipPolicyProjector {
     private final JdbcTemplate jdbc;
     private final CenterPolicyProjector centerProjector;
     private final AuthorizationOperationService operations;
+    private final TeachingPolicyProjector teachingProjector;
 
     public MembershipPolicyProjector(
             JdbcTemplate jdbc,
             CenterPolicyProjector centerProjector,
-            AuthorizationOperationService operations) {
+            AuthorizationOperationService operations,
+            TeachingPolicyProjector teachingProjector) {
         this.jdbc = jdbc;
         this.centerProjector = centerProjector;
         this.operations = operations;
+        this.teachingProjector = teachingProjector;
     }
 
     /**
@@ -65,6 +70,9 @@ public class MembershipPolicyProjector {
                         PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
                         centerProjector.bundleDescriptors(workspaceId),
                         List.of());
+        List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
+        projections.add(projection);
+        projections.addAll(teachingProjector.allBundleProjections(workspaceId));
         return operations.applyDesiredState(
                 initiatorUserId,
                 workspaceId,
@@ -72,6 +80,6 @@ public class MembershipPolicyProjector {
                 payloadHash,
                 List.of(
                         new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(), List.of(projection))));
+                                partitions.getFirst(), List.copyOf(projections))));
     }
 }

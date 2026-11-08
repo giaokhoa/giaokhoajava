@@ -33,10 +33,14 @@ services:
 
   test-keycloak:
     image: quay.io/keycloak/keycloak:26.8.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: start-dev --import-realm
     volumes:
       - ./keycloak/test-realm.json:/opt/keycloak/data/import/giaokhoa-it-realm.json:ro
     environment:
+      # Backend, frontend và Keycloak dùng chung runner TEST; tránh JVM lấy phần lớn RAM máy.
+      JAVA_OPTS_KC_HEAP: "-Xms64m -Xmx512m"
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://test-keycloak-db:5432/keycloak_test
       KC_DB_USERNAME: keycloak_test

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady, logoutViaApplicationForm } from "./support/test-environment";
 
 // Kiểm chứng bảo mật phiên ở biên trình duyệt: không token trong DOM/network/SSR,
 // Cache-Control no-store trên phản hồi bảo vệ, CSRF cho mọi mutation (back-channel là
@@ -41,21 +41,6 @@ async function layCsrf(page: Page, origin: string): Promise<{ headerName: string
   };
   expect(session.csrf?.token).toBeTruthy();
   return session.csrf!;
-}
-
-async function dangXuatBangForm(page: Page, token: string): Promise<void> {
-  await page.evaluate((csrfToken) => {
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = "/api/logout";
-    const csrf = document.createElement("input");
-    csrf.type = "hidden";
-    csrf.name = "_csrf";
-    csrf.value = csrfToken;
-    form.appendChild(csrf);
-    document.body.appendChild(form);
-    form.submit();
-  }, token);
 }
 
 test("không token trong DOM/network/SSR: trình duyệt không gửi Authorization và storage không giữ token", async ({
@@ -174,7 +159,7 @@ test("CSRF: mutation thiếu token bị 403; back-channel là ngoại lệ duy n
   }
 });
 
-test("chưa eligible thì không tạo được action mới: POST action kèm CSRF hợp lệ vẫn bị 503 fail-closed", async ({
+test("phiên cũ mất eligibility không tạo được action dù CSRF còn hợp lệ", async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -183,9 +168,15 @@ test("chưa eligible thì không tạo được action mới: POST action kèm C
   try {
     await dangNhapQuaUngDung(page, origin, user);
     const csrf = await layCsrf(page, origin);
+    const workspaces = await appRequestWhenReady(page, `${origin}/api/me/workspaces`);
+    expect(workspaces.status()).toBe(200);
+    const personal = ((await workspaces.json()) as { id: string; kind: string }[])
+      .find((workspace) => workspace.kind === "PERSONAL");
+    expect(personal).toBeTruthy();
+    await env.setEmailVerified(user, false);
 
     const response = await page.request.post(
-      `${origin}/api/workspaces/${randomUUID()}/samples/actions`,
+      `${origin}/api/workspaces/${personal!.id}/samples/actions`,
       {
         headers: { [csrf.headerName]: csrf.token, "Idempotency-Key": randomUUID() },
         data: {
@@ -196,8 +187,8 @@ test("chưa eligible thì không tạo được action mới: POST action kèm C
         },
       },
     );
-    expect(response.status()).toBe(503);
-    expect((await response.json() as { code?: string }).code).toBe("AUTHORIZATION_NOT_READY");
+    expect([403, 503]).toContain(response.status());
+    expect(["PERMISSION_DENIED", "AUTHORIZATION_NOT_READY"]).toContain((await response.json() as { code?: string }).code);
   } finally {
     await env.deleteUser(user);
   }
@@ -239,7 +230,7 @@ test("sau logout, storage state cũ không hồi sinh được phiên", async ({
     const state = await page.context().storageState();
 
     const csrf = await layCsrf(page, origin);
-    await dangXuatBangForm(page, csrf.token);
+    await logoutViaApplicationForm(page, origin, csrf.token);
     await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
     expect((await goiOperationDauDo(page, origin)).status()).toBe(302);
 

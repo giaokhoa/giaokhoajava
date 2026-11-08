@@ -3,6 +3,7 @@ package com.giaokhoa.teaching;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -58,11 +59,13 @@ public class AssignmentController {
                     @PathVariable UUID courseSubjectId,
                     @RequestParam(value = "cursor", required = false) @Nullable String cursor,
                     @RequestParam(value = "limit", required = false) @Nullable Integer limit,
-                    Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+                    Authentication authentication,
+                    HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     repository
                             .findCourseSubjectScope(workspaceId, courseSubjectId)
                             .orElseThrow(() ->
@@ -89,9 +92,8 @@ public class AssignmentController {
             @PathVariable UUID courseSubjectId,
             @RequestBody @Nullable TeacherAssignRequest body,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        support.requireAdmin(actor, workspaceId);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         TeacherAssignRequest request = body == null ? new TeacherAssignRequest(List.of()) : body;
         String path =
                 "/api/workspaces/"
@@ -100,9 +102,21 @@ public class AssignmentController {
                         + courseSubjectId
                         + "/teachers";
         String hash = support.payloadHash("POST", path, request);
-        return support.receipt(
-                assignments.assignTeachers(
-                        actor, workspaceId, courseSubjectId, request.teacherUserIds(), key, hash));
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
+                workspaceId,
+                actor -> {
+                    support.requireAdmin(actor, workspaceId);
+                    return support.receipt(
+                            assignments.assignTeachers(
+                                    actor,
+                                    workspaceId,
+                                    courseSubjectId,
+                                    request.teacherUserIds(),
+                                    key,
+                                    hash));
+                });
     }
 
     @DeleteMapping(
@@ -112,9 +126,8 @@ public class AssignmentController {
             @PathVariable UUID courseSubjectId,
             @PathVariable UUID assignmentId,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        support.requireAdmin(actor, workspaceId);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         String path =
                 "/api/workspaces/"
                         + workspaceId
@@ -123,9 +136,16 @@ public class AssignmentController {
                         + "/teachers/"
                         + assignmentId;
         String hash = support.payloadHash("DELETE", path, null);
-        return support.receipt(
-                assignments.revokeTeacherAssignment(
-                        actor, workspaceId, courseSubjectId, assignmentId, key, hash));
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
+                workspaceId,
+                actor -> {
+                    support.requireAdmin(actor, workspaceId);
+                    return support.receipt(
+                            assignments.revokeTeacherAssignment(
+                                    actor, workspaceId, courseSubjectId, assignmentId, key, hash));
+                });
     }
 
     @GetMapping("/api/workspaces/{workspaceId}/classes/{classId}/homeroom-assignments")
@@ -135,11 +155,13 @@ public class AssignmentController {
                     @PathVariable UUID classId,
                     @RequestParam(value = "cursor", required = false) @Nullable String cursor,
                     @RequestParam(value = "limit", required = false) @Nullable Integer limit,
-                    Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+                    Authentication authentication,
+                    HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     if (!support.canReadClass(actor, workspaceId, classId)) {
                         // Lớp không tồn tại trả 404; lớp tồn tại nhưng không được đọc trả 403.
                         repository
@@ -166,9 +188,8 @@ public class AssignmentController {
             @PathVariable UUID classId,
             @RequestBody @Nullable HomeroomAssignRequest body,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        support.requireAdmin(actor, workspaceId);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         HomeroomAssignRequest request = body == null ? new HomeroomAssignRequest(null) : body;
         UUID teacherUserId = request.teacherUserId();
         if (teacherUserId == null) {
@@ -180,8 +201,16 @@ public class AssignmentController {
         String path =
                 "/api/workspaces/" + workspaceId + "/classes/" + classId + "/homeroom-assignments";
         String hash = support.payloadHash("POST", path, request);
-        return support.receipt(
-                assignments.assignHomeroom(actor, workspaceId, classId, teacherUserId, key, hash));
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
+                workspaceId,
+                actor -> {
+                    support.requireAdmin(actor, workspaceId);
+                    return support.receipt(
+                            assignments.assignHomeroom(
+                                    actor, workspaceId, classId, teacherUserId, key, hash));
+                });
     }
 
     @DeleteMapping(
@@ -191,9 +220,8 @@ public class AssignmentController {
             @PathVariable UUID classId,
             @PathVariable UUID assignmentId,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        support.requireAdmin(actor, workspaceId);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         String path =
                 "/api/workspaces/"
                         + workspaceId
@@ -202,8 +230,15 @@ public class AssignmentController {
                         + "/homeroom-assignments/"
                         + assignmentId;
         String hash = support.payloadHash("DELETE", path, null);
-        return support.receipt(
-                assignments.revokeHomeroomAssignment(
-                        actor, workspaceId, classId, assignmentId, key, hash));
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
+                workspaceId,
+                actor -> {
+                    support.requireAdmin(actor, workspaceId);
+                    return support.receipt(
+                            assignments.revokeHomeroomAssignment(
+                                    actor, workspaceId, classId, assignmentId, key, hash));
+                });
     }
 }

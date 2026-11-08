@@ -157,6 +157,32 @@ export async function requestWhenReady<T = unknown>(path: string, init: RequestI
   }
 }
 
+// Danh sách dùng làm đầu vào chọn người/quan hệ phải đọc đủ trang trước khi hiển thị.
+export async function requestAllPages(
+  path: string,
+  init: Pick<RequestInit, "signal"> = {},
+): Promise<unknown[]> {
+  const items: unknown[] = [];
+  const seen = new Set<string>();
+  let next = apiPath(path);
+  for (;;) {
+    const result = await requestWhenReady<unknown>(next, init);
+    if (result.kind !== "data" || !isObject(result.data) || !Array.isArray(result.data.items)) {
+      throw new Error("Phản hồi danh sách không hợp lệ.");
+    }
+    items.push(...result.data.items);
+    const cursor = result.data.nextCursor;
+    if (cursor === undefined || cursor === null) return items;
+    if (typeof cursor !== "string" || !cursor || seen.has(cursor)) {
+      throw new Error("Cursor danh sách không hợp lệ.");
+    }
+    seen.add(cursor);
+    const url = new URL(apiPath(path), "http://same-origin.invalid");
+    url.searchParams.set("cursor", cursor);
+    next = url.pathname + url.search;
+  }
+}
+
 // Điều hướng bằng HTML form là bắt buộc cho RP-Initiated OIDC logout redirect của Spring.
 export async function submitLogout(): Promise<void> {
   const [, token] = await getCsrf();

@@ -1,20 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./support/test-environment";
 
 // E2E quản trị giảng dạy ở biên trình duyệt: tạo lớp/khóa nhiều môn, chọn môn ghi danh,
 // nhiều giáo viên cùng môn, chủ nhiệm, và actor chuyển lớp/môn không lộ dữ liệu.
 // Nguồn contract: FR-013–FR-021 (spec.md), hợp đồng HTTP (Lớp, khóa, môn và ghi danh)
 // và hợp đồng quyết định quyền (mục 4, bảng nguồn theo môn–khóa/chủ nhiệm).
 // Spec cần origin ứng dụng đang chạy (backend cùng stack TEST) qua
-// NATIVE_GATE_APP_ORIGIN, cùng cơ chế với center-administration.spec.ts; khi biến chưa
-// được đặt, spec tự bỏ qua để CI không đỏ giả. Các endpoint/UI thuộc hợp đồng nhưng chưa
-// được cài đặt (classes, courses, subjects, enrollments, teachers, homeroom-assignments,
-// trang /centers/{wid}/classes) sẽ đỏ có ý nghĩa cho tới khi có code; tuyệt đối không
-// trích test bị skip làm bằng chứng chạy thật.
+// NATIVE_GATE_APP_ORIGIN; thiếu biến là lỗi cấu hình, không được dùng skip thay cho nghiệm thu.
 //
-// Các helper dựng center/owner/manager ở đây sao chép tối giản từ
-// center-administration.spec.ts để spec tự chứa, không sửa spec đang xanh.
+// Các helper dựng center/owner/manager dùng phiên thật và ID directory của ứng dụng.
 //
 // Lưu ý kiểm chứng:
 // - Ghi danh/phân công chỉ dùng môn HIỆN CÓ lúc thao tác: thêm môn vào khóa sau không tự
@@ -79,11 +74,8 @@ type RosterEntry = {
 type EnrollmentEntry = { id: string; classStudentId?: string };
 
 function gateOrigin(): string {
-  test.skip(
-    !appOrigin,
-    "Cần NATIVE_GATE_APP_ORIGIN của môi trường gate/review để chạy spec quản trị giảng dạy.",
-  );
-  return appOrigin as string;
+  if (!appOrigin) throw new Error("Cần NATIVE_GATE_APP_ORIGIN để chạy E2E giảng dạy thật.");
+  return appOrigin;
 }
 
 async function dangNhapQuaUngDung(
@@ -107,31 +99,13 @@ async function laySessionView(page: Page, origin: string): Promise<SessionView> 
 // 503 xảy ra trước khi endpoint ghi operation của nó nên key chưa từng được ghi — giữ
 // nguyên key qua mọi lần thử để lần retry tường minh sau đó vẫn tra đúng operation;
 // tuyệt đối không thử lại 400/403/409 hay 503 với mã khác (vd: PDP lỗi).
-const THOI_GIAN_CHO_FENCE_MS = 60_000;
-const KHOANG_CHO_FENCE_MS = 1_000;
 
 // Lời gọi có fence này đồng bộ eligibility của actor (mẫu d7ade21 bên Java):
 // không có nó, lời gọi platform đầu tiên của operator mới bị PDP chặn 403 vì
 // leaf eligible chưa đồng bộ. Phiên thật luôn nạp workspace trước khi làm việc.
 async function dongBoEligibility(page: Page, origin: string): Promise<void> {
-  const batDau = Date.now();
-  for (;;) {
-    const traLoi = await page.request.get(`${origin}/api/me/workspaces`);
-    if (traLoi.status() !== 503) {
-      expect(traLoi.status()).toBe(200);
-      return;
-    }
-    let ma: unknown;
-    try {
-      ma = ((await traLoi.json()) as { code?: unknown }).code;
-    } catch {
-      throw new Error("workspaces trả 503 không rõ mã");
-    }
-    if (ma !== "AUTHORIZATION_NOT_READY" || Date.now() - batDau >= THOI_GIAN_CHO_FENCE_MS) {
-      throw new Error(`workspaces chưa sẵn sàng: 503 ${String(ma)}`);
-    }
-    await page.waitForTimeout(KHOANG_CHO_FENCE_MS);
-  }
+  const response = await appRequestWhenReady(page, `${origin}/api/me/workspaces`);
+  expect(response.status()).toBe(200);
 }
 
 // Đăng nhập lại bằng tài khoản khác trên cùng trang: đổi phiên rồi lấy CSRF mới.
@@ -171,50 +145,19 @@ async function guiMutation(
   body?: Record<string, unknown>,
   tuyChon?: { idempotencyKey?: string; headers?: Record<string, string> },
 ): Promise<APIResponse> {
-  const batDau = Date.now();
-  const khoaIdempotency = tuyChon?.idempotencyKey ?? randomUUID();
-  for (;;) {
-    const traLoi = await page.request.fetch(`${origin}${path}`, {
-      method,
-      headers: {
-        [csrf.headerName]: csrf.token,
-        "Idempotency-Key": khoaIdempotency,
-        ...(tuyChon?.headers ?? {}),
-      },
-      data: body,
-    });
-    if (traLoi.status() !== 503) return traLoi;
-    let ma: unknown;
-    try {
-      ma = ((await traLoi.json()) as { code?: unknown }).code;
-    } catch {
-      return traLoi;
-    }
-    if (ma !== "AUTHORIZATION_NOT_READY" || Date.now() - batDau >= THOI_GIAN_CHO_FENCE_MS) {
-      return traLoi;
-    }
-    await page.waitForTimeout(KHOANG_CHO_FENCE_MS);
-  }
+  return appRequestWhenReady(page, `${origin}${path}`, {
+    method, data: body,
+    headers: {
+      [csrf.headerName]: csrf.token,
+      "Idempotency-Key": tuyChon?.idempotencyKey ?? randomUUID(),
+      ...(tuyChon?.headers ?? {}),
+    },
+  });
 }
-
 // GET được bảo vệ cũng có thể gặp 503 AUTHORIZATION_NOT_READY ở lần gọi đầu của actor
 // mới (partition ACCOUNT còn PENDING); thử lại đúng mã này như mutation.
 async function guiGet(page: Page, origin: string, path: string): Promise<APIResponse> {
-  const batDau = Date.now();
-  for (;;) {
-    const traLoi = await page.request.get(`${origin}${path}`);
-    if (traLoi.status() !== 503) return traLoi;
-    let ma: unknown;
-    try {
-      ma = ((await traLoi.json()) as { code?: unknown }).code;
-    } catch {
-      return traLoi;
-    }
-    if (ma !== "AUTHORIZATION_NOT_READY" || Date.now() - batDau >= THOI_GIAN_CHO_FENCE_MS) {
-      return traLoi;
-    }
-    await page.waitForTimeout(KHOANG_CHO_FENCE_MS);
-  }
+  return appRequestWhenReady(page, `${origin}${path}`);
 }
 
 function layOperationId(traLoi: MutationTraLoi): string {
@@ -350,20 +293,25 @@ async function moiVaChapNhan(
   const token = traLoiMoi.invitationToken ?? "";
   expect(token).toBeTruthy();
 
-  const csrfNguoiDuocMoi = await dangNhapLai(page, origin, nguoiDuocMoi);
-  const chapNhan = await guiMutation(page, origin, csrfNguoiDuocMoi, "POST",
-    `/api/invitations/${token}/accept`);
-  expect(chapNhan.status()).toBe(202);
-  const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
-  await choOperationThanhCong(
-    page, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
+  // Người chấp nhận dùng context riêng, giữ nguyên phiên và CSRF của người mời.
+  const context = await page.context().browser()!.newContext();
+  try {
+    const acceptPage = await context.newPage();
+    const csrfNguoiDuocMoi = await dangNhapLai(acceptPage, origin, nguoiDuocMoi);
+    const chapNhan = await guiMutation(acceptPage, origin, csrfNguoiDuocMoi, "POST",
+      `/api/invitations/${token}/accept`);
+    expect(chapNhan.status()).toBe(202);
+    const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
+    await choOperationThanhCong(
+      acceptPage, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
 
-  const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
-  // Khớp theo username: membership user.id là id NỘI BỘ của user_account,
-  // không phải Keycloak sub của người được mời.
-  const membership = thanhVien.find((item) => item.user.username === nguoiDuocMoi.username);
-  expect(membership).toBeTruthy();
-  return { membershipId: membership!.id, userAppId: membership!.user.id };
+    const thanhVien = await layDanhSachThanhVien(acceptPage, origin, workspaceId);
+    // Khớp theo username: membership user.id là id NỘI BỘ của user_account,
+    // không phải Keycloak sub của người được mời.
+    const membership = thanhVien.find((item) => item.user.username === nguoiDuocMoi.username);
+    expect(membership).toBeTruthy();
+    return { membershipId: membership!.id, userAppId: membership!.user.id };
+  } finally { await context.close(); }
 }
 
 // Dựng đủ chuỗi center đã xác nhận gói + manager đã bổ nhiệm; trả phiên manager đang đăng nhập.
@@ -428,7 +376,7 @@ async function capStudent(
     { idempotencyKey: khoaIdempotency });
   expect(tao.status()).toBe(202);
   const traLoi = (await tao.json()) as MutationTraLoi;
-  expect(traLoi.completed).toBe(false);
+  expect(traLoi.operation?.completed).toBe(false);
   expect(traLoi.handoff?.username).toBe(username);
   const matKhauTam = traLoi.handoff?.temporaryPassword ?? "";
   expect(matKhauTam.length).toBeGreaterThan(0);
@@ -1021,12 +969,9 @@ test("giao diện quản trị: trang classes hiển thị lớp và khóa", asy
   const daTao: NguoiDungTest[] = [];
   try {
     const setup = await dungCenterLopKhoa(page, origin, env, daTao, 3);
-    // Như test giao diện của center-administration.spec.ts: phiên đăng nhập ở backend
-    // origin, test này còn cần topology một origin để trình duyệt đã đăng nhập tới
-    // được giao diện Next; khi chưa có, khẳng định đỏ đúng.
     await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/classes`);
-    await expect(page.getByText(setup.tenLop)).toBeVisible();
-    await expect(page.getByText(setup.tenKhoa)).toBeVisible();
+    await page.getByRole("button", { name: setup.tenLop, exact: true }).click();
+    await expect(page.getByRole("heading", { name: `Khóa: ${setup.tenKhoa}`, exact: true })).toBeVisible();
   } finally {
     await xoaNguoiDung(env, daTao);
   }

@@ -1,0 +1,16 @@
+{
+	admin off
+}
+
+http://127.0.0.1:8080 {
+	@backend path /api /api/* /oauth2/* /login /login/* /logout /logout/* /actuator/*
+	handle @backend {
+		reverse_proxy 127.0.0.1:18080 {
+			header_up X-Forwarded-Port 8080
+			header_up -X-Forwarded-Prefix
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3001
+	}
+}

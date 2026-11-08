@@ -4,10 +4,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -32,8 +35,8 @@ import tools.jackson.databind.json.JsonMapper;
  * hiện hành và chủ sở hữu của personal workspace — theo ngoại lệ SQL đã ghi ở mục 10 của hợp đồng
  * authorization (mở rộng cho route giảng dạy): quyết định có hiệu lực ngay từ dữ kiện nguồn, không
  * chờ projection áp xong, nên thu hồi phân công/membership chặn lời gọi tiếp theo trong cùng phiên.
- * Eligibility của actor vẫn do fence dùng chung xử lý khi phiên resolve workspace của mình; actor
- * không có tài khoản directory thì {@link ProtectedActionExecutor#actorUserId} fail-closed.
+ * Mỗi request đồng bộ eligibility hiện hành qua ACCOUNT/target fence trước khi quyết role bằng SQL;
+ * khóa workspace bao trọn kiểm tra role, đọc/ghi nguồn và ghi operation tới commit.
  *
  * <p>Mọi đọc ghi chạm bảng giảng dạy (đang bật RLS theo context workspace) chạy trong {@link
  * WorkspaceTransaction#inWorkspace} để context được đặt trước truy vấn đầu tiên; thiếu context thì
@@ -49,6 +52,7 @@ public class TeachingRouteSupport {
     private final TeachingRepository repository;
     private final WorkspaceTransaction workspaceTransaction;
     private final JdbcTemplate jdbc;
+    private final ResourceMutationCoordinator coordinator;
 
     public TeachingRouteSupport(
             ProtectedActionExecutor executor,
@@ -56,13 +60,15 @@ public class TeachingRouteSupport {
             TeachingPolicyProjector projector,
             TeachingRepository repository,
             WorkspaceTransaction workspaceTransaction,
-            JdbcTemplate jdbc) {
+            JdbcTemplate jdbc,
+            ResourceMutationCoordinator coordinator) {
         this.executor = executor;
         this.idempotency = idempotency;
         this.projector = projector;
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
         this.jdbc = jdbc;
+        this.coordinator = coordinator;
     }
 
     /** Một trang danh sách đã lọc quyền: chỉ các dòng actor được phép thấy, không lộ tổng số. */
@@ -78,8 +84,33 @@ public class TeachingRouteSupport {
         return executor.actorUserId(authentication);
     }
 
+    /** Eligibility qua ACCOUNT fence; khóa workspace trước mọi kiểm tra quyền và dữ kiện nguồn. */
+    public <T> T withEligibleActor(
+            Authentication authentication,
+            HttpServletRequest request,
+            UUID workspaceId,
+            Function<UUID, T> work) {
+        UUID actor = actor(authentication);
+        return executor.executeForActor(
+                authentication,
+                request,
+                List.of(
+                        new ProtectedActionExecutor.Target(
+                                NativePolicyTemplates.profileKey(actor),
+                                List.of(
+                                        PermissionCatalog.ProfileScope.WORKSPACE_LIST
+                                                .scopeName()))),
+                () ->
+                        inWorkspace(
+                                workspaceId,
+                                () -> {
+                                    coordinator.lockWorkspace(workspaceId);
+                                    return work.apply(actor);
+                                }));
+    }
+
     /** Chạy một thao tác trong transaction có context workspace cho RLS. */
-    public <T> T inWorkspace(UUID workspaceId, Supplier<T> work) {
+    private <T> T inWorkspace(UUID workspaceId, Supplier<T> work) {
         // Supplier của route luôn trả đáp án; inWorkspace chỉ trả null khi callback trả null.
         return Objects.requireNonNull(
                 workspaceTransaction.inWorkspace(workspaceId, work), "route result");

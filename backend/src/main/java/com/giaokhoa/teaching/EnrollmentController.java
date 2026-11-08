@@ -3,6 +3,7 @@ package com.giaokhoa.teaching;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -58,11 +59,13 @@ public class EnrollmentController {
                     @PathVariable UUID courseSubjectId,
                     @RequestParam(value = "cursor", required = false) @Nullable String cursor,
                     @RequestParam(value = "limit", required = false) @Nullable Integer limit,
-                    Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+                    Authentication authentication,
+                    HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     repository
                             .findCourseSubjectScope(workspaceId, courseSubjectId)
                             .orElseThrow(() ->
@@ -87,15 +90,17 @@ public class EnrollmentController {
             @PathVariable UUID workspaceId,
             @RequestBody @Nullable EnrollmentBatchRequest body,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         EnrollmentBatchRequest request =
                 body == null ? new EnrollmentBatchRequest(List.of(), List.of()) : body;
         String path = "/api/workspaces/" + workspaceId + "/enrollments";
         String hash = support.payloadHash("POST", path, request);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     requireBatchTargetsInWorkspace(
                             workspaceId, request.classStudentIds(), request.courseSubjectIds());
@@ -115,13 +120,20 @@ public class EnrollmentController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID enrollmentId,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        support.requireAdmin(actor, workspaceId);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         String path = "/api/workspaces/" + workspaceId + "/enrollments/" + enrollmentId;
         String hash = support.payloadHash("DELETE", path, null);
-        return support.receipt(
-                enrollments.revokeEnrollment(actor, workspaceId, enrollmentId, key, hash));
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
+                workspaceId,
+                actor -> {
+                    support.requireAdmin(actor, workspaceId);
+                    return support.receipt(
+                            enrollments.revokeEnrollment(
+                                    actor, workspaceId, enrollmentId, key, hash));
+                });
     }
 
     /**

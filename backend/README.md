@@ -50,3 +50,32 @@ Sau `-Pintegration verify`, chạy `node infra/keycloak/verify-oidc-logout.mjs` 
 ## Hỗ trợ khôi phục tài khoản không email
 
 Platform operator xác minh danh tính và ghi chú trước khi chọn **Đã xác minh danh tính**: yêu cầu giữ `VERIFIED`, chưa báo hoàn tất. Operator có thẩm quyền trên Keycloak đặt credential tạm, bàn giao qua kênh riêng cho đúng người dùng và kiểm tra việc bàn giao; sau đó ghi chú và chọn **Xác nhận đã khôi phục và bàn giao** (`COMPLETE`). Không nhập credential vào ghi chú, không gửi qua center, danh sách hoặc operation status. Lỗi hoặc chưa bàn giao thì giữ `VERIFIED`; `REJECT` không đổi credential. Mỗi mutation dùng `Idempotency-Key`; resolve gửi `If-Match` theo `version` của yêu cầu đang xem.
+
+## E2E frontend và backend thật
+
+Sau `clean verify` bằng JDK 25 và `npm --prefix frontend ci`, nạp `TEST_*` đúng stack TEST
+ở trên rồi chạy:
+
+```sh
+export NATIVE_GATE_APP_ORIGIN=http://127.0.0.1:8080
+export TEST_FRONTEND_ORIGIN=http://127.0.0.1:8080
+export BACKEND_INTERNAL_URL=http://127.0.0.1:18080
+npm --prefix frontend run test:e2e
+```
+
+Playwright tự chạy JAR backend ở 18080 với schema TEST ngẫu nhiên, build/chạy Next production
+ở 3001 và Caddy
+TEST ở 8080 theo cùng cách chia route của gateway DEV. Trình duyệt dùng duy nhất origin
+8080 cho UI, API, cookie, CSRF và OIDC; không nối vào DEV. Playwright dừng cả ba tiến trình
+khi kết thúc. PostgreSQL/Keycloak/Mailpit TEST hiện có được giữ nguyên. Ở local schema
+`e2e_*` được giữ để chẩn đoán; CI dùng database TEST dùng một lần. Thiếu origin trong CI
+hoặc khi chạy nhóm giảng dạy là lỗi cấu hình, không thay bằng skip. Nhóm
+`teaching-ui-regressions` dùng HTTP fixture để kiểm tra hành vi UI, tách biệt với E2E
+`teaching-administration` dùng backend/Keycloak thật.
+
+Runner dùng `TEST_KEYCLOAK_MASTER_USERNAME/PASSWORD` để chuẩn bị riêng realm `giaokhoa-it`:
+email/lastName không bắt buộc theo bootstrap production, redirect sau logout về origin TEST và
+back-channel qua `host.docker.internal:18080`. Chạy lại `docker compose up -d` theo file
+TEST hiện tại để container có mapping `host-gateway`; không xóa volume hay đổi realm DEV.
+Chỉ một lượt E2E dùng các cổng 8080/18080/3001 tại một thời điểm; có server cũ thì runner
+báo lỗi thay vì tự dùng lại gateway DEV.

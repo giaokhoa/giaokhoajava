@@ -3,6 +3,7 @@ package com.giaokhoa.teaching;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -75,11 +76,13 @@ public class CourseController {
             @PathVariable UUID classId,
             @RequestParam(value = "cursor", required = false) @Nullable String cursor,
             @RequestParam(value = "limit", required = false) @Nullable Integer limit,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     if (!support.canReadClass(actor, workspaceId, classId)) {
                         // Lớp không tồn tại trả 404; lớp tồn tại nhưng không được đọc trả 403.
                         repository
@@ -102,14 +105,16 @@ public class CourseController {
             @PathVariable UUID classId,
             @RequestBody @Nullable CourseCreateRequest body,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         CourseCreateRequest request = body == null ? new CourseCreateRequest("", List.of()) : body;
         String path = "/api/workspaces/" + workspaceId + "/classes/" + classId + "/courses";
         String hash = support.payloadHash("POST", path, request);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -132,11 +137,13 @@ public class CourseController {
     public ResponseEntity<CourseService.CourseView> getCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     CourseService.CourseView view = courses.getCourse(workspaceId, courseId);
                     if (!support.canReadCourse(actor, workspaceId, view.classId())) {
                         throw courseNotFound();
@@ -152,14 +159,16 @@ public class CourseController {
             @RequestBody @Nullable NameRequest body,
             @RequestHeader("Idempotency-Key") String key,
             @RequestHeader(value = "If-Match", required = false) @Nullable String ifMatch,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         NameRequest request = body == null ? new NameRequest("") : body;
         String path = "/api/workspaces/" + workspaceId + "/courses/" + courseId;
         String hash = support.payloadHash("PATCH", path, request);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -183,13 +192,15 @@ public class CourseController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         String path = "/api/workspaces/" + workspaceId + "/courses/" + courseId;
         String hash = support.payloadHash("DELETE", path, null);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -217,14 +228,16 @@ public class CourseController {
             @PathVariable UUID courseId,
             @RequestBody @Nullable SubjectAddRequest body,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         SubjectAddRequest request = body == null ? new SubjectAddRequest(List.of()) : body;
         String path = "/api/workspaces/" + workspaceId + "/courses/" + courseId + "/subjects";
         String hash = support.payloadHash("POST", path, request);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -248,8 +261,8 @@ public class CourseController {
             @PathVariable UUID courseId,
             @PathVariable UUID courseSubjectId,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         String path =
                 "/api/workspaces/"
                         + workspaceId
@@ -258,9 +271,11 @@ public class CourseController {
                         + "/subjects/"
                         + courseSubjectId;
         String hash = support.payloadHash("DELETE", path, null);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {

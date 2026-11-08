@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./support/test-environment";
 
 // E2E quản trị center ở biên trình duyệt: operator tạo center/xác nhận gói, owner bổ nhiệm
 // manager, manager mời/cấp student, mutation 202 và bí mật handoff chỉ ở response CREATE
@@ -12,11 +12,8 @@ import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environmen
 // bị skip làm bằng chứng chạy thật.
 //
 // Lưu ý kiểm chứng:
-// - Lời mời chấp nhận qua token một lần gửi bằng email: mail mời phải chứa link/token chấp
-//   nhận thì test mới trích được token; test không tự bịa token hay đọc token từ backend.
-// - Test giao diện chạy trên origin frontend (TEST_FRONTEND_ORIGIN): phiên đăng nhập ở
-//   backend origin nên test này còn cần topology một origin để trình duyệt đã đăng nhập
-//   tới được giao diện Next; khi chưa có, các khẳng định dữ liệu của test đó đỏ đúng.
+// - Token lời mời chỉ có trong response CREATE theo hợp đồng API; không có thư mời SMTP.
+// - UI và API dùng cùng origin TEST_FRONTEND_ORIGIN qua gateway do Playwright khởi động.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
 const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? "http://localhost:3001";
 
@@ -26,7 +23,7 @@ const NHOM_OPERATOR = "/gk/platform/operators";
 
 const HAN_DUNG_TEST = 300_000;
 
-type NguoiDungTest = Awaited<ReturnType<TestEnvironment["createUser"]>>;
+type NguoiDungTest = Awaited<ReturnType<TestEnvironment["createUser"]>> & { appId: string };
 type Csrf = { headerName: string; token: string };
 type SessionView = {
   authenticated?: boolean;
@@ -47,11 +44,12 @@ type MutationTraLoi = {
   state?: string;
   completed?: boolean;
   statusUrl?: string;
+  invitationToken?: string;
   operation?: OperationView;
   handoff?: { username?: string; temporaryPassword?: string };
 };
 type TrangDanhSach<T> = { items: T[]; nextCursor?: string };
-type CenterView = { id: string; name: string };
+type CenterView = { id: string; workspaceId: string; name: string };
 type MembershipView = {
   id: string;
   user: { id: string; username: string; displayName?: string };
@@ -110,8 +108,6 @@ async function dangNhapLai(
 // 503 xảy ra trước khi endpoint ghi operation của nó nên key chưa từng được ghi — giữ
 // nguyên key qua mọi lần thử để lần retry tường minh sau đó vẫn tra đúng operation;
 // tuyệt đối không thử lại 400/403/409 hay 503 với mã khác (vd: PDP lỗi).
-const THOI_GIAN_CHO_FENCE_MS = 60_000;
-const KHOANG_CHO_FENCE_MS = 1_000;
 
 async function guiMutation(
   page: Page,
@@ -122,33 +118,14 @@ async function guiMutation(
   body?: Record<string, unknown>,
   tuyChon?: { idempotencyKey?: string; headers?: Record<string, string> },
 ): Promise<APIResponse> {
-  const batDau = Date.now();
-  // Giữ nguyên key do caller truyền qua mọi lần thử: lần thử 503 chưa ghi operation nào
-  // nên key chưa từng được dùng; đổi key mới sẽ làm lần retry tường minh sau đó tra
-  // không thấy operation và bị coi là mutation mới (vd: 409 USERNAME_TAKEN ở test 5).
-  const khoaIdempotency = tuyChon?.idempotencyKey ?? randomUUID();
-  for (;;) {
-    const traLoi = await page.request.fetch(`${origin}${path}`, {
-      method,
-      headers: {
-        [csrf.headerName]: csrf.token,
-        "Idempotency-Key": khoaIdempotency,
-        ...(tuyChon?.headers ?? {}),
-      },
-      data: body,
-    });
-    if (traLoi.status() !== 503) return traLoi;
-    let ma: unknown;
-    try {
-      ma = ((await traLoi.json()) as { code?: unknown }).code;
-    } catch {
-      return traLoi;
-    }
-    if (ma !== "AUTHORIZATION_NOT_READY" || Date.now() - batDau >= THOI_GIAN_CHO_FENCE_MS) {
-      return traLoi;
-    }
-    await page.waitForTimeout(KHOANG_CHO_FENCE_MS);
-  }
+  return appRequestWhenReady(page, `${origin}${path}`, {
+    method, data: body,
+    headers: {
+      [csrf.headerName]: csrf.token,
+      "Idempotency-Key": tuyChon?.idempotencyKey ?? randomUUID(),
+      ...(tuyChon?.headers ?? {}),
+    },
+  });
 }
 
 function layOperationId(traLoi: MutationTraLoi): string {
@@ -181,13 +158,22 @@ async function choOperationThanhCong(
 }
 
 async function taoNguoiDung(
-  env: TestEnvironment,
+  page: Page, origin: string, env: TestEnvironment,
   nhom: string | null,
   daTao: NguoiDungTest[],
 ): Promise<NguoiDungTest> {
-  const user = await env.createUser();
+  const user = { ...await env.createUser(), appId: "" };
   daTao.push(user);
   if (nhom) await env.addToRealmGroup(user, nhom);
+  // ID directory của ứng dụng khác sub Keycloak; bootstrap bằng phiên thật trước khi làm target.
+  const context = await page.context().browser()!.newContext();
+  try {
+    const temporaryPage = await context.newPage();
+    await dangNhapQuaUngDung(temporaryPage, origin, user);
+    const session = await laySessionView(temporaryPage, origin);
+    expect(session.user?.id).toBeTruthy();
+    user.appId = session.user!.id!;
+  } finally { await context.close(); }
   return user;
 }
 
@@ -202,11 +188,11 @@ async function xoaNguoiDung(env: TestEnvironment, daTao: NguoiDungTest[]): Promi
 }
 
 async function layDanhSachCenter(page: Page, origin: string): Promise<CenterView[]> {
-  const response = await page.request.get(`${origin}/api/platform/centers`);
+  const response = await appRequestWhenReady(page, `${origin}/api/platform/centers`);
   expect(response.status()).toBe(200);
-  const body = (await response.json()) as TrangDanhSach<CenterView>;
-  expect(Array.isArray(body.items)).toBe(true);
-  return body.items;
+  const body = (await response.json()) as CenterView[];
+  expect(Array.isArray(body)).toBe(true);
+  return body;
 }
 
 async function layDanhSachThanhVien(
@@ -214,7 +200,7 @@ async function layDanhSachThanhVien(
   origin: string,
   workspaceId: string,
 ): Promise<MembershipView[]> {
-  const response = await page.request.get(`${origin}/api/workspaces/${workspaceId}/memberships`);
+  const response = await appRequestWhenReady(page, `${origin}/api/workspaces/${workspaceId}/memberships`);
   expect(response.status()).toBe(200);
   const body = (await response.json()) as TrangDanhSach<MembershipView>;
   expect(Array.isArray(body.items)).toBe(true);
@@ -222,7 +208,7 @@ async function layDanhSachThanhVien(
 }
 
 async function layDanhSachWorkspaceCuaToi(page: Page, origin: string): Promise<WorkspaceView[]> {
-  const response = await page.request.get(`${origin}/api/me/workspaces`);
+  const response = await appRequestWhenReady(page, `${origin}/api/me/workspaces`);
   expect(response.status()).toBe(200);
   const workspaces = (await response.json()) as WorkspaceView[];
   expect(Array.isArray(workspaces)).toBe(true);
@@ -248,7 +234,7 @@ async function taoCenter(
   const centers = await layDanhSachCenter(page, origin);
   const center = centers.find((item) => item.name === tenCenter);
   expect(center).toBeTruthy();
-  return { workspaceId: center!.id, tenCenter };
+  return { workspaceId: center!.workspaceId, tenCenter };
 }
 
 async function xacNhanGoi(
@@ -258,7 +244,8 @@ async function xacNhanGoi(
   workspaceId: string,
 ): Promise<void> {
   const validFrom = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  // Native time policy và SubscriptionService lưu mốc thời gian tới giây.
+  const expiresAt = new Date(Math.floor(Date.now() / 1000) * 1000 + 90 * 24 * 60 * 60 * 1000).toISOString();
   const xacNhan = await guiMutation(page, origin, csrf, "POST", "/api/platform/subscriptions", {
     workspaceId,
     validFrom,
@@ -271,57 +258,40 @@ async function xacNhanGoi(
   await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
 }
 
-// Token chấp nhận một lần chỉ tới được người được mời qua email: trích token từ link trong
-// mail mời (dạng .../invitations/{token}/accept hoặc ?token={token}).
-function trichTokenChapNhanMoi(noiDung: string): string {
-  for (const mau of [
-    /\/invitations\/([A-Za-z0-9_-]{8,})\/accept/,
-    /\/invitations\/([A-Za-z0-9_-]{8,})/,
-    /[?&]token=([A-Za-z0-9_-]{8,})/,
-  ]) {
-    const khop = noiDung.match(mau);
-    if (khop?.[1]) return khop[1];
-  }
-  return "";
-}
-
+// Nhận token một lần từ response CREATE; không đọc token từ DB hoặc dựng token giả.
 async function moiVaChapNhan(
   page: Page,
   origin: string,
-  env: TestEnvironment,
   csrfNguoiMoi: Csrf,
   workspaceId: string,
   nguoiDuocMoi: NguoiDungTest,
   roles: string[],
 ): Promise<{ membershipId: string }> {
-  const batDauChoMail = Date.now();
   const moi = await guiMutation(page, origin, csrfNguoiMoi, "POST",
     `/api/workspaces/${workspaceId}/invitations`, { email: nguoiDuocMoi.email, roles });
   expect(moi.status()).toBe(202);
   const traLoiMoi = (await moi.json()) as MutationTraLoi;
   await choOperationThanhCong(page, origin, layOperationId(traLoiMoi), traLoiMoi.statusUrl);
 
-  const mail = await env.waitForEmail(nguoiDuocMoi.email, batDauChoMail);
-  let token = "";
-  try {
-    token = trichTokenChapNhanMoi(await env.readEmailContent(mail));
-  } finally {
-    await env.deleteEmail(mail);
-  }
+  const token = traLoiMoi.invitationToken;
   expect(token).toBeTruthy();
+  // Người chấp nhận dùng context riêng, giữ nguyên phiên và CSRF của người mời.
+  const context = await page.context().browser()!.newContext();
+  try {
+    const acceptPage = await context.newPage();
+    const csrfNguoiDuocMoi = await dangNhapLai(acceptPage, origin, nguoiDuocMoi);
+    const chapNhan = await guiMutation(acceptPage, origin, csrfNguoiDuocMoi, "POST",
+      `/api/invitations/${token!}/accept`);
+    expect(chapNhan.status()).toBe(202);
+    const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
+    await choOperationThanhCong(
+      acceptPage, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
 
-  const csrfNguoiDuocMoi = await dangNhapLai(page, origin, nguoiDuocMoi);
-  const chapNhan = await guiMutation(page, origin, csrfNguoiDuocMoi, "POST",
-    `/api/invitations/${token}/accept`);
-  expect(chapNhan.status()).toBe(202);
-  const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
-  await choOperationThanhCong(
-    page, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
-
-  const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
-  const membership = thanhVien.find((item) => item.user.id === nguoiDuocMoi.id);
-  expect(membership).toBeTruthy();
-  return { membershipId: membership!.id };
+    const thanhVien = await layDanhSachThanhVien(acceptPage, origin, workspaceId);
+    const membership = thanhVien.find((item) => item.user.id === nguoiDuocMoi.appId);
+    expect(membership).toBeTruthy();
+    return { membershipId: membership!.id };
+  } finally { await context.close(); }
 }
 
 // Dựng đủ chuỗi center đã xác nhận gói + manager đã bổ nhiệm; trả phiên manager đang đăng nhập.
@@ -339,15 +309,15 @@ async function dungCenterVoiManager(
   managerMembershipId: string;
   csrfManager: Csrf;
 }> {
-  const operator = await taoNguoiDung(env, NHOM_OPERATOR, daTao);
-  const owner = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-  const ungVien = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
+  const operator = await taoNguoiDung(page, origin, env, NHOM_OPERATOR, daTao);
+  const owner = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
+  const ungVien = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
   let csrf = await dangNhapLai(page, origin, operator);
-  const { workspaceId, tenCenter } = await taoCenter(page, origin, csrf, owner.id);
+  const { workspaceId, tenCenter } = await taoCenter(page, origin, csrf, owner.appId);
   await xacNhanGoi(page, origin, csrf, workspaceId);
   csrf = await dangNhapLai(page, origin, owner);
   const { membershipId } = await moiVaChapNhan(
-    page, origin, env, csrf, workspaceId, ungVien, ["TEACHER"]);
+    page, origin, csrf, workspaceId, ungVien, ["TEACHER"]);
   csrf = await dangNhapLai(page, origin, owner);
   const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
   const membership = thanhVien.find((item) => item.id === membershipId);
@@ -381,7 +351,7 @@ async function capStudent(
     { idempotencyKey: khoaIdempotency });
   expect(tao.status()).toBe(202);
   const traLoi = (await tao.json()) as MutationTraLoi;
-  expect(traLoi.completed).toBe(false);
+  expect(traLoi.operation?.completed).toBe(false);
   expect(traLoi.handoff?.username).toBe(username);
   const matKhauTam = traLoi.handoff?.temporaryPassword ?? "";
   expect(matKhauTam.length).toBeGreaterThan(0);
@@ -417,10 +387,10 @@ test("operator tạo center: mutation 202 rồi poll tới SUCCEEDED, center có
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const operator = await taoNguoiDung(env, NHOM_OPERATOR, daTao);
-    const owner = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
+    const operator = await taoNguoiDung(page, origin, env, NHOM_OPERATOR, daTao);
+    const owner = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
     const csrf = await dangNhapLai(page, origin, operator);
-    const { workspaceId, tenCenter } = await taoCenter(page, origin, csrf, owner.id);
+    const { workspaceId, tenCenter } = await taoCenter(page, origin, csrf, owner.appId);
 
     const centers = await layDanhSachCenter(page, origin);
     expect(centers.some((center) => center.name === tenCenter)).toBe(true);
@@ -428,7 +398,7 @@ test("operator tạo center: mutation 202 rồi poll tới SUCCEEDED, center có
     // Tạo center đồng thời tạo owner membership; owner tự thấy membership của mình.
     await dangNhapLai(page, origin, owner);
     const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
-    const ownerMembership = thanhVien.find((item) => item.user.id === owner.id);
+    const ownerMembership = thanhVien.find((item) => item.user.id === owner.appId);
     expect(ownerMembership).toBeTruthy();
     expect(ownerMembership!.roles).toContain("OWNER");
   } finally {
@@ -444,12 +414,13 @@ test("operator xác nhận kỳ/gói: subscription 202 rồi poll tới SUCCEEDE
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const operator = await taoNguoiDung(env, NHOM_OPERATOR, daTao);
-    const owner = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
+    const operator = await taoNguoiDung(page, origin, env, NHOM_OPERATOR, daTao);
+    const owner = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
     const csrf = await dangNhapLai(page, origin, operator);
-    const { workspaceId } = await taoCenter(page, origin, csrf, owner.id);
+    const { workspaceId } = await taoCenter(page, origin, csrf, owner.appId);
     const validFrom = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+    // Native time policy và SubscriptionService lưu mốc thời gian tới giây.
+    const expiresAt = new Date(Math.floor(Date.now() / 1000) * 1000 + 90 * 24 * 60 * 60 * 1000).toISOString();
     const xacNhan = await guiMutation(page, origin, csrf, "POST", "/api/platform/subscriptions", {
       workspaceId,
       validFrom,
@@ -480,16 +451,16 @@ test("owner bổ nhiệm manager: PUT roles 202 rồi poll, danh sách thành vi
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const operator = await taoNguoiDung(env, NHOM_OPERATOR, daTao);
-    const owner = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const ungVien = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
+    const operator = await taoNguoiDung(page, origin, env, NHOM_OPERATOR, daTao);
+    const owner = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
+    const ungVien = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
     let csrf = await dangNhapLai(page, origin, operator);
-    const { workspaceId } = await taoCenter(page, origin, csrf, owner.id);
+    const { workspaceId } = await taoCenter(page, origin, csrf, owner.appId);
     await xacNhanGoi(page, origin, csrf, workspaceId);
 
     csrf = await dangNhapLai(page, origin, owner);
     const { membershipId } = await moiVaChapNhan(
-      page, origin, env, csrf, workspaceId, ungVien, ["TEACHER"]);
+      page, origin, csrf, workspaceId, ungVien, ["TEACHER"]);
     csrf = await dangNhapLai(page, origin, owner);
     const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
     const membership = thanhVien.find((item) => item.id === membershipId);
@@ -520,36 +491,36 @@ test("manager mời thành viên: invite 202; cấm mời OWNER; manager không 
   const daTao: NguoiDungTest[] = [];
   try {
     const setup = await dungCenterVoiManager(page, origin, env, daTao);
-    const nguoiMoi = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const nguoiMoi2 = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const nguoiMoi3 = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
+    const nguoiMoi = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
+    const nguoiMoi2 = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
+    const nguoiMoi3 = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
 
     // Manager mời thành viên mới bằng userId: 202 rồi SUCCEEDED, nhưng chưa phải thành viên
     // khi chưa chấp nhận lời mời.
     const moi = await guiMutation(page, origin, setup.csrfManager, "POST",
       `/api/workspaces/${setup.workspaceId}/invitations`,
-      { userId: nguoiMoi.id, roles: ["TEACHER"] });
+      { userId: nguoiMoi.appId, roles: ["TEACHER"] });
     expect(moi.status()).toBe(202);
     const traLoi = (await moi.json()) as MutationTraLoi;
     await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
     const thanhVien = await layDanhSachThanhVien(page, origin, setup.workspaceId);
-    expect(thanhVien.some((item) => item.user.id === nguoiMoi.id)).toBe(false);
+    expect(thanhVien.some((item) => item.user.id === nguoiMoi.appId)).toBe(false);
 
     // OWNER không nằm trong danh mục invite (lỗi field) và manager không được cấp MANAGER.
     const moiOwner = await guiMutation(page, origin, setup.csrfManager, "POST",
       `/api/workspaces/${setup.workspaceId}/invitations`,
-      { userId: nguoiMoi2.id, roles: ["OWNER"] });
+      { userId: nguoiMoi2.appId, roles: ["OWNER"] });
     expect(moiOwner.status()).toBe(400);
     const moiManager = await guiMutation(page, origin, setup.csrfManager, "POST",
       `/api/workspaces/${setup.workspaceId}/invitations`,
-      { userId: nguoiMoi3.id, roles: ["MANAGER"] });
+      { userId: nguoiMoi3.appId, roles: ["MANAGER"] });
     expect(moiManager.status()).toBe(403);
 
     // Đối chứng: owner mời MANAGER được (403 ở trên là do actor, không phải payload).
     const csrfOwner = await dangNhapLai(page, origin, setup.owner);
     const moiCuaOwner = await guiMutation(page, origin, csrfOwner, "POST",
       `/api/workspaces/${setup.workspaceId}/invitations`,
-      { userId: nguoiMoi3.id, roles: ["MANAGER"] });
+      { userId: nguoiMoi3.appId, roles: ["MANAGER"] });
     expect(moiCuaOwner.status()).toBe(202);
   } finally {
     await xoaNguoiDung(env, daTao);
@@ -637,11 +608,11 @@ test("teacher không tạo được lớp center dù đã có gói personal", as
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const operator = await taoNguoiDung(env, NHOM_OPERATOR, daTao);
-    const owner = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const teacher = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
+    const operator = await taoNguoiDung(page, origin, env, NHOM_OPERATOR, daTao);
+    const owner = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
+    const teacher = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
     let csrf = await dangNhapLai(page, origin, operator);
-    const { workspaceId } = await taoCenter(page, origin, csrf, owner.id);
+    const { workspaceId } = await taoCenter(page, origin, csrf, owner.appId);
     await xacNhanGoi(page, origin, csrf, workspaceId);
 
     // Teacher có gói personal thật: xác nhận gói cho personal workspace của chính teacher.
@@ -687,13 +658,14 @@ test("giao diện quản trị: trang members hiển thị thành viên và khô
       }
     });
     await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/members`);
-    await expect(page.getByText(username)).toBeVisible();
-    await expect(page.getByText(setup.manager.username)).toBeVisible();
+    await expect(page.getByText(username, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(setup.manager.username, { exact: true }).first()).toBeVisible();
     expect(await page.content()).not.toContain(temporaryPassword);
     for (const body of phanHoiTrang) expect(body).not.toContain(temporaryPassword);
 
+    await dangNhapLai(page, origin, setup.operator);
     await page.goto(`${frontendOrigin}/platform`);
-    await expect(page.getByText(setup.tenCenter)).toBeVisible();
+    await expect(page.getByRole("definition").filter({ hasText: setup.tenCenter })).toBeVisible();
     expect(await page.content()).not.toContain(temporaryPassword);
   } finally {
     await xoaNguoiDung(env, daTao);

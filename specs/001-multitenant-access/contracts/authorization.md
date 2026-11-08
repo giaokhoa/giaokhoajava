@@ -260,7 +260,12 @@ Mutation của các service dữ kiện nguồn không tự ghi operation (lớp
 kèm authorization operation cho bundle của mọi target bị chạm tới trong cùng transaction;
 mutation ghi danh/phân công tự ghi operation ở service. Projection vẫn được worker áp như bình
 thường cho các bề mặt dùng PDP thật (capabilities, sample action); riêng quyết định cho phép
-của các route trên không chờ fence/projection.
+của các route trên không chờ projection WORKSPACE. Mỗi business request vẫn phải đồng bộ
+eligibility hiện hành qua ACCOUNT/target fence và PDP profile của chính actor; không dựa vào
+việc trình duyệt đã gọi danh sách workspace trước đó. Mutation lấy khóa workspace trước khi
+kiểm tra role, liệt kê target bị ảnh hưởng hoặc đọc/ghi nguồn, giữ tới commit operation.
+Chấp nhận lời mời bổ sung membership/role phải ghi lại các bundle giảng dạy bị ảnh hưởng
+trong cùng revision như đường thay role và xác nhận gói.
 
 ### Lý do
 

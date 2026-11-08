@@ -79,8 +79,8 @@ jq -s '.[0] * (.[1] | {
 })' "$TMP/realm-current.json" "$BASELINE" > "$TMP/realm-update.json"
 admin_send PUT '' "$TMP/realm-update.json"
 
-# Profile mặc định của Keycloak có thể đòi email. Không bao giờ ép điều đó với học viên do center cấp.
-admin_get '/users/profile' | jq '(.attributes[] | select(.name == "email")) |= del(.required)' \
+# Tài khoản được cấp có displayName ở firstName, không bắt buộc email hay họ tách riêng.
+admin_get '/users/profile' | jq '(.attributes[] | select(.name == "email" or .name == "lastName")) |= del(.required)' \
   > "$TMP/profile.json"
 admin_send PUT '/users/profile' "$TMP/profile.json"
 

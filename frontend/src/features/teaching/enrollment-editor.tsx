@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiRequest } from "../../lib/api-client";
+import { requestAllPages } from "../../lib/api-client";
 import {
   operationSucceeded,
   parsePage,
@@ -113,9 +113,7 @@ export function EnrollmentEditor({
   async function loadEnrollments() {
     setLoadError(null);
     try {
-      const result = await apiRequest<unknown>(enrollmentsPath);
-      if (result.kind !== "data") throw new Error("Phản hồi danh sách ghi danh không hợp lệ.");
-      setEnrollments(parseEnrollments(result.data));
+      setEnrollments(parseEnrollments(await requestAllPages(enrollmentsPath)));
     } catch (error) {
       setEnrollments([]);
       setLoadError(teachingErrorMessage(error, "Không tải được danh sách ghi danh."));
@@ -124,10 +122,10 @@ export function EnrollmentEditor({
 
   useEffect(() => {
     let ignore = false;
-    apiRequest<unknown>(enrollmentsPath)
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setEnrollments(parseEnrollments(result.data));
+    requestAllPages(enrollmentsPath)
+      .then((items) => {
+        if (ignore) return;
+        setEnrollments(parseEnrollments(items));
         setLoadError(null);
       })
       .catch((error: unknown) => {
