@@ -3,6 +3,7 @@ package com.giaokhoa.teaching;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectScopeRow;
@@ -10,9 +11,6 @@ import com.giaokhoa.teaching.data.TeachingRepository.HomeroomAssignmentRow;
 import com.giaokhoa.teaching.data.TeachingRepository.TeachingAssignmentRow;
 import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,7 +18,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,8 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Như các service giảng dạy khác, mỗi phương thức đặt context workspace cho transaction qua
  * {@link WorkspaceTransaction} ngay khi bắt đầu vì các bảng phân công nằm dưới RLS theo đúng
- * context đó, và các mutation trong cùng một workspace được tuần tự hoá bằng advisory lock khóa
- * theo workspace giữ tới commit như ở {@code EnrollmentService}.
+ * context đó, và các mutation trong cùng một workspace được tuần tự hoá bằng khóa workspace thống
+ * nhất giữ tới commit như ở {@code EnrollmentService}.
  */
 @Service
 public class AssignmentService {
@@ -54,19 +51,19 @@ public class AssignmentService {
     private final WorkspaceTransaction workspaceTransaction;
     private final IdempotencyService idempotency;
     private final TeachingPolicyProjector projector;
-    private final JdbcTemplate jdbc;
+    private final ResourceMutationCoordinator coordinator;
 
     public AssignmentService(
             TeachingRepository repository,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,
             TeachingPolicyProjector projector,
-            JdbcTemplate jdbc) {
+            ResourceMutationCoordinator coordinator) {
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
         this.idempotency = idempotency;
         this.projector = projector;
-        this.jdbc = jdbc;
+        this.coordinator = coordinator;
     }
 
     /** Một phân công giảng dạy: định danh dòng, giáo viên và trạng thái hiện hành tối thiểu. */
@@ -408,24 +405,12 @@ public class AssignmentService {
     }
 
     /**
-     * Tuần tự hoá mọi mutation giảng dạy của một workspace trong transaction hiện hành bằng
-     * advisory lock của PostgreSQL, cùng cách CenterService khoá: lock tự nhả khi transaction kết
-     * thúc nên không cần đường mở khoá riêng.
+     * Tuần tự hoá mọi mutation của một workspace trên khóa workspace thống nhất của {@link
+     * ResourceMutationCoordinator} — cùng một khóa với CenterService, SubscriptionService và các
+     * service lớp/khóa — để dữ kiện nguồn mà projector chiếu không bao giờ thiếu một mutation đang
+     * chạy đồng thời của cùng workspace.
      */
     private void lockWorkspace(UUID workspaceId) {
-        jdbc.query("SELECT pg_advisory_xact_lock(?)", _ -> {}, lockId("teaching:" + workspaceId));
-    }
-
-    private static long lockId(String key) {
-        try {
-            byte[] digest =
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(
-                                    ("giaokhoa:teaching-service:" + key)
-                                            .getBytes(StandardCharsets.UTF_8));
-            return java.nio.ByteBuffer.wrap(digest).getLong();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        coordinator.lockWorkspace(workspaceId);
     }
 }
