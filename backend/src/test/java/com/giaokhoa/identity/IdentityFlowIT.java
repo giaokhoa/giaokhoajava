@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.support.OidcFormLogin;
@@ -803,38 +804,29 @@ class IdentityFlowIT extends IntegrationEnvironment {
                                 null,
                                 false,
                                 "Password1-" + UUID.randomUUID()));
-        var writer = webContext.getBean(com.giaokhoa.authorization.policy.PolicyGraphWriter.class);
+        var directory =
+                webContext.getBean(
+                        com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient.class);
         try {
             seedAccount(subject, "SELF_REGISTERED", username + "@example.test", true);
             UUID target = seedAccount(targetSubject, "CENTER_ISSUED", null, false);
             var submitted = webContext.getBean(RecoveryService.class).submit(target, target, null);
-            writer.apply(
-                    new com.giaokhoa.authorization.policy.PolicyGraph(
-                            "platform",
-                            "account.recover",
-                            List.of(),
-                            List.of(
-                                    com.giaokhoa.authorization.policy.PolicyGraph.Source.of(
-                                            new com.giaokhoa.authorization.policy.PolicyGraph.Gate
-                                                    .Actor(subject)))));
+            directory.setRealmGroupMembership(
+                    subject, NativePolicyTemplates.PLATFORM_OPERATORS_GROUP, true);
             try (var session = openSession(username, password, subject)) {
                 String path = "/api/platform/recovery-requests/" + submitted.id() + "/resolve";
                 String key = "approve-" + UUID.randomUUID();
                 var early =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "early-" + UUID.randomUUID())
-                                                .header("If-Match", "\"0\"")
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã bàn giao\"}"))
-                                .andReturn()
-                                .getResponse();
+                        requestWhenReady(
+                                mockMvc(),
+                                post(path)
+                                        .cookie(session.cookie())
+                                        .with(csrf())
+                                        .header("Idempotency-Key", "early-" + UUID.randomUUID())
+                                        .header("If-Match", "\"0\"")
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(
+                                                "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã bàn giao\"}"));
                 assertEquals(409, early.getStatus());
 
                 String approval =
@@ -957,7 +949,6 @@ class IdentityFlowIT extends IntegrationEnvironment {
                                 submitted.id()));
             }
         } finally {
-            writer.retractRoot("platform", "account.recover");
             deleteUser(subject);
             deleteUser(targetSubject);
         }

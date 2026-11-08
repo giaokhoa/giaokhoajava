@@ -1,5 +1,6 @@
 package com.giaokhoa.identity;
 
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class IssuedStudentRegistrar {
     private final JdbcTemplate jdbc;
 
-    public IssuedStudentRegistrar(JdbcTemplate jdbc) {
+    private final ResourceMutationCoordinator coordinator;
+
+    public IssuedStudentRegistrar(JdbcTemplate jdbc, ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
+        this.coordinator = coordinator;
     }
 
     /** Kết quả cấp: user, personal workspace và membership STUDENT, kèm cờ tạo mới. */
@@ -54,6 +58,7 @@ public class IssuedStudentRegistrar {
             throw new IllegalArgumentException("Keycloak subject and username are required");
         }
 
+        coordinator.lockWorkspace(centerWorkspaceId);
         List<Map<String, Object>> centers =
                 jdbc.queryForList(
                         "SELECT kind, state FROM workspace WHERE id = ?", centerWorkspaceId);

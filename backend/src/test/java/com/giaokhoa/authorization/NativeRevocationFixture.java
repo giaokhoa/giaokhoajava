@@ -705,6 +705,25 @@ final class NativeRevocationFixture implements AutoCloseable {
     }
 
     private List<Map<String, Object>> getList(String path) {
+        boolean paginated =
+                path.endsWith("/resource")
+                        || path.endsWith("/policy")
+                        || path.endsWith("/permission/scope");
+        if (!paginated) {
+            return getListPage(path);
+        }
+        List<Map<String, Object>> all = new java.util.ArrayList<>();
+        for (int first = 0; ; first += 1000) {
+            List<Map<String, Object>> page = getListPage(path + "?first=" + first + "&max=1000");
+            all.addAll(page);
+            if (page.size() < 1000) {
+                return all;
+            }
+        }
+    }
+
+    private List<Map<String, Object>> getListPage(String path) {
+
         List<Map<String, Object>> result =
                 http.get()
                         .uri(admin(path))

@@ -44,6 +44,32 @@ class ProtectedActionExecutorTest {
             new ProtectedActionExecutor.Target(KEY, List.of("enter"));
 
     @Test
+    void actorOnlyActionStillSynchronizesEligibilityAndUsesThePdpFence() {
+        Fixture fixture = new Fixture(Map.of(KEY, "recorded-resource"));
+        Manifest manifest =
+                new Manifest(
+                        ACTOR, null, List.of(KEY), Map.of(KEY, "recorded-resource"), List.of());
+        when(fixture.resolver.resolve(ACTOR, null, List.of(KEY))).thenReturn(manifest);
+        when(fixture.fence.acquire(manifest))
+                .thenReturn(new AuthorizationFence.Snapshot(manifest, Map.of()));
+        when(fixture.decisions.isAllowed(any(), any(), any())).thenReturn(true);
+        assertEquals(
+                "done",
+                fixture.executor.executeForActor(
+                        fixture.authentication,
+                        new MockHttpServletRequest(),
+                        List.of(TARGET),
+                        () -> "done"));
+        InOrder ordered =
+                inOrder(fixture.eligibility, fixture.resolver, fixture.fence, fixture.decisions);
+        ordered.verify(fixture.eligibility).synchronizeEligibility(ACTOR);
+        ordered.verify(fixture.resolver).resolve(ACTOR, null, List.of(KEY));
+        ordered.verify(fixture.fence).acquire(manifest);
+        ordered.verify(fixture.decisions).isAllowed(any(), any(), any());
+        ordered.verify(fixture.fence).atSnapshot(any(), any());
+    }
+
+    @Test
     void evaluateUsesTheRecordedResourceIdAndReturnsEveryPair() {
         Fixture fixture = new Fixture(Map.of(KEY, "recorded-resource"));
         when(fixture.decisions.isAllowed(any(), any(), any())).thenReturn(true);

@@ -69,3 +69,18 @@ Bắt đầu lập: 2026-11-08 (theo lệnh của chủ dự án). Nguồn: báo
 
 ---
 *Sổ này do Nô tài duy trì. Mỗi điểm mới phát hiện trong review/cổng các issue tiếp theo (#44 → #101) phải được bổ sung vào đây trước khi issue đó đóng.*
+
+## Cập nhật sửa lỗi review #170
+
+- Eligibility của các route thành viên nay dùng PDP profile + ACCOUNT fence chung; ngoại lệ
+  role/gói SQL ở A1 vẫn giữ phạm vi cũ. Không cho SELF_REGISTERED chưa verified đi vào nghiệp vụ.
+- B15 đã sửa tại điểm vào platform: dùng pipeline ACCOUNT/target, không cần gọi workspace trước.
+  Frontend thử lại riêng 503 AUTHORIZATION_NOT_READY cho cả đọc và ghi; 403 và lỗi dịch vụ khác
+  không được tự thử lại. A14 cũng hết nhân bản guard ở ba controller platform.
+- Desired bundle được dựng dưới khóa nguồn workspace chung, bao trọn ghi dữ kiện và operation;
+  hai confirmation khác key/ref không ghi đè hash bằng snapshot thiếu kỳ của nhau.
+- Đồng bộ group xét mỗi user một lần theo membership ACTIVE hiện hành, không để row REVOKED
+  lịch sử xóa group của người đã tham gia lại. Không phục hồi các role đã thu hồi.
+- Fixture TEST tra policy/permission theo tên và đọc đủ trang collection dùng chung; không coi
+  trang đầu là toàn bộ resource/nguồn tham chiếu khi realm đã tích lũy dữ liệu. Test recovery US1
+  dùng group operator thật thay cho grant riêng bỏ qua eligibility của hợp đồng.

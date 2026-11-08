@@ -171,6 +171,24 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
         }
     }
 
+    /** Chỉ thử lại fence chưa sẵn sàng; lỗi danh tính/dịch vụ khác vẫn được trả cho assertion. */
+    protected static org.springframework.mock.web.MockHttpServletResponse requestWhenReady(
+            org.springframework.test.web.servlet.MockMvc mvc,
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request)
+            throws Exception {
+        AtomicReference<org.springframework.mock.web.MockHttpServletResponse> last =
+                new AtomicReference<>();
+        await().atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(250))
+                .until(() -> {
+                    var response = mvc.perform(request).andReturn().getResponse();
+                    last.set(response);
+                    return response.getStatus() != 503
+                            || !response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
+                });
+        return java.util.Objects.requireNonNull(last.get());
+    }
+
     static void validateTargets(String database, String issuer) {
         boolean lane1 = TEST_DB.equals(database) && TEST_ISSUER.equals(issuer);
         boolean lane2 = TEST_DB_LANE_2.equals(database) && TEST_ISSUER_LANE_2.equals(issuer);

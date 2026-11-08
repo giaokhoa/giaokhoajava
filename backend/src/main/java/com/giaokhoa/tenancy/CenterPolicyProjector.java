@@ -154,7 +154,7 @@ public class CenterPolicyProjector {
                                 workspaceId, NativePolicyTemplates.PrerequisiteRole.PARENTS));
         List<Map<String, Object>> members =
                 jdbc.queryForList(
-                        "SELECT m.user_id, u.keycloak_sub, m.state FROM center_membership m"
+                        "SELECT DISTINCT m.user_id, u.keycloak_sub FROM center_membership m"
                                 + " JOIN user_account u ON u.id = m.user_id"
                                 + " WHERE m.workspace_id = ?",
                         workspaceId);
@@ -162,10 +162,7 @@ public class CenterPolicyProjector {
             UUID userId = (UUID) Objects.requireNonNull(member.get("user_id"), "user_id");
             String subject =
                     Objects.requireNonNull((String) member.get("keycloak_sub"), "keycloak_sub");
-            Set<String> desired =
-                    "ACTIVE".equals(member.get("state"))
-                            ? desiredGroups(workspaceId, userId)
-                            : Set.of();
+            Set<String> desired = desiredGroups(workspaceId, userId);
             for (String groupPath : groupPaths) {
                 boolean shouldBeMember = desired.contains(groupPath);
                 if (directory.isRealmGroupMember(subject, groupPath) != shouldBeMember) {
@@ -177,6 +174,15 @@ public class CenterPolicyProjector {
 
     private Set<String> desiredGroups(UUID workspaceId, UUID userId) {
         Set<String> groups = new java.util.HashSet<>();
+        if (jdbc.queryForList(
+                        "SELECT id FROM center_membership WHERE workspace_id = ? AND user_id = ?"
+                                + " AND state = 'ACTIVE'",
+                        UUID.class,
+                        workspaceId,
+                        userId)
+                .isEmpty()) {
+            return Set.of();
+        }
         groups.add(NativePolicyTemplates.membersGroup(workspaceId));
         Set<MembershipRole.Role> roles = EnumSet.noneOf(MembershipRole.Role.class);
         jdbc.queryForList(
