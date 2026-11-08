@@ -121,15 +121,28 @@ async function submitMutation(
   return result.data;
 }
 
-// Cùng một payload (kèm version đích) luôn dùng lại một key giữa các lần gửi lại sau lỗi,
-// đúng mẫu biên nhận idempotency của các form quản trị khác.
-function attemptKey(store: Map<string, string>, signature: string): string {
+// Cùng một payload (kèm version đích) dùng lại một key giữa các lần gửi lại khi
+// operation chưa hoàn tất, đúng mẫu biên nhận idempotency của các form quản trị khác.
+export function attemptKey(store: Map<string, string>, signature: string): string {
   let key = store.get(signature);
   if (!key) {
     key = crypto.randomUUID();
     store.set(signature, key);
   }
   return key;
+}
+
+// Operation đã hoàn tất thì backend chỉ replay đúng operation đó theo key cũ, nên
+// giữ key sẽ chặn thao tác mới cùng payload (ví dụ gửi lại yêu cầu sau khi liên kết
+// cũ bị từ chối hoặc bị gỡ). Bỏ key khi hoàn tất; chưa hoàn tất thì giữ cho lần gửi lại.
+export function closeAttempt(
+  store: Map<string, string>,
+  signature: string,
+  operation: Pick<TrackedOperation, "completed">,
+): void {
+  if (operation.completed) {
+    store.delete(signature);
+  }
 }
 
 function OperationPanel({
@@ -209,7 +222,7 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
   const [loadedMemberships, setLoadedMemberships] = useState<{ key: string; items: Membership[] } | null>(null);
   const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
   const [studentUserId, setStudentUserId] = useState("");
-  const [tracked, setTracked] = useState<{ key: string; operation: TrackedOperation } | null>(null);
+  const [tracked, setTracked] = useState<{ key: string; operation: TrackedOperation; signature: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const attempts = useRef(new Map<string, string>());
@@ -217,6 +230,7 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
   const links = loadedLinks?.key === contextKey ? loadedLinks.links : null;
   const listError = loadError?.key === contextKey ? loadError.message : null;
   const operation = tracked?.key === contextKey ? tracked.operation : null;
+  const operationSignature = tracked?.key === contextKey ? tracked.signature : null;
   const memberships = loadedMemberships?.key === contextKey ? loadedMemberships.items : [];
   const { canManage, canRequest } = guardianPermissions(memberships, userId);
 
@@ -282,7 +296,10 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
       if (!nextOperation) {
         throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
       }
-      setTracked({ key: contextKey, operation: nextOperation });
+      setTracked({ key: contextKey, operation: nextOperation, signature: operationSignature ?? "" });
+      if (operationSignature) {
+        closeAttempt(attempts.current, operationSignature, nextOperation);
+      }
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
         await loadLinks();
       }
@@ -306,7 +323,8 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
       const data = await submitMutation(path, init, key);
       const nextOperation = parseTrackedOperation(data);
       if (nextOperation) {
-        setTracked({ key: contextKey, operation: nextOperation });
+        setTracked({ key: contextKey, operation: nextOperation, signature });
+        closeAttempt(attempts.current, signature, nextOperation);
         if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
           await loadLinks();
         }

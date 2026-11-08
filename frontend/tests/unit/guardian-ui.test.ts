@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  attemptKey,
+  closeAttempt,
   guardianDecisionBody,
   guardianPermissions,
   guardianRequestBody,
   parseGuardianLinks,
   type GuardianLink,
 } from "../../src/features/guardians/guardian-link-review";
+import type { TrackedOperation } from "../../src/features/identity/recovery-request-form";
 import { parsePublishedResults } from "../../src/features/guardians/published-results";
 import type { Membership } from "../../src/features/tenancy/center-administration";
 
@@ -60,6 +63,33 @@ describe("body thao tác liên kết", () => {
       .toEqual({ decision: "APPROVE", expectedVersion: 2 });
     expect(guardianDecisionBody({ ...lienKetDung, version: 5 }, "REJECT"))
       .toEqual({ decision: "REJECT", expectedVersion: 5 });
+  });
+});
+
+describe("vòng đời idempotency key của một lần gửi", () => {
+  const signature = JSON.stringify(["u-parent", "w-1", "request", { studentUserId: "u-student" }]);
+  const operation = (completed: boolean): Pick<TrackedOperation, "completed"> => ({ completed });
+
+  it("gửi lại khi operation chưa hoàn tất vẫn giữ key cũ để backend replay đúng operation", () => {
+    const store = new Map<string, string>();
+    const key = attemptKey(store, signature);
+    closeAttempt(store, signature, operation(false));
+    expect(attemptKey(store, signature)).toBe(key);
+  });
+
+  it("operation đã hoàn tất thì lần gửi mới cho cùng học sinh sinh key mới", () => {
+    const store = new Map<string, string>();
+    const key = attemptKey(store, signature);
+    closeAttempt(store, signature, operation(true));
+    const nextKey = attemptKey(store, signature);
+    expect(nextKey).not.toBe(key);
+    expect(attemptKey(store, signature)).toBe(nextKey);
+  });
+
+  it("payload khác nhau dùng key khác nhau", () => {
+    const store = new Map<string, string>();
+    const other = JSON.stringify(["u-parent", "w-1", "request", { studentUserId: "u-student-2" }]);
+    expect(attemptKey(store, other)).not.toBe(attemptKey(store, signature));
   });
 });
 
