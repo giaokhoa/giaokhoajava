@@ -237,6 +237,30 @@
         <Field name="~(repository|workspaceTransaction)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (TeachingRepository, JdbcTemplate); không sao chép khi inject vào lớp hỗ trợ route giảng dạy. -->
+    <Match>
+        <Class name="com.giaokhoa.teaching.TeachingRouteSupport"/>
+        <Field name="~(repository|jdbc)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (ClassService, TeachingRepository); không sao chép khi inject vào controller lớp/roster. -->
+    <Match>
+        <Class name="com.giaokhoa.teaching.ClassController"/>
+        <Field name="~(classes|repository)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (CourseService, TeachingRepository); không sao chép khi inject vào controller khóa/môn. -->
+    <Match>
+        <Class name="com.giaokhoa.teaching.CourseController"/>
+        <Field name="~(courses|repository)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- TeachingRepository là dependency singleton do Spring quản lý; không sao chép khi inject vào controller ghi danh. -->
+    <Match>
+        <Class name="com.giaokhoa.teaching.EnrollmentController"/>
+        <Field name="repository"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Test cố ý truyền null trong assertThrows để xác nhận validation của constructor. -->
     <Match>
         <Class name="com.giaokhoa.authorization.model.AuthorizationModelTest"/>
