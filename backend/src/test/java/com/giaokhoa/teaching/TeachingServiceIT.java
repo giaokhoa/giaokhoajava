@@ -332,7 +332,8 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         workspace, clazz.id(), "Khóa cổng gói", List.of(subjects.getFirst()));
         seedSubscription(workspace, -60, -1, owner);
 
-        assertSubscriptionBlocked(() -> classes.renameClass(workspace, clazz.id(), "Tên lớp mới"));
+        assertSubscriptionBlocked(
+                () -> classes.renameClass(workspace, clazz.id(), "Tên lớp mới", "\"0\""));
         assertSubscriptionBlocked(
                 () -> classes.addStudents(workspace, clazz.id(), List.of(member)));
         assertSubscriptionBlocked(() ->
@@ -342,7 +343,8 @@ class TeachingServiceIT extends IntegrationEnvironment {
                 () -> courses.addSubjects(workspace, course.id(), List.of(subjects.get(1))));
 
         // Đổi tên khóa cố ý không qua cổng gói (xem B39): gói đã hết hạn vẫn đổi tên được.
-        CourseView renamed = courses.renameCourse(workspace, course.id(), "Khóa đã đổi tên");
+        CourseView renamed =
+                courses.renameCourse(workspace, course.id(), "Khóa đã đổi tên", "\"0\"");
         assertEquals("Khóa đã đổi tên", renamed.name());
     }
 

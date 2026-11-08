@@ -56,7 +56,7 @@ public class IdempotencyService {
         return key;
     }
 
-    public void requireIfMatch(@Nullable String ifMatch, long currentVersion) {
+    public static void requireIfMatch(@Nullable String ifMatch, long currentVersion) {
         if (ifMatch == null || ifMatch.isBlank()) {
             throw new HttpProblemException(
                     HttpStatus.PRECONDITION_REQUIRED, "PRECONDITION_REQUIRED", "Thiếu If-Match.");
