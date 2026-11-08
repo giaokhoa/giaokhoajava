@@ -212,24 +212,38 @@ class PublishedResultServiceIT extends GuardianFixture {
 
     /** Ghi projection cho các kết quả và chờ operation SUCCEEDED tại revision mới. */
     private void recordResults(GuardianCenter center, UUID... resultIds) {
+        recordResults(center.workspaceId(), center.ownerId(), resultIds);
+    }
+
+    /** Ghi projection cho các kết quả của một workspace bất kỳ (center hoặc personal). */
+    private void recordResults(UUID workspaceId, UUID initiatorId, UUID... resultIds) {
         List<String> targetKeys =
                 Arrays.stream(resultIds)
-                        .map(resultId ->
-                                NativePolicyTemplates.resultKey(center.workspaceId(), resultId))
+                        .map(resultId -> NativePolicyTemplates.resultKey(workspaceId, resultId))
                         .toList();
         String payloadHash =
                 idempotency.payloadHash(
                         "POST",
-                        "/workspaces/" + center.workspaceId() + "/results",
+                        "/workspaces/" + workspaceId + "/results",
                         JSON.readTree("{\"targets\":\"" + String.join(",", targetKeys) + "\"}"));
         AuthorizationOperation operation =
                 resultProjector.recordResultChange(
-                        center.ownerId(),
-                        center.workspaceId(),
+                        initiatorId,
+                        workspaceId,
                         "published-result-it-" + UUID.randomUUID(),
                         payloadHash,
                         targetKeys);
         awaitOperationSucceeded(jdbc, operation.getId());
+    }
+
+    /** Personal workspace của một tài khoản đã seed (mỗi tài khoản có đúng một workspace này). */
+    private UUID personalWorkspaceOf(UUID accountId) {
+        return Objects.requireNonNull(
+                jdbc.queryForObject(
+                        "SELECT id FROM workspace WHERE kind = 'PERSONAL' AND owner_user_id = ?",
+                        UUID.class,
+                        accountId),
+                "Tài khoản phải có personal workspace");
     }
 
     /** Gọi service bằng đúng phiên Spring thật của user, qua session filter như request thật. */
@@ -522,6 +536,101 @@ class PublishedResultServiceIT extends GuardianFixture {
                     false);
             recordResults(center, publishedId);
             assertDenied(parent, center.workspaceId(), center.studentX());
+        } finally {
+            deleteGuardianCenter(center);
+        }
+    }
+
+    @Test
+    void approvedParentTeacherGet403AndStudentGetsEmptyListWhenNothingPublished() throws Exception {
+        GuardianCenter center = seedGuardianCenter();
+        try (var owner = openSession(center.owner());
+                var parent = openSession(center.parent());
+                var student = openSession(center.students().get(0));
+                var teacher = openSession(center.teacher())) {
+            Scenario scenario = prepareScenario(owner, center, center.workspaceId());
+            assignTeacher(
+                    owner, center.workspaceId(), scenario.courseSubjectId(), center.teacherId());
+            seedLink(
+                    center.workspaceId(),
+                    center.parentId(),
+                    center.studentX(),
+                    "APPROVED",
+                    center.managerId());
+            putParentInGuardianGroup(center, center.studentX());
+            // Chỉ có kết quả DRAFT: không ứng viên PUBLISHED nào nên nhánh đọc rỗng của B55
+            // phải chạy — phụ huynh đã duyệt và giáo viên đúng môn–khóa đều nhận 403.
+            UUID draftId =
+                    seedResult(
+                            center,
+                            center.workspaceId(),
+                            scenario,
+                            center.studentX(),
+                            seedSubmission(
+                                    center, center.workspaceId(), scenario, center.studentX()),
+                            "DRAFT",
+                            "3.0",
+                            null);
+            recordResults(center, draftId);
+
+            assertDenied(parent, center.workspaceId(), center.studentX());
+            assertDenied(teacher, center.workspaceId(), center.studentX());
+            assertEquals(
+                    0,
+                    listAs(student, center.workspaceId(), center.studentX()).size(),
+                    "Học sinh tự đọc khi chưa có kết quả công bố nào thì được danh sách rỗng");
+        } finally {
+            deleteGuardianCenter(center);
+        }
+    }
+
+    @Test
+    void personalOwnerReadsPublishedResultButOutsiderCannot() throws Exception {
+        GuardianCenter center = seedGuardianCenter();
+        try (var owner = openSession(center.owner());
+                var student = openSession(center.students().get(0));
+                var outsider = openSession(center.otherParent())) {
+            UUID personalWid = personalWorkspaceOf(center.ownerId());
+            // Personal chưa có kỳ gói: seed một kỳ để seedSubmission có subscription_period_id.
+            seedSubscription(personalWid, center.ownerId());
+            Scenario scenario = prepareScenario(owner, center, personalWid);
+            UUID publishedId =
+                    seedResult(
+                            center,
+                            personalWid,
+                            scenario,
+                            center.studentX(),
+                            seedSubmission(center, personalWid, scenario, center.studentX()),
+                            "PUBLISHED",
+                            "9.0",
+                            "Làm tốt");
+            recordResults(personalWid, center.ownerId(), publishedId);
+
+            String publishedKey = NativePolicyTemplates.resultKey(personalWid, publishedId);
+            assertTrue(
+                    resultProjector
+                            .sourcesFor(publishedKey, "read.published")
+                            .contains(
+                                    "RESULT_ACTOR|workspace="
+                                            + personalWid
+                                            + "|user="
+                                            + center.ownerId()
+                                            + "|subject="
+                                            + center.owner().subject()
+                                            + "|target="
+                                            + publishedKey
+                                            + "|scope=read.published"),
+                    "Bundle của kết quả đã công bố trong personal mang descriptor actor của owner");
+
+            List<PublishedResultView> own = listAs(owner, personalWid, center.studentX());
+            assertEquals(1, own.size(), "Owner của personal đọc được kết quả đã công bố");
+            assertEquals(publishedId, own.getFirst().id());
+            List<PublishedResultView> byStudent = listAs(student, personalWid, center.studentX());
+            assertEquals(
+                    1,
+                    byStudent.size(),
+                    "Học sinh còn ghi danh trong personal đọc được kết quả của chính mình");
+            assertDenied(outsider, personalWid, center.studentX());
         } finally {
             deleteGuardianCenter(center);
         }
