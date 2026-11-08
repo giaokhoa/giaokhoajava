@@ -250,7 +250,9 @@ class TeachingStructureIT extends TeachingFixture {
         Fixture fixture = seedTeachingCenter();
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 5A");
-            List<UUID> subjects = subjectIds(session, 4);
+            // Khóa 2 môn + thêm môn thứ 3: đủ để chứng minh thêm môn không tự ghi danh,
+            // mà không chốt danh mục tối thiểu 4 môn như hợp đồng không quy định.
+            List<UUID> subjects = subjectIds(session, 3);
             UUID courseId =
                     createCourse(
                             session,
