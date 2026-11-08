@@ -97,6 +97,7 @@ Gói hết hạn chặn invite/cấp account/thêm role; các scope thu hồi c�
 | `POST /api/workspaces/{wid}/classes` | ClassCreate → OperationView | workspace `class.create`; center owner/manager, personal owner+gói |
 | `GET /api/workspaces/{wid}/classes/{cid}` | Class metadata | class `read`; không kèm toàn roster |
 | `PATCH /api/workspaces/{wid}/classes/{cid}` | `{name}` → OperationView | class `update`; cần gói active |
+| `DELETE /api/workspaces/{wid}/classes/{cid}` | OperationView | Thu hồi lớp: chuyển REVOKED, giữ lịch sử, đóng quan hệ phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
 | `GET /api/workspaces/{wid}/classes/{cid}/students` | Class-student page | class `roster.read`; manager/owner/homeroom theo source; teacher không mặc định thấy mọi học sinh lớp |
 | `POST /api/workspaces/{wid}/classes/{cid}/students` | `{studentUserIds[]}` → OperationView | class `roster.add`; CENTER cần membership, PERSONAL cần owner tổ chức và danh tính người học hợp lệ |
 | `DELETE /api/workspaces/{wid}/classes/{cid}/students/{id}` | OperationView | class `roster.revoke`; revoke enrollment phụ thuộc, giữ lịch sử |
@@ -106,7 +107,9 @@ Gói hết hạn chặn invite/cấp account/thêm role; các scope thu hồi c�
 | `POST /api/workspaces/{wid}/classes/{cid}/courses` | CourseCreate → OperationView | class `course.create`; ít nhất một môn, đúng lớp/workspace |
 | `GET /api/workspaces/{wid}/courses/{kid}` | CourseView | course `read` |
 | `PATCH /api/workspaces/{wid}/courses/{kid}` | `{name}` → OperationView | course `update` |
+| `DELETE /api/workspaces/{wid}/courses/{kid}` | OperationView | Thu hồi khóa: chuyển REVOKED, giữ lịch sử, đóng ghi danh/phân công phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
 | `POST /api/workspaces/{wid}/courses/{kid}/subjects` | `{subjectIds[]}` → OperationView | course `subject.add`; không tự ghi danh/phân công |
+| `DELETE /api/workspaces/{wid}/courses/{kid}/subjects/{csid}` | OperationView | Gỡ môn khỏi khóa: chuyển REVOKED, giữ lịch sử, đóng ghi danh/phân công phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
 | `GET /api/subjects` | Danh mục tham chiếu tối thiểu | Danh mục không chứa dữ liệu riêng; không tạo taxonomy chương trình |
 | `GET /api/workspaces/{wid}/course-subjects/{csid}/enrollments` | Enrollment page | course-subject `roster.read`; chỉ roster môn đó |
 | `POST /api/workspaces/{wid}/enrollments` | EnrollmentBatch → OperationView | Mỗi course-subject `enrollment.add`; tất cả cùng lớp, kiểm tra đủ cặp |
