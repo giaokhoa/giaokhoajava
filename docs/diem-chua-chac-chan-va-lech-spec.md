@@ -62,6 +62,8 @@ Bắt đầu lập: 2026-11-08 (theo lệnh của chủ dự án). Nguồn: báo
 
 - **B27 — Hợp đồng không đặt tên ba môn seed của danh mục subject.** `data-model.md`/`http-api.md` chỉ nói "Danh mục môn tham chiếu tối thiểu", quickstart chỉ gọi K ba môn M1/M2/M3. T046 tự quyết seed đúng ba môn mã M1/M2/M3, tên "Môn 1"/"Môn 2"/"Môn 3", trạng thái ACTIVE trong V015 (id ngẫu nhiên theo tiền lệ V002). Nếu đội catalog sau này chốt tên thật thì đổi tên bằng migration mới, không sửa V015 đã apply; test T043/T044 chỉ dùng id trả về từ `GET /api/subjects` nên không phụ thuộc tên.
 
+- **B30 — `resource.subject_id` (V008) là UUID trơn, không có FK tới bảng `subject` mới.** `V008__resource_primitives.sql:6` khai `subject_id UUID NOT NULL` không có FK; `data-model.md:53` liệt kê `resource.subject_id` nhưng không nói nó tham chiếu tới danh mục `subject`. Chưa rõ đây là cùng khái niệm "môn" với danh mục hay chỉ là trường định danh nội bộ của resource (câu hỏi tương tự với `resource_assignment.subject_id?` ở `data-model.md:57`). Không thêm FK trong T046 vì ngoài phạm vi và có thể vỡ fixture hiện có (hàng resource với `subject_id` không nằm trong danh mục). Đội T049/T051 quyết khi cài repository/service: nếu cùng khái niệm thì thêm FK (migration mới), nếu khác thì ghi rõ vào data-model.md.
+
 ## C. Điểm đã có quyết định xử lý trong pipeline (ghi để bên đánh giá đối chiếu)
 
 - **C1** — A1/M2: ghi ngoại lệ vào `authorization.md` tại gate #44 thay vì cài PDP + fence (lý do ở A1). **ĐÃ LÀM tại gate #44:** ngoại lệ ghi ở mục 10 mới của `specs/001-multitenant-access/contracts/authorization.md` (phạm vi 6 route của `MembershipController`, điểm lệch đã biết, lý do, giới hạn) — là thay đổi quyết định riêng theo cơ chế mục 9 của chính spec.
