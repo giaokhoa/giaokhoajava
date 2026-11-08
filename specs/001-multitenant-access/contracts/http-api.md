@@ -101,6 +101,7 @@ Gói hết hạn chặn invite/cấp account/thêm role; các scope thu hồi c�
 | `GET /api/workspaces/{wid}/classes/{cid}/students` | Class-student page | class `roster.read`; manager/owner/homeroom theo source; teacher không mặc định thấy mọi học sinh lớp |
 | `POST /api/workspaces/{wid}/classes/{cid}/students` | `{studentUserIds[]}` → OperationView | class `roster.add`; CENTER cần membership, PERSONAL cần owner tổ chức và danh tính người học hợp lệ |
 | `DELETE /api/workspaces/{wid}/classes/{cid}/students/{id}` | OperationView | class `roster.revoke`; revoke enrollment phụ thuộc, giữ lịch sử |
+| `GET /api/workspaces/{wid}/classes/{cid}/homeroom-assignments` | Homeroom assignment page | class `roster.read`; quản trị hoặc chủ nhiệm hiện hành của lớp; chỉ phân công hiện hành, kèm id cho route thu hồi |
 | `POST /api/workspaces/{wid}/classes/{cid}/homeroom-assignments` | HomeroomAssignment → OperationView | class `homeroom.assign` |
 | `DELETE /api/workspaces/{wid}/classes/{cid}/homeroom-assignments/{id}` | OperationView | class `homeroom.revoke` |
 | `GET /api/workspaces/{wid}/classes/{cid}/courses` | Course page | class `course.list` + từng course `read` |
@@ -114,6 +115,7 @@ Gói hết hạn chặn invite/cấp account/thêm role; các scope thu hồi c�
 | `GET /api/workspaces/{wid}/course-subjects/{csid}/enrollments` | Enrollment page | course-subject `roster.read`; chỉ roster môn đó |
 | `POST /api/workspaces/{wid}/enrollments` | EnrollmentBatch → OperationView | Mỗi course-subject `enrollment.add`; tất cả cùng lớp, kiểm tra đủ cặp |
 | `DELETE /api/workspaces/{wid}/enrollments/{id}` | OperationView | course-subject `enrollment.revoke` |
+| `GET /api/workspaces/{wid}/course-subjects/{csid}/teachers` | Teacher assignment page | course-subject `roster.read`; chỉ phân công hiện hành, kèm id cho route thu hồi |
 | `POST /api/workspaces/{wid}/course-subjects/{csid}/teachers` | TeacherAssignment → OperationView | course-subject `teacher.assign`; hỗ trợ nhiều giáo viên |
 | `DELETE /api/workspaces/{wid}/course-subjects/{csid}/teachers/{id}` | OperationView | course-subject `teacher.revoke` |
 

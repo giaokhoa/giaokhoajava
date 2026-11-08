@@ -2,6 +2,7 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.teaching.data.TeachingRepository;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -9,27 +10,36 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Bề mặt HTTP của phân công: phân công/thu hồi giáo viên cho một môn–khóa và phân công/thu hồi chủ
- * nhiệm cho một lớp. Phân công là quyền quản trị của workspace nên route đòi quản trị hiện hành
- * (owner/manager của center) theo dữ kiện nguồn — giáo viên của một môn và chủ nhiệm của lớp đều
- * không tự phân công được; các route này không áp dụng cho personal (service trả 404). {@link
+ * nhiệm cho một lớp, kèm hai route đọc danh sách phân công hiện hành (nguồn assignmentId cho các
+ * route thu hồi). Phân công là quyền quản trị của workspace nên route mutation đòi quản trị hiện
+ * hành (owner/manager của center) theo dữ kiện nguồn — giáo viên của một môn và chủ nhiệm của lớp
+ * đều không tự phân công được; các route này không áp dụng cho personal (service trả 404). Route
+ * đọc quyết quyền theo nguồn đọc roster như danh sách ghi danh và roster của lớp. {@link
  * AssignmentService} tự kiểm tra tiền đề TEACHER của đúng center, tự ghi authorization operation
  * nên route chỉ quyết quyền và trả biên nhận.
  */
 @RestController
 public class AssignmentController {
     private final AssignmentService assignments;
+    private final TeachingRepository repository;
     private final TeachingRouteSupport support;
 
-    public AssignmentController(AssignmentService assignments, TeachingRouteSupport support) {
+    public AssignmentController(
+            AssignmentService assignments,
+            TeachingRepository repository,
+            TeachingRouteSupport support) {
         this.assignments = assignments;
+        this.repository = repository;
         this.support = support;
     }
 
@@ -40,6 +50,38 @@ public class AssignmentController {
     }
 
     public record HomeroomAssignRequest(@Nullable UUID teacherUserId) {}
+
+    @GetMapping("/api/workspaces/{workspaceId}/course-subjects/{courseSubjectId}/teachers")
+    public ResponseEntity<TeachingRouteSupport.Page<AssignmentService.TeachingAssignmentView>>
+            listTeacherAssignments(
+                    @PathVariable UUID workspaceId,
+                    @PathVariable UUID courseSubjectId,
+                    @RequestParam(value = "cursor", required = false) @Nullable String cursor,
+                    @RequestParam(value = "limit", required = false) @Nullable Integer limit,
+                    Authentication authentication) {
+        UUID actor = support.actor(authentication);
+        return support.inWorkspace(
+                workspaceId,
+                () -> {
+                    repository
+                            .findCourseSubjectScope(workspaceId, courseSubjectId)
+                            .orElseThrow(() ->
+                                    new HttpProblemException(
+                                            HttpStatus.NOT_FOUND,
+                                            "COURSE_SUBJECT_NOT_FOUND",
+                                            "Không tìm thấy môn–khóa trong workspace" + " này."));
+                    if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
+                        throw TeachingRouteSupport.denied();
+                    }
+                    return support.ok(
+                            support.page(
+                                    assignments.listTeacherAssignments(
+                                            workspaceId, courseSubjectId),
+                                    cursor,
+                                    limit,
+                                    AssignmentService.TeachingAssignmentView::id));
+                });
+    }
 
     @PostMapping("/api/workspaces/{workspaceId}/course-subjects/{courseSubjectId}/teachers")
     public ResponseEntity<IdempotencyService.OperationReceipt> assignTeachers(
@@ -84,6 +126,38 @@ public class AssignmentController {
         return support.receipt(
                 assignments.revokeTeacherAssignment(
                         actor, workspaceId, courseSubjectId, assignmentId, key, hash));
+    }
+
+    @GetMapping("/api/workspaces/{workspaceId}/classes/{classId}/homeroom-assignments")
+    public ResponseEntity<TeachingRouteSupport.Page<AssignmentService.HomeroomAssignmentView>>
+            listHomeroomAssignments(
+                    @PathVariable UUID workspaceId,
+                    @PathVariable UUID classId,
+                    @RequestParam(value = "cursor", required = false) @Nullable String cursor,
+                    @RequestParam(value = "limit", required = false) @Nullable Integer limit,
+                    Authentication authentication) {
+        UUID actor = support.actor(authentication);
+        return support.inWorkspace(
+                workspaceId,
+                () -> {
+                    if (!support.canReadClass(actor, workspaceId, classId)) {
+                        // Lớp không tồn tại trả 404; lớp tồn tại nhưng không được đọc trả 403.
+                        repository
+                                .findClass(workspaceId, classId)
+                                .orElseThrow(() ->
+                                        new HttpProblemException(
+                                                HttpStatus.NOT_FOUND,
+                                                "CLASS_NOT_FOUND",
+                                                "Không tìm thấy lớp trong workspace" + " này."));
+                        throw TeachingRouteSupport.denied();
+                    }
+                    return support.ok(
+                            support.page(
+                                    assignments.listHomeroomAssignments(workspaceId, classId),
+                                    cursor,
+                                    limit,
+                                    AssignmentService.HomeroomAssignmentView::id));
+                });
     }
 
     @PostMapping("/api/workspaces/{workspaceId}/classes/{classId}/homeroom-assignments")

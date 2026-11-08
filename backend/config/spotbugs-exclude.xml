@@ -261,6 +261,12 @@
         <Field name="repository"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- TeachingRepository là dependency singleton do Spring quản lý; không sao chép khi inject vào controller phân công. -->
+    <Match>
+        <Class name="com.giaokhoa.teaching.AssignmentController"/>
+        <Field name="repository"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Test cố ý truyền null trong assertThrows để xác nhận validation của constructor. -->
     <Match>
         <Class name="com.giaokhoa.authorization.model.AuthorizationModelTest"/>
