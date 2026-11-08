@@ -87,7 +87,7 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
     protected static void stopSchedulerAndDropSchema(ApplicationContext context, String schema) {
         context.getBeansOfType(ThreadPoolTaskScheduler.class)
                 .values()
-                .forEach(ThreadPoolTaskScheduler::shutdown);
+                .forEach(scheduler -> scheduler.shutdown());
         try (Connection connection =
                         DriverManager.getConnection(
                                 required("TEST_DATABASE_URL"),
@@ -169,6 +169,24 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
         if (failureCode.get() != null) {
             fail("Operation failed with " + failureCode.get());
         }
+    }
+
+    /** Chỉ thử lại fence chưa sẵn sàng; lỗi danh tính/dịch vụ khác vẫn được trả cho assertion. */
+    protected static org.springframework.mock.web.MockHttpServletResponse requestWhenReady(
+            org.springframework.test.web.servlet.MockMvc mvc,
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request)
+            throws Exception {
+        AtomicReference<org.springframework.mock.web.MockHttpServletResponse> last =
+                new AtomicReference<>();
+        await().atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(250))
+                .until(() -> {
+                    var response = mvc.perform(request).andReturn().getResponse();
+                    last.set(response);
+                    return response.getStatus() != 503
+                            || !response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
+                });
+        return java.util.Objects.requireNonNull(last.get());
     }
 
     static void validateTargets(String database, String issuer) {

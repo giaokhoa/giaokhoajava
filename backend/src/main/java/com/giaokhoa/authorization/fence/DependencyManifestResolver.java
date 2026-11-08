@@ -24,11 +24,12 @@ import org.springframework.stereotype.Component;
 
 /**
  * Resolve dependency manifest của một protected request: ACCOUNT partition của actor, WORKSPACE
- * partition đích và closure nguồn upstream của các target được yêu cầu — các partition sở hữu một
- * target projection cộng, theo quan hệ truyền dẫn, mọi partition mà các projection đó phụ thuộc.
- * Partition chỉ phụ thuộc vào cùng các nguồn (một grant độc lập dùng chung workspace) không thuộc
- * manifest, nên fence một nguồn không bao giờ fence các nguồn còn lại. Thiếu một partition nghĩa là
- * projection chưa từng được ghi: fail closed với 503 thay vì quyết định trên một tập thiếu.
+ * partition đích (nếu action có workspace) và closure nguồn upstream của các target được yêu cầu —
+ * các partition sở hữu một target projection cộng, theo quan hệ truyền dẫn, mọi partition mà các
+ * projection đó phụ thuộc. Partition chỉ phụ thuộc vào cùng các nguồn (một grant độc lập dùng chung
+ * workspace) không thuộc manifest, nên fence một nguồn không bao giờ fence các nguồn còn lại. Thiếu
+ * một partition nghĩa là projection chưa từng được ghi: fail closed với 503 thay vì quyết định trên
+ * một tập thiếu.
  */
 @Component
 public class DependencyManifestResolver {
@@ -44,7 +45,7 @@ public class DependencyManifestResolver {
     /** Một manifest đã resolve; ID các partition theo thứ tự khóa ổn định mà fence sử dụng. */
     public record Manifest(
             UUID actorUserId,
-            UUID workspaceId,
+            @Nullable UUID workspaceId,
             List<String> targetKeys,
             Map<String, String> recordedResourceIds,
             List<UUID> partitionIds) {
@@ -61,9 +62,9 @@ public class DependencyManifestResolver {
             @Nullable String keycloakResourceId,
             List<UUID> dependencyPartitionIds) {}
 
-    public Manifest resolve(UUID actorUserId, UUID workspaceId, Collection<String> targetKeys) {
+    public Manifest resolve(
+            UUID actorUserId, @Nullable UUID workspaceId, Collection<String> targetKeys) {
         Objects.requireNonNull(actorUserId, "actorUserId");
-        Objects.requireNonNull(workspaceId, "workspaceId");
         if (targetKeys == null || targetKeys.isEmpty()) {
             throw new IllegalArgumentException("At least one target key is required");
         }
@@ -73,10 +74,12 @@ public class DependencyManifestResolver {
                 partitions,
                 frontier,
                 partitionId(AuthorizationPartition.Kind.ACCOUNT, "account:" + actorUserId));
-        include(
-                partitions,
-                frontier,
-                partitionId(AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId));
+        if (workspaceId != null) {
+            include(
+                    partitions,
+                    frontier,
+                    partitionId(AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId));
+        }
 
         Map<String, String> resourceIds = new LinkedHashMap<>();
         for (String targetKey : new LinkedHashSet<>(targetKeys)) {

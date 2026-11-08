@@ -5,6 +5,7 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
@@ -57,16 +58,20 @@ public class SubscriptionService {
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
 
+    private final ResourceMutationCoordinator coordinator;
+
     public SubscriptionService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
+            ResourceMutationCoordinator coordinator,
             TeachingPolicyProjector teachingProjector) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
         this.centerProjector = centerProjector;
+        this.coordinator = coordinator;
         this.teachingProjector = teachingProjector;
     }
 
@@ -90,6 +95,7 @@ public class SubscriptionService {
         Objects.requireNonNull(validFrom, "validFrom");
         Objects.requireNonNull(expiresAt, "expiresAt");
         idempotency.requireKey(idempotencyKey);
+        coordinator.lockWorkspace(workspaceId);
         lockOn("subscription-confirm:" + operatorUserId + ":" + idempotencyKey);
         Optional<AuthorizationOperation> existing =
                 idempotency.findExisting(operatorUserId, idempotencyKey, payloadHash);

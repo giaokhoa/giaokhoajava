@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.ClassService.ClassView;
@@ -425,10 +426,20 @@ class TeachingServiceIT extends IntegrationEnvironment {
                     new WorkspaceTransaction(runtimeJdbc, runtimeTxManager);
             TeachingRevocationContributor runtimeContributor =
                     new TeachingRevocationContributor(runtimeRepository, runtimeWorkspaceTx);
+            ResourceMutationCoordinator runtimeCoordinator =
+                    new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);
             ClassService runtimeClasses =
-                    new ClassService(runtimeRepository, runtimeWorkspaceTx, runtimeContributor);
+                    new ClassService(
+                            runtimeRepository,
+                            runtimeWorkspaceTx,
+                            runtimeCoordinator,
+                            runtimeContributor);
             CourseService runtimeCourses =
-                    new CourseService(runtimeRepository, runtimeWorkspaceTx, runtimeContributor);
+                    new CourseService(
+                            runtimeRepository,
+                            runtimeWorkspaceTx,
+                            runtimeCoordinator,
+                            runtimeContributor);
             TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
 
             ClassView created =

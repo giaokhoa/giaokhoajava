@@ -12,6 +12,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.AssignmentService.HomeroomAssignmentView;
@@ -489,20 +490,22 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
             TeachingPolicyProjector runtimeProjector =
                     new TeachingPolicyProjector(
                             runtimeJdbc, directory, runtimeOperations, runtimeTxManager);
+            ResourceMutationCoordinator runtimeCoordinator =
+                    new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);
             EnrollmentService runtimeEnrollments =
                     new EnrollmentService(
                             runtimeRepository,
                             runtimeWorkspaceTx,
                             runtimeIdempotency,
                             runtimeProjector,
-                            runtimeJdbc);
+                            runtimeCoordinator);
             AssignmentService runtimeAssignments =
                     new AssignmentService(
                             runtimeRepository,
                             runtimeWorkspaceTx,
                             runtimeIdempotency,
                             runtimeProjector,
-                            runtimeJdbc);
+                            runtimeCoordinator);
             TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
             TransactionTemplate appTx = new TransactionTemplate(transactionManager);
 

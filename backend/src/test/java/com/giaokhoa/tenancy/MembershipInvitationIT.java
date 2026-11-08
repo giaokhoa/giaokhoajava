@@ -112,6 +112,109 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     @Autowired SessionRepository<?> sessions;
 
     @Test
+    void issuedIdentityWithoutCurrentEmailCanStillReadItsMemberships() throws Exception {
+        KeycloakLogin login = createVerifiedUser("issued-no-email");
+        try {
+            UUID actor = seedAccount(login.subject(), "CENTER_ISSUED", null, false);
+            UUID workspace = seedCenter(actor);
+            try (var session = openSession(login)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
+                Map<String, Object> profile = new HashMap<>(getUser(login.subject()));
+                profile.put("email", "");
+                profile.put("emailVerified", false);
+                HTTP.put()
+                        .uri(admin("/users/" + login.subject()))
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(profile)
+                        .retrieve()
+                        .toBodilessEntity();
+                assertNull(getUser(login.subject()).get("email"));
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/workspaces/" + workspace + "/memberships")
+                                                .cookie(session.cookie()))
+                                .getStatus());
+            }
+        } finally {
+            deleteUser(login.subject());
+        }
+    }
+
+    @Test
+    void unverifiedIdentityCannotUseMembershipBusinessRoutes() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("review-unverified-owner");
+        KeycloakLogin targetLogin = createVerifiedUser("review-unverified-target");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID target =
+                    seedAccount(
+                            targetLogin.subject(), "SELF_REGISTERED", targetLogin.email(), true);
+            UUID workspace = seedCenter(owner);
+            try (var session = openSession(ownerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
+                HTTP.put()
+                        .uri(admin("/users/" + ownerLogin.subject()))
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("emailVerified", false))
+                        .retrieve()
+                        .toBodilessEntity();
+                int list =
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/workspaces/" + workspace + "/memberships")
+                                                .cookie(session.cookie()))
+                                .getStatus();
+                int invite =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + workspace + "/invitations")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header(
+                                                        "Idempotency-Key",
+                                                        "review-unverified-" + UUID.randomUUID())
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(
+                                                        "{\"userId\":\""
+                                                                + target
+                                                                + "\",\"roles\":[\"STUDENT\"]}"))
+                                .andReturn()
+                                .getResponse()
+                                .getStatus();
+                org.junit.jupiter.api.Assertions.assertAll(
+                        () ->
+                                assertEquals(
+                                        403,
+                                        list,
+                                        "SELF_REGISTERED chưa verified không được đọc danh sách nghiệp vụ"),
+                        () ->
+                                assertEquals(
+                                        403,
+                                        invite,
+                                        "SELF_REGISTERED chưa verified không được mời thành viên"));
+            }
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(targetLogin.subject());
+        }
+    }
+
+    @Test
     void inviteExistingIdentityReturnsPendingOperation() throws Exception {
         KeycloakLogin ownerLogin = createVerifiedUser("invite-owner");
         KeycloakLogin inviteeLogin = createVerifiedUser("invite-invitee");
@@ -124,6 +227,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -189,6 +298,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -247,6 +362,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse both =
                         mockMvc()
                                 .perform(
@@ -312,6 +433,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             UUID center = seedCenter(owner);
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -367,6 +494,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             addMembership(center, manager, "MANAGER");
 
             try (var session = openSession(managerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse studentInvite =
                         mockMvc()
                                 .perform(
@@ -452,6 +585,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             String firstBody = "{\"userId\":\"" + invitee + "\",\"roles\":[\"STUDENT\"]}";
 
             try (var session = openSession(ownerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse first =
                         mockMvc()
                                 .perform(
@@ -539,6 +678,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             seedAccount(user.subject(), "SELF_REGISTERED", user.email(), true);
 
             try (var session = openSession(user)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -580,6 +725,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             String temporaryPassword;
             UUID operationId;
             try (var session = openSession(managerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -684,6 +835,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             addMembership(center, manager, "MANAGER");
 
             try (var session = openSession(managerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -752,6 +909,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             String username = "student-" + UUID.randomUUID();
 
             try (var session = openSession(managerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -802,6 +965,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             seedSubscription(center, -60, -1, owner);
 
             try (var session = openSession(managerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(
@@ -841,6 +1010,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             addMembership(center, teacher, "TEACHER");
 
             try (var session = openSession(teacherLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
                 MockHttpServletResponse response =
                         mockMvc()
                                 .perform(

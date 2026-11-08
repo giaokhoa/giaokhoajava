@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiRequest } from "../../../lib/api-client";
+import { apiRequest, requestWhenReady } from "../../../lib/api-client";
 import {
   operationStatus,
 } from "../../../features/operations/operation-status";
@@ -97,7 +97,7 @@ export function PlatformRecoveryContent() {
   async function loadRequests() {
     setListError(null);
     try {
-      const result = await apiRequest<unknown>("/api/platform/recovery-requests");
+      const result = await requestWhenReady("/api/platform/recovery-requests");
       if (result.kind !== "data") throw new Error("Phản hồi danh sách yêu cầu không hợp lệ.");
       setRequests(parsePlatformRecoveryRequests(result.data));
     } catch (error) {
@@ -109,7 +109,8 @@ export function PlatformRecoveryContent() {
   useEffect(() => {
     if (!userId) return;
     let ignore = false;
-    apiRequest<unknown>("/api/platform/recovery-requests")
+    const controller = new AbortController();
+    requestWhenReady("/api/platform/recovery-requests", { signal: controller.signal })
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setRequests(parsePlatformRecoveryRequests(result.data));
@@ -122,6 +123,7 @@ export function PlatformRecoveryContent() {
       });
     return () => {
       ignore = true;
+      controller.abort();
     };
   }, [userId]);
 

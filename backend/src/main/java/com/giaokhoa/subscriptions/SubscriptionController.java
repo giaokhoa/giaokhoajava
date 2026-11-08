@@ -1,22 +1,17 @@
 package com.giaokhoa.subscriptions;
 
-import com.giaokhoa.authorization.decision.KeycloakDecisionClient;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
-import com.giaokhoa.authorization.decision.RequiredPermissions;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -33,25 +28,17 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @RestController
 public class SubscriptionController {
-    private static final Logger LOG = LoggerFactory.getLogger(SubscriptionController.class);
-
     private static final JsonMapper JSON = new JsonMapper();
     private final SubscriptionService subscriptions;
     private final ProtectedActionExecutor executor;
-    private final KeycloakDecisionClient decisions;
-    private final PolicyGraphWriter policyWriter;
     private final IdempotencyService idempotency;
 
     public SubscriptionController(
             SubscriptionService subscriptions,
             ProtectedActionExecutor executor,
-            KeycloakDecisionClient decisions,
-            PolicyGraphWriter policyWriter,
             IdempotencyService idempotency) {
         this.subscriptions = subscriptions;
         this.executor = executor;
-        this.decisions = decisions;
-        this.policyWriter = policyWriter;
         this.idempotency = idempotency;
     }
 
@@ -67,68 +54,46 @@ public class SubscriptionController {
             HttpServletRequest request,
             @RequestBody @Nullable SubscriptionConfirmRequest body,
             @RequestHeader("Idempotency-Key") String key) {
-        requirePlatformScope(
+        return executor.executeForActor(
                 authentication,
                 request,
-                PermissionCatalog.PlatformScope.SUBSCRIPTION_CONFIRM,
-                "Tài khoản không có quyền vận hành xác nhận gói.");
-        if (body == null) {
-            throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST,
-                    "VALIDATION_FAILED",
-                    "Thiếu trường bắt buộc của kỳ gói.");
-        }
-        UUID workspaceId = body.workspaceId();
-        OffsetDateTime validFrom = body.validFrom();
-        OffsetDateTime expiresAt = body.expiresAt();
-        if (workspaceId == null || validFrom == null || expiresAt == null) {
-            throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST,
-                    "VALIDATION_FAILED",
-                    "Thiếu trường bắt buộc của kỳ gói.");
-        }
-        UUID actor = executor.actorUserId(authentication);
-        AuthorizationOperation operation =
-                Objects.requireNonNull(
-                        subscriptions.confirm(
-                                actor,
-                                workspaceId,
-                                validFrom.toInstant(),
-                                expiresAt.toInstant(),
-                                body.confirmationRef(),
-                                key,
-                                idempotency.payloadHash(
-                                        "POST",
-                                        "/api/platform/subscriptions",
-                                        JSON.valueToTree(body))));
-        return idempotency.responseFor(operation);
-    }
-
-    private void requirePlatformScope(
-            Authentication authentication,
-            HttpServletRequest request,
-            PermissionCatalog.PlatformScope scope,
-            String detail) {
-        Optional<String> resourceId;
-        try {
-            resourceId = policyWriter.findResourceId(NativePolicyTemplates.platformKey());
-        } catch (IllegalStateException ex) {
-            // Resource server chưa được bootstrap trong realm này thì chưa thể tồn tại grant
-            // operator nào: từ chối như trường hợp không có resource, không coi là lỗi hệ thống.
-            // Ghi WARN để vận hành phân biệt được realm chưa bootstrap với lời gọi trái phép.
-            LOG.warn("Không tra được resource platform khi kiểm tra quyền operator", ex);
-            resourceId = Optional.empty();
-        }
-        boolean allowed =
-                resourceId.isPresent()
-                        && decisions.isAllowed(
-                                authentication,
-                                request,
-                                RequiredPermissions.of(
-                                        RequiredPermissions.require(
-                                                resourceId.get(), scope.scopeName())));
-        if (!allowed) {
-            throw new HttpProblemException(HttpStatus.FORBIDDEN, "FORBIDDEN", detail);
-        }
+                List.of(
+                        new ProtectedActionExecutor.Target(
+                                NativePolicyTemplates.platformKey(),
+                                List.of(
+                                        PermissionCatalog.PlatformScope.SUBSCRIPTION_CONFIRM
+                                                .scopeName()))),
+                () -> {
+                    if (body == null) {
+                        throw new HttpProblemException(
+                                HttpStatus.BAD_REQUEST,
+                                "VALIDATION_FAILED",
+                                "Thiếu trường bắt buộc của kỳ gói.");
+                    }
+                    UUID workspaceId = body.workspaceId();
+                    OffsetDateTime validFrom = body.validFrom();
+                    OffsetDateTime expiresAt = body.expiresAt();
+                    if (workspaceId == null || validFrom == null || expiresAt == null) {
+                        throw new HttpProblemException(
+                                HttpStatus.BAD_REQUEST,
+                                "VALIDATION_FAILED",
+                                "Thiếu trường bắt buộc của kỳ gói.");
+                    }
+                    UUID actor = executor.actorUserId(authentication);
+                    AuthorizationOperation operation =
+                            Objects.requireNonNull(
+                                    subscriptions.confirm(
+                                            actor,
+                                            workspaceId,
+                                            validFrom.toInstant(),
+                                            expiresAt.toInstant(),
+                                            body.confirmationRef(),
+                                            key,
+                                            idempotency.payloadHash(
+                                                    "POST",
+                                                    "/api/platform/subscriptions",
+                                                    JSON.valueToTree(body))));
+                    return idempotency.responseFor(operation);
+                });
     }
 }

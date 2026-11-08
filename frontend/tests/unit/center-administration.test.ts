@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { requestWhenReady } from "../../src/lib/api-client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   centerCreateBody,
   invitationBody,
@@ -151,5 +152,35 @@ describe("cấp học sinh và handoff một lần", () => {
     expect(poll?.operation.state).toBe("SUCCEEDED");
     expect(parseStudentIssue({ id: "op-2", state: "PENDING" })).toBeNull();
     expect(parseStudentIssue("khong-phai-object")).toBeNull();
+  });
+});
+
+describe("vào trực tiếp trang quản trị khi eligibility đang đồng bộ", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("thử lại danh sách sau fence 503 rồi nhận dữ liệu, không cần gọi workspace trước", async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: "AUTHORIZATION_NOT_READY" }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "c1", name: "Trung tâm" }]), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    const pending = requestWhenReady("/api/platform/centers");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await pending).data).toEqual([{ id: "c1", name: "Trung tâm" }]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls.every(([path]) => path === "/api/platform/centers")).toBe(true);
+  });
+
+  it.each([
+    [403, "PERMISSION_DENIED"],
+    [503, "IDENTITY_UNAVAILABLE"],
+  ])("không thử lại lỗi %s %s", async (status, code) => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code }), { status }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(requestWhenReady("/api/platform/centers")).rejects.toMatchObject({ status, code });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

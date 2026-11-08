@@ -1,6 +1,7 @@
 package com.giaokhoa.tenancy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -8,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
+import com.giaokhoa.identity.InitialCredentialHandoff.Handoff;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.InvitationService.InvitationIssued;
@@ -323,8 +325,12 @@ class InvitationMembershipServiceIT extends IntegrationEnvironment {
             StudentIssueResult first =
                     memberships.issueStudent(
                             owner, center, username, "Học Sinh Mới", null, key, payloadHash);
-            assertNotNull(first.handoff(), "Lần cấp đầu tiên phải mang handoff credential");
-            assertEquals(username, first.handoff().username());
+            var handoff =
+                    assertInstanceOf(
+                            Handoff.class,
+                            first.handoff(),
+                            "Lần cấp đầu tiên phải mang handoff credential");
+            assertEquals(username, handoff.username());
             issuedSubject =
                     jdbc.queryForObject(
                             "SELECT keycloak_sub FROM user_account WHERE username = ?",

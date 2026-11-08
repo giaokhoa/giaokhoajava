@@ -212,6 +212,21 @@ trong phạm vi này.
 - Bên đánh giá rà lại quyết định này trước khi đóng parent issue; khi nào các route này chuyển
   sang PDP thì gỡ mục này và ghi rõ commit gỡ.
 
+### Eligibility và tính nhất quán của ngoại lệ SQL (#170)
+
+Ngoại lệ chỉ thay cách quyết role/gói của center. Mọi route thành viên, kể cả chấp nhận
+lời mời, vẫn đồng bộ profile Keycloak hiện hành và đi qua PDP eligibility trên profile
+của chính actor, có ACCOUNT/target fence trước khi đọc hoặc ghi. SELF_REGISTERED chưa
+verified bị từ chối; CENTER_ISSUED không email vẫn được dùng nghiệp vụ theo role.
+
+Mutation giữ cùng khóa workspace từ kiểm tra role/gói đến ghi dữ kiện nguồn, dựng bundle
+và commit operation. Các writer trực tiếp của center/membership/subscription dùng cùng khóa;
+không được dựng descriptor trước rồi mới tuần tự hóa bước ghi hash.
+
+Các endpoint platform tự đi qua pipeline ACCOUNT/target với scope platform tương ứng;
+không đòi một lời gọi workspace trước. Actor hoặc projection chưa READY trả
+503 AUTHORIZATION_NOT_READY để client thử lại có giới hạn, không trả 403 thiếu quyền
+chỉ vì eligibility chưa từng được chiếu.
 ## 11. Mở rộng ngoại lệ mục 10: route giảng dạy quyết quyền bằng SQL
 
 Quyết định riêng theo đúng điều kiện của mục 10 ("Không mở rộng ngoại lệ sang route mới mà không

@@ -30,6 +30,7 @@ final class NativeRevocationFixture implements AutoCloseable {
     private static final JsonMapper JSON = new JsonMapper();
     private static final String REDIRECT_URI = "http://127.0.0.1:18888/callback";
     private static final int SINGLE_CLIENT = 1;
+    private static final int PAGE_SIZE = 1000;
     private static final String DEFAULT_PERMISSION = "Default Permission";
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
@@ -705,6 +706,26 @@ final class NativeRevocationFixture implements AutoCloseable {
     }
 
     private List<Map<String, Object>> getList(String path) {
+        boolean paginated =
+                path.endsWith("/resource")
+                        || path.endsWith("/policy")
+                        || path.endsWith("/permission/scope");
+        if (!paginated) {
+            return getListPage(path);
+        }
+        List<Map<String, Object>> all = new java.util.ArrayList<>();
+        for (int first = 0; ; first += PAGE_SIZE) {
+            List<Map<String, Object>> page =
+                    getListPage(path + "?first=" + first + "&max=" + PAGE_SIZE);
+            all.addAll(page);
+            if (page.size() < PAGE_SIZE) {
+                return all;
+            }
+        }
+    }
+
+    private List<Map<String, Object>> getListPage(String path) {
+
         List<Map<String, Object>> result =
                 http.get()
                         .uri(admin(path))

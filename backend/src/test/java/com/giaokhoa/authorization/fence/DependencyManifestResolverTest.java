@@ -37,6 +37,27 @@ class DependencyManifestResolverTest {
                     + UUID.randomUUID();
 
     @Test
+    void actorOnlyActionIncludesAccountAndTargetClosureWithoutAnUnrelatedWorkspace() {
+        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
+        when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
+                .thenReturn(
+                        List.of(
+                                Map.of(
+                                        "partition_id",
+                                        GRANT,
+                                        "keycloak_resource_id",
+                                        "platform-resource",
+                                        "dependency_partition_ids",
+                                        new UUID[] {SOURCE})));
+        when(jdbc.queryForList(contains("WHERE partition_id"), any(UUID.class)))
+                .thenReturn(List.of());
+        var manifest =
+                new DependencyManifestResolver(jdbc).resolve(ACTOR, null, List.of("platform"));
+        assertEquals(sorted(List.of(ACCOUNT, GRANT, SOURCE)), manifest.partitionIds());
+        assertEquals("platform-resource", manifest.recordedResourceIds().get("platform"));
+    }
+
+    @Test
     void manifestAlwaysContainsActorAccountAndTargetWorkspace() {
         JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
         when(jdbc.queryForList(contains("WHERE target_key"), anyString())).thenReturn(List.of());

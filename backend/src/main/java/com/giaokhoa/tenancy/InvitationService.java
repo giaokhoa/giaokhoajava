@@ -2,6 +2,7 @@ package com.giaokhoa.tenancy;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.nio.charset.StandardCharsets;
@@ -64,13 +65,17 @@ public class InvitationService {
     private final IdempotencyService idempotency;
     private final MembershipPolicyProjector projector;
 
+    private final ResourceMutationCoordinator coordinator;
+
     public InvitationService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
-            MembershipPolicyProjector projector) {
+            MembershipPolicyProjector projector,
+            ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.projector = projector;
+        this.coordinator = coordinator;
     }
 
     /**
@@ -101,6 +106,7 @@ public class InvitationService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(roles, "roles");
         idempotency.requireKey(idempotencyKey);
+        coordinator.lockWorkspace(workspaceId);
         lockOn("invitation-create:" + initiatorUserId + ":" + idempotencyKey);
         Optional<AuthorizationOperation> existing =
                 idempotency.findExisting(initiatorUserId, idempotencyKey, payloadHash);
@@ -153,7 +159,7 @@ public class InvitationService {
         UUID invitationId = UUID.randomUUID();
         Instant expiresAt = Instant.now().plus(INVITATION_TTL);
         String[] roleNames =
-                roles.stream().map(MembershipRole.Role::name).sorted().toArray(String[]::new);
+                roles.stream().map(role -> role.name()).sorted().toArray(String[]::new);
         String tokenHash = tokenHash(token);
         jdbc.update(
                 "INSERT INTO invitation"
@@ -209,6 +215,7 @@ public class InvitationService {
                     HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "Không tìm thấy lời mời.");
         }
         InvitationRow invitation = rows.getFirst();
+        coordinator.lockWorkspace(invitation.workspaceId());
         if (!PENDING_STATE.equals(invitation.state())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,

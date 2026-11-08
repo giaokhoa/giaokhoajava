@@ -380,13 +380,17 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                 createUser(keycloakUser(username, username + "@example.test", true, password));
         try {
             try (var session = openSession(username, password, subject)) {
-                MockHttpServletResponse list =
+                assertEquals(
+                        200,
                         mockMvc()
-                                .perform(
-                                        get("/api/platform/recovery-requests")
-                                                .cookie(session.cookie()))
+                                .perform(get("/api/session").cookie(session.cookie()))
                                 .andReturn()
-                                .getResponse();
+                                .getResponse()
+                                .getStatus());
+                MockHttpServletResponse list =
+                        requestWhenReady(
+                                mockMvc(),
+                                get("/api/platform/recovery-requests").cookie(session.cookie()));
                 MockHttpServletResponse resolve =
                         mockMvc()
                                 .perform(

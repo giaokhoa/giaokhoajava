@@ -1,13 +1,10 @@
 package com.giaokhoa.identity;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.giaokhoa.authorization.decision.KeycloakDecisionClient;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
-import com.giaokhoa.authorization.decision.RequiredPermissions;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.identity.RecoveryService.Decision;
 import com.giaokhoa.identity.RecoveryService.RequestView;
 import com.giaokhoa.shared.http.HttpProblemException;
@@ -15,11 +12,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,30 +29,22 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Bề mặt HTTP của luồng hỗ trợ khôi phục danh tính: người dùng gửi yêu cầu, platform operator xem
  * hàng đợi và quyết định. Quyền operator không suy ra từ role nội bộ nào: mỗi lời gọi đều hỏi
- * Keycloak PDP bằng token của chính người gọi trên resource platform với scope account.recover,
- * đúng mô hình quyết định của control-plane (không qua fence nghiệp vụ của action thường).
+ * Keycloak PDP bằng token của chính người gọi trên resource platform với scope account.recover, qua
+ * ACCOUNT/target fence và đồng bộ eligibility trước mỗi quyết định.
  */
 @RestController
 public class RecoveryController {
-    private static final Logger LOG = LoggerFactory.getLogger(RecoveryController.class);
-
     private static final JsonMapper JSON = new JsonMapper();
     private final IdempotencyService idempotency;
     private final RecoveryService recovery;
     private final ProtectedActionExecutor executor;
-    private final KeycloakDecisionClient decisions;
-    private final PolicyGraphWriter policyWriter;
 
     public RecoveryController(
             RecoveryService recovery,
             ProtectedActionExecutor executor,
-            KeycloakDecisionClient decisions,
-            PolicyGraphWriter policyWriter,
             IdempotencyService idempotency) {
         this.recovery = recovery;
         this.executor = executor;
-        this.decisions = decisions;
-        this.policyWriter = policyWriter;
         this.idempotency = idempotency;
     }
 
@@ -131,10 +117,20 @@ public class RecoveryController {
     @GetMapping("/api/platform/recovery-requests")
     public ResponseEntity<List<RequestItem>> list(
             Authentication authentication, HttpServletRequest request) {
-        requirePlatformOperator(authentication, request);
-        List<RequestItem> items =
-                recovery.listRequests().stream().map(RecoveryController::item).toList();
-        return protectedOk(items);
+        return executor.executeForActor(
+                authentication,
+                request,
+                List.of(
+                        new ProtectedActionExecutor.Target(
+                                NativePolicyTemplates.platformKey(),
+                                List.of(
+                                        PermissionCatalog.PlatformScope.ACCOUNT_RECOVER
+                                                .scopeName()))),
+                () -> {
+                    List<RequestItem> items =
+                            recovery.listRequests().stream().map(RecoveryController::item).toList();
+                    return protectedOk(items);
+                });
     }
 
     @PostMapping("/api/platform/recovery-requests/{requestId}/resolve")
@@ -145,79 +141,68 @@ public class RecoveryController {
             @RequestBody @Nullable ResolveRequest body,
             @RequestHeader("Idempotency-Key") String key,
             @RequestHeader("If-Match") String ifMatch) {
-        requirePlatformOperator(authentication, request);
-        if (body == null || body.decision() == null) {
-            throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Thiếu quyết định xử lý yêu cầu.");
-        }
-        Decision decision;
-        try {
-            decision = Decision.valueOf(body.decision());
-        } catch (IllegalArgumentException ex) {
-            throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST,
-                    "VALIDATION_FAILED",
-                    "Quyết định xử lý không hợp lệ.",
-                    ex);
-        }
-        UUID operator = executor.actorUserId(authentication);
-        RequestView resolved =
-                Objects.requireNonNull(
-                        recovery.resolveOnce(
-                                operator,
-                                requestId,
-                                decision,
-                                body.verificationNote(),
-                                key,
-                                idempotency.payloadHash(
-                                        "POST",
-                                        "/api/platform/recovery-requests/" + requestId + "/resolve",
-                                        JSON.valueToTree(List.of(body, ifMatch))),
-                                ifMatch));
-        if (resolved.state() == com.giaokhoa.identity.model.RecoveryRequest.State.VERIFIED) {
-            return ResponseEntity.status(HttpStatus.ACCEPTED)
-                    .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-                    .body(
-                            new SubmitReceipt(
+        return executor.executeForActor(
+                authentication,
+                request,
+                List.of(
+                        new ProtectedActionExecutor.Target(
+                                NativePolicyTemplates.platformKey(),
+                                List.of(
+                                        PermissionCatalog.PlatformScope.ACCOUNT_RECOVER
+                                                .scopeName()))),
+                () -> {
+                    if (body == null || body.decision() == null) {
+                        throw new HttpProblemException(
+                                HttpStatus.BAD_REQUEST,
+                                "VALIDATION_FAILED",
+                                "Thiếu quyết định xử lý yêu cầu.");
+                    }
+                    Decision decision;
+                    try {
+                        decision = Decision.valueOf(body.decision());
+                    } catch (IllegalArgumentException ex) {
+                        throw new HttpProblemException(
+                                HttpStatus.BAD_REQUEST,
+                                "VALIDATION_FAILED",
+                                "Quyết định xử lý không hợp lệ.",
+                                ex);
+                    }
+                    UUID operator = executor.actorUserId(authentication);
+                    RequestView resolved =
+                            Objects.requireNonNull(
+                                    recovery.resolveOnce(
+                                            operator,
+                                            requestId,
+                                            decision,
+                                            body.verificationNote(),
+                                            key,
+                                            idempotency.payloadHash(
+                                                    "POST",
+                                                    "/api/platform/recovery-requests/"
+                                                            + requestId
+                                                            + "/resolve",
+                                                    JSON.valueToTree(List.of(body, ifMatch))),
+                                            ifMatch));
+                    if (resolved.state()
+                            == com.giaokhoa.identity.model.RecoveryRequest.State.VERIFIED) {
+                        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                                .body(
+                                        new SubmitReceipt(
+                                                resolved.id(),
+                                                "PENDING",
+                                                false,
+                                                "/api/me/operations/" + resolved.id()));
+                    }
+                    ResolveReceipt receipt =
+                            new ResolveReceipt(
                                     resolved.id(),
-                                    "PENDING",
-                                    false,
-                                    "/api/me/operations/" + resolved.id()));
-        }
-        ResolveReceipt receipt =
-                new ResolveReceipt(
-                        resolved.id(), "SUCCEEDED", true, "PROFILE", resolved.targetUserId());
-        return protectedOk(receipt);
-    }
-
-    private void requirePlatformOperator(
-            Authentication authentication, HttpServletRequest request) {
-        Optional<String> resourceId;
-        try {
-            resourceId = policyWriter.findResourceId(NativePolicyTemplates.platformKey());
-        } catch (IllegalStateException ex) {
-            // Resource server chưa được bootstrap trong realm này thì chưa thể tồn tại grant
-            // operator nào: từ chối như trường hợp không có resource, không coi là lỗi hệ thống.
-            // Ghi WARN để vận hành phân biệt được realm chưa bootstrap với lời gọi trái phép.
-            LOG.warn("Không tra được resource platform khi kiểm tra quyền operator", ex);
-            resourceId = Optional.empty();
-        }
-        boolean allowed =
-                resourceId.isPresent()
-                        && decisions.isAllowed(
-                                authentication,
-                                request,
-                                RequiredPermissions.of(
-                                        RequiredPermissions.require(
-                                                resourceId.get(),
-                                                PermissionCatalog.PlatformScope.ACCOUNT_RECOVER
-                                                        .scopeName())));
-        if (!allowed) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "FORBIDDEN",
-                    "Tài khoản không có quyền vận hành khôi phục danh tính.");
-        }
+                                    "SUCCEEDED",
+                                    true,
+                                    "PROFILE",
+                                    resolved.targetUserId());
+                    return protectedOk(receipt);
+                });
     }
 
     private static RequestItem item(RequestView view) {

@@ -69,6 +69,67 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
     @Autowired CenterPolicyProjector projector;
 
     @Test
+    void concurrentConfirmationsKeepTheWholeDesiredBundle() throws Exception {
+        UUID operator = seedAccount();
+        UUID workspace = seedCenter(seedAccount());
+        UUID partition = partitionOf(workspace);
+        Instant from = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        java.util.concurrent.CompletableFuture<AuthorizationOperation> first;
+        java.util.concurrent.CompletableFuture<AuthorizationOperation> second;
+        try (var connection = Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
+            connection.setAutoCommit(false);
+            try (var statement =
+                    connection.prepareStatement(
+                            "SELECT id FROM authz_partition WHERE id = ? FOR UPDATE")) {
+                statement.setObject(1, partition);
+                statement.executeQuery().close();
+            }
+            first =
+                    java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                            service.confirm(
+                                    operator,
+                                    workspace,
+                                    from,
+                                    from.plus(30, ChronoUnit.DAYS),
+                                    "review-ref-a-" + workspace,
+                                    "review-key-a-" + workspace,
+                                    HASH_A));
+            second =
+                    java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                            service.confirm(
+                                    operator,
+                                    workspace,
+                                    from,
+                                    from.plus(60, ChronoUnit.DAYS),
+                                    "review-ref-b-" + workspace,
+                                    "review-key-b-" + workspace,
+                                    HASH_B));
+            org.awaitility.Awaitility.await()
+                    .atMost(java.time.Duration.ofSeconds(20))
+                    .until(() ->
+                            Objects.requireNonNull(
+                                            jdbc.queryForObject(
+                                                    "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+                                                            + " AND (query LIKE 'SELECT desired_revision FROM authz_partition WHERE id = % FOR UPDATE' OR query LIKE 'SELECT pg_advisory_xact_lock%')",
+                                                    Integer.class))
+                                    >= 2);
+            connection.commit();
+        }
+        first.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        second.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(2, periodCount(workspace));
+        String target = "workspace:" + workspace;
+        assertEquals(
+                ProjectionReconciler.desiredHash(
+                        target, "enter", projector.bundleDescriptors(workspace)),
+                jdbc.queryForObject(
+                        "SELECT desired_hash FROM authz_projection WHERE target_key = ?",
+                        String.class,
+                        target),
+                "Hai confirmation đã commit phải cho hash chứa cả hai kỳ");
+    }
+
+    @Test
     void confirmCenterRecordsPeriodAuditAndDesiredBundle() {
         UUID operator = seedAccount();
         UUID owner = seedAccount();
