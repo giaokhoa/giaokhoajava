@@ -26,7 +26,7 @@ async function admin(path, body) {
 }
 const profile = await admin("/users/profile");
 for (const attribute of profile.attributes) {
-  if (attribute.name === "email") delete attribute.required;
+  if (["email", "lastName"].includes(attribute.name)) delete attribute.required;
 }
 await admin("/users/profile", profile);
 const clients = await admin("/clients?clientId=giaokhoa-it-web");

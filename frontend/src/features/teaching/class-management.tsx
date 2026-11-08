@@ -593,6 +593,9 @@ export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
       }
       return data;
     } catch (error) {
+      if (error instanceof ApiError && error.code === "OPERATION_FAILED") {
+        attempts.current.delete(signature);
+      }
       setActionError(teachingErrorMessage(error));
       return null;
     } finally {

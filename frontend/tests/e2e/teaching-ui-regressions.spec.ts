@@ -106,3 +106,29 @@ test("quản lý ở trang hai vẫn quản trị và thấy đủ roster vượ
   await page.getByRole("button", { name: "Review Class", exact: true }).click();
   await expect(page.getByText("student-20", { exact: true })).toBeVisible();
 });
+
+test("retry lỗi mạng giữ key, operation đã FAILED kết thúc attempt", async ({ page }) => {
+  await teachingFixture(page);
+  const keys: string[] = [];
+  await page.route("**/api/workspaces/w/classes", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    keys.push(route.request().headers()["idempotency-key"]);
+    if (keys.length === 1) return route.abort("failed");
+    if (keys.length === 2) return route.fulfill({ status: 503, json: { code: "OPERATION_FAILED" } });
+    return route.fulfill({ status: 202, json: {
+      operationId: "op-new", state: "PENDING", completed: false,
+      statusUrl: "/api/me/operations/op-new",
+    } });
+  });
+  await page.locator("#class-name").fill("Retry class");
+  const create = page.getByRole("button", { name: "Tạo lớp", exact: true });
+  await create.click();
+  await expect(create).toBeEnabled();
+  await create.click();
+  await expect(page.getByRole("alert")).toHaveText("Đồng bộ quyền không thành công. Vui lòng thử lại.");
+  await create.click();
+  await expect(page.getByText("op-new", { exact: true })).toBeVisible();
+  expect(keys).toHaveLength(3);
+  expect(keys[1]).toBe(keys[0]);
+  expect(keys[2]).not.toBe(keys[1]);
+});

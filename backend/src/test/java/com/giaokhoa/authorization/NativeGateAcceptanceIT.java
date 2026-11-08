@@ -840,6 +840,14 @@ class NativeGateAcceptanceIT {
                         TEMPORARY_PASSWORD,
                         true,
                         List.of("UPDATE_PASSWORD"));
+        // IdentityProvisioningClient chỉ có displayName ở firstName, không có họ tách riêng.
+        http.put()
+                .uri(base + "/admin/realms/" + REALM + "/users/" + issued.userId())
+                .headers(headers -> headers.setBearerAuth(adminToken))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("lastName", ""))
+                .retrieve()
+                .toBodilessEntity();
         joinEligible(issued);
         String teachers = NativePolicyTemplates.courseSubjectTeachersGroup(workspace, subject);
         joinGroup(issued, teachers);
@@ -851,6 +859,7 @@ class NativeGateAcceptanceIT {
                         .body(MAP);
         assertNotNull(representation);
         assertNull(representation.get("email"));
+        assertNull(representation.get("lastName"));
         assertEquals(List.of("UPDATE_PASSWORD"), representation.get("requiredActions"));
         String completion =
                 applyResource(

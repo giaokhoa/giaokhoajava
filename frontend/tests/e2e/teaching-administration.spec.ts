@@ -969,11 +969,8 @@ test("giao diện quản trị: trang classes hiển thị lớp và khóa", asy
   const daTao: NguoiDungTest[] = [];
   try {
     const setup = await dungCenterLopKhoa(page, origin, env, daTao, 3);
-    // Như test giao diện của center-administration.spec.ts: phiên đăng nhập ở backend
-    // origin, test này còn cần topology một origin để trình duyệt đã đăng nhập tới
-    // được giao diện Next; khi chưa có, khẳng định đỏ đúng.
     await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/classes`);
-    await expect(page.getByText(setup.tenLop)).toBeVisible();
+    await page.getByRole("button", { name: setup.tenLop, exact: true }).click();
     await expect(page.getByText(setup.tenKhoa)).toBeVisible();
   } finally {
     await xoaNguoiDung(env, daTao);
