@@ -56,6 +56,7 @@ type MutationTraLoi = {
   statusUrl?: string;
   operation?: OperationView;
   handoff?: { username?: string; temporaryPassword?: string };
+  invitationToken?: string;
 };
 type TrangDanhSach<T> = { items: T[]; nextCursor?: string };
 type CenterView = { id: string; workspaceId: string; name: string };
@@ -331,43 +332,22 @@ async function xacNhanGoi(
   await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
 }
 
-// Token chấp nhận một lần chỉ tới được người được mời qua email: trích token từ link trong
-// mail mời (dạng .../invitations/{token}/accept hoặc ?token={token}).
-function trichTokenChapNhanMoi(noiDung: string): string {
-  for (const mau of [
-    /\/invitations\/([A-Za-z0-9_-]{8,})\/accept/,
-    /\/invitations\/([A-Za-z0-9_-]{8,})/,
-    /[?&]token=([A-Za-z0-9_-]{8,})/,
-  ]) {
-    const khop = noiDung.match(mau);
-    if (khop?.[1]) return khop[1];
-  }
-  return "";
-}
-
+// Token chấp nhận một lần chỉ có trong response CREATE của lời mời
+// (InvitationCreatedView.invitationToken); hệ thống không gửi mail mời.
 async function moiVaChapNhan(
   page: Page,
   origin: string,
-  env: TestEnvironment,
   csrfNguoiMoi: Csrf,
   workspaceId: string,
   nguoiDuocMoi: NguoiDungTest,
   roles: string[],
 ): Promise<{ membershipId: string; userAppId: string }> {
-  const batDauChoMail = Date.now();
   const moi = await guiMutation(page, origin, csrfNguoiMoi, "POST",
     `/api/workspaces/${workspaceId}/invitations`, { email: nguoiDuocMoi.email, roles });
   expect(moi.status()).toBe(202);
   const traLoiMoi = (await moi.json()) as MutationTraLoi;
   await choOperationThanhCong(page, origin, layOperationId(traLoiMoi), traLoiMoi.statusUrl);
-
-  const mail = await env.waitForEmail(nguoiDuocMoi.email, batDauChoMail);
-  let token = "";
-  try {
-    token = trichTokenChapNhanMoi(await env.readEmailContent(mail));
-  } finally {
-    await env.deleteEmail(mail);
-  }
+  const token = traLoiMoi.invitationToken ?? "";
   expect(token).toBeTruthy();
 
   const csrfNguoiDuocMoi = await dangNhapLai(page, origin, nguoiDuocMoi);
@@ -414,7 +394,7 @@ async function dungCenterVoiManager(
   await xacNhanGoi(page, origin, csrf, workspaceId);
   csrf = await dangNhapLai(page, origin, owner);
   const { membershipId } = await moiVaChapNhan(
-    page, origin, env, csrf, workspaceId, ungVien, ["TEACHER"]);
+    page, origin, csrf, workspaceId, ungVien, ["TEACHER"]);
   csrf = await dangNhapLai(page, origin, owner);
   const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
   const membership = thanhVien.find((item) => item.id === membershipId);
@@ -807,7 +787,7 @@ test("thêm môn vào khóa sau không tự ghi danh/phân công", async ({ page
     // Cũng không tự phân công giáo viên môn cũ sang môn mới: giáo viên của môn 1
     // gọi roster môn mới bị từ chối.
     const giaoVien = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const { userAppId } = await moiVaChapNhan(page, origin, env, setup.csrfManager,
+    const { userAppId } = await moiVaChapNhan(page, origin, setup.csrfManager,
       setup.workspaceId, giaoVien, ["TEACHER"]);
     await phanCongGiaoVien(page, origin, setup.csrfManager, setup.workspaceId,
       mon1.id, [userAppId]);
@@ -833,11 +813,11 @@ test("nhiều giáo viên cùng môn: cả hai đều thấy roster môn, giáo 
     const giaoVienA = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
     const giaoVienB = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
     const giaoVienC = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const { userAppId: idGiaoVienA } = await moiVaChapNhan(page, origin, env,
+    const { userAppId: idGiaoVienA } = await moiVaChapNhan(page, origin,
       setup.csrfManager, setup.workspaceId, giaoVienA, ["TEACHER"]);
-    const { userAppId: idGiaoVienB } = await moiVaChapNhan(page, origin, env,
+    const { userAppId: idGiaoVienB } = await moiVaChapNhan(page, origin,
       setup.csrfManager, setup.workspaceId, giaoVienB, ["TEACHER"]);
-    const { userAppId: idGiaoVienC } = await moiVaChapNhan(page, origin, env,
+    const { userAppId: idGiaoVienC } = await moiVaChapNhan(page, origin,
       setup.csrfManager, setup.workspaceId, giaoVienC, ["TEACHER"]);
 
     const { username, operationId } = await capStudent(
@@ -884,7 +864,7 @@ test("chủ nhiệm: thấy roster lớp, không được phân công giáo viê
     const setup = await dungCenterLopKhoa(page, origin, env, daTao, 3);
     const [mon1] = setup.monKhoa;
     const chuNhiem = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const { userAppId } = await moiVaChapNhan(page, origin, env, setup.csrfManager,
+    const { userAppId } = await moiVaChapNhan(page, origin, setup.csrfManager,
       setup.workspaceId, chuNhiem, ["TEACHER"]);
     await phanCongChuNhiem(page, origin, setup.csrfManager, setup.workspaceId,
       setup.lopId, userAppId);
@@ -939,7 +919,7 @@ test("actor chuyển lớp/môn không lộ dữ liệu: giáo viên L1 và họ
       [dongRoster.id], [mon1L1.id]);
 
     const giaoVien = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
-    const { userAppId } = await moiVaChapNhan(page, origin, env, setup.csrfManager,
+    const { userAppId } = await moiVaChapNhan(page, origin, setup.csrfManager,
       setup.workspaceId, giaoVien, ["TEACHER"]);
     await phanCongGiaoVien(page, origin, setup.csrfManager, setup.workspaceId,
       mon1L1.id, [userAppId]);
