@@ -1,21 +1,23 @@
 {
   "repository": "giaokhoa/giaokhoa",
   "feature": "001-multitenant-access",
-  "verified_at": "2026-11-05T07:18:50.468190+00:00",
+  "verified_at": "2026-11-08T23:58:43.152933+00:00",
   "parent": {
     "number": 2,
     "url": "https://github.com/giaokhoa/giaokhoa/issues/2",
     "title": "Bộ khung Authentication & Authorization đa trung tâm — Spring Boot + Next.js + Keycloak"
   },
   "child_count": 99,
-  "dependency_edges": 131,
-  "parallel_candidates": 32,
+  "dependency_edges": 136,
+  "parallel_candidates": 40,
   "ready_tasks": [
-    "T001",
-    "T002",
-    "T003"
+    "T054",
+    "T055",
+    "T056",
+    "T057",
+    "T061"
   ],
-  "source_sha256": "9856c33a84a8c8058643ad4a36d51223458b6f9a3e472b2026929929e42efca6",
+  "source_sha256": "b1dd140534e73dff05b4e17933a8af515abfa6e93d94b6362a44810a7b1c37cf",
   "tasks": {
     "T001": {
       "number": 3,
@@ -24,7 +26,8 @@
       "story": null,
       "phase": "Phase 1: Setup — khởi tạo hai ứng dụng",
       "parallel_candidate": true,
-      "blocked_by": []
+      "blocked_by": [],
+      "state": "CLOSED"
     },
     "T002": {
       "number": 4,
@@ -33,7 +36,8 @@
       "story": null,
       "phase": "Phase 1: Setup — khởi tạo hai ứng dụng",
       "parallel_candidate": true,
-      "blocked_by": []
+      "blocked_by": [],
+      "state": "CLOSED"
     },
     "T003": {
       "number": 5,
@@ -42,7 +46,8 @@
       "story": null,
       "phase": "Phase 1: Setup — khởi tạo hai ứng dụng",
       "parallel_candidate": true,
-      "blocked_by": []
+      "blocked_by": [],
+      "state": "CLOSED"
     },
     "T004": {
       "number": 6,
@@ -56,7 +61,8 @@
           "task": "T003",
           "number": 5
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T005": {
       "number": 7,
@@ -78,7 +84,8 @@
           "task": "T004",
           "number": 6
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T006": {
       "number": 8,
@@ -92,7 +99,8 @@
           "task": "T005",
           "number": 7
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T007": {
       "number": 9,
@@ -106,7 +114,8 @@
           "task": "T006",
           "number": 8
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T008": {
       "number": 10,
@@ -120,7 +129,8 @@
           "task": "T006",
           "number": 8
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T009": {
       "number": 11,
@@ -134,7 +144,8 @@
           "task": "T007",
           "number": 9
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T010": {
       "number": 12,
@@ -152,7 +163,8 @@
           "task": "T006",
           "number": 8
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T011": {
       "number": 13,
@@ -167,14 +179,15 @@
           "number": 10
         },
         {
-          "task": "T010",
-          "number": 12
-        },
-        {
           "task": "T009",
           "number": 11
+        },
+        {
+          "task": "T010",
+          "number": 12
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T012": {
       "number": 14,
@@ -192,7 +205,8 @@
           "task": "T011",
           "number": 13
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T013": {
       "number": 15,
@@ -214,7 +228,8 @@
           "task": "T011",
           "number": 13
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T014": {
       "number": 16,
@@ -236,7 +251,8 @@
           "task": "T011",
           "number": 13
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T015": {
       "number": 17,
@@ -254,7 +270,8 @@
           "task": "T014",
           "number": 16
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T016": {
       "number": 18,
@@ -268,7 +285,8 @@
           "task": "T015",
           "number": 17
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T017": {
       "number": 19,
@@ -279,14 +297,15 @@
       "parallel_candidate": false,
       "blocked_by": [
         {
-          "task": "T016",
-          "number": 18
-        },
-        {
           "task": "T009",
           "number": 11
+        },
+        {
+          "task": "T016",
+          "number": 18
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T018": {
       "number": 20,
@@ -300,7 +319,8 @@
           "task": "T017",
           "number": 19
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T019": {
       "number": 21,
@@ -314,7 +334,8 @@
           "task": "T018",
           "number": 20
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T020": {
       "number": 22,
@@ -328,7 +349,8 @@
           "task": "T019",
           "number": 21
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T021": {
       "number": 23,
@@ -339,14 +361,15 @@
       "parallel_candidate": false,
       "blocked_by": [
         {
-          "task": "T020",
-          "number": 22
-        },
-        {
           "task": "T012",
           "number": 14
+        },
+        {
+          "task": "T020",
+          "number": 22
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T022": {
       "number": 24,
@@ -360,7 +383,8 @@
           "task": "T021",
           "number": 23
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T023": {
       "number": 25,
@@ -374,7 +398,8 @@
           "task": "T022",
           "number": 24
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T024": {
       "number": 26,
@@ -388,7 +413,8 @@
           "task": "T022",
           "number": 24
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T025": {
       "number": 27,
@@ -406,7 +432,8 @@
           "task": "T024",
           "number": 26
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T026": {
       "number": 28,
@@ -424,7 +451,8 @@
           "task": "T024",
           "number": 26
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T027": {
       "number": 29,
@@ -438,7 +466,8 @@
           "task": "T026",
           "number": 28
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T028": {
       "number": 30,
@@ -452,7 +481,8 @@
           "task": "T025",
           "number": 27
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T029": {
       "number": 31,
@@ -466,7 +496,8 @@
           "task": "T028",
           "number": 30
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T030": {
       "number": 32,
@@ -477,14 +508,15 @@
       "parallel_candidate": false,
       "blocked_by": [
         {
-          "task": "T029",
-          "number": 31
-        },
-        {
           "task": "T027",
           "number": 29
+        },
+        {
+          "task": "T029",
+          "number": 31
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T031": {
       "number": 33,
@@ -498,7 +530,8 @@
           "task": "T024",
           "number": 26
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T032": {
       "number": 34,
@@ -512,7 +545,8 @@
           "task": "T031",
           "number": 33
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T033": {
       "number": 35,
@@ -530,7 +564,8 @@
           "task": "T032",
           "number": 34
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T034": {
       "number": 36,
@@ -544,7 +579,8 @@
           "task": "T033",
           "number": 35
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T035": {
       "number": 37,
@@ -558,7 +594,8 @@
           "task": "T033",
           "number": 35
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T036": {
       "number": 38,
@@ -576,7 +613,8 @@
           "task": "T035",
           "number": 37
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T037": {
       "number": 39,
@@ -590,7 +628,8 @@
           "task": "T036",
           "number": 38
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T038": {
       "number": 40,
@@ -604,7 +643,8 @@
           "task": "T037",
           "number": 39
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T039": {
       "number": 41,
@@ -618,7 +658,8 @@
           "task": "T038",
           "number": 40
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T040": {
       "number": 42,
@@ -632,7 +673,8 @@
           "task": "T039",
           "number": 41
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T041": {
       "number": 43,
@@ -646,7 +688,8 @@
           "task": "T035",
           "number": 37
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T042": {
       "number": 44,
@@ -664,7 +707,8 @@
           "task": "T041",
           "number": 43
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T043": {
       "number": 45,
@@ -678,7 +722,8 @@
           "task": "T042",
           "number": 44
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T044": {
       "number": 46,
@@ -692,7 +737,8 @@
           "task": "T042",
           "number": 44
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T045": {
       "number": 47,
@@ -706,7 +752,8 @@
           "task": "T042",
           "number": 44
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T046": {
       "number": 48,
@@ -720,7 +767,8 @@
           "task": "T042",
           "number": 44
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T047": {
       "number": 49,
@@ -738,7 +786,8 @@
           "task": "T046",
           "number": 48
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T048": {
       "number": 50,
@@ -752,7 +801,8 @@
           "task": "T047",
           "number": 49
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T049": {
       "number": 51,
@@ -760,13 +810,14 @@
       "title": "[T049][US3] Cài lớp/roster/course/subject services và scoped repositories",
       "story": "US3",
       "phase": "Phase 5: US3 — Khóa đa môn, nhiều giáo viên, ghi danh từng môn (P1)",
-      "parallel_candidate": false,
+      "parallel_candidate": true,
       "blocked_by": [
         {
           "task": "T047",
           "number": 49
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T050": {
       "number": 52,
@@ -774,13 +825,14 @@
       "title": "[T050][US3] Cài batch enrollment và teacher/homeroom sources với prereq role đúng center",
       "story": "US3",
       "phase": "Phase 5: US3 — Khóa đa môn, nhiều giáo viên, ghi danh từng môn (P1)",
-      "parallel_candidate": false,
+      "parallel_candidate": true,
       "blocked_by": [
         {
           "task": "T048",
           "number": 50
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T051": {
       "number": 53,
@@ -788,13 +840,14 @@
       "title": "[T051][US3] Expose đầy đủ class/course/subject/roster/enrollment/teacher/homeroom routes",
       "story": "US3",
       "phase": "Phase 5: US3 — Khóa đa môn, nhiều giáo viên, ghi danh từng môn (P1)",
-      "parallel_candidate": false,
+      "parallel_candidate": true,
       "blocked_by": [
         {
           "task": "T049",
           "number": 51
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T052": {
       "number": 54,
@@ -808,7 +861,8 @@
           "task": "T044",
           "number": 46
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T053": {
       "number": 55,
@@ -846,7 +900,8 @@
           "task": "T052",
           "number": 54
         }
-      ]
+      ],
+      "state": "CLOSED"
     },
     "T054": {
       "number": 56,
@@ -860,7 +915,8 @@
           "task": "T053",
           "number": 55
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T055": {
       "number": 57,
@@ -874,12 +930,103 @@
           "task": "T053",
           "number": 55
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T056": {
       "number": 58,
       "url": "https://github.com/giaokhoa/giaokhoa/issues/58",
       "title": "[T056][US4] Tạo guardian_link schema/model/RLS, trạng thái REQUESTED/APPROVED/REJECTED/REVOKED và nguồn parent role",
+      "story": "US4",
+      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
+      "parallel_candidate": true,
+      "blocked_by": [
+        {
+          "task": "T053",
+          "number": 55
+        }
+      ],
+      "state": "OPEN"
+    },
+    "T057": {
+      "number": 59,
+      "url": "https://github.com/giaokhoa/giaokhoa/issues/59",
+      "title": "[T057][US4] Tạo primitive sample_activity/submission/result đủ FK/UTC/snapshot và RLS phục vụ read side",
+      "story": "US4",
+      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
+      "parallel_candidate": true,
+      "blocked_by": [
+        {
+          "task": "T053",
+          "number": 55
+        }
+      ],
+      "state": "OPEN"
+    },
+    "T058": {
+      "number": 60,
+      "url": "https://github.com/giaokhoa/giaokhoa/issues/60",
+      "title": "[T058][US4] Cài request/approve/reject/revoke và current native guardian group theo student+center, manager/owner gate",
+      "story": "US4",
+      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
+      "parallel_candidate": true,
+      "blocked_by": [
+        {
+          "task": "T056",
+          "number": 58
+        }
+      ],
+      "state": "OPEN"
+    },
+    "T059": {
+      "number": 61,
+      "url": "https://github.com/giaokhoa/giaokhoa/issues/61",
+      "title": "[T059][US4] Cài read side kết quả và ResultPolicyProjector: scope published tách read/grade, source teacher/personal owner/enrolled student/approved guardian",
+      "story": "US4",
+      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
+      "parallel_candidate": true,
+      "blocked_by": [
+        {
+          "task": "T057",
+          "number": 59
+        }
+      ],
+      "state": "OPEN"
+    },
+    "T060": {
+      "number": 62,
+      "url": "https://github.com/giaokhoa/giaokhoa/issues/62",
+      "title": "[T060][US4] Expose guardian request/list/decision/revoke và students/{sid}/results",
+      "story": "US4",
+      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
+      "parallel_candidate": true,
+      "blocked_by": [
+        {
+          "task": "T058",
+          "number": 60
+        }
+      ],
+      "state": "OPEN"
+    },
+    "T061": {
+      "number": 63,
+      "url": "https://github.com/giaokhoa/giaokhoa/issues/63",
+      "title": "[T061][US4] Xây parent request và manager review, trang kết quả con chỉ published",
+      "story": "US4",
+      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
+      "parallel_candidate": true,
+      "blocked_by": [
+        {
+          "task": "T053",
+          "number": 55
+        }
+      ],
+      "state": "OPEN"
+    },
+    "T062": {
+      "number": 64,
+      "url": "https://github.com/giaokhoa/giaokhoa/issues/64",
+      "title": "[T062][US4] Nghiệm thu 5 scenarios US4 và T6 bằng parent thật trong realm test",
       "story": "US4",
       "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
       "parallel_candidate": false,
@@ -891,87 +1038,23 @@
         {
           "task": "T055",
           "number": 57
-        }
-      ]
-    },
-    "T057": {
-      "number": 59,
-      "url": "https://github.com/giaokhoa/giaokhoa/issues/59",
-      "title": "[T057][US4] Tạo primitive sample_activity/submission/result đủ FK/UTC/snapshot và RLS phục vụ read side",
-      "story": "US4",
-      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
-      "parallel_candidate": false,
-      "blocked_by": [
+        },
         {
           "task": "T056",
           "number": 58
-        }
-      ]
-    },
-    "T058": {
-      "number": 60,
-      "url": "https://github.com/giaokhoa/giaokhoa/issues/60",
-      "title": "[T058][US4] Cài request/approve/reject/revoke và current native guardian group theo student+center, manager/owner gate",
-      "story": "US4",
-      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
-      "parallel_candidate": false,
-      "blocked_by": [
+        },
         {
           "task": "T057",
           "number": 59
-        }
-      ]
-    },
-    "T059": {
-      "number": 61,
-      "url": "https://github.com/giaokhoa/giaokhoa/issues/61",
-      "title": "[T059][US4] Cài read side kết quả và ResultPolicyProjector: scope published tách read/grade, source teacher/personal owner/enrolled student/approved guardian",
-      "story": "US4",
-      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
-      "parallel_candidate": false,
-      "blocked_by": [
+        },
         {
           "task": "T058",
           "number": 60
-        }
-      ]
-    },
-    "T060": {
-      "number": 62,
-      "url": "https://github.com/giaokhoa/giaokhoa/issues/62",
-      "title": "[T060][US4] Expose guardian request/list/decision/revoke và students/{sid}/results",
-      "story": "US4",
-      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
-      "parallel_candidate": false,
-      "blocked_by": [
+        },
         {
           "task": "T059",
           "number": 61
-        }
-      ]
-    },
-    "T061": {
-      "number": 63,
-      "url": "https://github.com/giaokhoa/giaokhoa/issues/63",
-      "title": "[T061][US4] Xây parent request và manager review, trang kết quả con chỉ published",
-      "story": "US4",
-      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
-      "parallel_candidate": true,
-      "blocked_by": [
-        {
-          "task": "T055",
-          "number": 57
-        }
-      ]
-    },
-    "T062": {
-      "number": 64,
-      "url": "https://github.com/giaokhoa/giaokhoa/issues/64",
-      "title": "[T062][US4] Nghiệm thu 5 scenarios US4 và T6 bằng parent thật trong realm test",
-      "story": "US4",
-      "phase": "Phase 6: US4 — Phụ huynh xem kết quả của đúng con (P1)",
-      "parallel_candidate": false,
-      "blocked_by": [
+        },
         {
           "task": "T060",
           "number": 62
@@ -980,7 +1063,8 @@
           "task": "T061",
           "number": 63
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T063": {
       "number": 65,
@@ -994,7 +1078,8 @@
           "task": "T062",
           "number": 64
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T064": {
       "number": 66,
@@ -1008,7 +1093,8 @@
           "task": "T062",
           "number": 64
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T065": {
       "number": 67,
@@ -1026,7 +1112,8 @@
           "task": "T064",
           "number": 66
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T066": {
       "number": 68,
@@ -1040,7 +1127,8 @@
           "task": "T065",
           "number": 67
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T067": {
       "number": 69,
@@ -1054,7 +1142,8 @@
           "task": "T066",
           "number": 68
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T068": {
       "number": 70,
@@ -1068,7 +1157,8 @@
           "task": "T067",
           "number": 69
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T069": {
       "number": 71,
@@ -1082,7 +1172,8 @@
           "task": "T068",
           "number": 70
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T070": {
       "number": 72,
@@ -1096,7 +1187,8 @@
           "task": "T068",
           "number": 70
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T071": {
       "number": 73,
@@ -1114,7 +1206,8 @@
           "task": "T070",
           "number": 72
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T072": {
       "number": 74,
@@ -1128,7 +1221,8 @@
           "task": "T071",
           "number": 73
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T073": {
       "number": 75,
@@ -1142,7 +1236,8 @@
           "task": "T070",
           "number": 72
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T074": {
       "number": 76,
@@ -1160,7 +1255,8 @@
           "task": "T073",
           "number": 75
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T075": {
       "number": 77,
@@ -1174,7 +1270,8 @@
           "task": "T074",
           "number": 76
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T076": {
       "number": 78,
@@ -1188,7 +1285,8 @@
           "task": "T074",
           "number": 76
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T077": {
       "number": 79,
@@ -1206,7 +1304,8 @@
           "task": "T076",
           "number": 78
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T078": {
       "number": 80,
@@ -1220,7 +1319,8 @@
           "task": "T077",
           "number": 79
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T079": {
       "number": 81,
@@ -1234,7 +1334,8 @@
           "task": "T078",
           "number": 80
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T080": {
       "number": 82,
@@ -1248,7 +1349,8 @@
           "task": "T079",
           "number": 81
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T081": {
       "number": 83,
@@ -1262,7 +1364,8 @@
           "task": "T080",
           "number": 82
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T082": {
       "number": 84,
@@ -1276,7 +1379,8 @@
           "task": "T081",
           "number": 83
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T083": {
       "number": 85,
@@ -1290,7 +1394,8 @@
           "task": "T082",
           "number": 84
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T084": {
       "number": 86,
@@ -1304,7 +1409,8 @@
           "task": "T083",
           "number": 85
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T085": {
       "number": 87,
@@ -1318,7 +1424,8 @@
           "task": "T076",
           "number": 78
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T086": {
       "number": 88,
@@ -1336,7 +1443,8 @@
           "task": "T085",
           "number": 87
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T087": {
       "number": 89,
@@ -1350,7 +1458,8 @@
           "task": "T086",
           "number": 88
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T088": {
       "number": 90,
@@ -1364,7 +1473,8 @@
           "task": "T086",
           "number": 88
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T089": {
       "number": 91,
@@ -1382,7 +1492,8 @@
           "task": "T088",
           "number": 90
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T090": {
       "number": 92,
@@ -1396,7 +1507,8 @@
           "task": "T089",
           "number": 91
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T091": {
       "number": 93,
@@ -1410,7 +1522,8 @@
           "task": "T090",
           "number": 92
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T092": {
       "number": 94,
@@ -1424,7 +1537,8 @@
           "task": "T088",
           "number": 90
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T093": {
       "number": 95,
@@ -1442,7 +1556,8 @@
           "task": "T092",
           "number": 94
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T094": {
       "number": 96,
@@ -1456,7 +1571,8 @@
           "task": "T093",
           "number": 95
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T095": {
       "number": 97,
@@ -1470,7 +1586,8 @@
           "task": "T094",
           "number": 96
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T096": {
       "number": 98,
@@ -1484,7 +1601,8 @@
           "task": "T095",
           "number": 97
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T097": {
       "number": 99,
@@ -1498,7 +1616,8 @@
           "task": "T096",
           "number": 98
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T098": {
       "number": 100,
@@ -1512,7 +1631,8 @@
           "task": "T097",
           "number": 99
         }
-      ]
+      ],
+      "state": "OPEN"
     },
     "T099": {
       "number": 101,
@@ -1526,10 +1646,11 @@
           "task": "T098",
           "number": 100
         }
-      ]
+      ],
+      "state": "OPEN"
     }
   },
   "ready_filter_url": "https://github.com/giaokhoa/giaokhoa/issues?q=is%3Aissue+is%3Aopen+label%3Atask+label%3A%22feature%3Amultitenant-access%22+-is%3Ablocked",
   "ready_filter_verified": true,
-  "notes": "Mapping và trạng thái ready là ảnh chụp lúc xác minh; native Blocked by và bộ lọc GitHub phản ánh tiến độ hiện hành. Không phải kết quả triển khai hoặc kiểm thử sản phẩm."
+  "notes": "Snapshot trạng thái issue và native Blocked by tại verified_at; không phải bằng chứng sản phẩm đạt. ready_tasks chỉ gồm task mở không còn blocker native mở. Tiền đề artifact có thể đã sẵn sàng ở PR/SHA dù issue còn mở; xem tasks.md, implementation-prompt.md và parent #2 để chọn phần độc lập. Gate vẫn cần nghiệm thu thật."
 }

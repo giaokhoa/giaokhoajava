@@ -150,11 +150,13 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Execution flow**: Order and dependency requirements
 
 6. Execute implementation following the task plan:
-   - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
-   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
+   - **Điều phối hiện hành**: Đọc `AGENTS.md` và parent issue của feature. Áp dụng yêu cầu song song của người dùng bằng công cụ phân công agent thực tế; giao issue, file, worktree và đầu ra rõ ràng, bổ sung việc độc lập khi agent rảnh.
+   - **Phase-by-phase execution**: Giữ gate giữa các story; trong story đã mở, triển khai từng phần xuyên schema/service/quyền/API/test khi đầu vào của phần đó sẵn sàng, không đợi hoàn tất cả tầng cho toàn story.
+   - **Respect dependencies**: Phân biệt tiền đề artifact với gate nghiệm thu. PR/SHA có contract ổn định và kiểm chứng phù hợp cho phép bắt đầu phần tiêu thụ dù issue còn mở; `[P]` là gợi ý, không giới hạn việc phân công các phần độc lập khác. Đồng bộ dependency mới vào GitHub, `tasks.md` và `github-issues.json`.
+   - **Follow TDD approach**: Viết/review contract và xác nhận red có ý nghĩa trước phần implementation tương ứng. Task test không phải chờ toàn story green mới được hoàn tất; `main` chỉ nhận PR tích hợp đã xanh và qua review.
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
+   - **Tích hợp và tài nguyên**: Một owner ghép file chung và `origin/main` trước kiểm chứng cuối/bàn giao. Tuân thủ giới hạn test nặng, stack TEST riêng và báo cáo agent → task → PR/SHA → blocker theo `AGENTS.md`.
 
 7. Implementation execution rules:
    - **Setup first**: Initialize project structure, dependencies, configuration
@@ -165,7 +167,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 8. Progress tracking and error handling:
    - Report progress after each completed task
-   - Halt execution if any non-parallel task fails
+   - Khi task lỗi, chặn đúng phần phụ thuộc và tiếp tục phần độc lập; gate lỗi vẫn chặn mở story sau. Không để một task chưa có `[P]` làm dừng mọi agent.
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if implementation cannot proceed
