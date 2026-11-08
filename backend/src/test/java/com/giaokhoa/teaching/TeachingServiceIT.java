@@ -10,19 +10,27 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.ClassService.ClassView;
 import com.giaokhoa.teaching.ClassService.RosterEntryView;
 import com.giaokhoa.teaching.CourseService.CourseView;
+import com.giaokhoa.teaching.data.TeachingRepository;
+import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -36,13 +44,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  * membership ACTIVE và lô roster nguyên tử, thu hồi roster kéo theo thu hồi ghi danh phụ thuộc mà
  * giữ lịch sử, khóa phải có ít nhất một môn lúc tạo, và thêm môn không tự ghi danh. Seed chỉ bằng
  * JDBC trong schema cô lập; không cần Keycloak vì tầng service không quyết quyền và không ghi
- * operation.
+ * operation. Riêng phần RLS chạy service qua một role runtime NOSUPERUSER NOBYPASSRLS theo mẫu
+ * SystemPracticeHistoryIT, vì user của stack TEST là superuser nên tự nó không chịu RLS — chỉ qua
+ * role đó mới chứng minh được service đặt đúng context workspace cho mọi đường.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TeachingServiceIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "teaching_service_" + UUID.randomUUID().toString().replace("-", "");
+    private static final String RUNTIME_ROLE = "teaching_service_runtime";
 
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
@@ -58,6 +69,8 @@ class TeachingServiceIT extends IntegrationEnvironment {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired ClassService classes;
     @Autowired CourseService courses;
+
+    private @Nullable SingleConnectionDataSource runtimeDataSource;
 
     @Test
     void createClassReadsBackScopedToWorkspace() {
@@ -170,12 +183,13 @@ class TeachingServiceIT extends IntegrationEnvironment {
         RosterEntryView entry =
                 classes.addStudents(workspace, clazz.id(), List.of(student)).getFirst();
         UUID courseSubjectId = course.subjects().getFirst().id();
+        UUID enrollmentId = UUID.randomUUID();
         tx(() -> {
             jdbc.update(
                     "INSERT INTO enrollment"
                             + " (id, workspace_id, class_student_id, course_subject_id,"
                             + " state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                    UUID.randomUUID(),
+                    enrollmentId,
                     workspace,
                     entry.id(),
                     courseSubjectId);
@@ -202,6 +216,17 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         Integer.class,
                         entry.id()),
                 "Ghi danh phụ thuộc bị thu hồi cùng roster");
+        assertEquals(
+                "REVOKED",
+                jdbc.queryForObject(
+                        "SELECT state FROM enrollment WHERE id = ?", String.class, enrollmentId),
+                "Hàng ghi danh phụ thuộc chuyển hẳn sang REVOKED, không lùi về trạng thái chờ");
+        assertNotNull(
+                jdbc.queryForObject(
+                        "SELECT revoked_at FROM enrollment WHERE id = ?",
+                        OffsetDateTime.class,
+                        enrollmentId),
+                "Thu hồi ghi danh phụ thuộc ghi thời điểm thu hồi");
         assertEquals(List.of(), classes.listStudents(workspace, clazz.id()));
     }
 
@@ -292,6 +317,178 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         HttpProblemException.class,
                         () -> courses.revokeCourseSubject(workspace, course.id(), courseSubjectId));
         assertEquals(HttpStatus.CONFLICT, problem.getStatus());
+    }
+
+    @Test
+    void expiredSubscriptionGatesEveryExpansionExceptRenameCourse() {
+        UUID owner = seedAccount();
+        UUID workspace = seedCenter(owner);
+        UUID member = seedAccount();
+        addMembership(workspace, member, "STUDENT");
+        ClassView clazz = classes.createClass(workspace, "Lớp cổng gói");
+        List<UUID> subjects = courses.listSubjects().stream().map(s -> s.id()).toList();
+        CourseView course =
+                courses.createCourse(
+                        workspace, clazz.id(), "Khóa cổng gói", List.of(subjects.getFirst()));
+        seedSubscription(workspace, -60, -1, owner);
+
+        assertSubscriptionBlocked(() -> classes.renameClass(workspace, clazz.id(), "Tên lớp mới"));
+        assertSubscriptionBlocked(
+                () -> classes.addStudents(workspace, clazz.id(), List.of(member)));
+        assertSubscriptionBlocked(() ->
+                courses.createCourse(
+                        workspace, clazz.id(), "Khóa mới", List.of(subjects.getFirst())));
+        assertSubscriptionBlocked(
+                () -> courses.addSubjects(workspace, course.id(), List.of(subjects.get(1))));
+
+        // Đổi tên khóa cố ý không qua cổng gói (xem B39): gói đã hết hạn vẫn đổi tên được.
+        CourseView renamed = courses.renameCourse(workspace, course.id(), "Khóa đã đổi tên");
+        assertEquals("Khóa đã đổi tên", renamed.name());
+    }
+
+    @Test
+    void crossWorkspaceCourseRosterRevokeAndCourseListAreNotFound() {
+        UUID owner = seedAccount();
+        UUID workspace = seedCenter(owner);
+        UUID student = seedAccount();
+        addMembership(workspace, student, "STUDENT");
+        ClassView clazz = classes.createClass(workspace, "Lớp scope");
+        UUID subject = courses.listSubjects().getFirst().id();
+        CourseView course =
+                courses.createCourse(workspace, clazz.id(), "Khóa scope", List.of(subject));
+        RosterEntryView entry =
+                classes.addStudents(workspace, clazz.id(), List.of(student)).getFirst();
+        UUID other = seedCenter(seedAccount());
+
+        HttpProblemException getCourseProblem =
+                assertThrows(
+                        HttpProblemException.class, () -> courses.getCourse(other, course.id()));
+        assertEquals(HttpStatus.NOT_FOUND, getCourseProblem.getStatus());
+        assertEquals("COURSE_NOT_FOUND", getCourseProblem.getCode());
+
+        HttpProblemException revokeProblem =
+                assertThrows(
+                        HttpProblemException.class,
+                        () -> classes.revokeStudent(other, clazz.id(), entry.id()));
+        assertEquals(HttpStatus.NOT_FOUND, revokeProblem.getStatus());
+        assertEquals("ROSTER_ENTRY_NOT_FOUND", revokeProblem.getCode());
+
+        HttpProblemException listProblem =
+                assertThrows(
+                        HttpProblemException.class, () -> courses.listCourses(other, clazz.id()));
+        assertEquals(HttpStatus.NOT_FOUND, listProblem.getStatus());
+        assertEquals("CLASS_NOT_FOUND", listProblem.getCode());
+
+        assertEquals(
+                "ACTIVE",
+                classes.listStudents(workspace, clazz.id()).getFirst().state(),
+                "Đường chéo workspace không chạm được vào hàng thật của workspace gốc");
+    }
+
+    @Test
+    void serviceOperationsRunUnderNonBypassRlsRole() {
+        UUID owner = seedAccount();
+        UUID workspace = seedCenter(owner);
+        UUID other = seedCenter(seedAccount());
+        UUID student = seedAccount();
+        addMembership(workspace, student, "STUDENT");
+        UUID subject = courses.listSubjects().getFirst().id();
+
+        String password = UUID.randomUUID().toString();
+        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        jdbc.execute(
+                "CREATE ROLE "
+                        + RUNTIME_ROLE
+                        + " LOGIN PASSWORD '"
+                        + password
+                        + "' NOSUPERUSER NOBYPASSRLS");
+        jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        jdbc.execute(
+                "GRANT SELECT, INSERT, UPDATE ON school_class, class_student, course,"
+                        + " course_subject, enrollment TO "
+                        + RUNTIME_ROLE);
+        jdbc.execute(
+                "GRANT SELECT ON workspace, subscription_period, user_account, center_membership,"
+                        + " subject TO "
+                        + RUNTIME_ROLE);
+        String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
+        runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
+        try {
+            JdbcTemplate runtimeJdbc = new JdbcTemplate(runtimeDataSource);
+            runtimeJdbc.execute("SET search_path TO " + SCHEMA + ",public");
+            DataSourceTransactionManager runtimeTxManager =
+                    new DataSourceTransactionManager(runtimeDataSource);
+            TeachingRepository runtimeRepository = new TeachingRepository(runtimeJdbc);
+            WorkspaceTransaction runtimeWorkspaceTx =
+                    new WorkspaceTransaction(runtimeJdbc, runtimeTxManager);
+            ClassService runtimeClasses = new ClassService(runtimeRepository, runtimeWorkspaceTx);
+            CourseService runtimeCourses = new CourseService(runtimeRepository, runtimeWorkspaceTx);
+            TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
+
+            ClassView created =
+                    Objects.requireNonNull(
+                            runtimeTx.execute(
+                                    _ -> runtimeClasses.createClass(workspace, "Lớp runtime")));
+            assertEquals(
+                    0,
+                    runtimeJdbc.queryForObject("SELECT count(*) FROM school_class", Integer.class),
+                    "Không có context thì role runtime không thấy hàng nào (fail-closed)");
+            assertThrows(
+                    DataAccessException.class,
+                    () ->
+                            runtimeJdbc.update(
+                                    "INSERT INTO school_class (id, workspace_id, name, state)"
+                                            + " VALUES (?, ?, 'Lớp lậu', 'ACTIVE')",
+                                    UUID.randomUUID(),
+                                    workspace),
+                    "Ghi không qua context bị WITH CHECK của RLS chặn");
+            assertEquals(
+                    created,
+                    runtimeTx.execute(_ -> runtimeClasses.getClass(workspace, created.id())));
+            assertEquals(
+                    List.of(created),
+                    runtimeTx.execute(_ -> runtimeClasses.listClasses(workspace)));
+            List<RosterEntryView> added =
+                    Objects.requireNonNull(
+                            runtimeTx.execute(_ ->
+                                    runtimeClasses.addStudents(
+                                            workspace, created.id(), List.of(student))));
+            CourseView course =
+                    Objects.requireNonNull(
+                            runtimeTx.execute(_ ->
+                                    runtimeCourses.createCourse(
+                                            workspace,
+                                            created.id(),
+                                            "Khóa runtime",
+                                            List.of(subject))));
+            assertEquals(1, course.subjects().size());
+            RosterEntryView revoked =
+                    Objects.requireNonNull(
+                            runtimeTx.execute(_ ->
+                                    runtimeClasses.revokeStudent(
+                                            workspace, created.id(), added.getFirst().id())));
+            assertEquals("REVOKED", revoked.state());
+            HttpProblemException cross =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    runtimeTx.execute(
+                                            _ -> runtimeClasses.getClass(other, created.id())));
+            assertEquals(HttpStatus.NOT_FOUND, cross.getStatus(), "Workspace khác vẫn vô hình");
+        } finally {
+            if (runtimeDataSource != null) {
+                runtimeDataSource.destroy();
+            }
+            jdbc.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+            jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+            jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        }
+    }
+
+    private static void assertSubscriptionBlocked(Executable action) {
+        HttpProblemException problem = assertThrows(HttpProblemException.class, action);
+        assertEquals(HttpStatus.FORBIDDEN, problem.getStatus());
+        assertEquals("SUBSCRIPTION_INACTIVE", problem.getCode());
     }
 
     // ---------- Seed dữ kiện thư mục bằng JDBC ----------
