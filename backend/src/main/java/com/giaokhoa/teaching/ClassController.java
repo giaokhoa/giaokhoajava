@@ -136,6 +136,7 @@ public class ClassController {
             @PathVariable UUID classId,
             @RequestBody @Nullable NameRequest body,
             @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(value = "If-Match", required = false) @Nullable String ifMatch,
             Authentication authentication) {
         UUID actor = support.actor(authentication);
         NameRequest request = body == null ? new NameRequest("") : body;
@@ -149,7 +150,7 @@ public class ClassController {
                     if (existing.isPresent()) {
                         return support.receipt(existing.get());
                     }
-                    classes.renameClass(workspaceId, classId, request.name());
+                    classes.renameClass(workspaceId, classId, request.name(), ifMatch);
                     return support.receipt(
                             support.recordChange(
                                     actor,

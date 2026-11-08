@@ -1,6 +1,7 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseRow;
@@ -11,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -121,9 +123,14 @@ public class CourseService {
                 .toList();
     }
 
-    /** Đổi tên khóa hiện hành; khóa đã thu hồi bị trigger giữ lịch sử khóa mọi thay đổi nên 409. */
+    /**
+     * Đổi tên khóa hiện hành; khóa đã thu hồi bị trigger giữ lịch sử khóa mọi thay đổi nên 409. Như
+     * đổi tên lớp, bắt buộc If-Match khớp row version hiện tại, kiểm tra sau khi khóa row và trước
+     * khi ghi.
+     */
     @Transactional
-    public CourseView renameCourse(UUID workspaceId, UUID courseId, String name) {
+    public CourseView renameCourse(
+            UUID workspaceId, UUID courseId, String name, @Nullable String ifMatch) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
@@ -136,6 +143,7 @@ public class CourseService {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "COURSE_ALREADY_REVOKED", "Khóa đã bị thu hồi trước đó.");
         }
+        IdempotencyService.requireIfMatch(ifMatch, row.version());
         repository.renameCourse(courseId, trimmed);
         return view(
                 new CourseRow(

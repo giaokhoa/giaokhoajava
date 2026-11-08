@@ -184,7 +184,7 @@ public class CenterService {
                     "MEMBERSHIP_NOT_ACTIVE",
                     "Membership đã bị thu hồi, không đổi role được nữa.");
         }
-        idempotency.requireIfMatch(ifMatch, row.version());
+        IdempotencyService.requireIfMatch(ifMatch, row.version());
         Set<MembershipRole.Role> current = rolesOf(membershipId);
         boolean hasOwner = current.contains(MembershipRole.Role.OWNER);
         if (desiredRoles.contains(MembershipRole.Role.OWNER) && !hasOwner) {
