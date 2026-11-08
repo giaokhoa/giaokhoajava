@@ -42,8 +42,8 @@ import tools.jackson.databind.json.JsonMapper;
  * theo projector: xem danh sách chỉ cần là thành viên hiện hành; mời, đổi role (phần thêm) và cấp
  * học sinh cần owner/manager cộng gói chưa hết hiệu lực; bổ nhiệm hoặc gỡ manager chỉ thuộc owner;
  * thu hồi không bị gate bởi gói. Route tạo lớp đã chuyển sang controller giảng dạy với cùng biên
- * quyết quyền bằng dữ kiện nguồn này. Gói chỉ chặn khi center đã từng có kỳ gói mà không kỳ nào
- * còn hiệu lực — center chưa từng được xác nhận gói vẫn do owner/manager quản trị, đúng hành vi hợp
+ * quyết quyền bằng dữ kiện nguồn này. Gói chỉ chặn khi center đã từng có kỳ gói mà không kỳ nào còn
+ * hiệu lực — center chưa từng được xác nhận gói vẫn do owner/manager quản trị, đúng hành vi hợp
  * đồng US2 yêu cầu. Các service giữ tiền điều kiện dữ kiện riêng của thao tác ghi (đúng một đích
  * mời, OWNER không mời được, học sinh trùng username) và trả lỗi nghiệp vụ của chúng.
  */
