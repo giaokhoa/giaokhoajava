@@ -8,7 +8,7 @@
     "title": "Bộ khung Authentication & Authorization đa trung tâm — Spring Boot + Next.js + Keycloak"
   },
   "child_count": 99,
-  "dependency_edges": 128,
+  "dependency_edges": 131,
   "parallel_candidates": 32,
   "ready_tasks": [
     "T001",
@@ -703,12 +703,8 @@
       "parallel_candidate": true,
       "blocked_by": [
         {
-          "task": "T043",
-          "number": 45
-        },
-        {
-          "task": "T044",
-          "number": 46
+          "task": "T042",
+          "number": 44
         }
       ]
     },
@@ -721,12 +717,8 @@
       "parallel_candidate": true,
       "blocked_by": [
         {
-          "task": "T043",
-          "number": 45
-        },
-        {
-          "task": "T044",
-          "number": 46
+          "task": "T042",
+          "number": 44
         }
       ]
     },
@@ -771,8 +763,8 @@
       "parallel_candidate": false,
       "blocked_by": [
         {
-          "task": "T048",
-          "number": 50
+          "task": "T047",
+          "number": 49
         }
       ]
     },
@@ -785,8 +777,8 @@
       "parallel_candidate": false,
       "blocked_by": [
         {
-          "task": "T049",
-          "number": 51
+          "task": "T048",
+          "number": 50
         }
       ]
     },
@@ -799,8 +791,8 @@
       "parallel_candidate": false,
       "blocked_by": [
         {
-          "task": "T050",
-          "number": 52
+          "task": "T049",
+          "number": 51
         }
       ]
     },
@@ -826,6 +818,26 @@
       "phase": "Phase 5: US3 — Khóa đa môn, nhiều giáo viên, ghi danh từng môn (P1)",
       "parallel_candidate": false,
       "blocked_by": [
+        {
+          "task": "T043",
+          "number": 45
+        },
+        {
+          "task": "T044",
+          "number": 46
+        },
+        {
+          "task": "T048",
+          "number": 50
+        },
+        {
+          "task": "T049",
+          "number": 51
+        },
+        {
+          "task": "T050",
+          "number": 52
+        },
         {
           "task": "T051",
           "number": 53
