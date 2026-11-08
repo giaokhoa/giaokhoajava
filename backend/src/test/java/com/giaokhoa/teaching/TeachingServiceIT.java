@@ -421,8 +421,12 @@ class TeachingServiceIT extends IntegrationEnvironment {
             TeachingRepository runtimeRepository = new TeachingRepository(runtimeJdbc);
             WorkspaceTransaction runtimeWorkspaceTx =
                     new WorkspaceTransaction(runtimeJdbc, runtimeTxManager);
-            ClassService runtimeClasses = new ClassService(runtimeRepository, runtimeWorkspaceTx);
-            CourseService runtimeCourses = new CourseService(runtimeRepository, runtimeWorkspaceTx);
+            TeachingRevocationContributor runtimeContributor =
+                    new TeachingRevocationContributor(runtimeRepository, runtimeWorkspaceTx);
+            ClassService runtimeClasses =
+                    new ClassService(runtimeRepository, runtimeWorkspaceTx, runtimeContributor);
+            CourseService runtimeCourses =
+                    new CourseService(runtimeRepository, runtimeWorkspaceTx, runtimeContributor);
             TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
 
             ClassView created =
