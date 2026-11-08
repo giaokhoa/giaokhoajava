@@ -5,6 +5,7 @@ import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseRow;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectRow;
 import com.giaokhoa.teaching.data.TeachingRepository.SubjectRow;
+import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -16,7 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Nghiệp vụ khóa, môn của khóa và danh mục môn ở tầng dữ kiện nguồn: tạo/đổi tên/thu hồi khóa,
  * gắn/gỡ môn của khóa, đọc danh mục môn tham chiếu. Mọi thao tác đi qua {@link TeachingRepository}
- * đã khóa phạm vi theo workspace và lớp cha.
+ * đã khóa phạm vi theo workspace và lớp cha. Như {@link ClassService}, mỗi phương thức có phạm vi
+ * workspace đặt context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt đầu
+ * để RLS ở tầng DB khóa đúng cùng phạm vi; riêng danh mục môn là dữ liệu dùng chung, không có RLS
+ * nên không cần context.
  *
  * <p>Như {@link ClassService}, service này chỉ giữ bất biến dữ kiện và trạng thái — không tự quyết
  * quyền thay Keycloak PDP, không ghi authorization operation. Bất biến riêng của khóa: danh sách
@@ -29,9 +33,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CourseService {
     private final TeachingRepository repository;
+    private final WorkspaceTransaction workspaceTransaction;
 
-    public CourseService(TeachingRepository repository) {
+    public CourseService(TeachingRepository repository, WorkspaceTransaction workspaceTransaction) {
         this.repository = repository;
+        this.workspaceTransaction = workspaceTransaction;
     }
 
     /** Một môn trong khóa theo đúng hình dạng hợp đồng CourseView. */
@@ -57,6 +63,7 @@ public class CourseService {
             UUID workspaceId, UUID classId, String name, List<UUID> subjectIds) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
+        workspaceTransaction.applyContext(workspaceId);
         String trimmed = normalizeName(name);
         List<UUID> subjects = requireSubjects(subjectIds);
         var clazz = repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
@@ -85,6 +92,7 @@ public class CourseService {
     public CourseView getCourse(UUID workspaceId, UUID courseId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
+        workspaceTransaction.applyContext(workspaceId);
         CourseRow row =
                 repository.findCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
         return view(row, repository.listCurrentCourseSubjects(workspaceId, courseId));
@@ -95,6 +103,7 @@ public class CourseService {
     public List<CourseView> listCourses(UUID workspaceId, UUID classId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
+        workspaceTransaction.applyContext(workspaceId);
         repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
         return repository.listCourses(workspaceId, classId).stream()
                 .map(row -> view(row, repository.listCurrentCourseSubjects(workspaceId, row.id())))
@@ -106,6 +115,7 @@ public class CourseService {
     public CourseView renameCourse(UUID workspaceId, UUID courseId, String name) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
+        workspaceTransaction.applyContext(workspaceId);
         String trimmed = normalizeName(name);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
@@ -131,6 +141,7 @@ public class CourseService {
     public CourseView revokeCourse(UUID workspaceId, UUID courseId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
+        workspaceTransaction.applyContext(workspaceId);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
         boolean alreadyRevoked = "REVOKED".equals(row.state());
@@ -159,6 +170,7 @@ public class CourseService {
     public CourseView addSubjects(UUID workspaceId, UUID courseId, List<UUID> subjectIds) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
+        workspaceTransaction.applyContext(workspaceId);
         List<UUID> subjects = requireSubjects(subjectIds);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
@@ -192,6 +204,7 @@ public class CourseService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
         Objects.requireNonNull(courseSubjectId, "courseSubjectId");
+        workspaceTransaction.applyContext(workspaceId);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
         CourseSubjectRow subject =
