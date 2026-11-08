@@ -83,6 +83,12 @@ BEGIN
         OR OLD.created_at IS DISTINCT FROM NEW.created_at THEN
         RAISE EXCEPTION 'Class identity cannot change' USING ERRCODE = '23514';
     END IF;
+    IF OLD.state = 'REVOKED' AND NEW IS DISTINCT FROM OLD THEN
+        RAISE EXCEPTION 'Revoked class cannot be modified' USING ERRCODE = '23514';
+    END IF;
+    IF OLD.state = 'ACTIVE' AND NEW.state = 'PENDING' THEN
+        RAISE EXCEPTION 'Active class cannot return to PENDING' USING ERRCODE = '23514';
+    END IF;
     RETURN NEW;
 END;
 $$;
@@ -100,6 +106,12 @@ BEGIN
         OR OLD.student_user_id IS DISTINCT FROM NEW.student_user_id
         OR OLD.created_at IS DISTINCT FROM NEW.created_at THEN
         RAISE EXCEPTION 'Roster identity cannot change' USING ERRCODE = '23514';
+    END IF;
+    IF OLD.state = 'REVOKED' AND NEW IS DISTINCT FROM OLD THEN
+        RAISE EXCEPTION 'Revoked roster entry cannot be modified' USING ERRCODE = '23514';
+    END IF;
+    IF OLD.state = 'ACTIVE' AND NEW.state = 'PENDING' THEN
+        RAISE EXCEPTION 'Active roster entry cannot return to PENDING' USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END;
