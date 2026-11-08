@@ -211,3 +211,63 @@ trong phạm vi này.
 - Không mở rộng ngoại lệ sang route mới mà không ghi thêm quyết định riêng tại đây.
 - Bên đánh giá rà lại quyết định này trước khi đóng parent issue; khi nào các route này chuyển
   sang PDP thì gỡ mục này và ghi rõ commit gỡ.
+
+## 11. Mở rộng ngoại lệ mục 10: route giảng dạy quyết quyền bằng SQL
+
+Quyết định riêng theo đúng điều kiện của mục 10 ("Không mở rộng ngoại lệ sang route mới mà không
+ghi thêm quyết định riêng tại đây"), chốt khi cài tầng route của US3.
+
+### Phạm vi
+
+Các route giảng dạy trong `backend/src/main/java/com/giaokhoa/teaching/` (`ClassController`,
+`CourseController`, `EnrollmentController`, `AssignmentController`) quyết quyền bằng đúng dữ
+kiện nguồn mà `TeachingPolicyProjector` chiếu lên native graph:
+
+- Mọi mutation lớp/khóa/roster/ghi danh/phân công (POST/PATCH/DELETE dưới
+  `/api/workspaces/{wid}/classes`, `/courses`, `/course-subjects`, `/enrollments`): actor là
+  OWNER hoặc MANAGER hiện hành của center (`center_membership` ACTIVE kèm role), hoặc chủ sở
+  hữu của personal workspace; route phân công giáo viên/chủ nhiệm không áp dụng cho personal.
+  Cổng gói do service dữ kiện nguồn giữ (mở rộng bị chặn khi gói hết hiệu lực, thu hồi không bị
+  chặn).
+- `GET /api/workspaces/{wid}/classes`: quản trị thấy mọi lớp; chủ nhiệm hiện hành thấy các lớp
+  mình chủ nhiệm; actor không đọc được lớp nào bị từ chối 403. Học sinh không có nguồn
+  `class.list` lẫn `read` của lớp (ghi danh chỉ cấp `read` của môn–khóa) nên bị từ chối 403.
+- `GET .../classes/{cid}` và `GET .../courses/{kid}`: quản trị hoặc chủ nhiệm hiện hành của
+  lớp (chứa khóa); không được đọc trả 404 như không tồn tại.
+- `GET .../classes/{cid}/students` và `GET .../classes/{cid}/courses`: quản trị hoặc chủ nhiệm
+  hiện hành của lớp; lớp tồn tại nhưng không được đọc trả 403.
+- `GET .../course-subjects/{csid}/enrollments`: quản trị hoặc giáo viên đang được phân công
+  đúng môn–khóa đó; chủ nhiệm và học sinh không có nguồn `roster.read` của môn–khóa nên bị từ
+  chối 403.
+- `GET /api/subjects`: danh mục tham chiếu dùng chung, chỉ đòi phiên có tài khoản hợp lệ.
+
+Mutation của các service dữ kiện nguồn không tự ghi operation (lớp/khóa/roster) được route ghi
+kèm authorization operation cho bundle của mọi target bị chạm tới trong cùng transaction;
+mutation ghi danh/phân công tự ghi operation ở service. Projection vẫn được worker áp như bình
+thường cho các bề mặt dùng PDP thật (capabilities, sample action); riêng quyết định cho phép
+của các route trên không chờ fence/projection.
+
+### Lý do
+
+Cùng lý do của mục 10, cộng thêm tính chất vòng khởi đầu của giảng dạy: target lớp/khóa/môn–khóa
+chỉ có projection sau mutation giảng dạy đầu tiên, nên route tạo lớp qua PDP+fence không có
+resource/policy nào để hỏi ở lần gọi đầu; test hợp đồng của US3 cũng seed center bằng JDBC như
+US2. Quyết từ dữ kiện nguồn cho đáp án trùng với graph mà projector dựng từ cùng dữ kiện đó, và
+cho hiệu lực thu hồi ngay ở lời gọi tiếp theo (gate 2 của mục 9) thay vì chờ worker áp revision
+mới.
+
+### Điểm lệch đã biết so với hợp đồng PDP
+
+Khi projection của target giảng dạy chưa được áp (operation còn PENDING) hoặc đang lệch, PDP sẽ
+deny/503 trong khi route vẫn cho phép theo dữ kiện nguồn hiện hành — cùng họ lệch có chủ đích
+của mục 10. Route thu hồi lớp/khóa/môn–khóa dùng DELETE chuyển trạng thái (giữ lịch sử, không
+xóa vật lý), khớp nguyên tắc không mở DELETE vật lý của hợp đồng HTTP.
+
+### Giới hạn
+
+- Chỉ các route liệt kê ở trên; route capabilities/sample action và mọi route khác vẫn theo
+  mục 5–7.
+- Catalog quyền chưa có scope revoke riêng cho class/course/course-subject; việc thu hồi ba
+  target này đi theo biên quản trị của mục này cho tới khi một đợt riêng bổ sung scope.
+- Bên đánh giá rà lại quyết định này cùng mục 10 trước khi đóng parent issue; khi nào các route
+  này chuyển sang PDP thì gỡ mục này và ghi rõ commit gỡ.
