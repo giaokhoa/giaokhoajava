@@ -7,13 +7,9 @@ import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./su
 // Nguồn contract: FR-013–FR-021 (spec.md), hợp đồng HTTP (Lớp, khóa, môn và ghi danh)
 // và hợp đồng quyết định quyền (mục 4, bảng nguồn theo môn–khóa/chủ nhiệm).
 // Spec cần origin ứng dụng đang chạy (backend cùng stack TEST) qua
-// NATIVE_GATE_APP_ORIGIN, cùng cơ chế với center-administration.spec.ts; thiếu biến là lỗi cấu hình, không được dùng skip thay cho nghiệm thu. Các endpoint/UI thuộc hợp đồng nhưng chưa
-// được cài đặt (classes, courses, subjects, enrollments, teachers, homeroom-assignments,
-// trang /centers/{wid}/classes) sẽ đỏ có ý nghĩa cho tới khi có code; tuyệt đối không
-// trích test bị skip làm bằng chứng chạy thật.
+// NATIVE_GATE_APP_ORIGIN; thiếu biến là lỗi cấu hình, không được dùng skip thay cho nghiệm thu.
 //
-// Các helper dựng center/owner/manager ở đây sao chép tối giản từ
-// center-administration.spec.ts để spec tự chứa, không sửa spec đang xanh.
+// Các helper dựng center/owner/manager dùng phiên thật và ID directory của ứng dụng.
 //
 // Lưu ý kiểm chứng:
 // - Ghi danh/phân công chỉ dùng môn HIỆN CÓ lúc thao tác: thêm môn vào khóa sau không tự
@@ -297,20 +293,25 @@ async function moiVaChapNhan(
   const token = traLoiMoi.invitationToken ?? "";
   expect(token).toBeTruthy();
 
-  const csrfNguoiDuocMoi = await dangNhapLai(page, origin, nguoiDuocMoi);
-  const chapNhan = await guiMutation(page, origin, csrfNguoiDuocMoi, "POST",
-    `/api/invitations/${token}/accept`);
-  expect(chapNhan.status()).toBe(202);
-  const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
-  await choOperationThanhCong(
-    page, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
+  // Người chấp nhận dùng context riêng, giữ nguyên phiên và CSRF của người mời.
+  const context = await page.context().browser()!.newContext();
+  try {
+    const acceptPage = await context.newPage();
+    const csrfNguoiDuocMoi = await dangNhapLai(acceptPage, origin, nguoiDuocMoi);
+    const chapNhan = await guiMutation(acceptPage, origin, csrfNguoiDuocMoi, "POST",
+      `/api/invitations/${token}/accept`);
+    expect(chapNhan.status()).toBe(202);
+    const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
+    await choOperationThanhCong(
+      acceptPage, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
 
-  const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
-  // Khớp theo username: membership user.id là id NỘI BỘ của user_account,
-  // không phải Keycloak sub của người được mời.
-  const membership = thanhVien.find((item) => item.user.username === nguoiDuocMoi.username);
-  expect(membership).toBeTruthy();
-  return { membershipId: membership!.id, userAppId: membership!.user.id };
+    const thanhVien = await layDanhSachThanhVien(acceptPage, origin, workspaceId);
+    // Khớp theo username: membership user.id là id NỘI BỘ của user_account,
+    // không phải Keycloak sub của người được mời.
+    const membership = thanhVien.find((item) => item.user.username === nguoiDuocMoi.username);
+    expect(membership).toBeTruthy();
+    return { membershipId: membership!.id, userAppId: membership!.user.id };
+  } finally { await context.close(); }
 }
 
 // Dựng đủ chuỗi center đã xác nhận gói + manager đã bổ nhiệm; trả phiên manager đang đăng nhập.
@@ -375,7 +376,7 @@ async function capStudent(
     { idempotencyKey: khoaIdempotency });
   expect(tao.status()).toBe(202);
   const traLoi = (await tao.json()) as MutationTraLoi;
-  expect(traLoi.completed).toBe(false);
+  expect(traLoi.operation?.completed).toBe(false);
   expect(traLoi.handoff?.username).toBe(username);
   const matKhauTam = traLoi.handoff?.temporaryPassword ?? "";
   expect(matKhauTam.length).toBeGreaterThan(0);

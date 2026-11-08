@@ -13,9 +13,7 @@ import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./su
 //
 // Lưu ý kiểm chứng:
 // - Token lời mời chỉ có trong response CREATE theo hợp đồng API; không có thư mời SMTP.
-// - Test giao diện chạy trên origin frontend (TEST_FRONTEND_ORIGIN): phiên đăng nhập ở
-//   backend origin nên test này còn cần topology một origin để trình duyệt đã đăng nhập
-//   tới được giao diện Next; khi chưa có, các khẳng định dữ liệu của test đó đỏ đúng.
+// - UI và API dùng cùng origin TEST_FRONTEND_ORIGIN qua gateway do Playwright khởi động.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
 const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? "http://localhost:3001";
 
@@ -192,9 +190,9 @@ async function xoaNguoiDung(env: TestEnvironment, daTao: NguoiDungTest[]): Promi
 async function layDanhSachCenter(page: Page, origin: string): Promise<CenterView[]> {
   const response = await appRequestWhenReady(page, `${origin}/api/platform/centers`);
   expect(response.status()).toBe(200);
-  const body = (await response.json()) as TrangDanhSach<CenterView>;
-  expect(Array.isArray(body.items)).toBe(true);
-  return body.items;
+  const body = (await response.json()) as CenterView[];
+  expect(Array.isArray(body)).toBe(true);
+  return body;
 }
 
 async function layDanhSachThanhVien(
@@ -246,7 +244,8 @@ async function xacNhanGoi(
   workspaceId: string,
 ): Promise<void> {
   const validFrom = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+  // Native time policy và SubscriptionService lưu mốc thời gian tới giây.
+  const expiresAt = new Date(Math.floor(Date.now() / 1000) * 1000 + 90 * 24 * 60 * 60 * 1000).toISOString();
   const xacNhan = await guiMutation(page, origin, csrf, "POST", "/api/platform/subscriptions", {
     workspaceId,
     validFrom,
@@ -276,18 +275,23 @@ async function moiVaChapNhan(
 
   const token = traLoiMoi.invitationToken;
   expect(token).toBeTruthy();
-  const csrfNguoiDuocMoi = await dangNhapLai(page, origin, nguoiDuocMoi);
-  const chapNhan = await guiMutation(page, origin, csrfNguoiDuocMoi, "POST",
-    `/api/invitations/${token!}/accept`);
-  expect(chapNhan.status()).toBe(202);
-  const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
-  await choOperationThanhCong(
-    page, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
+  // Người chấp nhận dùng context riêng, giữ nguyên phiên và CSRF của người mời.
+  const context = await page.context().browser()!.newContext();
+  try {
+    const acceptPage = await context.newPage();
+    const csrfNguoiDuocMoi = await dangNhapLai(acceptPage, origin, nguoiDuocMoi);
+    const chapNhan = await guiMutation(acceptPage, origin, csrfNguoiDuocMoi, "POST",
+      `/api/invitations/${token!}/accept`);
+    expect(chapNhan.status()).toBe(202);
+    const traLoiChapNhan = (await chapNhan.json()) as MutationTraLoi;
+    await choOperationThanhCong(
+      acceptPage, origin, layOperationId(traLoiChapNhan), traLoiChapNhan.statusUrl);
 
-  const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
-  const membership = thanhVien.find((item) => item.user.id === nguoiDuocMoi.appId);
-  expect(membership).toBeTruthy();
-  return { membershipId: membership!.id };
+    const thanhVien = await layDanhSachThanhVien(acceptPage, origin, workspaceId);
+    const membership = thanhVien.find((item) => item.user.id === nguoiDuocMoi.appId);
+    expect(membership).toBeTruthy();
+    return { membershipId: membership!.id };
+  } finally { await context.close(); }
 }
 
 // Dựng đủ chuỗi center đã xác nhận gói + manager đã bổ nhiệm; trả phiên manager đang đăng nhập.
@@ -347,7 +351,7 @@ async function capStudent(
     { idempotencyKey: khoaIdempotency });
   expect(tao.status()).toBe(202);
   const traLoi = (await tao.json()) as MutationTraLoi;
-  expect(traLoi.completed).toBe(false);
+  expect(traLoi.operation?.completed).toBe(false);
   expect(traLoi.handoff?.username).toBe(username);
   const matKhauTam = traLoi.handoff?.temporaryPassword ?? "";
   expect(matKhauTam.length).toBeGreaterThan(0);
@@ -415,7 +419,8 @@ test("operator xác nhận kỳ/gói: subscription 202 rồi poll tới SUCCEEDE
     const csrf = await dangNhapLai(page, origin, operator);
     const { workspaceId } = await taoCenter(page, origin, csrf, owner.appId);
     const validFrom = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+    // Native time policy và SubscriptionService lưu mốc thời gian tới giây.
+    const expiresAt = new Date(Math.floor(Date.now() / 1000) * 1000 + 90 * 24 * 60 * 60 * 1000).toISOString();
     const xacNhan = await guiMutation(page, origin, csrf, "POST", "/api/platform/subscriptions", {
       workspaceId,
       validFrom,
@@ -653,11 +658,12 @@ test("giao diện quản trị: trang members hiển thị thành viên và khô
       }
     });
     await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/members`);
-    await expect(page.getByText(username)).toBeVisible();
-    await expect(page.getByText(setup.manager.username)).toBeVisible();
+    await expect(page.getByText(username, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(setup.manager.username, { exact: true }).first()).toBeVisible();
     expect(await page.content()).not.toContain(temporaryPassword);
     for (const body of phanHoiTrang) expect(body).not.toContain(temporaryPassword);
 
+    await dangNhapLai(page, origin, setup.operator);
     await page.goto(`${frontendOrigin}/platform`);
     await expect(page.getByText(setup.tenCenter)).toBeVisible();
     expect(await page.content()).not.toContain(temporaryPassword);

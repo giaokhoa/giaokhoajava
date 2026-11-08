@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 [[ "${TEST_DATABASE_URL:-}" == jdbc:postgresql://127.0.0.1:15432/giaokhoa_test && "${TEST_KEYCLOAK_BASE_URL:-}" == http://127.0.0.1:18081 || "${TEST_DATABASE_URL:-}" == jdbc:postgresql://127.0.0.1:15433/giaokhoa_test && "${TEST_KEYCLOAK_BASE_URL:-}" == http://127.0.0.1:18082 ]] || { echo 'Chỉ chạy trên cặp PostgreSQL/Keycloak TEST đã kiểm chứng.' >&2; exit 1; }
 [[ "${TEST_KEYCLOAK_REALM:-}" == giaokhoa-it && "${NATIVE_GATE_APP_ORIGIN:-}" == http://127.0.0.1:8080 ]] || { echo 'Cần realm TEST và origin gateway TEST 127.0.0.1:8080.' >&2; exit 1; }
+node "$ROOT/infra/testing/prepare-keycloak.mjs"
 export SPRING_DATASOURCE_URL="$TEST_DATABASE_URL"
 export SPRING_DATASOURCE_USERNAME="${TEST_DATABASE_USERNAME:?}"
 export SPRING_DATASOURCE_PASSWORD="${TEST_DATABASE_PASSWORD:?}"

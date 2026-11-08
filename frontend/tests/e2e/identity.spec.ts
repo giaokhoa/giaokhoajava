@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady, logoutViaApplicationForm } from "./support/test-environment";
 
 // E2E danh tính US1 ở biên trình duyệt: Code login, verify mail, đổi mật khẩu tạm,
 // workspace switch, logout và back-channel logout qua ứng dụng thật trên stack TEST.
 // Spec cần origin ứng dụng đang chạy (backend cùng stack TEST) qua NATIVE_GATE_APP_ORIGIN,
-// cùng cơ chế với native-gate.spec.ts; khi biến chưa được đặt, spec tự bỏ qua để CI không
-// đỏ giả (CI hiện chưa khởi động ứng dụng cho bước e2e). Phần endpoint thuộc hợp đồng nhưng
-// chưa được cài đặt (session view, danh sách workspace) sẽ đỏ có ý nghĩa cho tới khi có code.
+// cùng cơ chế với native-gate.spec.ts. CI bắt buộc khởi động ứng dụng và đặt origin;
+// local có thể chạy riêng nhóm không cần ứng dụng khi chưa đặt biến.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
 
 function gateOrigin(): string {
@@ -33,8 +32,7 @@ async function dangNhapQuaUngDung(
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
 }
 
-// Đầu dò phiên dùng chung: đã có phiên thì fail-closed 503 vì user fixture chưa có thư mục,
-// chưa có phiên thì bị chuyển 302 tới đăng nhập.
+// Đầu dò operation không tồn tại: 503 trước bootstrap, 404 sau bootstrap, 302 khi mất phiên.
 async function goiOperationDauDo(page: Page, origin: string) {
   return page.request.get(`${origin}/api/me/operations/${randomUUID()}`, { maxRedirects: 0 });
 }
@@ -65,10 +63,9 @@ test("đăng nhập Code qua ứng dụng: phiên được lập, session view k
     expect(session.csrf?.headerName).toMatch(/^X-/);
     expect(session.csrf?.token).toBeTruthy();
 
-    // Phiên là thật nhưng identity chưa có thư mục: nghiệp vụ fail-closed, không allow cũ.
+    // /api/session đã bootstrap directory; operation không tồn tại phải trả 404.
     const probe = await goiOperationDauDo(page, origin);
-    expect(probe.status()).toBe(503);
-    expect((await probe.json() as { code?: string }).code).toBe("AUTHORIZATION_NOT_READY");
+    expect(probe.status()).toBe(404);
   } finally {
     await env.deleteUser(user);
   }
@@ -108,7 +105,8 @@ test("bấm link xác minh trong email (Mailpit) thì đăng nhập được và
     message = await env.waitForEmail(user.email, requestedAt);
 
     await page.goto(await env.readVerificationLink(message));
-    await expect(page.locator("body")).toContainText(/has been verified/i);
+    await page.getByRole("link", { name: /Click here to proceed/i }).click();
+    await expect(page.getByRole("heading", { name: "Account updated", exact: true })).toBeVisible();
 
     await dangNhapQuaUngDung(page, origin, user);
     const session = await laySessionView(page, origin);
@@ -217,19 +215,7 @@ test("logout: hủy phiên ứng dụng và cả phiên SSO Keycloak", async ({ 
     expect(session.csrf?.token).toBeTruthy();
 
     // Gửi form POST /api/logout kèm _csrf đúng cách frontend vẫn làm (api-client submitLogout).
-    await page.evaluate((token) => {
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = "/api/logout";
-      const csrf = document.createElement("input");
-      csrf.type = "hidden";
-      csrf.name = "_csrf";
-      csrf.value = token;
-      form.appendChild(csrf);
-      document.body.appendChild(form);
-      form.submit();
-    }, session.csrf!.token);
-    await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
+    await logoutViaApplicationForm(page, origin, session.csrf!.token);
 
     expect((await laySessionView(page, origin)).authenticated).toBe(false);
     const probe = await goiOperationDauDo(page, origin);

@@ -19,20 +19,21 @@ export default defineConfig({
     ...(appOrigin ? [{
       command: "bash ../infra/testing/run-backend.sh",
       url: "http://127.0.0.1:18080/api/session",
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 120_000,
       gracefulShutdown: { signal: "SIGTERM" as const, timeout: 10_000 },
     }] : []),
     {
-      command: "npm run dev",
+      command: appOrigin ? "npm run build && npm run start" : "npm run dev",
       url: appOrigin ? "http://127.0.0.1:3001" : frontendOrigin,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: !appOrigin && !process.env.CI,
       timeout: 120_000,
     },
     ...(appOrigin ? [{
       command: "docker run --rm --network host -v \"$PWD/../infra/gateway/Caddyfile.test:/etc/caddy/Caddyfile:ro\" caddy:2.10.2-alpine",
       url: frontendOrigin,
-      reuseExistingServer: !process.env.CI,
+      // Không dùng lại gateway DEV dù cổng 8080 trùng nhau.
+      reuseExistingServer: false,
       timeout: 120_000,
       gracefulShutdown: { signal: "SIGTERM" as const, timeout: 10_000 },
     }] : []),

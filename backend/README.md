@@ -63,7 +63,8 @@ export BACKEND_INTERNAL_URL=http://127.0.0.1:18080
 npm --prefix frontend run test:e2e
 ```
 
-Playwright tự chạy JAR backend ở 18080 với schema TEST ngẫu nhiên, Next ở 3001 và Caddy
+Playwright tự chạy JAR backend ở 18080 với schema TEST ngẫu nhiên, build/chạy Next production
+ở 3001 và Caddy
 TEST ở 8080 theo cùng cách chia route của gateway DEV. Trình duyệt dùng duy nhất origin
 8080 cho UI, API, cookie, CSRF và OIDC; không nối vào DEV. Playwright dừng cả ba tiến trình
 khi kết thúc. PostgreSQL/Keycloak/Mailpit TEST hiện có được giữ nguyên. Ở local schema
@@ -71,3 +72,10 @@ khi kết thúc. PostgreSQL/Keycloak/Mailpit TEST hiện có được giữ nguy
 hoặc khi chạy nhóm giảng dạy là lỗi cấu hình, không thay bằng skip. Nhóm
 `teaching-ui-regressions` dùng HTTP fixture để kiểm tra hành vi UI, tách biệt với E2E
 `teaching-administration` dùng backend/Keycloak thật.
+
+Runner dùng `TEST_KEYCLOAK_MASTER_USERNAME/PASSWORD` để chuẩn bị riêng realm `giaokhoa-it`:
+email không bắt buộc theo bootstrap production, redirect sau logout về origin TEST và
+back-channel qua `host.docker.internal:18080`. Chạy lại `docker compose up -d` theo file
+TEST hiện tại để container có mapping `host-gateway`; không xóa volume hay đổi realm DEV.
+Chỉ một lượt E2E dùng các cổng 8080/18080/3001 tại một thời điểm; có server cũ thì runner
+báo lỗi thay vì tự dùng lại gateway DEV.

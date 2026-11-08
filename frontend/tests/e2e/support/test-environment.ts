@@ -110,6 +110,11 @@ export class TestEnvironment {
     this.createdUsers.delete(user.id);
   }
 
+  async setEmailVerified(user: TestUser, verified: boolean): Promise<void> {
+    if (!this.createdUsers.has(user.id)) throw new Error("Chỉ sửa tài khoản do test tạo");
+    await this.admin("PUT", `/users/${encodeURIComponent(user.id)}`, { emailVerified: verified });
+  }
+
   async requestVerificationEmail(user: TestUser): Promise<void> {
     if (!this.createdUsers.has(user.id)) throw new Error("Chỉ gửi mail cho tài khoản test");
     await this.admin("PUT", `/users/${encodeURIComponent(user.id)}/send-verify-email`);
@@ -287,4 +292,25 @@ export async function appRequestWhenReady(
     if (code !== "AUTHORIZATION_NOT_READY" || Date.now() - startedAt >= 60_000) return response;
     await page.waitForTimeout(1_000);
   }
+}
+
+// Chờ một navigation mới về trang chủ, kể cả khi URL trước logout cũng là trang chủ.
+export async function logoutViaApplicationForm(page: Page, origin: string, token: string): Promise<void> {
+  await Promise.all([
+    page.waitForEvent("framenavigated", {
+      predicate: (frame) => frame === page.mainFrame() && frame.url() === `${origin}/`,
+    }),
+    page.evaluate((csrfToken) => {
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/api/logout";
+      const csrf = document.createElement("input");
+      csrf.type = "hidden";
+      csrf.name = "_csrf";
+      csrf.value = csrfToken;
+      form.appendChild(csrf);
+      document.body.appendChild(form);
+      form.submit();
+    }, token),
+  ]);
 }
