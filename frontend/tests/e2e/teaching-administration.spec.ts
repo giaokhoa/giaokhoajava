@@ -971,7 +971,7 @@ test("giao diện quản trị: trang classes hiển thị lớp và khóa", asy
     const setup = await dungCenterLopKhoa(page, origin, env, daTao, 3);
     await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/classes`);
     await page.getByRole("button", { name: setup.tenLop, exact: true }).click();
-    await expect(page.getByText(setup.tenKhoa)).toBeVisible();
+    await expect(page.getByRole("heading", { name: `Khóa: ${setup.tenKhoa}`, exact: true })).toBeVisible();
   } finally {
     await xoaNguoiDung(env, daTao);
   }

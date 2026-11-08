@@ -114,6 +114,17 @@ Bắt đầu lập: 2026-11-08 (theo lệnh của chủ dự án). Nguồn: báo
 
 ## C. Điểm đã có quyết định xử lý trong pipeline (ghi để bên đánh giá đối chiếu)
 
+- **C6 — Khắc phục review #180 trên US3 (PR #184, 2026-11-08).** Route giảng dạy nay giữ
+  eligibility/fence hiện hành và khóa workspace trước kiểm tra role; membership activation
+  ghi cả bundle giảng dạy. Chặn mở rộng dưới lớp/khóa đã thu hồi và ghi danh người đã mất
+  STUDENT. UI kết thúc attempt đúng receipt/lỗi terminal và đọc đủ cursor. CI chạy E2E qua
+  backend/Next production/gateway TEST cùng origin, thiếu origin phải lỗi. Khi bật cổng thật,
+  phát hiện thêm `IdentityProvisioningClient` chỉ có displayName ở firstName nhưng Keycloak
+  ép nhập lastName: bootstrap nay giữ lastName tùy chọn, có native regression thực.
+  Ngoại lệ SQL của authorization §11 vẫn có chủ đích; chưa chuyển toàn bộ route sang PDP
+  cho nguồn role. [Bằng chứng và giới hạn kiểm thử](../specs/001-multitenant-access/validation/us3.md);
+  chờ CI/review ngoài.
+
 - **C1** — A1/M2: ghi ngoại lệ vào `authorization.md` tại gate #44 thay vì cài PDP + fence (lý do ở A1). **ĐÃ LÀM tại gate #44:** ngoại lệ ghi ở mục 10 mới của `specs/001-multitenant-access/contracts/authorization.md` (phạm vi 6 route của `MembershipController`, điểm lệch đã biết, lý do, giới hạn) — là thay đổi quyết định riêng theo cơ chế mục 9 của chính spec.
 - **C2** — Testcontainers: gỡ hẳn 3 dependency khỏi `pom.xml` (đợt D4). Specs ghi Testcontainers là một lựa chọn ("khi Docker có sẵn, hoặc services/realm/database test riêng"); dự án chọn nhánh thứ hai qua biến `TEST_*`.
 - **C3** — 16 điểm lệch chuẩn docs rà trên main ngày 2026-11-06 (gồm các điểm A4–A8 và A12 một phần): quyết định ngày 2026-11-06 là không tạo GitHub issue cho chúng; ngày 2026-11-08 chủ dự án đổi cách lưu trữ — ghi vào sổ này để bên đánh giá rà lại trước khi đóng parent issue.

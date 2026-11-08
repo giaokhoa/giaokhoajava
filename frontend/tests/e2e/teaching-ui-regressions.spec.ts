@@ -104,7 +104,7 @@ test("quản lý ở trang hai vẫn quản trị và thấy đủ roster vượ
   await expect(page.getByRole("button", { name: "Tạo lớp", exact: true })).toBeVisible();
   expect(fixture.membershipQueries).toEqual(["", "?cursor=members-2"]);
   await page.getByRole("button", { name: "Review Class", exact: true }).click();
-  await expect(page.getByText("student-20", { exact: true })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "student-20" })).toBeVisible();
 });
 
 test("retry lỗi mạng giữ key, operation đã FAILED kết thúc attempt", async ({ page }) => {
@@ -125,7 +125,8 @@ test("retry lỗi mạng giữ key, operation đã FAILED kết thúc attempt", 
   await create.click();
   await expect(create).toBeEnabled();
   await create.click();
-  await expect(page.getByRole("alert")).toHaveText("Đồng bộ quyền không thành công. Vui lòng thử lại.");
+  await expect(page.getByRole("alert").filter({ hasText: "Đồng bộ quyền không thành công." }))
+    .toHaveText("Đồng bộ quyền không thành công. Vui lòng thử lại.");
   await create.click();
   await expect(page.getByText("op-new", { exact: true })).toBeVisible();
   expect(keys).toHaveLength(3);

@@ -665,7 +665,7 @@ test("giao diện quản trị: trang members hiển thị thành viên và khô
 
     await dangNhapLai(page, origin, setup.operator);
     await page.goto(`${frontendOrigin}/platform`);
-    await expect(page.getByText(setup.tenCenter)).toBeVisible();
+    await expect(page.getByRole("definition").filter({ hasText: setup.tenCenter })).toBeVisible();
     expect(await page.content()).not.toContain(temporaryPassword);
   } finally {
     await xoaNguoiDung(env, daTao);

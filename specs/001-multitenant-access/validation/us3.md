@@ -1,5 +1,9 @@
 # Chuẩn bị gate US3 — Lớp/khóa đa môn, nhiều giáo viên, ghi danh từng môn (T053)
 
+> **Cập nhật 2026-11-08 sau review #180:** xem mục “Khắc phục review #180” cuối tài liệu.
+> Phần chuẩn bị bên dưới được giữ làm lịch sử; không dùng các lượt chọn lọc cũ để thay thế
+> kết quả trên cây sửa hiện tại. PR #184 chờ CI và review ngoài trước khi nghiệm thu lại.
+
 Issue #55: “[T053][US3] Chạy đầy đủ US3.1–US3.8 và raw-query RLS/FK tests, giáo
 viên chỉ roster môn phụ trách, current/future subject và class khác”. Cây chuẩn
 bị: branch `issue-55-gate-tests` trên nền commit `4fb7e81` (đỉnh chuỗi
@@ -177,3 +181,53 @@ trên nền cũ: 53/0/0/0.
    `CenterServiceIT.subscriptionPeriodAddsNativeTimePoliciesToGatedScopes`) và
    lỗi SMTP local của `RecoveryFlowIT` (không có Mailpit native; xanh ở CI)
    phải được phân loại lại ở lượt toàn suite của gate thật.
+
+## Khắc phục review #180
+
+PR [#184](https://github.com/giaokhoa/giaokhoa/pull/184) trên `main@9e88ea9` sau #179.
+Đã rà diff và caller liên quan bằng `ponytail-review`, theo tải nhiều request cùng workspace.
+Phạm vi là các hành vi đã triển khai của US1–US3; không bổ sung tính năng US4–US8.
+
+- Route giảng dạy đồng bộ eligibility hiện hành qua ACCOUNT/target fence và PDP profile;
+  khóa workspace bao trọn kiểm tra role, đọc/ghi nguồn và ghi operation. Ngoại lệ SQL
+  về nguồn role theo authorization §11 vẫn được giữ và ghi rõ.
+- Membership activation ghi lại bundle giảng dạy trong cùng operation; ghi danh kiểm tra
+  trạng thái lớp/khóa cha và STUDENT hiện hành trước khi ghi cả lô.
+- UI kết thúc attempt khi nhận receipt hoặc `OPERATION_FAILED`, giữ key khi lỗi mạng chưa
+  rõ kết quả, chặn thao tác mới lúc pending và đọc đủ cursor của dữ kiện chọn người/quan hệ.
+- E2E dùng backend, Next production và Caddy TEST cùng origin; CI thiếu origin phải lỗi.
+  Fixture dùng đúng ID directory, receipt, phiên/CSRF và điều hướng thực của Keycloak.
+- Chạy E2E thật còn phát hiện tài khoản được cấp có displayName ở firstName nhưng bị ép
+  nhập lastName sau đổi mật khẩu tạm. Bootstrap giữ lastName tùy chọn; native acceptance
+  kiểm đúng hình dạng này. Không bỏ email verification.
+
+Kết quả local trên stack TEST riêng (PostgreSQL 15433, Keycloak 18082, Mailpit 18026), JDK 25:
+
+| Lệnh | Kết quả |
+| --- | --- |
+| `./backend/mvnw -B -ntp -f backend/pom.xml spotless:apply` | Đạt |
+| `./backend/mvnw -B -ntp -f backend/pom.xml clean verify` | 172 unit đạt; compiler, Spotless, PMD, SpotBugs đạt |
+| `./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration verify` | 334 run, 325 đạt, 0 failure/error, 9 skip có sẵn |
+| `bash infra/keycloak/verify-native.sh` | 13 test đạt, 0 skip; bootstrap/provisioning/PDP đạt |
+| `npm --prefix frontend run lint` và `npm --prefix frontend test` | Đạt, 67 unit |
+| `npm --prefix frontend run test:e2e` | 38 ca đã chạy: 34 đạt, 4 lỗi selector |
+| `npm --prefix frontend run test:e2e -- --grep 'giao diện quản trị:|quản lý ở trang hai|retry lỗi mạng'` | Sửa selector, chạy lại cả 4 ca: 4 đạt, 0 skip |
+
+Các lệnh Maven dùng giới hạn heap 384 MB cho Maven, test JVM và SpotBugs trên máy local;
+không dùng cờ skip hay giảm rule. Cả 7 integration regression mới đều chạy và đạt.
+Trong 9 skip của profile integration, 8 native được chạy riêng và đạt qua script ở trên;
+1 placeholder invitation cũ của `IdentityFlowIT` vẫn disabled. Không dùng placeholder
+làm bằng chứng; luồng invitation thật được kiểm ở `MembershipInvitationIT` và E2E.
+Các test lifecycle/hash tách worker để kiểm dữ kiện nguồn; test HTTP/PDP và acceptance
+native không mock PDP.
+
+Cả 8 ca `teaching-administration` đã được kiểm chứng với backend/Keycloak/PDP thật;
+3 ca `teaching-ui-regressions` dùng component thật và HTTP fixture, tách khỏi acceptance.
+Các lỗi selector là khớp nhiều phần tử hoặc đòi text khớp tuyệt đối khi roster có thêm
+trạng thái; không đổi assertion nghiệp vụ. Chưa có một lượt local toàn suite xanh trên
+commit cuối: bằng chứng hiện tại gồm lượt toàn suite và lượt chạy lại 4 ca đã sửa;
+CI chạy lại toàn bộ 38 ca không có bộ lọc. Build Next production đạt trong webServer
+của cả hai lượt Playwright.
+
+Tự review sau sửa không còn Must fix trong diff và code liên quan. Chưa merge; kết quả
+CI trên commit cuối và review ngoài vẫn là điều kiện trước khi nghiệm thu/merge.

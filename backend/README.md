@@ -74,7 +74,7 @@ hoặc khi chạy nhóm giảng dạy là lỗi cấu hình, không thay bằng 
 `teaching-administration` dùng backend/Keycloak thật.
 
 Runner dùng `TEST_KEYCLOAK_MASTER_USERNAME/PASSWORD` để chuẩn bị riêng realm `giaokhoa-it`:
-email không bắt buộc theo bootstrap production, redirect sau logout về origin TEST và
+email/lastName không bắt buộc theo bootstrap production, redirect sau logout về origin TEST và
 back-channel qua `host.docker.internal:18080`. Chạy lại `docker compose up -d` theo file
 TEST hiện tại để container có mapping `host-gateway`; không xóa volume hay đổi realm DEV.
 Chỉ một lượt E2E dùng các cổng 8080/18080/3001 tại một thời điểm; có server cũ thì runner
