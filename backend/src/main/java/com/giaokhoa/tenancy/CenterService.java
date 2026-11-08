@@ -8,10 +8,14 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.teaching.TeachingPolicyProjector;
+import com.giaokhoa.teaching.TeachingRevocationContributor;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -48,6 +52,8 @@ public class CenterService {
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector projector;
     private final KeycloakProvisioningClient directory;
+    private final TeachingRevocationContributor teachingRevocations;
+    private final TeachingPolicyProjector teachingProjector;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -57,13 +63,17 @@ public class CenterService {
             AuthorizationOperationService operations,
             CenterPolicyProjector projector,
             KeycloakProvisioningClient directory,
-            ResourceMutationCoordinator coordinator) {
+            ResourceMutationCoordinator coordinator,
+            TeachingRevocationContributor teachingRevocations,
+            TeachingPolicyProjector teachingProjector) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
         this.projector = projector;
         this.directory = directory;
         this.coordinator = coordinator;
+        this.teachingRevocations = teachingRevocations;
+        this.teachingProjector = teachingProjector;
     }
 
     /** Metadata tối thiểu của một center cho danh sách của platform operator. */
@@ -197,6 +207,18 @@ public class CenterService {
                 "UPDATE center_membership SET version = version + 1, updated_at = now()"
                         + " WHERE id = ?",
                 membershipId);
+        // Gỡ role tiền đề thì đóng nguồn giảng dạy phụ thuộc trong cùng transaction/revision:
+        // gỡ TEACHER đóng phân công của người đó, gỡ STUDENT đóng ghi danh của người đó. Các
+        // role còn lại của cùng người giữ nguồn độc lập của chúng.
+        Set<MembershipRole.Role> removed = EnumSet.noneOf(MembershipRole.Role.class);
+        removed.addAll(current);
+        removed.removeAll(desiredRoles);
+        if (removed.contains(MembershipRole.Role.TEACHER)) {
+            teachingRevocations.revokeAssignmentsOfTeacher(workspaceId, row.userId());
+        }
+        if (removed.contains(MembershipRole.Role.STUDENT)) {
+            teachingRevocations.revokeEnrollmentsOfStudent(workspaceId, row.userId());
+        }
         return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
     }
 
@@ -238,19 +260,24 @@ public class CenterService {
                 "UPDATE center_membership SET state = 'REVOKED', revoked_at = now(),"
                         + " version = version + 1, updated_at = now() WHERE id = ?",
                 membershipId);
+        // Mất membership là mất mọi tiền đề: đóng toàn bộ quan hệ giảng dạy của người này
+        // trong center ở cùng transaction/revision, để phân công/ghi danh không sống lại ngầm
+        // nếu người đó tham gia lại sau này.
+        teachingRevocations.revokeAllRelationsOfMember(workspaceId, row.userId());
         return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
     }
 
-    private record MembershipRow(UUID workspaceId, String state, long version) {}
+    private record MembershipRow(UUID workspaceId, UUID userId, String state, long version) {}
 
     private MembershipRow loadMembershipForUpdate(UUID membershipId, UUID workspaceId) {
         List<MembershipRow> rows =
                 jdbc.query(
-                        "SELECT workspace_id, state, version FROM center_membership"
+                        "SELECT workspace_id, user_id, state, version FROM center_membership"
                                 + " WHERE id = ? FOR UPDATE",
                         (rs, _) ->
                                 new MembershipRow(
                                         rs.getObject("workspace_id", UUID.class),
+                                        rs.getObject("user_id", UUID.class),
                                         rs.getString("state"),
                                         rs.getLong("version")),
                         membershipId);
@@ -279,7 +306,11 @@ public class CenterService {
 
     /**
      * Ghi operation cho một thay đổi trên workspace: toàn bộ bundle desired của projector tại dữ
-     * kiện nguồn hiện hành, trên WORKSPACE partition của chính workspace đó.
+     * kiện nguồn hiện hành, trên WORKSPACE partition của chính workspace đó. Gắn kèm bundle của mọi
+     * target giảng dạy của workspace, vì thay đổi membership ở đây có thể đổi nguồn quản trị
+     * (owner/manager) mà mọi bundle giảng dạy đều tham chiếu, và phép đóng nguồn phụ thuộc của
+     * {@link TeachingRevocationContributor} vừa đổi dữ kiện nguồn của các bundle đó trong cùng
+     * transaction.
      */
     private AuthorizationOperation recordWorkspaceOperation(
             UUID initiatorUserId, UUID workspaceId, String idempotencyKey, String payloadHash) {
@@ -293,12 +324,14 @@ public class CenterService {
             throw new IllegalStateException(
                     "Workspace authorization partition is missing: " + workspaceId);
         }
-        var projection =
+        List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
+        projections.add(
                 new AuthorizationOperationService.DesiredProjection(
                         NativePolicyTemplates.workspaceKey(workspaceId),
                         PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
                         projector.bundleDescriptors(workspaceId),
-                        List.of());
+                        List.of()));
+        projections.addAll(teachingProjector.allBundleProjections(workspaceId));
         return operations.applyDesiredState(
                 initiatorUserId,
                 workspaceId,
@@ -306,7 +339,7 @@ public class CenterService {
                 payloadHash,
                 List.of(
                         new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(), List.of(projection))));
+                                partitions.getFirst(), List.copyOf(projections))));
     }
 
     private void requireAccount(UUID userId) {

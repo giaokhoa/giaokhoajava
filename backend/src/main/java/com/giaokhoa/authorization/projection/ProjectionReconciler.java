@@ -9,6 +9,7 @@ import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter.AppliedGraph;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -78,6 +79,7 @@ public class ProjectionReconciler {
     private final PolicyGraphWriter writer;
     private final KeycloakProvisioningClient directory;
     private final CenterPolicyProjector centerProjector;
+    private final TeachingPolicyProjector teachingProjector;
     private final TransactionTemplate transactions;
     private final ResourceMutationCoordinator coordinator;
 
@@ -86,12 +88,14 @@ public class ProjectionReconciler {
             PolicyGraphWriter writer,
             KeycloakProvisioningClient directory,
             CenterPolicyProjector centerProjector,
+            TeachingPolicyProjector teachingProjector,
             PlatformTransactionManager transactionManager,
             ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
         this.writer = writer;
         this.directory = directory;
         this.centerProjector = centerProjector;
+        this.teachingProjector = teachingProjector;
         this.transactions = new TransactionTemplate(transactionManager);
         this.coordinator = coordinator;
     }
@@ -364,6 +368,9 @@ public class ProjectionReconciler {
                         partitionId);
         if (!centers.isEmpty()) {
             centerProjector.syncGroupMemberships(centers.getFirst());
+            // Cùng một vòng đối chiếu: group nguồn giảng dạy (giáo viên/chủ nhiệm/học sinh theo
+            // môn–khóa) cũng phải khớp membership hiện hành trước khi writer áp bundle.
+            teachingProjector.syncGroupMemberships(centers.getFirst());
         }
     }
 
@@ -538,6 +545,12 @@ public class ProjectionReconciler {
         if (type == NativePolicyTemplates.TargetType.PLATFORM) {
             return resolvePlatformBundle(projection);
         }
+        if ((type == NativePolicyTemplates.TargetType.CLASS
+                        || type == NativePolicyTemplates.TargetType.COURSE
+                        || type == NativePolicyTemplates.TargetType.COURSE_SUBJECT)
+                && isCenterWorkspace(workspaceKeyOf(projection.targetKey()))) {
+            return resolveTeachingBundle(projection);
+        }
         for (String scope : type.scopes()) {
             if (desiredHash(projection.targetKey(), scope, List.of())
                     .equals(projection.desiredHash())) {
@@ -621,6 +634,48 @@ public class ProjectionReconciler {
                         UUID.class,
                         workspaceId)
                 .isEmpty();
+    }
+
+    /** Target key của workspace chứa một target con (lớp/khóa/môn–khóa) của cùng workspace đó. */
+    private static String workspaceKeyOf(String targetKey) {
+        return targetKey.substring(0, "workspace:".length() + 36);
+    }
+
+    /**
+     * Bundle của một target giảng dạy (lớp/khóa/môn–khóa) thuộc CENTER workspace: cùng hình dạng
+     * với bundle của workspace — desired hash đã ghi phải khớp đúng tập descriptor mà {@link
+     * TeachingPolicyProjector} dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa READ của
+     * projector.
+     */
+    private Resolved resolveTeachingBundle(ProjectionRow projection) {
+        NativePolicyTemplates.TargetType type =
+                NativePolicyTemplates.targetTypeOf(projection.targetKey())
+                        .orElseThrow(() ->
+                                new ReconciliationException(
+                                        ERROR_DESIRED_SOURCE_MISMATCH,
+                                        "Target key matches no fixed template: "
+                                                + projection.targetKey()));
+        List<String> bundle = teachingProjector.bundleDescriptors(projection.targetKey());
+        List<String> managedScopes = TeachingPolicyProjector.managedScopes(type);
+        if (bundle.isEmpty()) {
+            return new Resolved.RetractBundle(managedScopes);
+        }
+        String bundleScope = TeachingPolicyProjector.bundleScope();
+        if (!desiredHash(projection.targetKey(), bundleScope, bundle)
+                .equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the teaching sources rebuilt from durable rows: "
+                            + projection.targetKey());
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : managedScopes) {
+            List<String> sources = teachingProjector.sourcesFor(projection.targetKey(), scope);
+            if (!sources.isEmpty()) {
+                graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
+            }
+        }
+        return new Resolved.ApplyBundle(graphs, managedScopes);
     }
 
     private List<String> reconstructSources(
@@ -746,6 +801,9 @@ public class ProjectionReconciler {
     private static PolicyGraph.Source sourceFor(String descriptor) {
         if (descriptor.startsWith("CENTER_GROUP")) {
             return new PolicyGraph.Source(CenterPolicyProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("TEACHING_GROUP")) {
+            return new PolicyGraph.Source(TeachingPolicyProjector.gatesFor(descriptor));
         }
         if (descriptor.startsWith("PLATFORM_OPERATOR")) {
             return new PolicyGraph.Source(PlatformPolicyProjector.gatesFor(descriptor));
