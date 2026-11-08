@@ -234,7 +234,7 @@ public class RecoveryService {
         if (versions.isEmpty()) {
             throw requestNotFound();
         }
-        idempotency.requireIfMatch(ifMatch, versions.getFirst());
+        IdempotencyService.requireIfMatch(ifMatch, versions.getFirst());
         return resolve(operatorUserId, requestId, decision, verificationNote);
     }
 

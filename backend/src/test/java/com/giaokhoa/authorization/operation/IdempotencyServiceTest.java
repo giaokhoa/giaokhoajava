@@ -53,27 +53,37 @@ class IdempotencyServiceTest {
                         .getStatus());
         assertEquals(
                 HttpStatus.PRECONDITION_REQUIRED,
-                assertThrows(HttpProblemException.class, () -> service.requireIfMatch(null, 2))
+                assertThrows(
+                                HttpProblemException.class,
+                                () -> IdempotencyService.requireIfMatch(null, 2))
                         .getStatus());
         assertEquals(
                 "INVALID_IF_MATCH",
-                assertThrows(HttpProblemException.class, () -> service.requireIfMatch("W/\"2\"", 2))
-                        .getCode());
-        assertEquals(
-                "INVALID_IF_MATCH",
-                assertThrows(HttpProblemException.class, () -> service.requireIfMatch("*", 2))
+                assertThrows(
+                                HttpProblemException.class,
+                                () -> IdempotencyService.requireIfMatch("W/\"2\"", 2))
                         .getCode());
         assertEquals(
                 "INVALID_IF_MATCH",
                 assertThrows(
                                 HttpProblemException.class,
-                                () -> service.requireIfMatch("\"999999999999999999999\"", 2))
+                                () -> IdempotencyService.requireIfMatch("*", 2))
+                        .getCode());
+        assertEquals(
+                "INVALID_IF_MATCH",
+                assertThrows(
+                                HttpProblemException.class,
+                                () ->
+                                        IdempotencyService.requireIfMatch(
+                                                "\"999999999999999999999\"", 2))
                         .getCode());
         assertEquals(
                 HttpStatus.CONFLICT,
-                assertThrows(HttpProblemException.class, () -> service.requireIfMatch("\"1\"", 2))
+                assertThrows(
+                                HttpProblemException.class,
+                                () -> IdempotencyService.requireIfMatch("\"1\"", 2))
                         .getStatus());
-        assertDoesNotThrow(() -> service.requireIfMatch("\"2\"", 2));
+        assertDoesNotThrow(() -> IdempotencyService.requireIfMatch("\"2\"", 2));
     }
 
     @Test
