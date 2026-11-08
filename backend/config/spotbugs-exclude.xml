@@ -201,16 +201,16 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- TeachingRepository là dependency singleton do Spring quản lý; không sao chép khi inject vào service lớp/roster. -->
+    <!-- TeachingRepository và ResourceMutationCoordinator là dependency singleton do Spring quản lý; không sao chép khi inject vào service lớp/roster. -->
     <Match>
         <Class name="com.giaokhoa.teaching.ClassService"/>
-        <Field name="repository"/>
+        <Field name="~(repository|coordinator)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- TeachingRepository là dependency singleton do Spring quản lý; không sao chép khi inject vào service khóa/môn. -->
+    <!-- TeachingRepository và ResourceMutationCoordinator là dependency singleton do Spring quản lý; không sao chép khi inject vào service khóa/môn. -->
     <Match>
         <Class name="com.giaokhoa.teaching.CourseService"/>
-        <Field name="repository"/>
+        <Field name="~(repository|coordinator)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Test cố ý truyền null trong assertThrows để xác nhận validation của constructor. -->

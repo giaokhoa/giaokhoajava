@@ -1,5 +1,6 @@
 package com.giaokhoa.teaching;
 
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseRow;
@@ -20,7 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
  * đã khóa phạm vi theo workspace và lớp cha. Như {@link ClassService}, mỗi phương thức có phạm vi
  * workspace đặt context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt đầu
  * để RLS ở tầng DB khóa đúng cùng phạm vi; riêng danh mục môn là dữ liệu dùng chung, không có RLS
- * nên không cần context.
+ * nên không cần context. Mọi phương thức ghi giữ khóa workspace thống nhất qua {@link
+ * ResourceMutationCoordinator} ngay sau khi đặt context, như {@link ClassService}.
  *
  * <p>Như {@link ClassService}, service này chỉ giữ bất biến dữ kiện và trạng thái — không tự quyết
  * quyền thay Keycloak PDP, không ghi authorization operation. Bất biến riêng của khóa: danh sách
@@ -34,10 +36,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class CourseService {
     private final TeachingRepository repository;
     private final WorkspaceTransaction workspaceTransaction;
+    private final ResourceMutationCoordinator coordinator;
 
-    public CourseService(TeachingRepository repository, WorkspaceTransaction workspaceTransaction) {
+    public CourseService(
+            TeachingRepository repository,
+            WorkspaceTransaction workspaceTransaction,
+            ResourceMutationCoordinator coordinator) {
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
+        this.coordinator = coordinator;
     }
 
     /** Một môn trong khóa theo đúng hình dạng hợp đồng CourseView. */
@@ -64,6 +71,7 @@ public class CourseService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
+        coordinator.lockWorkspace(workspaceId);
         String trimmed = normalizeName(name);
         List<UUID> subjects = requireSubjects(subjectIds);
         var clazz = repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
@@ -116,6 +124,7 @@ public class CourseService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
+        coordinator.lockWorkspace(workspaceId);
         String trimmed = normalizeName(name);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
@@ -142,6 +151,7 @@ public class CourseService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
+        coordinator.lockWorkspace(workspaceId);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
         boolean alreadyRevoked = "REVOKED".equals(row.state());
@@ -171,6 +181,7 @@ public class CourseService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
+        coordinator.lockWorkspace(workspaceId);
         List<UUID> subjects = requireSubjects(subjectIds);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
@@ -205,6 +216,7 @@ public class CourseService {
         Objects.requireNonNull(courseId, "courseId");
         Objects.requireNonNull(courseSubjectId, "courseSubjectId");
         workspaceTransaction.applyContext(workspaceId);
+        coordinator.lockWorkspace(workspaceId);
         CourseRow row =
                 repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
         CourseSubjectRow subject =
