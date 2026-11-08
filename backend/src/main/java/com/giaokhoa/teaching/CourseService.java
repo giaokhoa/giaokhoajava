@@ -34,10 +34,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class CourseService {
     private final TeachingRepository repository;
     private final WorkspaceTransaction workspaceTransaction;
+    private final TeachingRevocationContributor revocationContributor;
 
-    public CourseService(TeachingRepository repository, WorkspaceTransaction workspaceTransaction) {
+    public CourseService(
+            TeachingRepository repository,
+            WorkspaceTransaction workspaceTransaction,
+            TeachingRevocationContributor revocationContributor) {
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
+        this.revocationContributor = revocationContributor;
     }
 
     /** Một môn trong khóa theo đúng hình dạng hợp đồng CourseView. */
@@ -136,7 +141,11 @@ public class CourseService {
                 repository.listCurrentCourseSubjects(workspaceId, courseId));
     }
 
-    /** Thu hồi khóa: chỉ đổi state, giữ lịch sử; không bị chặn bởi gói hết hạn. */
+    /**
+     * Thu hồi khóa: đổi state của khóa và đóng luôn ghi danh, phân công giảng dạy phụ thuộc các
+     * môn–khóa của khóa trong cùng transaction qua {@link TeachingRevocationContributor}, giữ
+     * nguyên toàn bộ lịch sử; không bị chặn bởi gói hết hạn.
+     */
     @Transactional
     public CourseView revokeCourse(UUID workspaceId, UUID courseId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
@@ -150,6 +159,7 @@ public class CourseService {
                     HttpStatus.CONFLICT, "COURSE_ALREADY_REVOKED", "Khóa đã bị thu hồi trước đó.");
         }
         repository.revokeCourse(courseId);
+        revocationContributor.revokeDependentsOfCourse(workspaceId, courseId);
         return view(
                 new CourseRow(
                         row.id(),
@@ -195,9 +205,9 @@ public class CourseService {
     }
 
     /**
-     * Gỡ một môn khỏi khóa: thu hồi dòng môn–khóa, giữ lịch sử. Khóa được phép còn lại ít môn hơn
-     * lúc tạo, kể cả rỗng. Việc đóng ghi danh/phân công phụ thuộc dòng môn–khóa này ở tầng policy
-     * thuộc lớp projection riêng.
+     * Gỡ một môn khỏi khóa: thu hồi dòng môn–khóa và đóng luôn ghi danh/phân công giảng dạy phụ
+     * thuộc dòng môn–khóa đó trong cùng transaction qua {@link TeachingRevocationContributor}, giữ
+     * lịch sử. Khóa được phép còn lại ít môn hơn lúc tạo, kể cả rỗng.
      */
     @Transactional
     public CourseView revokeCourseSubject(UUID workspaceId, UUID courseId, UUID courseSubjectId) {
@@ -223,6 +233,7 @@ public class CourseService {
                     "Môn đã được gỡ khỏi khóa trước đó.");
         }
         repository.revokeCourseSubject(courseSubjectId);
+        revocationContributor.revokeDependentsOfCourseSubject(workspaceId, courseSubjectId);
         return view(row, repository.listCurrentCourseSubjects(workspaceId, courseId));
     }
 

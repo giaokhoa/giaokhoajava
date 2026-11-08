@@ -6,6 +6,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -13,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -53,16 +55,19 @@ public class SubscriptionService {
     private final IdempotencyService idempotency;
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
+    private final TeachingPolicyProjector teachingProjector;
 
     public SubscriptionService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             AuthorizationOperationService operations,
-            CenterPolicyProjector centerProjector) {
+            CenterPolicyProjector centerProjector,
+            TeachingPolicyProjector teachingProjector) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
         this.centerProjector = centerProjector;
+        this.teachingProjector = teachingProjector;
     }
 
     /**
@@ -181,15 +186,19 @@ public class SubscriptionService {
         if (partitions.isEmpty()) {
             return Optional.empty();
         }
-        var projection =
+        List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
+        projections.add(
                 new AuthorizationOperationService.DesiredProjection(
                         NativePolicyTemplates.workspaceKey(workspaceId),
                         PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
                         centerProjector.bundleDescriptors(workspaceId),
-                        List.of());
+                        List.of()));
+        // Kỳ gói đổi hiệu lực mà các scope giảng dạy cổng gói tham chiếu, nên bundle của mọi
+        // target giảng dạy ghi lại trong cùng operation như bundle workspace.
+        projections.addAll(teachingProjector.allBundleProjections(workspaceId));
         return Optional.of(
                 new AuthorizationOperationService.PartitionChange(
-                        partitions.getFirst(), List.of(projection)));
+                        partitions.getFirst(), List.copyOf(projections)));
     }
 
     private record PartitionAnchor(UUID id, long desiredRevision) {}
