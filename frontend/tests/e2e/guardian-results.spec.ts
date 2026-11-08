@@ -1100,11 +1100,15 @@ test("chủ nhiệm không có vai trò quản lý thì bị từ chối khi duy
     await guiRequestLienKet(
       page, origin, csrfParent, setup.workspaceId, setup.hocSinhX.userId);
 
+    // Lấy id liên kết qua danh sách của manager: hợp đồng chỉ hứa danh sách cho
+    // parent và owner/manager, không hứa cho giáo viên/chủ nhiệm.
+    await dangNhapLai(page, origin, setup.manager);
+    const lienKet = timLienKet(
+      await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
+
     // Chủ nhiệm chỉ là giáo viên của lớp, không có vai trò quản lý/chủ sở hữu:
     // gọi decision bị từ chối và liên kết vẫn ở REQUESTED.
     const csrfChuNhiem = await dangNhapLai(page, origin, setup.chuNhiem);
-    const lienKet = timLienKet(
-      await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
     const quyetDinh = await guiMutation(page, origin, csrfChuNhiem, "POST",
       `/api/workspaces/${setup.workspaceId}/guardian-links/${lienKet.id}/decision`,
       { decision: "APPROVE", expectedVersion: lienKet.version });
