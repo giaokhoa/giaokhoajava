@@ -1,8 +1,8 @@
 -- Danh mục môn tham chiếu tối thiểu: mã duy nhất, không cây chương trình hay taxonomy.
 -- Không có workspace_id: danh mục dùng chung toàn hệ thống, course_subject giữ FK
 -- danh mục nhưng có ID phạm vi riêng (data-model.md). Không RLS vì không có cột
--- workspace. Seed đúng ba môn M1/M2/M3 theo quickstart (K ba môn); test T043
--- dùng đúng 3 môn qua GET /api/subjects, seed thừa sẽ làm test đỏ sai lý do.
+-- workspace. Seed đúng ba môn M1/M2/M3 theo quickstart (K ba môn); test tích hợp
+-- giảng dạy dùng đúng 3 môn qua GET /api/subjects, seed thừa sẽ làm test đỏ sai lý do.
 CREATE TABLE subject (
     id UUID PRIMARY KEY,
     code VARCHAR(32) NOT NULL UNIQUE CHECK (btrim(code) <> ''),
