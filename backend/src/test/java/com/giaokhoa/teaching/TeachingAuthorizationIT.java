@@ -487,6 +487,97 @@ class TeachingAuthorizationIT extends TeachingFixture {
         }
     }
 
+    @Test
+    void teacherWithSecondAssignmentReadsBothSubjectRosters() throws Exception {
+        Fixture fixture = seedTeachingCenter();
+        try (var owner = openSession(fixture.owner());
+                var teacher = openSession(fixture.teacherA())) {
+            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            assignTeachers(
+                    owner,
+                    fixture.workspaceId(),
+                    setup.courseSubject(0),
+                    List.of(fixture.teacherAId()));
+            enroll(
+                    owner,
+                    fixture.workspaceId(),
+                    setup.classStudents(),
+                    List.of(setup.courseSubject(0), setup.courseSubject(1)));
+            // Phân công bổ sung mở thêm đúng môn được gắn, không mở các môn còn lại.
+            assignTeachers(
+                    owner,
+                    fixture.workspaceId(),
+                    setup.courseSubject(1),
+                    List.of(fixture.teacherAId()));
+            assertEquals(
+                    3,
+                    enrollmentCount(teacher, fixture.workspaceId(), setup.courseSubject(0)),
+                    "Giáo viên đọc được roster môn phân công đầu tiên");
+            assertEquals(
+                    3,
+                    enrollmentCount(teacher, fixture.workspaceId(), setup.courseSubject(1)),
+                    "Giáo viên đọc được roster môn nhận qua phân công bổ sung");
+            MockHttpServletResponse response =
+                    mockMvc()
+                            .perform(
+                                    get("/api/workspaces/"
+                                                    + fixture.workspaceId()
+                                                    + "/course-subjects/"
+                                                    + setup.courseSubject(2)
+                                                    + "/enrollments")
+                                            .cookie(teacher.cookie()))
+                            .andReturn()
+                            .getResponse();
+            assertEquals(
+                    403,
+                    response.getStatus(),
+                    "Môn chưa được phân công vẫn bị từ chối sau phân công bổ sung");
+        } finally {
+            deleteFixture(fixture);
+        }
+    }
+
+    @Test
+    void homeroomOfOneClassCannotReadOtherClassRoster() throws Exception {
+        Fixture fixture = seedTeachingCenter();
+        try (var owner = openSession(fixture.owner());
+                var homeroom = openSession(fixture.teacherA())) {
+            TeachingSetup first = prepareCourse(owner, fixture, 3);
+            assignHomeroom(owner, fixture.workspaceId(), first.classId(), fixture.teacherAId());
+            TeachingSetup second = prepareSecondClass(owner, fixture, 3);
+            assertEquals(
+                    3,
+                    getJson(
+                                    homeroom,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + first.classId()
+                                            + "/students",
+                                    200)
+                            .get("items")
+                            .size(),
+                    "Chủ nhiệm đọc được roster lớp của mình");
+            MockHttpServletResponse response =
+                    mockMvc()
+                            .perform(
+                                    get("/api/workspaces/"
+                                                    + fixture.workspaceId()
+                                                    + "/classes/"
+                                                    + second.classId()
+                                                    + "/students")
+                                            .cookie(homeroom.cookie()))
+                            .andReturn()
+                            .getResponse();
+            assertEquals(
+                    403,
+                    response.getStatus(),
+                    "Chủ nhiệm lớp này không được đọc roster lớp khác dù cùng trung tâm");
+        } finally {
+            deleteFixture(fixture);
+        }
+    }
+
     // ---------- Chuỗi thao tác giảng dạy qua API ----------
 
     private record TeachingSetup(
