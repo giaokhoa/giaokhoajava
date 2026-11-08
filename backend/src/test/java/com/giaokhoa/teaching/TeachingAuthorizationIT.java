@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
@@ -40,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TeachingAuthorizationIT extends TeachingFixture {
     private static final String SCHEMA =
             "teaching_authz_" + UUID.randomUUID().toString().replace("-", "");
@@ -56,9 +59,23 @@ class TeachingAuthorizationIT extends TeachingFixture {
         stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
+    // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt); mỗi test
+    // vẫn dựng center riêng trên danh tính đó để giữ cô lập dữ kiện.
+    private SharedIdentities sharedIdentities;
+
+    @BeforeAll
+    void seedSharedIdentitiesOnce() {
+        sharedIdentities = seedSharedIdentities();
+    }
+
+    @AfterAll
+    void deleteSharedIdentitiesOnce() {
+        deleteSharedIdentities(sharedIdentities);
+    }
+
     @Test
     void teacherReadsOwnSubjectRoster() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -76,14 +93,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     3,
                     enrollmentCount(teacher, fixture.workspaceId(), setup.courseSubject(0)),
                     "Giáo viên đúng môn–khóa đọc được roster môn của mình");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void teacherOfOneSubjectCannotAssignTeacherOfAnother() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -116,14 +131,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     403,
                     response.getStatus(),
                     "Giáo viên môn này không được phân công giáo viên cho môn khác");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void teacherOfOneSubjectCannotReadOtherSubjectRoster() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -145,14 +158,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             .getResponse();
             assertEquals(
                     403, response.getStatus(), "Giáo viên môn này không được đọc roster môn khác");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void teacherCannotReadOtherClassRoster() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup first = prepareCourse(owner, fixture, 3);
@@ -177,14 +188,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     403,
                     response.getStatus(),
                     "Giáo viên lớp này không được đọc roster lớp khác cùng center");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void homeroomCanReadClassRosterButCannotAssignTeachers() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -226,14 +235,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     403,
                     assign.getStatus(),
                     "Chủ nhiệm không được phân công giáo viên cho môn — đó là quyền quản trị");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void homeroomCannotAddEnrollments() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -259,14 +266,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             .andReturn()
                             .getResponse();
             assertEquals(403, response.getStatus(), "Chủ nhiệm không được ghi danh học sinh");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void homeroomCannotCreateCourses() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -293,14 +298,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             .andReturn()
                             .getResponse();
             assertEquals(403, response.getStatus(), "Chủ nhiệm không được tạo khóa");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void homeroomCannotAssignHomeroom() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -329,14 +332,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     403,
                     response.getStatus(),
                     "Chỉ chủ sở hữu/quản lý được chỉ định chủ nhiệm, chủ nhiệm hiện tại không được");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void studentCannotReadUnenrolledSubjectRoster() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var student = openSession(fixture.students().getFirst())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -360,14 +361,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     403,
                     response.getStatus(),
                     "Học sinh không được đọc roster môn mình chưa ghi danh");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void actorFromAnotherCenterCannotReadClass() throws Exception {
-        Fixture first = seedTeachingCenter();
+        Fixture first = seedCenterFixture(sharedIdentities);
         Fixture second = seedTeachingCenter();
         try (var owner = openSession(first.owner());
                 var outsider = openSession(second.teacherA())) {
@@ -387,14 +386,13 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     response.getStatus(),
                     "Lớp của center khác không tồn tại đối với actor ngoài center");
         } finally {
-            deleteFixture(first);
             deleteFixture(second);
         }
     }
 
     @Test
     void sameSessionAfterTeacherRevokeIsDenied() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacherA = openSession(fixture.teacherA());
                 var teacherB = openSession(fixture.teacherB())) {
@@ -450,14 +448,12 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     3,
                     enrollmentCount(teacherB, fixture.workspaceId(), subject),
                     "Giáo viên còn lại vẫn hoạt động bình thường");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void managerCanAssignHomeroom() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var manager = openSession(fixture.manager());
                 var owner = openSession(fixture.owner())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 3);
@@ -482,8 +478,6 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             setup.classId(),
                             fixture.teacherAId()),
                     "Quản lý chỉ định được chủ nhiệm cho lớp");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 

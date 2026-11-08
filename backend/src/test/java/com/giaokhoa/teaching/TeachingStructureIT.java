@@ -14,7 +14,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
@@ -45,6 +47,7 @@ import tools.jackson.databind.JsonNode;
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class TeachingStructureIT extends TeachingFixture {
     private static final String SCHEMA =
             "teaching_struct_" + UUID.randomUUID().toString().replace("-", "");
@@ -61,9 +64,23 @@ class TeachingStructureIT extends TeachingFixture {
         stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
+    // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt); mỗi test
+    // vẫn dựng center riêng trên danh tính đó để giữ cô lập dữ kiện.
+    private SharedIdentities sharedIdentities;
+
+    @BeforeAll
+    void seedSharedIdentitiesOnce() {
+        sharedIdentities = seedSharedIdentities();
+    }
+
+    @AfterAll
+    void deleteSharedIdentitiesOnce() {
+        deleteSharedIdentities(sharedIdentities);
+    }
+
     @Test
     void ownerCreatesClassReturnsPendingOperation() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 1A");
 
@@ -81,19 +98,15 @@ class TeachingStructureIT extends TeachingFixture {
             JsonNode body = JSON.readTree(read.getContentAsString());
             assertEquals(classId.toString(), body.get("id").stringValue());
             assertEquals("Lớp 1A", body.get("name").stringValue());
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void managerCreatesClassReturnsPendingOperation() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.manager())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 1B");
             assertNotNull(classId, "Quản lý tạo được lớp trong center của mình");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
@@ -102,7 +115,7 @@ class TeachingStructureIT extends TeachingFixture {
         // Fixture này chỉ có kỳ gói đã hết hạn (không kỳ nào còn hiệu lực): biên quyền
         // của route tạo lớp phải từ chối 403. Bảng lớp chưa tồn tại nên test này không
         // khẳng định thêm "không để lại lớp" bằng truy vấn DB.
-        Fixture fixture = seedTeachingCenterWithSubscription(-60, -1);
+        Fixture fixture = seedCenterFixture(sharedIdentities, -60, -1);
         try (var session = openSession(fixture.owner())) {
             MockHttpServletResponse response =
                     mockMvc()
@@ -118,14 +131,12 @@ class TeachingStructureIT extends TeachingFixture {
                             .andReturn()
                             .getResponse();
             assertEquals(403, response.getStatus(), "Gói hết hạn chặn tạo lớp mới");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void courseRequiresAtLeastOneSubject() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 2A");
             MockHttpServletResponse response =
@@ -151,14 +162,12 @@ class TeachingStructureIT extends TeachingFixture {
                     jdbc.queryForObject(
                             "SELECT count(*) FROM course WHERE name = 'Khóa rỗng'", Integer.class),
                     "Khóa không hợp lệ không được ghi");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void subjectsCatalogListsReferenceSubjects() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             List<UUID> subjects = subjectIds(session, 3);
             assertEquals(3, subjects.size(), "Danh mục môn tối thiểu phải có đủ ba môn");
@@ -167,14 +176,12 @@ class TeachingStructureIT extends TeachingFixture {
                 assertFalse(item.get("code").stringValue().isBlank(), "Môn có mã danh mục");
                 assertFalse(item.get("name").stringValue().isBlank(), "Môn có tên hiển thị");
             }
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void courseWithThreeSubjectsHasCourseView() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 3A");
             List<UUID> subjects = subjectIds(session, 3);
@@ -203,14 +210,12 @@ class TeachingStructureIT extends TeachingFixture {
                                 .anyMatch(id -> id.equals(subject.get("subjectId").stringValue())),
                         "Môn trong khóa là môn đã chọn");
             }
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void studentChoosesOnlySelectedSubjects() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 4A");
             List<UUID> subjects = subjectIds(session, 3);
@@ -240,14 +245,12 @@ class TeachingStructureIT extends TeachingFixture {
                             fixture.workspaceId(),
                             courseSubjectId(courseId, subjects.get(2))),
                     "Môn không chọn không có học sinh này");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void addingSubjectDoesNotAutoEnroll() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 5A");
             // Khóa 2 môn + thêm môn thứ 3: đủ để chứng minh thêm môn không tự ghi danh,
@@ -282,14 +285,12 @@ class TeachingStructureIT extends TeachingFixture {
                     1,
                     enrollmentCount(session, fixture.workspaceId(), current.get(0)),
                     "Ghi danh môn hiện có không đổi khi thêm môn mới");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void twoTeachersShareOneCourseSubject() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 6A");
             List<UUID> subjects = subjectIds(session, 3);
@@ -310,14 +311,12 @@ class TeachingStructureIT extends TeachingFixture {
                             Integer.class,
                             courseSubject),
                     "Hai giáo viên cùng phụ trách một môn–khóa");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void sameSubjectInTwoCoursesHasDifferentScopeIdentity() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 7A");
             List<UUID> subjects = subjectIds(session, 3);
@@ -341,14 +340,12 @@ class TeachingStructureIT extends TeachingFixture {
                             Integer.class,
                             secondSubject),
                     "Phân công ở khóa một không lan sang khóa hai");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void enrollmentBatchAcrossClassesIsRejected() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID firstClass = createClass(session, fixture.workspaceId(), "Lớp 8A");
             UUID secondClass = createClass(session, fixture.workspaceId(), "Lớp 8B");
@@ -391,14 +388,12 @@ class TeachingStructureIT extends TeachingFixture {
                             Integer.class,
                             classStudentId),
                     "Lô ghi danh không hợp lệ không được ghi phần nào");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void enrollmentBatchAcrossWorkspacesIsRejected() throws Exception {
-        Fixture first = seedTeachingCenter();
+        Fixture first = seedCenterFixture(sharedIdentities);
         Fixture second = seedTeachingCenter();
         try (var session = openSession(first.owner())) {
             UUID classId = createClass(session, first.workspaceId(), "Lớp 9A");
@@ -442,14 +437,13 @@ class TeachingStructureIT extends TeachingFixture {
                             classStudentId),
                     "Lô ghi danh không hợp lệ không được ghi phần nào");
         } finally {
-            deleteFixture(first);
             deleteFixture(second);
         }
     }
 
     @Test
     void rosterAddRequiresCenterMembership() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         KeycloakLogin outsiderLogin = createVerifiedUser("teaching-outsider");
         UUID outsider;
         try {
@@ -497,13 +491,12 @@ class TeachingStructureIT extends TeachingFixture {
             }
         } finally {
             deleteUser(outsiderLogin.subject());
-            deleteFixture(fixture);
         }
     }
 
     @Test
     void revokeRosterKeepsHistoryAndRevokesEnrollments() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 11A");
             List<UUID> subjects = subjectIds(session, 3);
@@ -554,8 +547,6 @@ class TeachingStructureIT extends TeachingFixture {
                             Integer.class,
                             classStudentId),
                     "Thu hồi roster phải thu hồi ghi danh phụ thuộc");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 
@@ -575,7 +566,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void classMutationWithoutCsrfIsRejected() throws Exception {
-        Fixture fixture = seedTeachingCenter();
+        Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             MockHttpServletResponse response =
                     mockMvc()
@@ -590,8 +581,6 @@ class TeachingStructureIT extends TeachingFixture {
                             .andReturn()
                             .getResponse();
             assertEquals(403, response.getStatus(), "Mutation trình duyệt thiếu CSRF bị chặn");
-        } finally {
-            deleteFixture(fixture);
         }
     }
 

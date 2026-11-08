@@ -310,12 +310,29 @@ abstract class TeachingFixture extends IntegrationEnvironment {
         }
     }
 
-    protected Fixture seedTeachingCenter() {
-        return seedTeachingCenterWithSubscription(-1, 365);
+    /**
+     * Danh tính dùng chung cho cả class test: tạo user Keycloak và tài khoản là phần seed đắt (mỗi
+     * user tạo ra là một lần Keycloak băm mật khẩu), còn center, membership và gói là JDBC rẻ và
+     * phải riêng từng test để giữ cô lập dữ kiện giữa các test.
+     */
+    protected record SharedIdentities(
+            KeycloakLogin owner,
+            UUID ownerId,
+            KeycloakLogin manager,
+            UUID managerId,
+            KeycloakLogin teacherA,
+            UUID teacherAId,
+            KeycloakLogin teacherB,
+            UUID teacherBId,
+            List<KeycloakLogin> students,
+            List<UUID> studentIds) {
+        protected SharedIdentities {
+            students = List.copyOf(students);
+            studentIds = List.copyOf(studentIds);
+        }
     }
 
-    protected Fixture seedTeachingCenterWithSubscription(
-            int validFromOffsetDays, int expiresOffsetDays) {
+    protected SharedIdentities seedSharedIdentities() {
         KeycloakLogin ownerLogin = createVerifiedUser("teaching-owner");
         KeycloakLogin managerLogin = createVerifiedUser("teaching-manager");
         KeycloakLogin teacherALogin = createVerifiedUser("teaching-teacher-a");
@@ -340,16 +357,7 @@ abstract class TeachingFixture extends IntegrationEnvironment {
             studentIds.add(
                     seedAccount(student.subject(), "SELF_REGISTERED", student.email(), true));
         }
-        UUID workspaceId = seedCenter(ownerId);
-        addMembership(workspaceId, managerId, "MANAGER");
-        addMembership(workspaceId, teacherAId, "TEACHER");
-        addMembership(workspaceId, teacherBId, "TEACHER");
-        for (UUID studentId : studentIds) {
-            addMembership(workspaceId, studentId, "STUDENT");
-        }
-        seedSubscription(workspaceId, validFromOffsetDays, expiresOffsetDays, ownerId);
-        return new Fixture(
-                workspaceId,
+        return new SharedIdentities(
                 ownerLogin,
                 ownerId,
                 managerLogin,
@@ -360,6 +368,59 @@ abstract class TeachingFixture extends IntegrationEnvironment {
                 teacherBId,
                 studentLogins,
                 studentIds);
+    }
+
+    protected void deleteSharedIdentities(SharedIdentities identities) {
+        deleteUser(identities.owner().subject());
+        deleteUser(identities.manager().subject());
+        deleteUser(identities.teacherA().subject());
+        deleteUser(identities.teacherB().subject());
+        for (KeycloakLogin student : identities.students()) {
+            deleteUser(student.subject());
+        }
+    }
+
+    protected Fixture seedCenterFixture(SharedIdentities identities) {
+        return seedCenterFixture(identities, -1, 365);
+    }
+
+    /**
+     * Dựng một center riêng cho một test trên danh tính dùng chung của class. Fixture trả về không
+     * được đưa vào {@code deleteFixture} vì sẽ xoá user dùng chung của cả class; danh tính chỉ dọn
+     * một lần ở cuối class qua {@code deleteSharedIdentities}, còn dữ kiện của center nằm trong
+     * schema cô lập bị DROP ở teardown của class.
+     */
+    protected Fixture seedCenterFixture(
+            SharedIdentities identities, int validFromOffsetDays, int expiresOffsetDays) {
+        UUID workspaceId = seedCenter(identities.ownerId());
+        addMembership(workspaceId, identities.managerId(), "MANAGER");
+        addMembership(workspaceId, identities.teacherAId(), "TEACHER");
+        addMembership(workspaceId, identities.teacherBId(), "TEACHER");
+        for (UUID studentId : identities.studentIds()) {
+            addMembership(workspaceId, studentId, "STUDENT");
+        }
+        seedSubscription(workspaceId, validFromOffsetDays, expiresOffsetDays, identities.ownerId());
+        return new Fixture(
+                workspaceId,
+                identities.owner(),
+                identities.ownerId(),
+                identities.manager(),
+                identities.managerId(),
+                identities.teacherA(),
+                identities.teacherAId(),
+                identities.teacherB(),
+                identities.teacherBId(),
+                identities.students(),
+                identities.studentIds());
+    }
+
+    protected Fixture seedTeachingCenter() {
+        return seedTeachingCenterWithSubscription(-1, 365);
+    }
+
+    protected Fixture seedTeachingCenterWithSubscription(
+            int validFromOffsetDays, int expiresOffsetDays) {
+        return seedCenterFixture(seedSharedIdentities(), validFromOffsetDays, expiresOffsetDays);
     }
 
     protected void deleteFixture(Fixture fixture) {
