@@ -159,7 +159,7 @@ public class InvitationService {
         UUID invitationId = UUID.randomUUID();
         Instant expiresAt = Instant.now().plus(INVITATION_TTL);
         String[] roleNames =
-                roles.stream().map(MembershipRole.Role::name).sorted().toArray(String[]::new);
+                roles.stream().map(role -> role.name()).sorted().toArray(String[]::new);
         String tokenHash = tokenHash(token);
         jdbc.update(
                 "INSERT INTO invitation"

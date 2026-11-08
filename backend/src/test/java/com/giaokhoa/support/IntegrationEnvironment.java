@@ -87,7 +87,7 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
     protected static void stopSchedulerAndDropSchema(ApplicationContext context, String schema) {
         context.getBeansOfType(ThreadPoolTaskScheduler.class)
                 .values()
-                .forEach(ThreadPoolTaskScheduler::shutdown);
+                .forEach(scheduler -> scheduler.shutdown());
         try (Connection connection =
                         DriverManager.getConnection(
                                 required("TEST_DATABASE_URL"),

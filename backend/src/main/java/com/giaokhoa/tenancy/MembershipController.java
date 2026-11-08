@@ -464,7 +464,7 @@ public class MembershipController {
         return new MembershipItem(
                 view.id(),
                 new MembershipUserView(view.userId(), view.username(), view.username()),
-                view.roles().stream().map(MembershipRole.Role::name).toList(),
+                view.roles().stream().map(role -> role.name()).toList(),
                 view.state(),
                 view.version());
     }
