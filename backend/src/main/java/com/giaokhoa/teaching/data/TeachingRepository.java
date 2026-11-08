@@ -19,10 +19,10 @@ import org.springframework.stereotype.Repository;
  * {@code FOR UPDATE} trên chính hàng đó trong cùng transaction trước đó (tiền lệ CenterService); ai
  * gọi thẳng repository này phải giữ đúng kỷ luật khóa-trước đó.
  *
- * <p>Dòng "hiện hành" của roster, môn–khóa, ghi danh là dòng ở state PENDING hoặc ACTIVE; dòng
- * REVOKED là lịch sử, chỉ đọc khi cần đối chiếu, không nằm trong danh sách hiện hành. Thu hồi chỉ
- * là UPDATE state/revoked_at kèm tăng version — không có DELETE vật lý ở đây, khớp trigger giữ lịch
- * sử của các migration V014–V017.
+ * <p>Dòng "hiện hành" của roster, môn–khóa, ghi danh và phân công là dòng ở state PENDING hoặc
+ * ACTIVE; dòng REVOKED là lịch sử, chỉ đọc khi cần đối chiếu, không nằm trong danh sách hiện hành.
+ * Thu hồi chỉ là UPDATE state/revoked_at kèm tăng version — không có DELETE vật lý ở đây, khớp
+ * trigger giữ lịch sử của các migration V014–V017.
  */
 @Repository
 public class TeachingRepository {
@@ -58,6 +58,46 @@ public class TeachingRepository {
 
     /** Một môn trong danh mục tham chiếu dùng chung. */
     public record SubjectRow(UUID id, String code, String name, String state) {}
+
+    /** Một môn–khóa đầy đủ phạm vi: kèm lớp và khóa cha để service kiểm tra cùng-lớp/cùng-scope. */
+    public record CourseSubjectScopeRow(
+            UUID id, UUID workspaceId, UUID classId, UUID courseId, UUID subjectId, String state) {}
+
+    /** Một ghi danh hiện hành hoặc lịch sử giữa một dòng roster và một môn–khóa. */
+    public record EnrollmentRow(
+            UUID id,
+            UUID workspaceId,
+            UUID classStudentId,
+            UUID courseSubjectId,
+            String state,
+            long version) {}
+
+    /** Một ghi danh trong danh sách của một môn–khóa, kèm học sinh của dòng roster của nó. */
+    public record EnrollmentListRow(
+            UUID id,
+            UUID classStudentId,
+            UUID courseSubjectId,
+            UUID studentUserId,
+            String state,
+            long version) {}
+
+    /** Một phân công giảng dạy hiện hành hoặc lịch sử của một giáo viên cho một môn–khóa. */
+    public record TeachingAssignmentRow(
+            UUID id,
+            UUID workspaceId,
+            UUID courseSubjectId,
+            UUID teacherUserId,
+            String state,
+            long version) {}
+
+    /** Một phân công chủ nhiệm hiện hành hoặc lịch sử của một giáo viên cho một lớp. */
+    public record HomeroomAssignmentRow(
+            UUID id,
+            UUID workspaceId,
+            UUID classId,
+            UUID teacherUserId,
+            String state,
+            long version) {}
 
     public Optional<WorkspaceInfo> findWorkspace(UUID workspaceId) {
         return jdbc
@@ -110,6 +150,21 @@ public class TeachingRepository {
                         Integer.class,
                         workspaceId,
                         userId);
+        return count != null && count > 0;
+    }
+
+    /** Membership ACTIVE của center kèm đúng một role tiền đề — tiền đề của nguồn phân công. */
+    public boolean hasActiveCenterMembershipWithRole(UUID workspaceId, UUID userId, String role) {
+        Integer count =
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM center_membership m"
+                                + " JOIN membership_role r ON r.membership_id = m.id"
+                                + " WHERE m.workspace_id = ? AND m.user_id = ?"
+                                + " AND m.state = 'ACTIVE' AND r.role = ?",
+                        Integer.class,
+                        workspaceId,
+                        userId,
+                        role);
         return count != null && count > 0;
     }
 
@@ -375,6 +430,436 @@ public class TeachingRepository {
                 courseSubjectId);
     }
 
+    /** Một dòng roster theo id trong đúng workspace, bất kể trạng thái. */
+    public Optional<RosterRow> findRosterEntryById(UUID workspaceId, UUID rosterId) {
+        return jdbc
+                .query(
+                        rosterSelect() + " WHERE cs.workspace_id = ? AND cs.id = ?",
+                        (rs, _) -> mapRoster(rs),
+                        workspaceId,
+                        rosterId)
+                .stream()
+                .findFirst();
+    }
+
+    /** Một môn–khóa đầy đủ phạm vi (lớp/khóa cha, trạng thái của chính dòng) theo id. */
+    public Optional<CourseSubjectScopeRow> findCourseSubjectScope(
+            UUID workspaceId, UUID courseSubjectId) {
+        return jdbc
+                .query(
+                        "SELECT id, workspace_id, class_id, course_id, subject_id, state"
+                                + " FROM course_subject WHERE workspace_id = ? AND id = ?",
+                        (rs, _) ->
+                                new CourseSubjectScopeRow(
+                                        rs.getObject("id", UUID.class),
+                                        rs.getObject("workspace_id", UUID.class),
+                                        rs.getObject("class_id", UUID.class),
+                                        rs.getObject("course_id", UUID.class),
+                                        rs.getObject("subject_id", UUID.class),
+                                        rs.getString("state")),
+                        workspaceId,
+                        courseSubjectId)
+                .stream()
+                .findFirst();
+    }
+
+    // ---------- Ghi danh ----------
+
+    public void insertEnrollment(
+            UUID id, UUID workspaceId, UUID classStudentId, UUID courseSubjectId) {
+        jdbc.update(
+                "INSERT INTO enrollment"
+                        + " (id, workspace_id, class_student_id, course_subject_id, state)"
+                        + " VALUES (?, ?, ?, ?, 'ACTIVE')",
+                id,
+                workspaceId,
+                classStudentId,
+                courseSubjectId);
+    }
+
+    public Optional<EnrollmentRow> findCurrentEnrollment(
+            UUID workspaceId, UUID classStudentId, UUID courseSubjectId) {
+        return jdbc
+                .query(
+                        "SELECT id, workspace_id, class_student_id, course_subject_id, state,"
+                                + " version FROM enrollment"
+                                + " WHERE workspace_id = ? AND class_student_id = ?"
+                                + " AND course_subject_id = ?"
+                                + " AND state IN ('PENDING', 'ACTIVE')",
+                        (rs, _) -> mapEnrollment(rs),
+                        workspaceId,
+                        classStudentId,
+                        courseSubjectId)
+                .stream()
+                .findFirst();
+    }
+
+    public Optional<EnrollmentRow> lockEnrollment(UUID workspaceId, UUID enrollmentId) {
+        return jdbc
+                .query(
+                        "SELECT id, workspace_id, class_student_id, course_subject_id, state,"
+                                + " version FROM enrollment"
+                                + " WHERE workspace_id = ? AND id = ? FOR UPDATE",
+                        (rs, _) -> mapEnrollment(rs),
+                        workspaceId,
+                        enrollmentId)
+                .stream()
+                .findFirst();
+    }
+
+    /** Các ghi danh hiện hành của một môn–khóa kèm học sinh của dòng roster, thứ tự tạo ổn định. */
+    public List<EnrollmentListRow> listCurrentEnrollments(UUID workspaceId, UUID courseSubjectId) {
+        return jdbc.query(
+                "SELECT e.id, e.class_student_id, e.course_subject_id, cs.student_user_id,"
+                        + " e.state, e.version FROM enrollment e"
+                        + " JOIN class_student cs ON cs.id = e.class_student_id"
+                        + " WHERE e.workspace_id = ? AND e.course_subject_id = ?"
+                        + " AND e.state IN ('PENDING', 'ACTIVE')"
+                        + " ORDER BY e.created_at ASC, e.id ASC",
+                (rs, _) ->
+                        new EnrollmentListRow(
+                                rs.getObject("id", UUID.class),
+                                rs.getObject("class_student_id", UUID.class),
+                                rs.getObject("course_subject_id", UUID.class),
+                                rs.getObject("student_user_id", UUID.class),
+                                rs.getString("state"),
+                                rs.getLong("version")),
+                workspaceId,
+                courseSubjectId);
+    }
+
+    public void revokeEnrollment(UUID enrollmentId) {
+        jdbc.update(
+                "UPDATE enrollment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now() WHERE id = ?",
+                enrollmentId);
+    }
+
+    // ---------- Phân công giảng dạy và chủ nhiệm ----------
+
+    public void insertTeachingAssignment(
+            UUID id, UUID workspaceId, UUID courseSubjectId, UUID teacherUserId) {
+        jdbc.update(
+                "INSERT INTO teaching_assignment"
+                        + " (id, workspace_id, course_subject_id, teacher_user_id, state)"
+                        + " VALUES (?, ?, ?, ?, 'ACTIVE')",
+                id,
+                workspaceId,
+                courseSubjectId,
+                teacherUserId);
+    }
+
+    public Optional<TeachingAssignmentRow> findCurrentTeachingAssignment(
+            UUID workspaceId, UUID courseSubjectId, UUID teacherUserId) {
+        return jdbc
+                .query(
+                        "SELECT id, workspace_id, course_subject_id, teacher_user_id, state,"
+                                + " version FROM teaching_assignment"
+                                + " WHERE workspace_id = ? AND course_subject_id = ?"
+                                + " AND teacher_user_id = ?"
+                                + " AND state IN ('PENDING', 'ACTIVE')",
+                        (rs, _) -> mapTeachingAssignment(rs),
+                        workspaceId,
+                        courseSubjectId,
+                        teacherUserId)
+                .stream()
+                .findFirst();
+    }
+
+    public Optional<TeachingAssignmentRow> lockTeachingAssignment(
+            UUID workspaceId, UUID courseSubjectId, UUID assignmentId) {
+        return jdbc
+                .query(
+                        "SELECT id, workspace_id, course_subject_id, teacher_user_id, state,"
+                                + " version FROM teaching_assignment"
+                                + " WHERE workspace_id = ? AND course_subject_id = ? AND id = ?"
+                                + " FOR UPDATE",
+                        (rs, _) -> mapTeachingAssignment(rs),
+                        workspaceId,
+                        courseSubjectId,
+                        assignmentId)
+                .stream()
+                .findFirst();
+    }
+
+    /** Các phân công giảng dạy hiện hành của một môn–khóa, theo thứ tự tạo ổn định. */
+    public List<TeachingAssignmentRow> listCurrentTeachingAssignments(
+            UUID workspaceId, UUID courseSubjectId) {
+        return jdbc.query(
+                "SELECT id, workspace_id, course_subject_id, teacher_user_id, state, version"
+                        + " FROM teaching_assignment WHERE workspace_id = ?"
+                        + " AND course_subject_id = ? AND state IN ('PENDING', 'ACTIVE')"
+                        + " ORDER BY created_at ASC, id ASC",
+                (rs, _) -> mapTeachingAssignment(rs),
+                workspaceId,
+                courseSubjectId);
+    }
+
+    public void revokeTeachingAssignment(UUID assignmentId) {
+        jdbc.update(
+                "UPDATE teaching_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now() WHERE id = ?",
+                assignmentId);
+    }
+
+    public void insertHomeroomAssignment(
+            UUID id, UUID workspaceId, UUID classId, UUID teacherUserId) {
+        jdbc.update(
+                "INSERT INTO homeroom_assignment"
+                        + " (id, workspace_id, class_id, teacher_user_id, state)"
+                        + " VALUES (?, ?, ?, ?, 'ACTIVE')",
+                id,
+                workspaceId,
+                classId,
+                teacherUserId);
+    }
+
+    public Optional<HomeroomAssignmentRow> findCurrentHomeroomAssignment(
+            UUID workspaceId, UUID classId, UUID teacherUserId) {
+        return jdbc
+                .query(
+                        "SELECT id, workspace_id, class_id, teacher_user_id, state, version"
+                                + " FROM homeroom_assignment"
+                                + " WHERE workspace_id = ? AND class_id = ?"
+                                + " AND teacher_user_id = ?"
+                                + " AND state IN ('PENDING', 'ACTIVE')",
+                        (rs, _) -> mapHomeroomAssignment(rs),
+                        workspaceId,
+                        classId,
+                        teacherUserId)
+                .stream()
+                .findFirst();
+    }
+
+    public Optional<HomeroomAssignmentRow> lockHomeroomAssignment(
+            UUID workspaceId, UUID classId, UUID assignmentId) {
+        return jdbc
+                .query(
+                        "SELECT id, workspace_id, class_id, teacher_user_id, state, version"
+                                + " FROM homeroom_assignment"
+                                + " WHERE workspace_id = ? AND class_id = ? AND id = ?"
+                                + " FOR UPDATE",
+                        (rs, _) -> mapHomeroomAssignment(rs),
+                        workspaceId,
+                        classId,
+                        assignmentId)
+                .stream()
+                .findFirst();
+    }
+
+    /** Các phân công chủ nhiệm hiện hành của một lớp, theo thứ tự tạo ổn định. */
+    public List<HomeroomAssignmentRow> listCurrentHomeroomAssignments(
+            UUID workspaceId, UUID classId) {
+        return jdbc.query(
+                "SELECT id, workspace_id, class_id, teacher_user_id, state, version"
+                        + " FROM homeroom_assignment WHERE workspace_id = ? AND class_id = ?"
+                        + " AND state IN ('PENDING', 'ACTIVE')"
+                        + " ORDER BY created_at ASC, id ASC",
+                (rs, _) -> mapHomeroomAssignment(rs),
+                workspaceId,
+                classId);
+    }
+
+    public void revokeHomeroomAssignment(UUID assignmentId) {
+        jdbc.update(
+                "UPDATE homeroom_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now() WHERE id = ?",
+                assignmentId);
+    }
+
+    /** Các lớp mà một giáo viên đang có phân công chủ nhiệm hiện hành trong workspace. */
+    public List<UUID> currentHomeroomClassIdsOfUser(UUID workspaceId, UUID teacherUserId) {
+        return jdbc.queryForList(
+                "SELECT class_id FROM homeroom_assignment WHERE workspace_id = ?"
+                        + " AND teacher_user_id = ? AND state IN ('PENDING', 'ACTIVE')",
+                UUID.class,
+                workspaceId,
+                teacherUserId);
+    }
+
+    /** Các môn–khóa mà một giáo viên đang có phân công giảng dạy hiện hành trong workspace. */
+    public List<UUID> currentTeachingCourseSubjectIdsOfUser(UUID workspaceId, UUID teacherUserId) {
+        return jdbc.queryForList(
+                "SELECT course_subject_id FROM teaching_assignment WHERE workspace_id = ?"
+                        + " AND teacher_user_id = ? AND state IN ('PENDING', 'ACTIVE')",
+                UUID.class,
+                workspaceId,
+                teacherUserId);
+    }
+
+    /** Các môn–khóa mà một học sinh đang có ghi danh hiện hành trong workspace. */
+    public List<UUID> currentEnrolledCourseSubjectIdsOfStudent(
+            UUID workspaceId, UUID studentUserId) {
+        return jdbc.queryForList(
+                "SELECT e.course_subject_id FROM enrollment e"
+                        + " JOIN class_student cs ON cs.id = e.class_student_id"
+                        + " WHERE e.workspace_id = ? AND cs.student_user_id = ?"
+                        + " AND e.state IN ('PENDING', 'ACTIVE')",
+                UUID.class,
+                workspaceId,
+                studentUserId);
+    }
+
+    /** Mọi môn–khóa thuộc một lớp trong workspace. */
+    public List<UUID> courseSubjectIdsOfClass(UUID workspaceId, UUID classId) {
+        return jdbc.queryForList(
+                "SELECT id FROM course_subject WHERE workspace_id = ? AND class_id = ?",
+                UUID.class,
+                workspaceId,
+                classId);
+    }
+
+    /** Mọi khóa thuộc một lớp trong workspace. */
+    public List<UUID> courseIdsOfClass(UUID workspaceId, UUID classId) {
+        return jdbc.queryForList(
+                "SELECT id FROM course WHERE workspace_id = ? AND class_id = ? ORDER BY id",
+                UUID.class,
+                workspaceId,
+                classId);
+    }
+
+    /** Mọi môn–khóa thuộc một khóa trong workspace. */
+    public List<UUID> courseSubjectIdsOfCourse(UUID workspaceId, UUID courseId) {
+        return jdbc.queryForList(
+                "SELECT id FROM course_subject WHERE workspace_id = ? AND course_id = ?",
+                UUID.class,
+                workspaceId,
+                courseId);
+    }
+
+    // ---------- Đóng nguồn phụ thuộc (dùng bởi TeachingRevocationContributor) ----------
+
+    /** Thu hồi mọi ghi danh hiện hành của một học sinh trong center, qua các dòng roster của họ. */
+    public void revokeEnrollmentsOfStudent(UUID workspaceId, UUID studentUserId) {
+        jdbc.update(
+                "UPDATE enrollment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND state IN ('PENDING', 'ACTIVE')"
+                        + " AND class_student_id IN (SELECT id FROM class_student"
+                        + " WHERE workspace_id = ? AND student_user_id = ?)",
+                workspaceId,
+                workspaceId,
+                studentUserId);
+    }
+
+    /** Thu hồi mọi dòng roster hiện hành của một người trong workspace. */
+    public void revokeRosterEntriesOfUser(UUID workspaceId, UUID userId) {
+        jdbc.update(
+                "UPDATE class_student SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND student_user_id = ?"
+                        + " AND state IN ('PENDING', 'ACTIVE')",
+                workspaceId,
+                userId);
+    }
+
+    /** Thu hồi mọi phân công giảng dạy hiện hành của một giáo viên trong workspace. */
+    public void revokeTeachingAssignmentsOfUser(UUID workspaceId, UUID teacherUserId) {
+        jdbc.update(
+                "UPDATE teaching_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND teacher_user_id = ?"
+                        + " AND state IN ('PENDING', 'ACTIVE')",
+                workspaceId,
+                teacherUserId);
+    }
+
+    /** Thu hồi mọi phân công chủ nhiệm hiện hành của một giáo viên trong workspace. */
+    public void revokeHomeroomAssignmentsOfUser(UUID workspaceId, UUID teacherUserId) {
+        jdbc.update(
+                "UPDATE homeroom_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND teacher_user_id = ?"
+                        + " AND state IN ('PENDING', 'ACTIVE')",
+                workspaceId,
+                teacherUserId);
+    }
+
+    /** Thu hồi mọi ghi danh hiện hành thuộc các môn–khóa của một lớp. */
+    public void revokeEnrollmentsOfClass(UUID workspaceId, UUID classId) {
+        jdbc.update(
+                "UPDATE enrollment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND state IN ('PENDING', 'ACTIVE')"
+                        + " AND course_subject_id IN (SELECT id FROM course_subject"
+                        + " WHERE workspace_id = ? AND class_id = ?)",
+                workspaceId,
+                workspaceId,
+                classId);
+    }
+
+    /** Thu hồi mọi phân công giảng dạy hiện hành thuộc các môn–khóa của một lớp. */
+    public void revokeTeachingAssignmentsOfClass(UUID workspaceId, UUID classId) {
+        jdbc.update(
+                "UPDATE teaching_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND state IN ('PENDING', 'ACTIVE')"
+                        + " AND course_subject_id IN (SELECT id FROM course_subject"
+                        + " WHERE workspace_id = ? AND class_id = ?)",
+                workspaceId,
+                workspaceId,
+                classId);
+    }
+
+    /** Thu hồi mọi phân công chủ nhiệm hiện hành của một lớp. */
+    public void revokeHomeroomAssignmentsOfClass(UUID workspaceId, UUID classId) {
+        jdbc.update(
+                "UPDATE homeroom_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND class_id = ?"
+                        + " AND state IN ('PENDING', 'ACTIVE')",
+                workspaceId,
+                classId);
+    }
+
+    /** Thu hồi mọi ghi danh hiện hành thuộc các môn–khóa của một khóa. */
+    public void revokeEnrollmentsOfCourse(UUID workspaceId, UUID courseId) {
+        jdbc.update(
+                "UPDATE enrollment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND state IN ('PENDING', 'ACTIVE')"
+                        + " AND course_subject_id IN (SELECT id FROM course_subject"
+                        + " WHERE workspace_id = ? AND course_id = ?)",
+                workspaceId,
+                workspaceId,
+                courseId);
+    }
+
+    /** Thu hồi mọi phân công giảng dạy hiện hành thuộc các môn–khóa của một khóa. */
+    public void revokeTeachingAssignmentsOfCourse(UUID workspaceId, UUID courseId) {
+        jdbc.update(
+                "UPDATE teaching_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND state IN ('PENDING', 'ACTIVE')"
+                        + " AND course_subject_id IN (SELECT id FROM course_subject"
+                        + " WHERE workspace_id = ? AND course_id = ?)",
+                workspaceId,
+                workspaceId,
+                courseId);
+    }
+
+    /** Thu hồi mọi ghi danh hiện hành của một môn–khóa. */
+    public void revokeEnrollmentsOfCourseSubject(UUID workspaceId, UUID courseSubjectId) {
+        jdbc.update(
+                "UPDATE enrollment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND course_subject_id = ?"
+                        + " AND state IN ('PENDING', 'ACTIVE')",
+                workspaceId,
+                courseSubjectId);
+    }
+
+    /** Thu hồi mọi phân công giảng dạy hiện hành của một môn–khóa. */
+    public void revokeTeachingAssignmentsOfCourseSubject(UUID workspaceId, UUID courseSubjectId) {
+        jdbc.update(
+                "UPDATE teaching_assignment SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1, updated_at = now()"
+                        + " WHERE workspace_id = ? AND course_subject_id = ?"
+                        + " AND state IN ('PENDING', 'ACTIVE')",
+                workspaceId,
+                courseSubjectId);
+    }
+
     // ---------- Danh mục môn ----------
 
     /** Toàn bộ môn đang ACTIVE của danh mục tham chiếu, theo mã. */
@@ -461,5 +946,37 @@ public class TeachingRepository {
                 rs.getObject("subject_id", UUID.class),
                 rs.getString("subject_name"),
                 rs.getString("state"));
+    }
+
+    private static EnrollmentRow mapEnrollment(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new EnrollmentRow(
+                rs.getObject("id", UUID.class),
+                rs.getObject("workspace_id", UUID.class),
+                rs.getObject("class_student_id", UUID.class),
+                rs.getObject("course_subject_id", UUID.class),
+                rs.getString("state"),
+                rs.getLong("version"));
+    }
+
+    private static TeachingAssignmentRow mapTeachingAssignment(java.sql.ResultSet rs)
+            throws java.sql.SQLException {
+        return new TeachingAssignmentRow(
+                rs.getObject("id", UUID.class),
+                rs.getObject("workspace_id", UUID.class),
+                rs.getObject("course_subject_id", UUID.class),
+                rs.getObject("teacher_user_id", UUID.class),
+                rs.getString("state"),
+                rs.getLong("version"));
+    }
+
+    private static HomeroomAssignmentRow mapHomeroomAssignment(java.sql.ResultSet rs)
+            throws java.sql.SQLException {
+        return new HomeroomAssignmentRow(
+                rs.getObject("id", UUID.class),
+                rs.getObject("workspace_id", UUID.class),
+                rs.getObject("class_id", UUID.class),
+                rs.getObject("teacher_user_id", UUID.class),
+                rs.getString("state"),
+                rs.getLong("version"));
     }
 }
