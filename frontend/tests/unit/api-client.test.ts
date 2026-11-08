@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest, submitLogout } from "../../src/lib/api-client";
+import { apiRequest, requestAllPages, submitLogout } from "../../src/lib/api-client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -171,5 +171,36 @@ describe("browser API client", () => {
     })).toEqual({ kind: "data", status: 204, data: undefined });
     expect(new Headers(fetchMock.mock.calls[1][1].headers).get("Idempotency-Key")).toBe("stable-key");
     expect(new Headers(fetchMock.mock.calls[1][1].headers).get("If-Match")).toBe("\"7\"");
+  });
+});
+
+
+describe("đọc đủ trang danh sách bảo vệ", () => {
+  it("giữ bộ lọc và theo cursor để không làm mất người ở trang sau", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ items: [{ id: "first" }], nextCursor: "page 2" }))
+      .mockResolvedValueOnce(Response.json({ items: [{ id: "last" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await requestAllPages("/api/workspaces/w/memberships?limit=20"))
+      .toEqual([{ id: "first" }, { id: "last" }]);
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/workspaces/w/memberships?limit=20&cursor=page+2");
+  });
+
+  it("không trả danh sách thiếu khi một trang bị từ chối", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(Response.json({ items: ["first"], nextCursor: "next" }))
+      .mockResolvedValueOnce(Response.json({ code: "PERMISSION_DENIED" }, { status: 403 })));
+    await expect(requestAllPages("/api/workspaces/w/memberships"))
+      .rejects.toMatchObject({ status: 403 });
+  });
+
+  it("dừng với lỗi khi server lặp cursor thay vì lặp request vô hạn", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
+      Response.json({ items: ["first"], nextCursor: "repeated" }),
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(requestAllPages("/api/workspaces/w/memberships"))
+      .rejects.toThrow("Cursor danh sách không hợp lệ");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

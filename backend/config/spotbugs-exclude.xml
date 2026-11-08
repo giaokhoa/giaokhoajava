@@ -147,10 +147,10 @@
         <Field name="~(jdbc|idempotency|projector)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CenterPolicyProjector, AuthorizationOperationService); không sao chép khi inject vào projector membership. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CenterPolicyProjector, AuthorizationOperationService, TeachingPolicyProjector); không sao chép khi inject vào projector membership. -->
     <Match>
         <Class name="com.giaokhoa.tenancy.MembershipPolicyProjector"/>
-        <Field name="~(jdbc|centerProjector|operations)"/>
+        <Field name="~(jdbc|centerProjector|operations|teachingProjector)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdempotencyService, InitialCredentialHandoff, MembershipPolicyProjector, ResourceMutationCoordinator); không sao chép khi inject vào service membership. -->
@@ -237,10 +237,10 @@
         <Field name="~(repository|workspaceTransaction)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (TeachingRepository, JdbcTemplate); không sao chép khi inject vào lớp hỗ trợ route giảng dạy. -->
+    <!-- Dependency singleton do Spring quản lý (TeachingRepository, JdbcTemplate, ResourceMutationCoordinator); không sao chép khi inject vào lớp hỗ trợ route giảng dạy. -->
     <Match>
         <Class name="com.giaokhoa.teaching.TeachingRouteSupport"/>
-        <Field name="~(repository|jdbc)"/>
+        <Field name="~(repository|jdbc|coordinator)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Dependency singleton do Spring quản lý (ClassService, TeachingRepository); không sao chép khi inject vào controller lớp/roster. -->

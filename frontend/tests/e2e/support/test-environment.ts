@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type APIResponse } from "@playwright/test";
 
 type TestUser = { id: string; username: string; email: string; password: string };
 type Mail = { ID: string; Subject: string; Created: string; To: { Address: string }[] };
@@ -49,7 +49,8 @@ export class TestEnvironment {
     // Hai làn TEST local đều được phép: làn 1 Keycloak 18081, làn 2 Keycloak 18082.
     if ((this.keycloak.href !== "http://127.0.0.1:18081/"
         && this.keycloak.href !== "http://127.0.0.1:18082/")
-        || this.mailpit.href !== "http://127.0.0.1:18025/") {
+        || (this.mailpit.href !== "http://127.0.0.1:18025/"
+          && this.mailpit.href !== "http://127.0.0.1:18026/")) {
       throw new Error("Chỉ dùng Keycloak/Mailpit TEST; không được kết nối DEV");
     }
   }
@@ -266,5 +267,24 @@ export class TestEnvironment {
     } finally {
       callbackServer.close();
     }
+  }
+}
+
+
+// Chỉ thử lại ACCOUNT/target fence đang đồng bộ; caller giữ nguyên key qua mọi lần thử.
+export async function appRequestWhenReady(
+  page: Page,
+  url: string,
+  options: { method?: string; headers?: Record<string, string>; data?: Record<string, unknown> } = {},
+): Promise<APIResponse> {
+  const startedAt = Date.now();
+  for (;;) {
+    const response = await page.request.fetch(url, options);
+    if (response.status() !== 503) return response;
+    let code: unknown;
+    try { code = ((await response.json()) as { code?: unknown }).code; }
+    catch { return response; }
+    if (code !== "AUTHORIZATION_NOT_READY" || Date.now() - startedAt >= 60_000) return response;
+    await page.waitForTimeout(1_000);
   }
 }

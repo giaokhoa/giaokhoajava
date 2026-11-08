@@ -3,6 +3,7 @@ package com.giaokhoa.teaching;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -62,11 +63,13 @@ public class ClassController {
             @PathVariable UUID workspaceId,
             @RequestParam(value = "cursor", required = false) @Nullable String cursor,
             @RequestParam(value = "limit", required = false) @Nullable Integer limit,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     List<ClassService.ClassView> all = classes.listClasses(workspaceId);
                     if (!support.isAdmin(actor, workspaceId)) {
                         // Danh sách chỉ chứa các lớp actor đọc được: chủ nhiệm thấy lớp của
@@ -87,14 +90,16 @@ public class ClassController {
             @PathVariable UUID workspaceId,
             @RequestBody @Nullable NameRequest body,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         NameRequest request = body == null ? new NameRequest("") : body;
         String hash =
                 support.payloadHash("POST", "/api/workspaces/" + workspaceId + "/classes", request);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -117,11 +122,13 @@ public class ClassController {
     public ResponseEntity<ClassService.ClassView> getClass(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     ClassService.ClassView view = classes.getClass(workspaceId, classId);
                     if (!support.canReadClass(actor, workspaceId, classId)) {
                         throw classNotFound();
@@ -137,14 +144,16 @@ public class ClassController {
             @RequestBody @Nullable NameRequest body,
             @RequestHeader("Idempotency-Key") String key,
             @RequestHeader(value = "If-Match", required = false) @Nullable String ifMatch,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         NameRequest request = body == null ? new NameRequest("") : body;
         String path = "/api/workspaces/" + workspaceId + "/classes/" + classId;
         String hash = support.payloadHash("PATCH", path, request);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -168,13 +177,15 @@ public class ClassController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         String path = "/api/workspaces/" + workspaceId + "/classes/" + classId;
         String hash = support.payloadHash("DELETE", path, null);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -208,11 +219,13 @@ public class ClassController {
             @PathVariable UUID classId,
             @RequestParam(value = "cursor", required = false) @Nullable String cursor,
             @RequestParam(value = "limit", required = false) @Nullable Integer limit,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
-        return support.inWorkspace(
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     if (!support.canReadClass(actor, workspaceId, classId)) {
                         // Lớp không tồn tại trả 404; lớp tồn tại nhưng không được đọc trả 403.
                         classes.getClass(workspaceId, classId);
@@ -233,14 +246,16 @@ public class ClassController {
             @PathVariable UUID classId,
             @RequestBody @Nullable RosterAddRequest body,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         RosterAddRequest request = body == null ? new RosterAddRequest(List.of()) : body;
         String path = "/api/workspaces/" + workspaceId + "/classes/" + classId + "/students";
         String hash = support.payloadHash("POST", path, request);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {
@@ -265,8 +280,8 @@ public class ClassController {
             @PathVariable UUID classId,
             @PathVariable UUID classStudentId,
             @RequestHeader("Idempotency-Key") String key,
-            Authentication authentication) {
-        UUID actor = support.actor(authentication);
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
         String path =
                 "/api/workspaces/"
                         + workspaceId
@@ -275,9 +290,11 @@ public class ClassController {
                         + "/students/"
                         + classStudentId;
         String hash = support.payloadHash("DELETE", path, null);
-        return support.inWorkspace(
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
                 workspaceId,
-                () -> {
+                actor -> {
                     support.requireAdmin(actor, workspaceId);
                     var existing = support.replay(actor, key, hash);
                     if (existing.isPresent()) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiRequest } from "../../lib/api-client";
+import { requestAllPages, requestWhenReady } from "../../lib/api-client";
 import type { Membership } from "../tenancy/center-administration";
 import {
   ifMatchValue,
@@ -164,9 +164,7 @@ function TeacherAssignmentList({
   );
 
   const loadAssignments = useCallback(async (): Promise<TeacherAssignment[]> => {
-    const result = await apiRequest<unknown>(assignmentsPath);
-    if (result.kind !== "data") throw new Error("Phản hồi danh sách phân công không hợp lệ.");
-    return parseTeacherAssignments(result.data);
+    return parseTeacherAssignments(await requestAllPages(assignmentsPath));
   }, [assignmentsPath]);
 
   useEffect(() => {
@@ -286,7 +284,7 @@ export function CourseSubjectEditor({
   async function loadCourses() {
     setLoadError(null);
     try {
-      const result = await apiRequest<unknown>(coursesPath);
+      const result = await requestWhenReady<unknown>(coursesPath);
       if (result.kind !== "data") throw new Error("Phản hồi danh sách khóa không hợp lệ.");
       setCourses(parseCourses(result.data));
       setNextCursor(parsePage(result.data).nextCursor);
@@ -298,7 +296,7 @@ export function CourseSubjectEditor({
 
   useEffect(() => {
     let ignore = false;
-    apiRequest<unknown>(coursesPath)
+    requestWhenReady<unknown>(coursesPath)
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setCourses(parseCourses(result.data));
@@ -319,7 +317,7 @@ export function CourseSubjectEditor({
   async function loadMoreCourses() {
     if (!nextCursor) return;
     try {
-      const result = await apiRequest<unknown>(
+      const result = await requestWhenReady<unknown>(
         `${coursesPath}?cursor=${encodeURIComponent(nextCursor)}`,
       );
       if (result.kind !== "data") throw new Error("Phản hồi danh sách khóa không hợp lệ.");

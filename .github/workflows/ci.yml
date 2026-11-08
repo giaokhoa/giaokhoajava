@@ -124,6 +124,9 @@ jobs:
       TEST_KEYCLOAK_PROVISIONER_CLIENT_SECRET: ci-fixtures-only
       TEST_KEYCLOAK_AUTHZ_AUDIENCE: giaokhoa-it-api
       TEST_APP_ORIGIN: http://127.0.0.1:8080
+      NATIVE_GATE_APP_ORIGIN: http://127.0.0.1:8080
+      TEST_FRONTEND_ORIGIN: http://127.0.0.1:8080
+      BACKEND_INTERNAL_URL: http://127.0.0.1:18080
       TEST_MAILPIT_URL: http://127.0.0.1:18025
     steps:
       - uses: actions/checkout@v4
@@ -168,7 +171,7 @@ jobs:
       # chạy cổng tĩnh hay failsafe, chỉ biên dịch và đóng gói (kèm unit test của vòng đời).
       - name: Build backend application jar for system checks
         run: ./backend/mvnw -B -ntp -f backend/pom.xml package
-      - name: Verify Authorization Code, PKCE and Mailpit
+      - name: Verify frontend/backend E2E with PostgreSQL and Keycloak
         run: npm --prefix frontend run test:e2e
       - name: Verify native Keycloak bootstrap and provisioning
         run: bash infra/keycloak/verify-native.sh

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
+import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./support/test-environment";
 
 // E2E danh tính US1 ở biên trình duyệt: Code login, verify mail, đổi mật khẩu tạm,
 // workspace switch, logout và back-channel logout qua ứng dụng thật trên stack TEST.
@@ -161,7 +161,7 @@ test("mật khẩu tạm: lần đăng nhập đầu bị ép đổi mật khẩ
   }
 });
 
-test("workspace switch: danh sách theo hợp đồng, workspace lạ là 404 và cookie active-workspace giả không đổi được danh sách", async ({
+test("workspace switch: danh sách theo hợp đồng, workspace lạ bị từ chối và cookie active-workspace giả không đổi được danh sách", async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -170,7 +170,8 @@ test("workspace switch: danh sách theo hợp đồng, workspace lạ là 404 v�
   try {
     await dangNhapQuaUngDung(page, origin, user);
 
-    const response = await page.request.get(`${origin}/api/me/workspaces`);
+    await laySessionView(page, origin);
+    const response = await appRequestWhenReady(page, `${origin}/api/me/workspaces`);
     expect(response.status()).toBe(200);
     const workspaces = (await response.json()) as {
       id: string; kind: string; name: string; roles: string[]; syncState: string;
@@ -190,13 +191,15 @@ test("workspace switch: danh sách theo hợp đồng, workspace lạ là 404 v�
     const stranger = await page.request.get(
       `${origin}/api/workspaces/${randomUUID()}/classes`,
     );
-    expect(stranger.status()).toBe(404);
+    expect(stranger.status()).toBe(403);
+    const detail = await page.request.get(`${origin}/api/workspaces/${randomUUID()}/classes/${randomUUID()}`);
+    expect(detail.status()).toBe(404);
 
     // Backend không tin active-workspace cookie: cookie giả không làm danh sách đổi khác.
     await page.context().addCookies([
       { name: "active-workspace", value: randomUUID(), url: origin },
     ]);
-    const after = await page.request.get(`${origin}/api/me/workspaces`);
+    const after = await appRequestWhenReady(page, `${origin}/api/me/workspaces`);
     const afterIds = ((await after.json()) as { id: string }[]).map((w) => w.id).sort();
     expect(afterIds).toEqual(workspaces.map((w) => w.id).sort());
   } finally {

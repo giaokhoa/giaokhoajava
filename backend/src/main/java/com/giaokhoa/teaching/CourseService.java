@@ -143,6 +143,7 @@ public class CourseService {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "COURSE_ALREADY_REVOKED", "Khóa đã bị thu hồi trước đó.");
         }
+        requireClassActive(workspaceId, row.classId());
         IdempotencyService.requireIfMatch(ifMatch, row.version());
         repository.renameCourse(courseId, trimmed);
         return view(
@@ -208,6 +209,7 @@ public class CourseService {
                     "COURSE_NOT_ACTIVE",
                     "Khóa đã bị thu hồi, không gắn thêm môn được nữa.");
         }
+        requireClassActive(workspaceId, row.classId());
         requireSubscriptionCurrent(workspaceId);
         List<SubjectRow> catalog = subjects.stream().map(this::requireCatalogSubject).toList();
         for (SubjectRow subject : catalog) {
@@ -261,6 +263,19 @@ public class CourseService {
         return repository.listSubjects().stream()
                 .map(subject -> new SubjectView(subject.id(), subject.code(), subject.name()))
                 .toList();
+    }
+
+    private void requireClassActive(UUID workspaceId, UUID classId) {
+        var clazz =
+                repository
+                        .findClass(workspaceId, classId)
+                        .orElseThrow(CourseService::classNotFound);
+        if (!"ACTIVE".equals(clazz.state())) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT,
+                    "CLASS_NOT_ACTIVE",
+                    "Lớp đã bị thu hồi, không mở rộng hoặc sửa khóa được nữa.");
+        }
     }
 
     private List<UUID> requireSubjects(List<UUID> subjectIds) {

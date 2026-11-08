@@ -110,7 +110,7 @@ public class EnrollmentService {
                     "ENROLLMENT_BATCH_REQUIRED",
                     "Lô ghi danh cần ít nhất một học sinh và một môn–khóa.");
         }
-        requireTeachingWorkspace(workspaceId);
+        WorkspaceInfo workspace = requireTeachingWorkspace(workspaceId);
         List<RosterRow> roster = new ArrayList<>();
         for (UUID rosterId : rosterIds) {
             RosterRow entry =
@@ -122,6 +122,14 @@ public class EnrollmentService {
                         HttpStatus.BAD_REQUEST,
                         "ROSTER_ENTRY_NOT_CURRENT",
                         "Học sinh không còn trong roster hiện hành của lớp.");
+            }
+            if ("CENTER".equals(workspace.kind())
+                    && !repository.hasActiveCenterMembershipWithRole(
+                            workspaceId, entry.studentUserId(), "STUDENT")) {
+                throw new HttpProblemException(
+                        HttpStatus.BAD_REQUEST,
+                        "STUDENT_NOT_CENTER_STUDENT",
+                        "Người được ghi danh phải là học sinh đang hoạt động của trung tâm.");
             }
             roster.add(entry);
         }
@@ -136,6 +144,20 @@ public class EnrollmentService {
                         HttpStatus.BAD_REQUEST,
                         "COURSE_SUBJECT_NOT_CURRENT",
                         "Môn–khóa không còn hiện hành trong khóa.");
+            }
+            var clazz =
+                    repository
+                            .findClass(workspaceId, subject.classId())
+                            .orElseThrow(EnrollmentService::enrollmentTargetNotFound);
+            var course =
+                    repository
+                            .findCourse(workspaceId, subject.courseId())
+                            .orElseThrow(EnrollmentService::enrollmentTargetNotFound);
+            if (!"ACTIVE".equals(clazz.state()) || !"ACTIVE".equals(course.state())) {
+                throw new HttpProblemException(
+                        HttpStatus.CONFLICT,
+                        "TEACHING_CONTEXT_NOT_ACTIVE",
+                        "Lớp hoặc khóa đã bị thu hồi, không ghi danh mới được nữa.");
             }
             subjects.add(subject);
         }
