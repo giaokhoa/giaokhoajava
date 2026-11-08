@@ -42,14 +42,17 @@ public class ClassService {
     private final TeachingRepository repository;
     private final WorkspaceTransaction workspaceTransaction;
     private final ResourceMutationCoordinator coordinator;
+    private final TeachingRevocationContributor revocationContributor;
 
     public ClassService(
             TeachingRepository repository,
             WorkspaceTransaction workspaceTransaction,
-            ResourceMutationCoordinator coordinator) {
+            ResourceMutationCoordinator coordinator,
+            TeachingRevocationContributor revocationContributor) {
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
         this.coordinator = coordinator;
+        this.revocationContributor = revocationContributor;
     }
 
     /** Metadata của một lớp; đọc lớp chỉ trả metadata này, không kèm roster. */
@@ -114,9 +117,9 @@ public class ClassService {
     }
 
     /**
-     * Thu hồi lớp: chỉ đổi state, giữ nguyên mọi dữ kiện và lịch sử phụ thuộc. Thu hồi không bị
-     * chặn bởi gói hết hạn. Việc đóng các quan hệ phụ thuộc ở tầng policy thuộc lớp projection
-     * riêng, không nằm ở đây.
+     * Thu hồi lớp: đổi state của lớp và đóng luôn ghi danh, phân công giảng dạy và phân công chủ
+     * nhiệm phụ thuộc lớp trong cùng transaction qua {@link TeachingRevocationContributor}, giữ
+     * nguyên toàn bộ lịch sử. Thu hồi không bị chặn bởi gói hết hạn.
      */
     @Transactional
     public ClassView revokeClass(UUID workspaceId, UUID classId) {
@@ -132,6 +135,7 @@ public class ClassService {
                     HttpStatus.CONFLICT, "CLASS_ALREADY_REVOKED", "Lớp đã bị thu hồi trước đó.");
         }
         repository.revokeClass(classId);
+        revocationContributor.revokeDependentsOfClass(workspaceId, classId);
         return new ClassView(row.id(), row.workspaceId(), row.name(), "REVOKED", row.version() + 1);
     }
 
