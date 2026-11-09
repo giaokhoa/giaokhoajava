@@ -27,7 +27,7 @@ import { seedGuardianResult } from "./support/guardian-results-fixture";
 // - Trạng thái liên kết theo vòng đời của hợp đồng: REQUESTED → APPROVED/REJECTED,
 //   APPROVED → REVOKED; quyết định duyệt mang expectedVersion lấy từ bản đọc hiện tại.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
-const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? "http://localhost:3001";
+const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? "http://localhost:3001";
 
 // Nhóm nguồn cố định theo NativePolicyTemplates của backend.
 const NHOM_ELIGIBLE = "/gk/identity/eligible";
@@ -1087,7 +1087,7 @@ test("gỡ liên kết: phiên parent cũ mất quyền xem và back navigation 
       const traLoiGo = (await go.json()) as MutationTraLoi;
       await choOperationThanhCong(page, origin, layOperationId(traLoiGo), traLoiGo.statusUrl);
       const lienKetSauGo = timLienKet(
-        await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
+        await layDanhSachLienKet(trangParent, origin, setup.workspaceId), setup.hocSinhX.userId);
       expect(lienKetSauGo.state).toBe("REVOKED");
 
       // Cùng phiên parent cũ: API bị từ chối ngay dù chưa hề đăng nhập lại.
