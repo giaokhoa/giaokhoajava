@@ -73,7 +73,7 @@ export class TestEnvironment {
     return (await response.json() as { access_token: string }).access_token;
   }
 
-  private async admin(method: string, path: string, body?: object): Promise<Response> {
+  private async adminResponse(method: string, path: string, body?: object): Promise<Response> {
     const response = await fetch(this.url(`/admin/realms/${this.realm}${path}`), {
       method,
       headers: {
@@ -82,7 +82,17 @@ export class TestEnvironment {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!response.ok) throw new Error(`Keycloak test admin ${method}: HTTP ${response.status}`);
+    return response;
+  }
+
+  private async admin(method: string, path: string, body?: object): Promise<Response> {
+    const response = await this.adminResponse(method, path, body);
+    if (!response.ok) {
+      const chiTiet = await response.text().catch(() => "");
+      throw new Error(
+        `Keycloak test admin ${method}: HTTP ${response.status}${chiTiet ? ` — ${chiTiet}` : ""}`,
+      );
+    }
     return response;
   }
 
@@ -106,8 +116,25 @@ export class TestEnvironment {
 
   async deleteUser(user: TestUser): Promise<void> {
     if (!this.createdUsers.has(user.id)) throw new Error("Không xóa tài khoản không do test tạo");
-    await this.admin("DELETE", `/users/${encodeURIComponent(user.id)}`);
-    this.createdUsers.delete(user.id);
+    // Dọn dẹp cuối test: mục tiêu là user không còn tồn tại. Keycloak có thể trả 409
+    // khi một thao tác khác (worker chiếu group membership) đang chạm cùng user trong
+    // lúc chạy song song — thử lại vài lần rồi mới kết luận lỗi; 404 nghĩa là user
+    // đã không còn, coi như dọn xong. 409 dai dẳng vẫn ném lỗi kèm nội dung Keycloak
+    // trả về để lần sau chẩn đoán được, thay vì chỉ còn mã trạng thái.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await this.adminResponse("DELETE", `/users/${encodeURIComponent(user.id)}`);
+      if (response.ok || response.status === 404) {
+        this.createdUsers.delete(user.id);
+        return;
+      }
+      if (response.status !== 409 || attempt === 2) {
+        const chiTiet = await response.text().catch(() => "");
+        throw new Error(
+          `Keycloak test admin DELETE: HTTP ${response.status}${chiTiet ? ` — ${chiTiet}` : ""}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
   }
 
   async setEmailVerified(user: TestUser, verified: boolean): Promise<void> {
