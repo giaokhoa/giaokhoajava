@@ -620,12 +620,15 @@ class PublishedResultServiceIT extends GuardianFixture {
     @Test
     void personalOwnerReadsPublishedResultButOutsiderCannot() throws Exception {
         GuardianCenter center = seedGuardianCenter();
+        UUID personalWid = personalWorkspaceOf(center.ownerId());
+        // Personal chưa có kỳ gói: seed một kỳ để seedSubmission có subscription_period_id.
+        // Kỳ phải có trước lần đăng nhập đầu tiên: bootstrap ghi bundle entitlement lúc
+        // đăng nhập, seed sau sẽ làm desired hash cũ thiếu descriptor kỳ gói và reconcile
+        // chết DESIRED_SOURCE_MISMATCH khi tạo lớp.
+        seedSubscription(personalWid, center.ownerId());
         try (var owner = openSession(center.owner());
                 var student = openSession(center.students().get(0));
                 var outsider = openSession(center.otherParent())) {
-            UUID personalWid = personalWorkspaceOf(center.ownerId());
-            // Personal chưa có kỳ gói: seed một kỳ để seedSubmission có subscription_period_id.
-            seedSubscription(personalWid, center.ownerId());
             Scenario scenario = prepareScenario(owner, center, personalWid);
             UUID publishedId =
                     seedResult(

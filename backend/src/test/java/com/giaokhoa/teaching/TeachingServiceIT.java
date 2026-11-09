@@ -226,6 +226,8 @@ class TeachingServiceIT extends IntegrationEnvironment {
     void personalRosterNeedsOnlyExistingAccount() {
         UUID owner = seedAccount();
         UUID personal = personalWorkspaceOf(owner);
+        // Cổng gói personal là luật nghiêm ngặt: phải có kỳ đang hiệu lực mới mở rộng được.
+        seedSubscription(personal, -1, 20, owner);
         UUID learner = seedAccount();
         ClassView clazz = classes.createClass(personal, "Lớp cá nhân");
 

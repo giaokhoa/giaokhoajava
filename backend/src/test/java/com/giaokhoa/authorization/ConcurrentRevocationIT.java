@@ -693,21 +693,15 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
             ActorScope actor = actorWithReadyPersonalWorkspace(nativeGate.userSubject());
             String targetKey = "workspace:" + actor.workspace();
             String scope = "enter";
-            // Writer có thể dựng lại ý đồ graph của nguồn owner này từ các dòng bền vững của V001.
-            String canonicalSource =
-                    jdbc.queryForObject(
-                            """
-                            SELECT concat('PERSONAL_OWNER|workspace=',w.id,
-                                '|user=',u.id,'|subject=',u.keycloak_sub,
-                                '|target=workspace:',w.id,'|scope=enter')
-                            FROM workspace w JOIN user_account u ON u.id=w.owner_user_id
-                            WHERE w.id=? AND w.kind='PERSONAL'
-                                AND u.email_verified AND u.identity_state='ACTIVE'
-                            """,
-                            String.class,
-                            actor.workspace());
-            assertNotNull(canonicalSource, "Expected an eligible durable personal owner source");
-            String desiredHash = hashOf(canonicalSource);
+            // Desired của personal workspace nay là bundle entitlement đầy đủ (enter, read,
+            // class.list của owner), không còn là một descriptor enter đơn lẻ: reconciler
+            // đối chiếu cả bundle nên seed theo đúng bundle mà bootstrap ghi.
+            String desiredHash =
+                    ProjectionReconciler.desiredHash(
+                            targetKey,
+                            scope,
+                            new PersonalEntitlementProjector(jdbc)
+                                    .bundleDescriptors(actor.workspace()));
             try (var graph = nativeGate.partiallyProvisionApplicationResource(targetKey, scope)) {
                 UUID projection = UUID.randomUUID();
                 var operation =
@@ -840,9 +834,11 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                         "Retry must install the missing native owner policy"),
                         () ->
                                 assertEquals(
-                                        1,
+                                        3,
                                         graph.permissionCount(),
-                                        "Exactly one scope permission must reference this resource"),
+                                        "Bundle personal áp một scope permission cho mỗi scope"
+                                                + " còn nguồn (enter, read, class.list) trên cùng"
+                                                + " một resource"),
                         () ->
                                 assertTrue(
                                         graph.allowed(
@@ -860,7 +856,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                     return null;
                 });
                 assertEquals(1, graph.resourceCount());
-                assertEquals(1, graph.permissionCount());
+                assertEquals(3, graph.permissionCount());
             }
         }
     }
@@ -872,13 +868,6 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                         (rs, _) -> (String[]) rs.getArray(1).getArray(),
                         projection);
         return java.util.Arrays.asList(java.util.Objects.requireNonNull(names));
-    }
-
-    private String hashOf(String source) throws Exception {
-        byte[] digest =
-                java.security.MessageDigest.getInstance("SHA-256")
-                        .digest(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return java.util.HexFormat.of().formatHex(digest);
     }
 
     @Test
