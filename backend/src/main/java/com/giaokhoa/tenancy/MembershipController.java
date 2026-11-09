@@ -19,7 +19,6 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,7 +57,6 @@ public class MembershipController {
     private final CenterService centers;
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
-    private final JdbcTemplate jdbc;
     private final ResourceMutationCoordinator coordinator;
 
     public MembershipController(
@@ -67,14 +65,12 @@ public class MembershipController {
             CenterService centers,
             ProtectedActionExecutor executor,
             IdempotencyService idempotency,
-            JdbcTemplate jdbc,
             ResourceMutationCoordinator coordinator) {
         this.memberships = memberships;
         this.invitations = invitations;
         this.centers = centers;
         this.executor = executor;
         this.idempotency = idempotency;
-        this.jdbc = jdbc;
         this.coordinator = coordinator;
     }
 
@@ -141,34 +137,17 @@ public class MembershipController {
                 request,
                 null,
                 actor -> {
-                    if (actorRoles(actor, workspaceId).isEmpty()) {
+                    if (memberships.activeRoles(actor, workspaceId).isEmpty()) {
                         throw denied(
                                 "Chỉ thành viên hiện hành của trung tâm mới xem được danh sách này.");
                     }
                     int pageSize = limit == null ? 20 : Math.min(Math.max(limit, 1), 100);
-                    List<MembershipService.MembershipView> all =
-                            memberships.listMemberships(workspaceId);
-                    int start = 0;
-                    if (cursor != null) {
-                        // Cursor là id của phần tử cuối trang trước; không còn khớp nghĩa là trang
-                        // đã cạn.
-                        start = all.size();
-                        for (int i = 0; i < all.size(); i++) {
-                            if (all.get(i).id().toString().equals(cursor)) {
-                                start = i + 1;
-                                break;
-                            }
-                        }
-                    }
-                    List<MembershipItem> items =
-                            all.subList(start, Math.min(start + pageSize, all.size())).stream()
-                                    .map(MembershipController::item)
-                                    .toList();
-                    String nextCursor =
-                            !items.isEmpty() && start + items.size() < all.size()
-                                    ? items.getLast().id().toString()
-                                    : null;
-                    return protectedOk(new MembershipPage(items, nextCursor));
+                    MembershipService.MembershipPage page =
+                            memberships.pageMemberships(workspaceId, cursor, pageSize);
+                    return protectedOk(
+                            new MembershipPage(
+                                    page.items().stream().map(MembershipController::item).toList(),
+                                    page.nextCursor()));
                 });
     }
 
@@ -191,8 +170,8 @@ public class MembershipController {
                                 "Thiếu danh sách role của lời mời.");
                     }
                     Set<MembershipRole.Role> roles = parseRoles(body.roles());
-                    requireAdmin(actor, workspaceId);
-                    requireSubscriptionCurrent(workspaceId);
+                    memberships.requireAdmin(actor, workspaceId);
+                    memberships.requireSubscriptionCurrent(workspaceId);
                     InvitationService.InvitationIssued issued =
                             invitations.invite(
                                     actor,
@@ -278,8 +257,8 @@ public class MembershipController {
                                 "VALIDATION_FAILED",
                                 "Thiếu tên đăng nhập hoặc tên hiển thị của học sinh.");
                     }
-                    requireAdmin(actor, workspaceId);
-                    requireSubscriptionCurrent(workspaceId);
+                    memberships.requireAdmin(actor, workspaceId);
+                    memberships.requireSubscriptionCurrent(workspaceId);
                     MembershipService.StudentIssueResult result =
                             memberships.issueStudent(
                                     actor,
@@ -337,8 +316,10 @@ public class MembershipController {
                                 "Thiếu danh sách role đích.");
                     }
                     Set<MembershipRole.Role> desired = parseRoles(body.roles());
-                    Set<MembershipRole.Role> actorRoles = requireAdmin(actor, workspaceId);
-                    Set<MembershipRole.Role> current = currentRoles(workspaceId, membershipId);
+                    Set<MembershipRole.Role> actorRoles =
+                            memberships.requireAdmin(actor, workspaceId);
+                    Set<MembershipRole.Role> current =
+                            memberships.currentRoles(workspaceId, membershipId);
                     Set<MembershipRole.Role> added = EnumSet.noneOf(MembershipRole.Role.class);
                     added.addAll(desired);
                     added.removeAll(current);
@@ -355,7 +336,7 @@ public class MembershipController {
                         throw denied("Chỉ chủ sở hữu mới được bổ nhiệm hoặc gỡ quản lý.");
                     }
                     if (!added.isEmpty()) {
-                        requireSubscriptionCurrent(workspaceId);
+                        memberships.requireSubscriptionCurrent(workspaceId);
                     }
                     AuthorizationOperation operation =
                             centers.replaceRoles(
@@ -389,8 +370,10 @@ public class MembershipController {
                 request,
                 workspaceId,
                 actor -> {
-                    Set<MembershipRole.Role> actorRoles = requireAdmin(actor, workspaceId);
-                    Set<MembershipRole.Role> current = currentRoles(workspaceId, membershipId);
+                    Set<MembershipRole.Role> actorRoles =
+                            memberships.requireAdmin(actor, workspaceId);
+                    Set<MembershipRole.Role> current =
+                            memberships.currentRoles(workspaceId, membershipId);
                     if ((current.contains(MembershipRole.Role.MANAGER)
                                     || current.contains(MembershipRole.Role.OWNER))
                             && !actorRoles.contains(MembershipRole.Role.OWNER)) {
@@ -445,62 +428,6 @@ public class MembershipController {
                 view.roles().stream().map(role -> role.name()).toList(),
                 view.state(),
                 view.version());
-    }
-
-    private Set<MembershipRole.Role> actorRoles(UUID actorUserId, UUID workspaceId) {
-        return Set.copyOf(
-                jdbc
-                        .queryForList(
-                                "SELECT r.role FROM center_membership m"
-                                        + " JOIN membership_role r ON r.membership_id = m.id"
-                                        + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                        + " AND m.state = 'ACTIVE'",
-                                String.class,
-                                workspaceId,
-                                actorUserId)
-                        .stream()
-                        .map(MembershipRole.Role::valueOf)
-                        .toList());
-    }
-
-    private Set<MembershipRole.Role> requireAdmin(UUID actorUserId, UUID workspaceId) {
-        Set<MembershipRole.Role> roles = actorRoles(actorUserId, workspaceId);
-        if (!roles.contains(MembershipRole.Role.OWNER)
-                && !roles.contains(MembershipRole.Role.MANAGER)) {
-            throw denied("Không có quyền quản trị thành viên của trung tâm này.");
-        }
-        return roles;
-    }
-
-    private Set<MembershipRole.Role> currentRoles(UUID workspaceId, UUID membershipId) {
-        return memberships.listMemberships(workspaceId).stream()
-                .filter(view -> view.id().equals(membershipId))
-                .findFirst()
-                .map(view -> Set.copyOf(view.roles()))
-                .orElse(Set.of());
-    }
-
-    private void requireSubscriptionCurrent(UUID workspaceId) {
-        Integer total =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM subscription_period WHERE workspace_id = ?",
-                        Integer.class,
-                        workspaceId);
-        if (total == null || total == 0) {
-            return;
-        }
-        Integer active =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM subscription_period WHERE workspace_id = ?"
-                                + " AND valid_from <= now() AND expires_at > now()",
-                        Integer.class,
-                        workspaceId);
-        if (active == null || active == 0) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
-                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
-        }
     }
 
     private static Set<MembershipRole.Role> parseRoles(List<String> roles) {

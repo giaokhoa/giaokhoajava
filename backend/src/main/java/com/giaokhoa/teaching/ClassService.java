@@ -88,6 +88,18 @@ public class ClassService {
                 repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound()));
     }
 
+    @Transactional(readOnly = true)
+    public TeachingRepository.Page<ClassView> pageClasses(
+            UUID workspaceId,
+            @Nullable String cursor,
+            @Nullable Integer limit,
+            @Nullable UUID homeroomTeacherId) {
+        workspaceTransaction.applyContext(workspaceId);
+        return repository
+                .pageClasses(workspaceId, cursor, limit, homeroomTeacherId)
+                .map(ClassService::toView);
+    }
+
     /** Các lớp hiện hành của workspace, cũ nhất trước; chỉ metadata, không kèm roster. */
     @Transactional(readOnly = true)
     public List<ClassView> listClasses(UUID workspaceId) {
@@ -199,6 +211,14 @@ public class ClassService {
             result.add(toView(entry));
         }
         return List.copyOf(result);
+    }
+
+    @Transactional(readOnly = true)
+    public TeachingRepository.Page<RosterEntryView> pageStudents(
+            UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
+        workspaceTransaction.applyContext(workspaceId);
+        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
+        return repository.pageRoster(workspaceId, classId, cursor, limit).map(ClassService::toView);
     }
 
     /** Roster hiện hành của lớp; đọc roster là thao tác riêng, không suy ra từ đọc lớp. */

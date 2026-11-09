@@ -92,12 +92,7 @@ public class CourseController {
                                 .orElseThrow(() -> classNotFound());
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.ok(
-                            support.page(
-                                    courses.listCourses(workspaceId, classId),
-                                    cursor,
-                                    limit,
-                                    item -> item.id()));
+                    return support.page(courses.pageCourses(workspaceId, classId, cursor, limit));
                 });
     }
 

@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -236,6 +237,28 @@ public class EnrollmentService {
                 List.of(
                         NativePolicyTemplates.courseSubjectKey(
                                 workspaceId, row.courseSubjectId())));
+    }
+
+    @Transactional(readOnly = true)
+    public TeachingRepository.Page<EnrollmentView> pageEnrollments(
+            UUID workspaceId,
+            UUID courseSubjectId,
+            @Nullable String cursor,
+            @Nullable Integer limit) {
+        workspaceTransaction.applyContext(workspaceId);
+        repository
+                .findCourseSubjectScope(workspaceId, courseSubjectId)
+                .orElseThrow(() -> enrollmentTargetNotFound());
+        return repository
+                .pageEnrollments(workspaceId, courseSubjectId, cursor, limit)
+                .map(row ->
+                        new EnrollmentView(
+                                row.id(),
+                                row.classStudentId(),
+                                row.courseSubjectId(),
+                                row.studentUserId(),
+                                row.state(),
+                                row.version()));
     }
 
     /** Các ghi danh hiện hành của một môn–khóa, theo thứ tự tạo ổn định. Chỉ đọc dữ kiện nguồn. */

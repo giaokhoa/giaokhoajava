@@ -4,6 +4,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.util.List;
 import java.util.Objects;
@@ -392,21 +393,7 @@ public class GuardianLinkService {
      * gói nào thì không bị chặn; đã có kỳ thì phải có ít nhất một kỳ đang trong hiệu lực.
      */
     private void requireSubscriptionCurrent(UUID workspaceId) {
-        Integer total =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM subscription_period WHERE workspace_id = ?",
-                        Integer.class,
-                        workspaceId);
-        if (total == null || total == 0) {
-            return;
-        }
-        Integer active =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM subscription_period WHERE workspace_id = ?"
-                                + " AND valid_from <= now() AND expires_at > now()",
-                        Integer.class,
-                        workspaceId);
-        if (active == null || active == 0) {
+        if (!SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspaceId)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
                     "SUBSCRIPTION_INACTIVE",
