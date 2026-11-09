@@ -146,9 +146,8 @@ class SourceRevocationCoordinatorTest {
         }
 
         List<AuthorizationOperationService.PartitionChange> capturedChanges() {
-            @SuppressWarnings("unchecked")
             ArgumentCaptor<List<AuthorizationOperationService.PartitionChange>> changes =
-                    ArgumentCaptor.forClass(List.class);
+                    ArgumentCaptor.captor();
             verify(operations)
                     .applyDesiredState(
                             eq(ACTOR), eq(WORKSPACE), eq("key"), eq("hash"), changes.capture());
