@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.subscriptions.SubscriptionService;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -37,6 +40,8 @@ import tools.jackson.databind.JsonNode;
 class PersonalClassAuthorizationIT extends TeachingFixture {
     private static final String SCHEMA =
             "personal_class_" + UUID.randomUUID().toString().replace("-", "");
+
+    @Autowired private SubscriptionService subscriptions;
 
     @DynamicPropertySource
     static void isolatedSchema(DynamicPropertyRegistry registry) {
@@ -333,7 +338,22 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
                     seedAccount(
                             studentLogin.subject(), "SELF_REGISTERED", studentLogin.email(), true);
             UUID personal = personalWorkspaceOf(ownerId);
-            seedSubscription(personal, -1, 365, ownerId);
+            // Đọc kết quả rỗng phải qua fence của đúng workspace đang đọc (thay đổi của #200):
+            // seed kỳ gói bằng JDBC không tạo partition của workspace nên fence trả 503.
+            // Xác nhận qua SubscriptionService để operation tạo partition và ghi bundle,
+            // chờ SUCCEEDED rồi mới đọc.
+            Instant from = OffsetDateTime.now(ZoneOffset.UTC).minusDays(1).toInstant();
+            Instant until = OffsetDateTime.now(ZoneOffset.UTC).plusDays(365).toInstant();
+            AuthorizationOperation confirmOperation =
+                    subscriptions.confirm(
+                            ownerId,
+                            personal,
+                            from,
+                            until,
+                            "personal-grade-confirm-" + UUID.randomUUID(),
+                            "personal-grade-" + UUID.randomUUID(),
+                            "a".repeat(64));
+            awaitOperationSucceeded(jdbc, confirmOperation.getId());
             PersonalChain chain = seedPersonalChain(personal, studentId);
             UUID resultId = seedSubmissionAndDraftResult(personal, ownerId, studentId, chain);
 

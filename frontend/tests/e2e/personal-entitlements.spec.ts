@@ -628,18 +628,19 @@ async function docLichSuLuyenTap(page: Page, origin: string): Promise<PracticeEn
 // Seed một lần luyện tập trên resource HỆ THỐNG thẳng vào DB bằng psql, theo đúng mẫu
 // SystemPracticeHistoryIT: tự tạo SYSTEM workspace + resource + version LOCKED của
 // chính nó rồi ghi attempt cho actor (trigger DB khóa đúng các ràng buộc này). Cần
-// E2E_SCHEMA và TEST_DATABASE_* của làn TEST; psql lấy từ PATH của harness.
+// TEST_E2E_SCHEMA (schema ngẫu nhiên mà backend và Playwright dùng chung từ #200;
+// E2E_SCHEMA là đường lui khi chạy local) và TEST_DATABASE_* của làn TEST; psql lấy từ PATH của harness.
 function seedLichSuLuyenTap(
   personalId: string,
   userAppId: string,
   subjectId: string,
 ): { resourceId: string; versionId: string } {
-  const schema = process.env.E2E_SCHEMA;
+  const schema = process.env.TEST_E2E_SCHEMA ?? process.env.E2E_SCHEMA;
   const databaseUrl = process.env.TEST_DATABASE_URL;
   const username = process.env.TEST_DATABASE_USERNAME;
   const password = process.env.TEST_DATABASE_PASSWORD;
   if (!schema || !databaseUrl || !username || !password) {
-    throw new Error("Seed lịch sử luyện tập cần E2E_SCHEMA và TEST_DATABASE_URL/USERNAME/PASSWORD");
+    throw new Error("Seed lịch sử luyện tập cần TEST_E2E_SCHEMA (hoặc E2E_SCHEMA) và TEST_DATABASE_URL/USERNAME/PASSWORD");
   }
   const match = databaseUrl.match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
   const host = match?.[1];
