@@ -31,8 +31,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -45,16 +43,14 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Workflow khôi phục danh tính và bàn giao credential ban đầu trên stack TEST thật: RecoveryService
- * ép phạm vi gửi yêu cầu và thứ tự REQUESTED → VERIFIED → RESOLVED/REJECTED trên schema cô lập,
- * InitialCredentialHandoff tạo identity trên Keycloak 26.8.1 thật rồi mới ghi directory, và mọi lỗi
- * sau identity-create đều reconcile sạch. Endpoint HTTP thuộc task sau; class này khóa hành vi
- * service mà endpoint sẽ gọi.
+ * ép phạm vi gửi yêu cầu và thứ tự REQUESTED → VERIFIED → RESOLVED/REJECTED trên schema dùng chung
+ * của suite, InitialCredentialHandoff tạo identity trên Keycloak 26.8.1 thật rồi mới ghi directory,
+ * và mọi lỗi sau identity-create đều reconcile sạch. Endpoint HTTP thuộc task sau; class này khóa
+ * hành vi service mà endpoint sẽ gọi.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class RecoveryWorkflowIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "recovery_workflow_" + UUID.randomUUID().toString().replace("-", "");
     private static final String DIRECT_CLIENT = "recovery-workflow-direct";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
@@ -66,11 +62,6 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
     private static @Nullable String ownedDirectClientId;
 
     private final List<String> createdKeycloakUsers = new ArrayList<>();
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
 
     @AfterAll
     static void removeFixtures() {
@@ -85,15 +76,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         }
     }
 
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
-
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua service đồng
-    // bộ), nhưng worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong khi
-    // @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL
-    // hủy DROP bằng deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
+    // bộ): mock để worker nền không tự xử lý operation song song với các lời gọi service
+    // trực tiếp của class.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired JdbcTemplate jdbc;

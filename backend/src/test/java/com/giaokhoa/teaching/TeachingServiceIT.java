@@ -25,20 +25,16 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,27 +45,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  * scope theo workspace, gói hết hạn chặn mở rộng nhưng không chặn thu hồi, roster của center đòi
  * membership ACTIVE và lô roster nguyên tử, thu hồi roster kéo theo thu hồi ghi danh phụ thuộc mà
  * giữ lịch sử, khóa phải có ít nhất một môn lúc tạo, và thêm môn không tự ghi danh. Seed chỉ bằng
- * JDBC trong schema cô lập; không cần Keycloak vì tầng service không quyết quyền và không ghi
- * operation. Riêng phần RLS chạy service qua một role runtime NOSUPERUSER NOBYPASSRLS theo mẫu
- * SystemPracticeHistoryIT, vì user của stack TEST là superuser nên tự nó không chịu RLS — chỉ qua
- * role đó mới chứng minh được service đặt đúng context workspace cho mọi đường.
+ * JDBC trong schema dùng chung của suite; không cần Keycloak vì tầng service không quyết quyền và
+ * không ghi operation. Riêng phần RLS chạy service qua một role runtime NOSUPERUSER NOBYPASSRLS
+ * theo mẫu SystemPracticeHistoryIT, vì user của stack TEST là superuser nên tự nó không chịu RLS —
+ * chỉ qua role đó mới chứng minh được service đặt đúng context workspace cho mọi đường.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class TeachingServiceIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "teaching_service_" + UUID.randomUUID().toString().replace("-", "");
+    private static final String SCHEMA = "public";
     private static final String RUNTIME_ROLE = "teaching_service_runtime";
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;

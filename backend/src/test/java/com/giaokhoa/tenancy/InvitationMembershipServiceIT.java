@@ -26,7 +26,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,8 +33,6 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -57,28 +54,14 @@ import tools.jackson.databind.json.JsonMapper;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class InvitationMembershipServiceIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "invitation_service_" + UUID.randomUUID().toString().replace("-", "");
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
     private static final RestClient HTTP = RestClient.create();
     private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
-
-    // Worker thật chạy theo lịch sẽ mở giao dịch trên chính schema cô lập này trong khi
-    // @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL
-    // hủy DROP bằng deadlock (cùng cơ chế BootstrapProfileIT). Mọi khẳng định của class này
-    // đều đồng bộ nên mock worker không đổi ý nghĩa kiểm thử.
+    // Mọi khẳng định của class này đều đồng bộ nên worker nền không thuộc phạm vi kiểm
+    // thử: mock để nó không tự xử lý operation song song với đường lái trực tiếp của class.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired JdbcTemplate jdbc;

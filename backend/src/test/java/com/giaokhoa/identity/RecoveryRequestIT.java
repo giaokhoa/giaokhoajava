@@ -13,14 +13,11 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -28,31 +25,18 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Schema và entity của recovery_request trên schema cô lập riêng: migration phải áp sạch từ đầu,
- * vòng đời REQUESTED → VERIFIED → RESOLVED/REJECTED được khóa tại DB qua cặp
- * verified_by/resolved_at, và lịch sử xác minh không bị hard-delete hay đổi định danh. Workflow
- * gửi/xử lý yêu cầu thuộc các task sau; class này chỉ khóa record nền.
+ * Schema và entity của recovery_request trên schema dùng chung của suite: vòng đời REQUESTED →
+ * VERIFIED → RESOLVED/REJECTED được khóa tại DB qua cặp verified_by/resolved_at, và lịch sử xác
+ * minh không bị hard-delete hay đổi định danh. Workflow gửi/xử lý yêu cầu thuộc các task sau; class
+ * này chỉ khóa record nền.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class RecoveryRequestIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "recovery_request_" + UUID.randomUUID().toString().replace("-", "");
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
 
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua service đồng
-    // bộ), nhưng worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong khi
-    // @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL
-    // hủy DROP bằng deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
+    // bộ): mock để worker nền không tự xử lý operation song song với các lời gọi service
+    // trực tiếp của class.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired JdbcTemplate jdbc;

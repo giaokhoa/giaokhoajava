@@ -23,18 +23,14 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,8 +46,6 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PublishedResultServiceIT extends GuardianFixture {
-    private static final String SCHEMA =
-            "published_results_" + UUID.randomUUID().toString().replace("-", "");
     private static final String CLASS_NAME = "Lớp kết quả service";
     private static final String COURSE_NAME = "Khóa kết quả service";
 
@@ -59,16 +53,6 @@ class PublishedResultServiceIT extends GuardianFixture {
     @Autowired private ResultPolicyProjector resultProjector;
     @Autowired private KeycloakProvisioningClient directory;
     @Autowired private IdempotencyService idempotency;
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     private record Scenario(UUID classId, UUID courseSubjectId, SubjectRef subject) {}
 

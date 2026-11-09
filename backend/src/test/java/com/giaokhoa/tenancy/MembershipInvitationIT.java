@@ -29,13 +29,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,8 +42,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -75,8 +71,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class MembershipInvitationIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "member_invite_" + UUID.randomUUID().toString().replace("-", "");
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST =
@@ -90,22 +84,9 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedApiClient() {
         ensureApiClient();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý (awaitOperationSucceeded tự poll) nên
-        // không mock được như BootstrapProfileIT; teardown dừng scheduler trước để không còn
-        // actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;

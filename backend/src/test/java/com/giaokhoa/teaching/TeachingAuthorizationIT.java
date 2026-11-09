@@ -14,13 +14,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,20 +42,6 @@ import org.springframework.transaction.annotation.Transactional;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Tag("e2e-backend")
 class TeachingAuthorizationIT extends TeachingFixture {
-    private static final String SCHEMA =
-            "teaching_authz_" + UUID.randomUUID().toString().replace("-", "");
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý nên teardown dừng scheduler trước để
-        // không còn actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt); mỗi test
     // vẫn dựng center riêng trên danh tính đó để giữ cô lập dữ kiện.

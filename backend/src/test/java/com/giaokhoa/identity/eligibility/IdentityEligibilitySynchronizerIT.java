@@ -16,17 +16,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,8 +40,6 @@ import org.springframework.web.client.RestClient;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "eligibility_sync_" + UUID.randomUUID().toString().replace("-", "");
     private static final String ELIGIBLE_GROUP = "/gk/identity/eligible";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
@@ -56,23 +50,10 @@ class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
     private static final String BASE = required("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = required("TEST_KEYCLOAK_REALM");
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedRealmPrerequisites() {
         seedEligibilityGroup();
         ensureApiClient();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý (awaitSucceeded) nên không mock được như
-        // BootstrapProfileIT; teardown dừng scheduler trước để không còn actor đồng thời nào chạm
-        // schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;

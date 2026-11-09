@@ -26,8 +26,6 @@ import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -35,29 +33,21 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Lịch sử practice trên schema cô lập riêng: migration phải áp sạch từ đầu, trigger chỉ cho
- * practice version đã khoá của resource hệ thống vào đúng personal workspace của người làm, và lịch
- * sử không bị hard-delete hay đổi định danh. Phần RLS chạy qua một role runtime không superuser,
- * không BYPASSRLS — đúng bất biến của data-model — vì user của stack TEST là owner nên tự nó không
- * chịu RLS.
+ * Lịch sử practice trên schema dùng chung của suite: trigger chỉ cho practice version đã khoá của
+ * resource hệ thống vào đúng personal workspace của người làm, và lịch sử không bị hard-delete hay
+ * đổi định danh. Phần RLS chạy qua một role runtime không superuser, không BYPASSRLS — đúng bất
+ * biến của data-model — vì user của stack TEST là owner nên tự nó không chịu RLS.
  */
 @SpringBootTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class SystemPracticeHistoryIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "system_practice_" + UUID.randomUUID().toString().replace("-", "");
+    private static final String SCHEMA = "public";
     private static final String RUNTIME_ROLE = "practice_history_runtime";
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua transaction
-    // đồng bộ), nhưng worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong
-    // khi @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và
-    // PostgreSQL hủy DROP bằng deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
+    // đồng bộ): mock để worker nền không tự xử lý operation song song với các transaction
+    // trực tiếp của class.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired private JdbcTemplate jdbc;
@@ -96,9 +86,18 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
     }
 
     @AfterAll
-    void removeSchemaAndRuntimeRole() {
+    void removeRuntimeRole() {
         runtimeDataSource.destroy();
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+        // Chỉ dọn role runtime do class tự tạo; schema là schema dùng chung của toàn suite
+        // nên tuyệt đối không DROP ở đây. Phải thu hồi các grant trên schema dùng chung trước,
+        // vì DROP ROLE bị chặn khi role còn giữ privilege trên đối tượng còn tồn tại.
+        jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        jdbc.execute(
+                "REVOKE SELECT, INSERT, UPDATE ON system_practice_attempt_sample FROM "
+                        + RUNTIME_ROLE);
+        jdbc.execute(
+                "REVOKE SELECT ON workspace, user_account, resource, resource_version FROM "
+                        + RUNTIME_ROLE);
         jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
     }
 

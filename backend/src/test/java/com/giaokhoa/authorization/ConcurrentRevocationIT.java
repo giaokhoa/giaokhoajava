@@ -22,14 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.awaitility.core.ConditionTimeoutException;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,8 +37,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -57,21 +53,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class ConcurrentRevocationIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "revocation_concurrent_" + UUID.randomUUID().toString().replace("-", "");
-
-    @DynamicPropertySource
-    static void isolatedCommittedTransactions(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeCommittedFixtures(@Autowired ApplicationContext context) {
-        // Class này cần worker thật nên không mock được như BootstrapProfileIT; teardown dừng
-        // scheduler trước để không còn actor đồng thời nào chạm schema khi DROP.
-        // DB thật cấm xóa từng partition riêng lẻ; chỉ drop schema do test này sở hữu.
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     @Autowired JdbcTemplate jdbc;
     @Autowired IdempotencyService idempotency;

@@ -24,15 +24,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -52,24 +49,12 @@ import org.springframework.web.client.RestClient;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class BootstrapProfileIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "bootstrap_profile_" + UUID.randomUUID().toString().replace("-", "");
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
 
     private static final RestClient HTTP = RestClient.create();
     private static final String BASE = required("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = required("TEST_KEYCLOAK_REALM");
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
 
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
@@ -78,9 +63,8 @@ class BootstrapProfileIT extends IntegrationEnvironment {
     @Autowired IssuedStudentRegistrar registrar;
 
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua service đồng
-    // bộ), nhưng worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong khi
-    // @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL
-    // hủy DROP bằng deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
+    // bộ): mock để worker nền không tự xử lý operation song song với các lời gọi service
+    // trực tiếp của class.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Test

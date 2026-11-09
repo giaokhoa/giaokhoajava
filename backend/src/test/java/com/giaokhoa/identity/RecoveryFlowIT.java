@@ -32,7 +32,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -44,8 +43,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -71,8 +68,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class RecoveryFlowIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "recovery_flow_" + UUID.randomUUID().toString().replace("-", "");
     private static final String DIRECT_CLIENT = "recovery-flow-direct";
     private static final String WEB_CLIENT = "giaokhoa-it-web";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
@@ -88,11 +83,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
             IdentityFlowIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = IdentityFlowIT.fixture("TEST_KEYCLOAK_REALM");
     private static @Nullable String ownedDirectClientId;
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
 
     @BeforeAll
     static void seedPlatformRealmPrerequisites() {
@@ -112,14 +102,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                 }
             }
         }
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Test platform operator của class này chờ đồng bộ eligibility do worker thật xử lý
-        // (getWorkspacesWhenReady) nên không mock được như trước; teardown dừng scheduler
-        // trước để không còn actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;

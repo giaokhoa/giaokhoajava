@@ -49,13 +49,11 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -75,8 +73,6 @@ import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -106,8 +102,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class CenterAdministrationIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "center_admin_" + UUID.randomUUID().toString().replace("-", "");
     private static final String OPERATOR_GROUP = "/gk/platform/operators";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
@@ -122,23 +116,10 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     private static final String DEFAULT_POLICY = "Default Policy";
     private static @Nullable String operatorGroupId;
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedOperatorGroup() {
         operatorGroupId = ensureGroup(OPERATOR_GROUP);
         ensureApiClient();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý (awaitOperationSucceeded tự poll) nên
-        // không mock được như BootstrapProfileIT; teardown dừng scheduler trước để không còn
-        // actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;

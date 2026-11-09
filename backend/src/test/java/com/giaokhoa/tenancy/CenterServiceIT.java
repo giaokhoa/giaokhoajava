@@ -30,18 +30,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.awaitility.core.ConditionTimeoutException;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,8 +59,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class CenterServiceIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "center_service_" + UUID.randomUUID().toString().replace("-", "");
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_MAP =
@@ -76,23 +70,10 @@ class CenterServiceIT extends IntegrationEnvironment {
     private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedRealmPrerequisites() {
         seedEligibilityGroup();
         ensureApiClient();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý (awaitOperationSucceeded tự poll) nên
-        // không mock được như BootstrapProfileIT; teardown dừng scheduler trước để không còn
-        // actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;
@@ -136,6 +117,9 @@ class CenterServiceIT extends IntegrationEnvironment {
                             .contains("/gk/workspaces/" + workspace + "/members"),
                     "Row REVOKED lịch sử không được xóa group của membership ACTIVE mới");
         } finally {
+            // Index vật lý do test này tự tạo phải tự dọn: schema dùng chung giữa các class
+            // không còn tự xoá DDL như schema riêng trước đây.
+            jdbc.execute("DROP INDEX IF EXISTS review_membership_order");
             operator.delete();
             owner.delete();
             member.delete();

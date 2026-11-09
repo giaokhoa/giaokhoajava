@@ -400,7 +400,7 @@ abstract class TeachingFixture extends IntegrationEnvironment {
      * Dựng một center riêng cho một test trên danh tính dùng chung của class. Fixture trả về không
      * được đưa vào {@code deleteFixture} vì sẽ xoá user dùng chung của cả class; danh tính chỉ dọn
      * một lần ở cuối class qua {@code deleteSharedIdentities}, còn dữ kiện của center nằm trong
-     * schema cô lập bị DROP ở teardown của class.
+     * schema dùng chung, được xoá sạch khi class kế tiếp bắt đầu.
      */
     protected Fixture seedCenterFixture(
             SharedIdentities identities, int validFromOffsetDays, int expiresOffsetDays) {

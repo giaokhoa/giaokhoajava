@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
@@ -14,11 +12,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.awaitility.core.ConditionTimeoutException;
-import org.springframework.context.ApplicationContext;
+import org.junit.jupiter.api.BeforeAll;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -39,6 +36,10 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
     private static final String TEST_DB_LANE_2 = "jdbc:postgresql://127.0.0.1:15433/giaokhoa_test";
     private static final String OPERATION_FAILED = "FAILED";
     private static final String TEST_ISSUER_LANE_2 = "http://127.0.0.1:18082/realms/giaokhoa-it";
+    // Schema mặc định của kết nối TEST — schema dùng chung cho toàn bộ nhóm IT full-context
+    // (B1): các class không còn khai schema riêng, context được Spring cache và dùng lại giữa
+    // các class cùng cấu hình; cô lập nằm ở dữ kiện, xem truncateSharedSchemaData.
+    private static final String SHARED_SCHEMA = "public";
 
     @DynamicPropertySource
     static void testServices(DynamicPropertyRegistry registry) {
@@ -73,10 +74,129 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
     }
 
     /**
-     * Khai báo schema cô lập cho một class test: Flyway migrate vào đúng schema đó và mọi kết nối
-     * của pool mang search_path trỏ vào nó. Từng class vẫn tự khai {@code @DynamicPropertySource}
-     * của mình (annotation phải nằm trên chính class) và chỉ truyền hằng SCHEMA vào đây, thay cho
-     * bản sao cùng 3 dòng khai báo ở mọi class trước đây.
+     * Cô lập dữ kiện giữa các class dùng chung một context và một schema (B1 — một context dùng
+     * chung theo cơ chế cache của Spring TestContext): trước mỗi class, xoá toàn bộ dữ kiện còn lại
+     * của class trước trong schema dùng chung. Mỗi class vẫn bắt đầu từ bảng rỗng như khi còn
+     * schema riêng, nhưng ApplicationContext và schema đã migrate được dùng lại thay vì nạp và
+     * migrate lại theo từng class. Chạy bằng connection độc lập vì ở thời điểm {@code @BeforeAll}
+     * context có thể chưa được nạp; trên DB trắng chưa migrate lần nào thì chưa có bảng nào để xoá
+     * nên bước này tự bỏ qua.
+     *
+     * <p>Các ngoại lệ không truncate như dữ kiện thường: {@code flyway_schema_history} (lịch sử
+     * migrate, là một phần của schema đã migrate) và {@code subject} — migration V015 gieo đúng ba
+     * môn M1/M2/M3 mà test giảng dạy đọc trực tiếp qua danh mục, nên bảng này chỉ xoá các môn ngoài
+     * ba mã gốc (môn do test tự thêm), giữ nguyên ba dòng gieo. Migration nào gieo thêm bảng gốc
+     * mới thì phải xử lý tương tự ở bước dọn này.
+     *
+     * <p>Ngoại lệ nữa: hai dòng singleton của target {@code platform} trong {@code
+     * authz_partition}/{@code authz_projection} — {@code PlatformProjectionSeeder} chỉ tạo chúng
+     * một lần lúc context khởi động (sự kiện {@code ApplicationReadyEvent}) nên context dùng chung
+     * không tạo lại được sau khi xoá; hai bảng này chỉ xoá các dòng không thuộc platform.
+     *
+     * <p>Connection dọn dẹp đặt {@code session_replication_role = 'replica'}: lịch sử audit của ứng
+     * dụng là append-only (trigger {@code reject_audit_event_mutation} chặn cả DELETE/TRUNCATE lan
+     * qua khóa ngoại), nên dọn liên class phải tắt trigger trên đúng phiên dọn dẹp này. Mọi test
+     * thật vẫn chạy ở role {@code origin} nên bất biến append-only vẫn được khóa nguyên vẹn (xem
+     * {@code AuditEventSchemaIT}); đây là thao tác của harness trên DB TEST, giữa hai class, không
+     * phải đường dữ kiện của test.
+     */
+    @BeforeAll
+    static void truncateSharedSchemaData() {
+        // Context dùng chung vẫn sống trong lúc dọn (worker/scheduler của nó không được dừng
+        // như teardown schema riêng trước đây), nên lượt dọn vẫn có thể chạm xung đột khoá với
+        // một giao dịch ứng dụng đang chạy dở ở biên class: thử lại có giới hạn, mỗi lượt một
+        // connection mới, chỉ với hai SQLState của xung đột khoá (40P01 deadlock_detected,
+        // 55P03 lock_not_available). Các DELETE đều idempotent nên thử lại an toàn.
+        SQLException lastFailure = null;
+        for (int attempt = 1; attempt <= 8; attempt++) {
+            try {
+                deleteSharedSchemaDataOnce();
+                return;
+            } catch (SQLException ex) {
+                lastFailure = ex;
+                if (!"40P01".equals(ex.getSQLState()) && !"55P03".equals(ex.getSQLState())) {
+                    break;
+                }
+                try {
+                    Thread.sleep(300L * attempt);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Không xoá được dữ kiện của schema dùng chung", lastFailure);
+    }
+
+    private static void deleteSharedSchemaDataOnce() throws SQLException {
+        try (Connection connection =
+                        DriverManager.getConnection(
+                                required("TEST_DATABASE_URL"),
+                                required("TEST_DATABASE_USERNAME"),
+                                required("TEST_DATABASE_PASSWORD"));
+                Statement statement = connection.createStatement()) {
+            statement.execute("SET session_replication_role = 'replica'");
+            statement.execute("SET lock_timeout = '5s'");
+            try {
+                // DELETE thay cho TRUNCATE: RowExclusiveLock tương thích với khoá đọc
+                // (AccessShareLock) của các giao dịch ứng dụng đang chạy trong context dùng
+                // chung, nên không tạo deadlock ở biên class như AccessExclusiveLock của
+                // TRUNCATE. Replica role đã tắt trigger khoá ngoại nên thứ tự xoá giữa các
+                // bảng không quan trọng. Câu SQL là hằng: vòng lặp và ghép tên bảng chạy ngay
+                // trong PostgreSQL bằng quote_ident, phía Java không ghép định danh vào SQL.
+                statement.execute(
+                        "DO $$ DECLARE r RECORD; BEGIN"
+                                + " FOR r IN SELECT tablename FROM pg_tables"
+                                + " WHERE schemaname = '"
+                                + SHARED_SCHEMA
+                                + "' AND tablename NOT IN ('flyway_schema_history', 'subject',"
+                                + " 'authz_partition', 'authz_projection') LOOP"
+                                + " EXECUTE 'DELETE FROM ' || quote_ident(r.tablename);"
+                                + " END LOOP;"
+                                + " FOR r IN SELECT schemaname, sequencename FROM pg_sequences"
+                                + " WHERE schemaname = '"
+                                + SHARED_SCHEMA
+                                + "' LOOP"
+                                + " EXECUTE 'ALTER SEQUENCE ' || quote_ident(r.schemaname)"
+                                + " || '.' || quote_ident(r.sequencename) || ' RESTART';"
+                                + " END LOOP; END $$");
+                // Giữ đúng ba môn gốc M1/M2/M3 của V015, chỉ xoá môn ngoài danh mục gốc;
+                // chạy sau vòng xoá chính nên không còn khoá ngoại nào trỏ tới các môn bị xoá.
+                // Guard to_regclass cho trường hợp DB chưa migrate lần nào (bảng chưa tồn tại).
+                statement.execute(
+                        "DO $$ BEGIN"
+                                + " IF to_regclass('"
+                                + SHARED_SCHEMA
+                                + ".subject') IS NOT NULL THEN"
+                                + " DELETE FROM subject WHERE code NOT IN ('M1', 'M2', 'M3');"
+                                + " END IF; END $$");
+                // Hai bảng authz chỉ xoá dòng không thuộc singleton platform (xem javadoc ở
+                // trên): projection trước, partition sau để không vướng khoá ngoại giữa chúng.
+                statement.execute(
+                        "DO $$ BEGIN"
+                                + " IF to_regclass('"
+                                + SHARED_SCHEMA
+                                + ".authz_projection') IS NOT NULL THEN"
+                                + " DELETE FROM authz_projection WHERE target_key <> 'platform';"
+                                + " END IF;"
+                                + " IF to_regclass('"
+                                + SHARED_SCHEMA
+                                + ".authz_partition') IS NOT NULL THEN"
+                                + " DELETE FROM authz_partition WHERE kind <> 'PLATFORM';"
+                                + " END IF; END $$");
+            } finally {
+                statement.execute("SET session_replication_role = 'origin'");
+            }
+        }
+    }
+
+    /**
+     * Khai báo schema cô lập cho một class cần schema riêng — chỉ còn nhóm slice
+     * {@code @DataJpaTest} kiểm chứng schema/migration dùng: Flyway migrate vào đúng schema đó và
+     * mọi kết nối của pool mang search_path trỏ vào nó. Nhóm IT full-context không dùng helper này
+     * nữa: chúng chạy trên schema dùng chung và cô lập bằng dữ kiện (xem {@link
+     * #truncateSharedSchemaData()}).
      */
     protected static void isolatedSchema(DynamicPropertyRegistry registry, String schema) {
         registry.add("spring.flyway.schemas", () -> schema);
@@ -84,63 +204,6 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
         registry.add(
                 "spring.datasource.hikari.connection-init-sql",
                 () -> "SET search_path TO " + schema + ",public");
-    }
-
-    /**
-     * Teardown cho class cần worker thật (không mock được): dừng scheduler để không còn lượt poll
-     * nào mở giao dịch trên schema, chờ khóa của lượt đang chạy dở tan hết, rồi DROP bằng
-     * connection độc lập vì pool vẫn mở theo context. KHÔNG đóng context ở đây: các listener
-     * afterTestClass của Spring Test vẫn chạm vào context sau @AfterAll, và context đã đóng làm
-     * chúng thử restart rồi lỗi "LifecycleProcessor not initialized" (Spring Test 7.0). Class dùng
-     * cách này cũng KHÔNG kèm @DirtiesContext — context của mỗi class là riêng (schema theo UUID
-     * trong DynamicPropertySource) nên không có class sau nào nhận lại nó.
-     */
-    protected static void stopSchedulerAndDropSchema(ApplicationContext context, String schema) {
-        context.getBeansOfType(ThreadPoolTaskScheduler.class)
-                .values()
-                .forEach(scheduler -> scheduler.shutdown());
-        try (Connection connection =
-                        DriverManager.getConnection(
-                                required("TEST_DATABASE_URL"),
-                                required("TEST_DATABASE_USERNAME"),
-                                required("TEST_DATABASE_PASSWORD"));
-                Statement statement = connection.createStatement()) {
-            awaitSchemaLocksReleased(connection, schema);
-            statement.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
-        } catch (SQLException ex) {
-            throw new IllegalStateException("Không DROP được schema " + schema, ex);
-        }
-    }
-
-    private static void awaitSchemaLocksReleased(Connection connection, String schema)
-            throws SQLException {
-        AtomicReference<SQLException> queryFailure = new AtomicReference<>();
-        try {
-            await().atMost(Duration.ofSeconds(60))
-                    .pollInterval(Duration.ofMillis(250))
-                    .until(() -> {
-                        try (PreparedStatement locks =
-                                connection.prepareStatement(
-                                        "SELECT count(*) FROM pg_locks l"
-                                                + " JOIN pg_class c ON c.oid = l.relation"
-                                                + " JOIN pg_namespace n ON n.oid = c.relnamespace"
-                                                + " WHERE n.nspname = ? AND l.pid <> pg_backend_pid()")) {
-                            locks.setString(1, schema);
-                            try (ResultSet result = locks.executeQuery()) {
-                                return result.next() && result.getLong(1) == 0;
-                            }
-                        } catch (SQLException ex) {
-                            queryFailure.set(ex);
-                            return true;
-                        }
-                    });
-        } catch (ConditionTimeoutException ex) {
-            // Hết 60 giây mà khóa chưa tan: giữ hành vi cũ — trả về để lệnh DROP tự xử lý.
-            return;
-        }
-        if (queryFailure.get() != null) {
-            throw queryFailure.get();
-        }
     }
 
     /**
