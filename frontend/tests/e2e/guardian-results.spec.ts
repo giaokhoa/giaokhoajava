@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
 import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
@@ -20,11 +21,12 @@ import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environmen
 // teaching-administration.spec.ts để spec tự chứa, không sửa spec đang xanh.
 //
 // Lưu ý kiểm chứng:
-// - Kết quả mẫu được seed qua chuỗi sample action của hợp đồng kiểm chứng quyền
-//   (CREATE_RESOURCE → ASSIGN_ACTIVITY → SUBMIT_ACTIVITY → GRADE_RESULT →
-//   PUBLISH_RESULT) vì đó là đường policy thật sẽ dùng cho nghiệp vụ sau; không seed
-//   thẳng vào DB. Backend hiện mới cài CREATE_RESOURCE nên spec đỏ ở bước seed cho tới
-//   khi pipeline mẫu hoàn thiện — đỏ đúng điểm còn thiếu, không phải đỏ giả.
+// - Kết quả mẫu được seed thẳng vào DB bằng psql theo đúng mẫu PublishedResultContractIT
+//   (resource/version/activity/submission/result, đúng FK và trigger ghi danh): đường
+//   sample action dừng ở ASSIGN_ACTIVITY vì backend chỉ cài CREATE_RESOURCE, các action
+//   assign/submit/grade/publish là T083/T084 của US7 (B60). Bundle kết quả được ghi kèm
+//   trong operation duyệt/gỡ link (B58) nên seed trước khi tạo liên kết là đủ, không cần
+//   ghi projection riêng.
 // - Trạng thái liên kết theo vòng đời của hợp đồng: REQUESTED → APPROVED/REJECTED,
 //   APPROVED → REVOKED; quyết định duyệt mang expectedVersion lấy từ bản đọc hiện tại.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
@@ -98,7 +100,6 @@ type PublishedResultView = {
   comment?: string;
   publishedAt?: string;
 };
-type SampleActionTraLoi = MutationTraLoi & { targetId?: string; targetType?: string };
 
 function gateOrigin(): string {
   test.skip(
@@ -396,6 +397,7 @@ async function dungCenterVoiManager(
   tenCenter: string;
   operator: NguoiDungTest;
   owner: NguoiDungTest;
+  ownerAppId: string;
   manager: NguoiDungTest;
   managerMembershipId: string;
   csrfManager: Csrf;
@@ -426,7 +428,7 @@ async function dungCenterVoiManager(
   await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
   const csrfManager = await dangNhapLai(page, origin, ungVien);
   return {
-    workspaceId, tenCenter, operator, owner, manager: ungVien,
+    workspaceId, tenCenter, operator, owner, ownerAppId, manager: ungVien,
     managerMembershipId: membershipId, csrfManager,
   };
 }
@@ -445,7 +447,8 @@ async function capStudent(
     { idempotencyKey: khoaIdempotency });
   expect(tao.status()).toBe(202);
   const traLoi = (await tao.json()) as MutationTraLoi;
-  expect(traLoi.completed).toBe(false);
+  // StudentIssueView bọc biên nhận trong operation (http-api.md), khác các mutation phẳng.
+  expect(traLoi.operation?.completed).toBe(false);
   expect(traLoi.handoff?.username).toBe(username);
   const matKhauTam = traLoi.handoff?.temporaryPassword ?? "";
   expect(matKhauTam.length).toBeGreaterThan(0);
@@ -615,32 +618,6 @@ async function phanCongChuNhiem(
   await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
 }
 
-// Học sinh cấp bằng capStudent chỉ có mật khẩu tạm: đổi mật khẩu ở lần đăng nhập đầu
-// (required action UPDATE_PASSWORD) rồi mới có phiên dùng được cho API.
-async function dangNhapHocSinhMoi(
-  browser: Browser,
-  origin: string,
-  username: string,
-  matKhauTam: string,
-): Promise<{ page: Page; csrf: Csrf }> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  const matKhauMoi = `${matKhauTam}Moi1!`;
-  await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, {
-    username,
-    password: matKhauTam,
-  });
-  await page.locator("#password-new").fill(matKhauMoi);
-  await page.locator("#password-confirm").fill(matKhauMoi);
-  await page.locator("#kc-submit").click();
-  await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
-  const session = await laySessionView(page, origin);
-  expect(session.authenticated).toBe(true);
-  expect(session.csrf?.token).toBeTruthy();
-  await dongBoEligibility(page, origin);
-  return { page, csrf: session.csrf! };
-}
-
 // Mở context trình duyệt mới và đăng nhập bằng tài khoản cho trước; dùng khi một
 // phiên phải sống độc lập với trang chính (vd: giữ nguyên phiên parent trong lúc
 // manager thao tác ở trang chính).
@@ -713,93 +690,90 @@ async function capHocSinhDayDu(
   return { username, temporaryPassword, userId: hocSinh!.user.id };
 }
 
-// Sample action theo hợp đồng kiểm chứng quyền: trả OperationView (202, poll tới
-// SUCCEEDED) hoặc kết quả stub hoàn tất ngay (201 như CREATE_RESOURCE hiện tại).
-async function guiSampleAction(
-  page: Page,
-  origin: string,
-  csrf: Csrf,
+// Seed một kết quả mẫu thẳng vào DB bằng psql, theo đúng mẫu PublishedResultContractIT:
+// resource + resource_version + sample_activity + sample_submission + sample_result
+// (đúng FK; trigger kiểm tra ghi danh của submission và nguồn của result). Kết quả
+// không công bố ở lại trạng thái DRAFT. Cần E2E_SCHEMA (schema riêng của lượt chạy,
+// run-e2e.sh xuất từ schema.txt) và TEST_DATABASE_* của làn TEST; psql lấy từ PATH
+// mà run-e2e.sh chuẩn bị. Seed chạy trước khi có liên kết: bundle kết quả được ghi
+// kèm trong operation duyệt/gỡ link (B58) nên không cần ghi projection riêng ở đây.
+function seedKetQuaMau(
   workspaceId: string,
-  body: Record<string, unknown>,
-): Promise<SampleActionTraLoi> {
-  const traLoi = await guiMutation(page, origin, csrf, "POST",
-    `/api/workspaces/${workspaceId}/samples/actions`, body);
-  expect([201, 202], `sample action ${String(body.action)} phải được hợp đồng chấp nhận`)
-    .toContain(traLoi.status());
-  const json = (await traLoi.json()) as SampleActionTraLoi;
-  if (json.completed === false) {
-    await choOperationThanhCong(page, origin, layOperationId(json), json.statusUrl);
-  }
-  return json;
-}
-
-function layIdMau(traLoi: SampleActionTraLoi): string {
-  const id = traLoi.targetId ?? traLoi.id ?? traLoi.operation?.targetId;
-  expect(typeof id).toBe("string");
-  expect(id!.length).toBeGreaterThan(0);
-  return id!;
-}
-
-// Seed một kết quả mẫu cho học sinh qua chuỗi action của hợp đồng: giáo viên tạo tài
-// nguyên và giao hoạt động, học sinh nộp bài bằng phiên riêng, giáo viên chấm và (nếu
-// congBo) công bố. Kết quả không công bố ở lại trạng thái DRAFT.
-async function taoKetQuaMau(
-  page: Page,
-  browser: Browser,
-  origin: string,
-  workspaceId: string,
-  giaoVien: NguoiDungTest,
-  hocSinh: { username: string; temporaryPassword: string },
   mon: MonTrongKhoa,
+  studentUserId: string,
+  ownerAppId: string,
+  teacherAppId: string,
   diem: string,
   nhanXet: string,
   congBo: boolean,
-): Promise<void> {
-  const csrfGiaoVien = await dangNhapLai(page, origin, giaoVien);
-  const taoTaiNguyen = await guiSampleAction(page, origin, csrfGiaoVien, workspaceId, {
-    action: "CREATE_RESOURCE",
-    courseSubjectId: mon.id,
-    subjectId: mon.subjectId,
-    kind: "BAI_TAP",
-    label: `tai-nguyen-mau-${randomUUID().slice(0, 8)}`,
-  });
-  const resourceId = layIdMau(taoTaiNguyen);
-  const giaoHoatDong = await guiSampleAction(page, origin, csrfGiaoVien, workspaceId, {
-    action: "ASSIGN_ACTIVITY",
-    courseSubjectId: mon.id,
-    resourceId,
-    // shortcut: CREATE_RESOURCE hiện trả stub một UUID duy nhất cho resource và chưa
-    // có version riêng; dùng cùng id cho versionId cho tới khi pipeline mẫu tách
-    // resource/version thật.
-    versionId: resourceId,
-    dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    attemptLimit: 1,
-  });
-  const activityId = layIdMau(giaoHoatDong);
-
-  const { page: trangHocSinh, csrf: csrfHocSinh } = await dangNhapHocSinhMoi(
-    browser, origin, hocSinh.username, hocSinh.temporaryPassword);
-  try {
-    const nopBai = await guiSampleAction(trangHocSinh, origin, csrfHocSinh, workspaceId, {
-      action: "SUBMIT_ACTIVITY",
-      activityId,
-      contentStub: "bai-lam-mau",
+): void {
+  const schema = process.env.E2E_SCHEMA;
+  const databaseUrl = process.env.TEST_DATABASE_URL;
+  const username = process.env.TEST_DATABASE_USERNAME;
+  const password = process.env.TEST_DATABASE_PASSWORD;
+  if (!schema || !databaseUrl || !username || !password) {
+    throw new Error("Seed kết quả mẫu cần E2E_SCHEMA và TEST_DATABASE_URL/USERNAME/PASSWORD");
+  }
+  const match = databaseUrl.match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
+  const host = match?.[1];
+  const database = match?.[3];
+  if (!host || !database) {
+    throw new Error(`TEST_DATABASE_URL không đúng dạng jdbc:postgresql://host:port/db: ${databaseUrl}`);
+  }
+  const port = match[2] ?? "5432";
+  const sql = `
+SET search_path TO :schema;
+SET app.workspace_id = :'wid';
+BEGIN;
+INSERT INTO resource(id, owner_workspace_id, created_by_user_id, kind, subject_id, state)
+VALUES (:'resource_id', :'wid', :'owner_id', 'EXAM', :'subject_id', 'ACTIVE');
+INSERT INTO resource_version(id, resource_id, version_no, label, body_stub, answer_stub, review_state)
+VALUES (:'version_id', :'resource_id', 1, 'Bản mẫu', 'Nội dung', 'Đáp án', 'APPROVED');
+INSERT INTO sample_activity(id, workspace_id, course_subject_id, resource_id, version_id, assigned_by, assigned_at, due_at, attempt_limit, subscription_period_id, state)
+VALUES (:'activity_id', :'wid', :'cs_id', :'resource_id', :'version_id', :'owner_id', now(), now() + interval '7 days', 1, (SELECT id FROM subscription_period WHERE workspace_id = :'wid'), 'ASSIGNED');
+INSERT INTO sample_submission(id, workspace_id, activity_id, student_user_id, attempt_no, submitted_at, content_stub, state)
+VALUES (:'submission_id', :'wid', :'activity_id', :'student_id', 1, now(), 'Bài làm mẫu', 'SUBMITTED');
+INSERT INTO sample_result(id, workspace_id, submission_id, student_user_id, course_subject_id, score_stub, comment_stub, state, published_at, graded_by)
+VALUES (:'result_id', :'wid', :'submission_id', :'student_id', :'cs_id', :'score', :'comment', :'state', CASE WHEN :'state' = 'PUBLISHED' THEN now() ELSE NULL END, :'teacher_id');
+COMMIT;
+`;
+  const ketQua = spawnSync("psql",
+    [
+      "-v", "ON_ERROR_STOP=1", "-X", "-q", "-f", "-",
+      "-v", `schema=${schema}`,
+      "-v", `wid=${workspaceId}`,
+      "-v", `cs_id=${mon.id}`,
+      "-v", `subject_id=${mon.subjectId}`,
+      "-v", `student_id=${studentUserId}`,
+      "-v", `owner_id=${ownerAppId}`,
+      "-v", `teacher_id=${teacherAppId}`,
+      "-v", `score=${diem}`,
+      "-v", `comment=${nhanXet}`,
+      "-v", `state=${congBo ? "PUBLISHED" : "DRAFT"}`,
+      "-v", `resource_id=${randomUUID()}`,
+      "-v", `version_id=${randomUUID()}`,
+      "-v", `activity_id=${randomUUID()}`,
+      "-v", `submission_id=${randomUUID()}`,
+      "-v", `result_id=${randomUUID()}`,
+    ],
+    {
+      input: sql,
+      env: {
+        ...process.env,
+        PGHOST: host,
+        PGPORT: port,
+        PGDATABASE: database,
+        PGUSER: username,
+        PGPASSWORD: password,
+      },
+      timeout: 60_000,
+      encoding: "utf-8",
     });
-    const resultId = layIdMau(nopBai);
-    await guiSampleAction(page, origin, csrfGiaoVien, workspaceId, {
-      action: "GRADE_RESULT",
-      resultId,
-      scoreStub: diem,
-      commentStub: nhanXet,
-    });
-    if (congBo) {
-      await guiSampleAction(page, origin, csrfGiaoVien, workspaceId, {
-        action: "PUBLISH_RESULT",
-        resultId,
-      });
-    }
-  } finally {
-    await trangHocSinh.context().close();
+  if (ketQua.error) {
+    throw new Error(`Không chạy được psql để seed kết quả mẫu: ${ketQua.error.message}`);
+  }
+  if (ketQua.status !== 0) {
+    throw new Error(`Seed kết quả mẫu thất bại (psql ${ketQua.status}): ${(ketQua.stderr ?? "").trim()}`);
   }
 }
 
@@ -903,7 +877,6 @@ type SanSangPhuHuynh = Awaited<ReturnType<typeof dungCenterLopKhoa>> & {
 // parent đã là thành viên với vai trò PARENT nhưng chưa có liên kết nào được duyệt.
 async function dungSanSangPhuHuynh(
   page: Page,
-  browser: Browser,
   origin: string,
   env: TestEnvironment,
   daTao: NguoiDungTest[],
@@ -911,38 +884,47 @@ async function dungSanSangPhuHuynh(
   const setup = await dungCenterLopKhoa(page, origin, env, daTao, 2);
   const [mon1, mon2] = setup.monKhoa;
 
+  // moiVaChapNhan kết thúc ở phiên người được mời: trước mutation tiếp theo bằng
+  // vai manager phải đăng nhập lại manager để lấy CSRF của phiên hiện tại.
+  let csrfManager = setup.csrfManager;
+
   const giaoVien = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
   const { userAppId: idGiaoVien } = await moiVaChapNhan(page, origin,
-    setup.csrfManager, setup.workspaceId, giaoVien, ["TEACHER"]);
-  await phanCongGiaoVien(page, origin, setup.csrfManager, setup.workspaceId,
+    csrfManager, setup.workspaceId, giaoVien, ["TEACHER"]);
+  csrfManager = await dangNhapLai(page, origin, setup.manager);
+  await phanCongGiaoVien(page, origin, csrfManager, setup.workspaceId,
     mon1.id, [idGiaoVien]);
-  await phanCongGiaoVien(page, origin, setup.csrfManager, setup.workspaceId,
+  await phanCongGiaoVien(page, origin, csrfManager, setup.workspaceId,
     mon2.id, [idGiaoVien]);
 
   const chuNhiem = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
   const { userAppId: idChuNhiem } = await moiVaChapNhan(page, origin,
-    setup.csrfManager, setup.workspaceId, chuNhiem, ["TEACHER"]);
-  await phanCongChuNhiem(page, origin, setup.csrfManager, setup.workspaceId,
+    csrfManager, setup.workspaceId, chuNhiem, ["TEACHER"]);
+  csrfManager = await dangNhapLai(page, origin, setup.manager);
+  await phanCongChuNhiem(page, origin, csrfManager, setup.workspaceId,
     setup.lopId, idChuNhiem);
 
   const phuHuynh = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
   const { userAppId: parentAppId } = await moiVaChapNhan(page, origin,
-    setup.csrfManager, setup.workspaceId, phuHuynh, ["PARENT"]);
+    csrfManager, setup.workspaceId, phuHuynh, ["PARENT"]);
+  csrfManager = await dangNhapLai(page, origin, setup.manager);
 
-  const hocSinhX = await capHocSinhDayDu(page, origin, setup.csrfManager,
+  const hocSinhX = await capHocSinhDayDu(page, origin, csrfManager,
     setup.workspaceId, setup.lopId, setup.monKhoa);
-  const hocSinhY = await capHocSinhDayDu(page, origin, setup.csrfManager,
+  const hocSinhY = await capHocSinhDayDu(page, origin, csrfManager,
     setup.workspaceId, setup.lopId, setup.monKhoa);
 
   const nhanXetCongBo = `nhan-xet-cong-bo-${randomUUID().slice(0, 8)}`;
   const nhanXetNhap = `nhan-xet-nhap-${randomUUID().slice(0, 8)}`;
   const nhanXetCongBoY = `nhan-xet-cong-bo-y-${randomUUID().slice(0, 8)}`;
-  await taoKetQuaMau(page, browser, origin, setup.workspaceId, giaoVien,
-    hocSinhX, mon1, "9.5", nhanXetCongBo, true);
-  await taoKetQuaMau(page, browser, origin, setup.workspaceId, giaoVien,
-    hocSinhX, mon2, "7.0", nhanXetNhap, false);
-  await taoKetQuaMau(page, browser, origin, setup.workspaceId, giaoVien,
-    hocSinhY, mon1, "8.0", nhanXetCongBoY, true);
+  // Seed bằng fixture trước khi có liên kết: bundle kết quả được ghi kèm trong
+  // operation duyệt/gỡ link (B58), nên không cần ghi projection riêng ở đây.
+  seedKetQuaMau(setup.workspaceId, mon1, hocSinhX.userId, setup.ownerAppId,
+    idGiaoVien, "9.5", nhanXetCongBo, true);
+  seedKetQuaMau(setup.workspaceId, mon2, hocSinhX.userId, setup.ownerAppId,
+    idGiaoVien, "7.0", nhanXetNhap, false);
+  seedKetQuaMau(setup.workspaceId, mon1, hocSinhY.userId, setup.ownerAppId,
+    idGiaoVien, "8.0", nhanXetCongBoY, true);
 
   await dangNhapLai(page, origin, setup.manager);
   const monHoc = await layDanhSachMon(page, origin);
@@ -974,14 +956,13 @@ async function lienKetDaDuyet(
 
 test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã công bố của đúng con", async ({
   page,
-  browser,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const setup = await dungSanSangPhuHuynh(page, browser, origin, env, daTao);
+    const setup = await dungSanSangPhuHuynh(page, origin, env, daTao);
 
     // Vai trò PARENT trong membership chưa tự cho xem con: parent gửi request cho
     // chính mình và liên kết ở trạng thái REQUESTED.
@@ -1043,14 +1024,13 @@ test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã c
 
 test("đổi sid hoặc wid: parent không lấy được kết quả của con khác hay ở center khác", async ({
   page,
-  browser,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const setup = await dungSanSangPhuHuynh(page, browser, origin, env, daTao);
+    const setup = await dungSanSangPhuHuynh(page, origin, env, daTao);
     await lienKetDaDuyet(page, origin, setup);
     await dangNhapLai(page, origin, setup.phuHuynh);
 
@@ -1087,14 +1067,13 @@ test("đổi sid hoặc wid: parent không lấy được kết quả của con 
 
 test("chủ nhiệm không có vai trò quản lý thì bị từ chối khi duyệt liên kết", async ({
   page,
-  browser,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const setup = await dungSanSangPhuHuynh(page, browser, origin, env, daTao);
+    const setup = await dungSanSangPhuHuynh(page, origin, env, daTao);
 
     const csrfParent = await dangNhapLai(page, origin, setup.phuHuynh);
     await guiRequestLienKet(
@@ -1137,7 +1116,7 @@ test("gỡ liên kết: phiên parent cũ mất quyền xem và back navigation 
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const setup = await dungSanSangPhuHuynh(page, browser, origin, env, daTao);
+    const setup = await dungSanSangPhuHuynh(page, origin, env, daTao);
     const lienKet = await lienKetDaDuyet(page, origin, setup);
 
     // Phiên parent riêng, giữ nguyên không đăng nhập lại trong suốt phần còn lại:
@@ -1153,7 +1132,10 @@ test("gỡ liên kết: phiên parent cũ mất quyền xem và back navigation 
       await moTrangKetQua(trangParent, urlKetQua);
       await expect(trangParent.getByText(setup.nhanXetCongBo)).toBeVisible();
 
-      // Manager gỡ liên kết ở trang chính: trạng thái chuyển REVOKED.
+      // Manager gỡ liên kết ở trang chính: trạng thái chuyển REVOKED. Danh sách của
+      // manager chỉ gồm link còn tác động được (REQUESTED + APPROVED, B55(iii)) nên
+      // trạng thái REVOKED đọc qua danh sách của chính parent — danh sách này gồm cả
+      // lịch sử đã đóng — trên phiên parent cũ.
       const csrfManager = await dangNhapLai(page, origin, setup.manager);
       const go = await guiMutation(page, origin, csrfManager, "DELETE",
         `/api/workspaces/${setup.workspaceId}/guardian-links/${lienKet.id}`);
@@ -1161,7 +1143,7 @@ test("gỡ liên kết: phiên parent cũ mất quyền xem và back navigation 
       const traLoiGo = (await go.json()) as MutationTraLoi;
       await choOperationThanhCong(page, origin, layOperationId(traLoiGo), traLoiGo.statusUrl);
       const lienKetSauGo = timLienKet(
-        await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
+        await layDanhSachLienKet(trangParent, origin, setup.workspaceId), setup.hocSinhX.userId);
       expect(lienKetSauGo.state).toBe("REVOKED");
 
       // Cùng phiên parent cũ: API bị từ chối ngay dù chưa hề đăng nhập lại.
