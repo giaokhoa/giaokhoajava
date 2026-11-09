@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, requestAllPages, requestWhenReady } from "../../lib/api-client";
-import { operationStatus } from "../operations/operation-status";
+import { operationStatus, pollOperationUntilSettled } from "../operations/operation-status";
 import {
   parseTrackedOperation,
   type TrackedOperation,
@@ -412,6 +412,12 @@ function HomeroomAssignmentList({
 }
 
 export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
+  const { session } = useSession();
+  const userId = session.status === "authenticated" ? session.user.id : null;
+  return <CenterClassesInner key={`${userId ?? "anonymous"}|${workspaceId}`} workspaceId={workspaceId} />;
+}
+
+function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
   const { session, refreshSession } = useSession();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
@@ -486,6 +492,13 @@ export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
     setRefreshTick((tick) => tick + 1);
     void loadClasses();
     if (selectedClassId) void loadRoster(selectedClassId);
+    void requestAllPages(`/api/workspaces/${wid}/memberships`)
+      .then((items) => setMemberships(parseMemberships(items)))
+      .catch(() => setMemberships([]));
+    void requestWhenReady<unknown>("/api/me/workspaces")
+      .then((result) => setWorkspace(result.kind === "data"
+        ? parseWorkspaces(result.data).find((item) => item.id === workspaceId) ?? null : null))
+      .catch(() => setWorkspace(null));
   }
 
   useEffect(() => {
@@ -552,6 +565,48 @@ export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
       ignore = true;
     };
   }, [selectedClassId, classesPath]);
+
+  useEffect(() => {
+    if (!operation || operationStatus(operation).kind !== "pending" || !userId) return;
+    const controller = new AbortController();
+    void pollOperationUntilSettled(operation.id, parseTrackedOperation, controller.signal)
+      .then(async (next) => {
+        if (controller.signal.aborted) return;
+        if (next.completed && next.state === "SUCCEEDED") {
+          const [classesResult, rosterResult, membershipResult, workspaceResult] = await Promise.allSettled([
+            requestWhenReady<unknown>(classesPath, { signal: controller.signal }),
+            selectedClassId
+              ? requestAllPages(`${classesPath}/${encodeURIComponent(selectedClassId)}/students`,
+                  { signal: controller.signal })
+              : Promise.resolve(null),
+            requestAllPages(`/api/workspaces/${wid}/memberships`, { signal: controller.signal }),
+            requestWhenReady<unknown>("/api/me/workspaces", { signal: controller.signal }),
+          ]);
+          if (controller.signal.aborted) return;
+          if (classesResult.status === "fulfilled" && classesResult.value.kind === "data") {
+            setClasses(parseClasses(classesResult.value.data));
+            setNextCursor(parsePage(classesResult.value.data).nextCursor);
+          } else {
+            setClasses([]);
+            setListError("Không thể làm mới danh sách lớp sau thay đổi quyền.");
+          }
+          setRoster(rosterResult.status === "fulfilled" && rosterResult.value !== null
+            ? parseRoster(rosterResult.value) : null);
+          setMemberships(membershipResult.status === "fulfilled" ? parseMemberships(membershipResult.value) : []);
+          setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
+            ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
+            : null);
+          setRefreshTick((tick) => tick + 1);
+        }
+        setOperationResult({ userId, workspaceId, value: next });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setActionError(teachingErrorMessage(error, "Không kiểm tra được trạng thái thao tác."));
+        }
+      });
+    return () => controller.abort();
+  }, [operation, userId, workspaceId, classesPath, selectedClassId, wid]);
 
   async function checkOperation() {
     if (!operation) return;

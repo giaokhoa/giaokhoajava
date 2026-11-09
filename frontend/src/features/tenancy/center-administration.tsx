@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { apiRequest, requestWhenReady } from "../../lib/api-client";
-import { operationStatus } from "../operations/operation-status";
+import { apiRequest, requestAllPages, requestWhenReady } from "../../lib/api-client";
+import { operationStatus, pollOperationUntilSettled } from "../operations/operation-status";
 import {
   parseTrackedOperation,
   type TrackedOperation,
@@ -296,6 +296,12 @@ function SessionGate({
 }
 
 export function PlatformCentersContent() {
+  const { session } = useSession();
+  const userId = session.status === "authenticated" ? session.user.id : null;
+  return <PlatformCentersInner key={userId ?? "anonymous"} />;
+}
+
+function PlatformCentersInner() {
   const { session, refreshSession } = useSession();
   const [centers, setCenters] = useState<CenterSummary[] | null>(null);
   const [ownWorkspaces, setOwnWorkspaces] = useState<WorkspaceView[] | null>(null);
@@ -314,13 +320,15 @@ export function PlatformCentersContent() {
 
   async function loadCenters() {
     setListError(null);
-    try {
-      const result = await requestWhenReady("/api/platform/centers");
-      if (result.kind !== "data") throw new Error("Phản hồi danh sách trung tâm không hợp lệ.");
-      setCenters(parseCenters(result.data));
-    } catch (error) {
-      setCenters([]);
-      setListError(error instanceof Error ? error.message : "Không tải được danh sách trung tâm.");
+    const [centerResult, workspaceResult] = await Promise.allSettled([
+      requestAllPages("/api/platform/centers"),
+      requestWhenReady("/api/me/workspaces"),
+    ]);
+    setCenters(centerResult.status === "fulfilled" ? parseCenters(centerResult.value) : []);
+    setOwnWorkspaces(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
+      ? parseWorkspaces(workspaceResult.value.data) : null);
+    if (centerResult.status === "rejected" || workspaceResult.status === "rejected") {
+      setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
     }
   }
 
@@ -328,10 +336,10 @@ export function PlatformCentersContent() {
     if (!userId) return;
     let ignore = false;
     const controller = new AbortController();
-    requestWhenReady("/api/platform/centers", { signal: controller.signal })
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setCenters(parseCenters(result.data));
+    requestAllPages("/api/platform/centers", { signal: controller.signal })
+      .then((items) => {
+        if (ignore) return;
+        setCenters(parseCenters(items));
         setListError(null);
       })
       .catch((error: unknown) => {
@@ -352,6 +360,35 @@ export function PlatformCentersContent() {
       controller.abort();
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (!operation || operationStatus(operation).kind !== "pending" || !userId) return;
+    const controller = new AbortController();
+    void pollOperationUntilSettled(operation.id, parseTrackedOperation, controller.signal)
+      .then(async (next) => {
+        if (controller.signal.aborted) return;
+        if (next.completed && next.state === "SUCCEEDED") {
+          const [centerResult, workspaceResult] = await Promise.allSettled([
+            requestAllPages("/api/platform/centers", { signal: controller.signal }),
+            requestWhenReady("/api/me/workspaces", { signal: controller.signal }),
+          ]);
+          if (controller.signal.aborted) return;
+          setCenters(centerResult.status === "fulfilled" ? parseCenters(centerResult.value) : []);
+          setOwnWorkspaces(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
+            ? parseWorkspaces(workspaceResult.value.data) : null);
+          if (centerResult.status === "rejected" || workspaceResult.status === "rejected") {
+            setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
+          }
+        }
+        setOperation(next);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setActionError(error instanceof Error ? error.message : "Không kiểm tra được trạng thái thao tác.");
+        }
+      });
+    return () => controller.abort();
+  }, [operation, userId]);
 
   async function checkOperation() {
     if (!operation) return;
@@ -627,6 +664,12 @@ function toggleRole(current: readonly CenterRole[], role: CenterRole, checked: b
 }
 
 export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
+  const { session } = useSession();
+  const userId = session.status === "authenticated" ? session.user.id : null;
+  return <CenterMembersInner key={`${userId ?? "anonymous"}|${workspaceId}`} workspaceId={workspaceId} />;
+}
+
+function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
   const { session, refreshSession } = useSession();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
@@ -651,13 +694,16 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
 
   async function loadMemberships() {
     setListError(null);
-    try {
-      const result = await requestWhenReady(membersPath);
-      if (result.kind !== "data") throw new Error("Phản hồi danh sách thành viên không hợp lệ.");
-      setMemberships(parseMemberships(result.data));
-    } catch (error) {
-      setMemberships([]);
-      setListError(error instanceof Error ? error.message : "Không tải được danh sách thành viên.");
+    const [memberResult, workspaceResult] = await Promise.allSettled([
+      requestAllPages(membersPath),
+      requestWhenReady("/api/me/workspaces"),
+    ]);
+    setMemberships(memberResult.status === "fulfilled" ? parseMemberships(memberResult.value) : []);
+    setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
+      ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
+      : null);
+    if (memberResult.status === "rejected" || workspaceResult.status === "rejected") {
+      setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
     }
   }
 
@@ -665,10 +711,10 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
     if (!userId) return;
     let ignore = false;
     const controller = new AbortController();
-    requestWhenReady(membersPath, { signal: controller.signal })
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setMemberships(parseMemberships(result.data));
+    requestAllPages(membersPath, { signal: controller.signal })
+      .then((items) => {
+        if (ignore) return;
+        setMemberships(parseMemberships(items));
         setListError(null);
       })
       .catch((error: unknown) => {
@@ -690,6 +736,36 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
       controller.abort();
     };
   }, [userId, workspaceId, membersPath]);
+
+  useEffect(() => {
+    if (!operation || operationStatus(operation).kind !== "pending" || !userId) return;
+    const controller = new AbortController();
+    void pollOperationUntilSettled(operation.id, parseTrackedOperation, controller.signal)
+      .then(async (next) => {
+        if (controller.signal.aborted) return;
+        if (next.completed && next.state === "SUCCEEDED") {
+          const [memberResult, workspaceResult] = await Promise.allSettled([
+            requestAllPages(membersPath, { signal: controller.signal }),
+            requestWhenReady("/api/me/workspaces", { signal: controller.signal }),
+          ]);
+          if (controller.signal.aborted) return;
+          setMemberships(memberResult.status === "fulfilled" ? parseMemberships(memberResult.value) : []);
+          setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
+            ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
+            : null);
+          if (memberResult.status === "rejected" || workspaceResult.status === "rejected") {
+            setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
+          }
+        }
+        setOperation(next);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setActionError(error instanceof Error ? error.message : "Không kiểm tra được trạng thái thao tác.");
+        }
+      });
+    return () => controller.abort();
+  }, [operation, userId, workspaceId, membersPath]);
 
   async function checkOperation() {
     if (!operation) return;

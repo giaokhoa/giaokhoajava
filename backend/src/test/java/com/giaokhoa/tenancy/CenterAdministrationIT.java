@@ -307,14 +307,12 @@ class CenterAdministrationIT extends IntegrationEnvironment {
                 // của operator, điều kiện để PDP cho qua scope platform.
                 getWorkspacesWhenReady(session);
                 MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(get("/api/platform/centers").cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
+                        requestWhenReady(
+                                mockMvc(), get("/api/platform/centers").cookie(session.cookie()));
 
-                assertEquals(200, response.getStatus());
+                assertEquals(200, response.getStatus(), response.getContentAsString());
                 JsonNode body = JSON.readTree(response.getContentAsString());
-                assertTrue(body.isArray(), "Danh sách tenant là một mảng");
+                assertTrue(body.get("items").isArray(), "Danh sách tenant có trang items");
             }
         } finally {
             deleteUser(operator.subject());

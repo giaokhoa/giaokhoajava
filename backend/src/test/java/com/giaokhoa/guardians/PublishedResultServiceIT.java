@@ -2,7 +2,9 @@ package com.giaokhoa.guardians;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -247,11 +249,16 @@ class PublishedResultServiceIT extends GuardianFixture {
     }
 
     /** Gọi service bằng đúng phiên Spring thật của user, qua session filter như request thật. */
-    private List<PublishedResultView> listAs(RealSession session, UUID workspaceId, UUID studentId)
+    private PublishedResultService.ResultPage pageAs(
+            RealSession session,
+            UUID workspaceId,
+            UUID studentId,
+            @Nullable String cursor,
+            int limit)
             throws Exception {
         var raw = new MockHttpServletRequest("GET", "/");
         raw.setCookies(session.cookie());
-        var out = new AtomicReference<List<PublishedResultView>>();
+        var out = new AtomicReference<PublishedResultService.ResultPage>();
         var failure = new AtomicReference<HttpProblemException>();
         sessionFilter.doFilter(
                 raw,
@@ -266,13 +273,15 @@ class PublishedResultServiceIT extends GuardianFixture {
                                                     .SPRING_SECURITY_CONTEXT_KEY);
                     try {
                         out.set(
-                                results.listPublishedResults(
+                                results.pagePublishedResults(
                                         Objects.requireNonNull(
                                                 Objects.requireNonNull(context)
                                                         .getAuthentication()),
                                         request,
                                         workspaceId,
-                                        studentId));
+                                        studentId,
+                                        cursor,
+                                        limit));
                     } catch (HttpProblemException ex) {
                         // Lỗi nghiệp vụ của service (403/503) được chuyển ra ngoài filter chain
                         // để test khẳng định trên đúng trạng thái của nó.
@@ -283,6 +292,11 @@ class PublishedResultServiceIT extends GuardianFixture {
             throw failure.get();
         }
         return Objects.requireNonNull(out.get(), "service result");
+    }
+
+    private List<PublishedResultView> listAs(RealSession session, UUID workspaceId, UUID studentId)
+            throws Exception {
+        return pageAs(session, workspaceId, studentId, null, 100).items();
     }
 
     private void assertDenied(RealSession session, UUID workspaceId, UUID studentId)
@@ -378,6 +392,37 @@ class PublishedResultServiceIT extends GuardianFixture {
             List<PublishedResultView> views =
                     listAs(parent, center.workspaceId(), center.studentX());
             assertEquals(2, views.size(), "Phụ huynh chỉ thấy hai kết quả PUBLISHED của đúng con");
+            var page1 = pageAs(parent, center.workspaceId(), center.studentX(), null, 1);
+            assertEquals(1, page1.items().size());
+            String nextCursor = Objects.requireNonNull(page1.nextCursor());
+            var page2 = pageAs(parent, center.workspaceId(), center.studentX(), nextCursor, 1);
+            assertEquals(1, page2.items().size());
+            assertNull(page2.nextCursor());
+            assertNotEquals(page1.items().getFirst().id(), page2.items().getFirst().id());
+            assertTrue(views.stream().anyMatch(v -> v.id().equals(page1.items().getFirst().id())));
+            assertTrue(views.stream().anyMatch(v -> v.id().equals(page2.items().getFirst().id())));
+            var crossStudent =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    pageAs(
+                                            parent,
+                                            center.workspaceId(),
+                                            center.studentY(),
+                                            nextCursor,
+                                            1));
+            assertEquals(HttpStatus.BAD_REQUEST, crossStudent.getStatus());
+            var changedLimit =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    pageAs(
+                                            parent,
+                                            center.workspaceId(),
+                                            center.studentX(),
+                                            nextCursor,
+                                            2));
+            assertEquals(HttpStatus.BAD_REQUEST, changedLimit.getStatus());
             PublishedResultView first =
                     views.stream()
                             .filter(view -> view.id().equals(publishedId))

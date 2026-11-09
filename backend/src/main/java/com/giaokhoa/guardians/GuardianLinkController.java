@@ -126,7 +126,7 @@ public class GuardianLinkController {
         return withEligibleActor(
                 authentication,
                 request,
-                null,
+                workspaceId,
                 actor -> {
                     Set<MembershipRole.Role> roles = actorRoles(actor, workspaceId);
                     List<GuardianLinkView> items;

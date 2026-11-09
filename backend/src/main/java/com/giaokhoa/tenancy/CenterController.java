@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -100,9 +101,23 @@ public class CenterController {
                 });
     }
 
+    public record CenterPage(
+            List<CenterService.CenterView> items,
+            @com.fasterxml.jackson.annotation.JsonInclude(
+                            com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                    @Nullable String nextCursor) {
+        public CenterPage {
+            items = List.copyOf(items);
+        }
+    }
+
     @GetMapping
-    public ResponseEntity<List<CenterService.CenterView>> listCenters(
-            Authentication authentication, HttpServletRequest request) {
+    public ResponseEntity<CenterPage> listCenters(
+            Authentication authentication,
+            HttpServletRequest request,
+            @RequestParam(value = "cursor", required = false) @Nullable String cursor,
+            @RequestParam(value = "limit", required = false) @Nullable Integer limit) {
+        UUID actor = executor.actorUserId(authentication);
         return executor.executeForActor(
                 authentication,
                 request,
@@ -111,7 +126,9 @@ public class CenterController {
                                 NativePolicyTemplates.platformKey(),
                                 List.of(PermissionCatalog.PlatformScope.CENTER_LIST.scopeName()))),
                 () -> {
-                    return protectedOk(centers.listCenters());
+                    CenterService.CenterPage page =
+                            centers.pageCenters(actor, cursor, limit == null ? 20 : limit);
+                    return protectedOk(new CenterPage(page.items(), page.nextCursor()));
                 });
     }
 

@@ -67,7 +67,7 @@ Cấp học sinh mới tạo identity/temporary credential đồng bộ trước
 
 | Method / path | Body / response | Scope |
 | --- | --- | --- |
-| `GET /api/platform/centers` | Danh sách metadata center | platform `center.list`; không kèm kết quả/học liệu |
+| `GET /api/platform/centers?cursor&limit` | `{items:CenterView[],nextCursor?}`; `limit=20`, tối đa 100, keyset theo `(created_at,id)` | platform `center.list`; chỉ metadata, không kèm kết quả/học liệu |
 | `POST /api/platform/centers` | CenterCreate → OperationView | platform `center.create`; tạo Organization, workspace, owner membership và projection |
 | `POST /api/platform/subscriptions` | SubscriptionConfirm → OperationView | platform `subscription.confirm`; không gọi payment gateway |
 | `GET /api/platform/recovery-requests` | Danh sách yêu cầu hỗ trợ tối thiểu | platform `account.recover` |
@@ -132,7 +132,7 @@ Trong PERSONAL workspace, owner thực hiện class/course/roster/ghi danh và g
 | `GET /api/workspaces/{wid}/guardian-links` | Danh sách theo quyền | Parent chỉ các request của mình; owner/manager được danh sách cần duyệt; không lộ kết quả qua route này; không có quyền xem → 403 `PERMISSION_DENIED` |
 | `POST /api/workspaces/{wid}/guardian-links/{id}/decision` | GuardianDecision → OperationView | workspace `guardian.approve`; teacher/homeroom đứng riêng bị từ chối; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_DECISION_INVALID` 400, `GUARDIAN_LINK_ALREADY_DECIDED` 409, `VERSION_CONFLICT` 409 khi `expectedVersion` lệch, `GUARDIAN_PREREQUISITE_NOT_CURRENT` 409, `SUBSCRIPTION_INACTIVE` 403 chỉ khi APPROVE |
 | `DELETE /api/workspaces/{wid}/guardian-links/{id}` | OperationView | workspace `guardian.revoke`; vẫn cho revoke khi gói hết hạn; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_LINK_NOT_APPROVED` 409, `GUARDIAN_LINK_ALREADY_CLOSED` 409, `GUARDIAN_LINK_ALREADY_REVOKED` 409 |
-| `GET /api/workspaces/{wid}/students/{sid}/results` | PublishedResultView page | Từng result `read.published`; parent đúng child/center/link và published; tập được phép rỗng → học sinh tự đọc 200 rỗng, actor khác 403 `PERMISSION_DENIED` |
+| `GET /api/workspaces/{wid}/students/{sid}/results?cursor&limit` | `{items:PublishedResultView[],nextCursor?}`, `limit=20`, tối đa 100; không `totalCount` | Từng result `read.published`; parent đúng child/center/link và published; tập được phép rỗng vẫn kiểm tra ACCOUNT eligibility/fence: học sinh tự đọc 200 rỗng, actor khác 403 `PERMISSION_DENIED` |
 
 Kết quả bản đầu là sample_result cùng policy path sẽ dùng cho nghiệp vụ sau. Không xây sổ điểm, không có endpoint parent lấy bài làm/đáp án. Parent không được thay sid để đọc người khác hoặc thay wid để dùng liên kết A tại B.
 

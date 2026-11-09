@@ -62,12 +62,14 @@ Yêu cầu TEST PostgreSQL + Keycloak và biến `TEST_*` như `backend/README.m
 ```sh
 ./backend/mvnw -B -ntp -f backend/pom.xml clean verify
 ./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration verify
-bash infra/verify-pending-contracts.sh
+# Lịch sử T014: verify-pending-contracts.sh chưa từng được commit; không chạy lệnh này.
+# Bằng chứng cổng hiện hành lấy từ -Pintegration verify và các E2E TEST.
 bash infra/keycloak/verify-native.sh
 ```
 
 Do schema TEST public trên máy kết nối có Flyway V002 checksum khác, thêm cùng ba
-tham số sau cho `-Pintegration verify` và `verify-pending-contracts.sh` khi chạy local:
+tham số sau cho `-Pintegration verify` khi chạy local ở thời điểm T014
+(không áp dụng tham số này vào script RED không tồn tại):
 
 ```sh
 '-Dspring.flyway.schemas=t014_issue16'
@@ -96,3 +98,14 @@ chưa thực sự kill/restart process T017; test này RED cho đến khi T017/T
 reconcile. HTTP READY/503/B vẫn RED do thiếu T021/T018. Test Code+PKCE/JDBC
 Spring session GREEN vẫn không thay thế Spring callback/UI login E2E. Chuyển RED
 sang CI GREEN khi implementation hoàn tất, không sửa expectation để hợp thức hóa 404.
+
+
+## Ghi chú đối chiếu sau T066 (2026-11-09)
+
+Bảng RED verifier phía trên ghi lại yêu cầu **lịch sử T014**, không phải hướng dẫn
+CI đang hoạt động: `infra/verify-pending-contracts.sh` chưa từng có trong repo,
+và các failure signature RED/404 ở mốc trước worker không còn đúng sau khi
+worker và authorization fence được triển khai. Không được tạo một script giả
+chỉ để công nhận các trạng thái cũ. Gate hiện hành là Maven `-Pintegration verify`
+cùng test native/Playwright và acceptance theo từng US, xem `backend/README.md`,
+`.github/workflows/ci.yml` và `validation/us5-progress.md`.

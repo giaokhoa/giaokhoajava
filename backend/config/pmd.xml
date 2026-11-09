@@ -9,7 +9,7 @@
         <exclude name="UnitTestContainsTooManyAsserts"/>
         <exclude name="UnitTestShouldIncludeAssert"/>
     </rule>
-    <!-- MockMvc .andExpect performs assertions, but PMD's default JUnit rule misses them. -->
+    <!-- MockMvc .andExpect là phép assert; rule JUnit mặc định của PMD không nhận ra. -->
     <rule ref="category/java/bestpractices.xml/UnitTestShouldIncludeAssert">
         <properties>
             <property name="extraAssertMethodNames" value="andExpect"/>
