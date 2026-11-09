@@ -11,6 +11,10 @@ if (appOrigin && (appOrigin !== "http://127.0.0.1:8080" || frontendOrigin !== ap
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalTimeout: process.env.CI ? 20 * 60_000 : 0,
+  reporter: process.env.CI
+    ? [["line"], ["json", { outputFile: "playwright-report/results.json" }]]
+    : "list",
   // Các file dùng chung realm TEST; test race tự tạo request đồng thời trong từng ca.
   workers: 1,
   use: { baseURL: frontendOrigin, trace: "retain-on-failure" },

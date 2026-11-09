@@ -76,9 +76,10 @@ và mọi issue của US4 (#56–#63) đã land vào `main`.
 
 ### US4.5 — Đã gỡ liên kết: yêu cầu tiếp theo bằng phiên cũ mất quyền xem; dữ liệu giữ cho người còn thẩm quyền
 
-- `GuardianAccessIT.revokedLinkBlocksSameSessionFromReadingResults`
-  (cùng session sau unlink bị chặn ở yêu cầu đầu tiên).
-- `PublishedResultContractIT.revokedLinkStopsParentFromReadingResults`,
+- `PublishedResultContractIT.revokedLinkStopsParentFromReadingResults`
+  khóa luồng HTTP cùng session sau unlink bị chặn ở yêu cầu đầu tiên;
+  test trùng trong `GuardianAccessIT` đã được gộp vào đây.
+- Kiểm chứng read side độc lập:
   `PublishedResultServiceIT.revokedLinkStopsParentFromReadingResults`.
 - Đóng nguồn cùng operation khi mất tiền đề:
   `GuardianLinkServiceIT.removingParentRoleClosesApprovedLinkInSameOperation`,

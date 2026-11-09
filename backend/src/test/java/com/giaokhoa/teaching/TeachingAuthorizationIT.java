@@ -80,7 +80,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignTeachers(
                     owner,
                     fixture.workspaceId(),
@@ -103,7 +103,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 2);
             assignTeachers(
                     owner,
                     fixture.workspaceId(),
@@ -141,7 +141,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 2);
             assignTeachers(
                     owner,
                     fixture.workspaceId(),
@@ -168,13 +168,13 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
-            TeachingSetup first = prepareCourse(owner, fixture, 3);
+            TeachingSetup first = prepareCourse(owner, fixture, 1);
             assignTeachers(
                     owner,
                     fixture.workspaceId(),
                     first.courseSubject(0),
                     List.of(fixture.teacherAId()));
-            TeachingSetup second = prepareSecondClass(owner, fixture, 3);
+            TeachingSetup second = prepareSecondClass(owner, fixture, 1);
             MockHttpServletResponse response =
                     mockMvc()
                             .perform(
@@ -198,7 +198,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
             MockHttpServletResponse read =
                     mockMvc()
@@ -245,7 +245,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
             MockHttpServletResponse response =
                     mockMvc()
@@ -276,9 +276,9 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
-            List<UUID> subjects = subjectIds(owner, 3);
+            List<UUID> subjects = subjectIds(owner, 1);
             MockHttpServletResponse response =
                     mockMvc()
                             .perform(
@@ -308,7 +308,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
             MockHttpServletResponse response =
                     mockMvc()
@@ -342,7 +342,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var student = openSession(fixture.students().getFirst())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             enroll(
                     owner,
                     fixture.workspaceId(),
@@ -372,7 +372,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture second = seedTeachingCenter();
         try (var owner = openSession(first.owner());
                 var outsider = openSession(second.teacherA())) {
-            TeachingSetup setup = prepareCourse(owner, first, 3);
+            TeachingSetup setup = prepareCourse(owner, first, 1);
             MockHttpServletResponse response =
                     mockMvc()
                             .perform(
@@ -398,7 +398,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         try (var owner = openSession(fixture.owner());
                 var teacherA = openSession(fixture.teacherA());
                 var teacherB = openSession(fixture.teacherB())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             UUID subject = setup.courseSubject(0);
             assignTeachers(owner, fixture.workspaceId(), subject, List.of(fixture.teacherAId()));
             assignTeachers(owner, fixture.workspaceId(), subject, List.of(fixture.teacherBId()));
@@ -458,7 +458,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var manager = openSession(fixture.manager());
                 var owner = openSession(fixture.owner())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 3);
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
             UUID operationId =
                     postMutation(
                             manager,
@@ -538,9 +538,9 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedTeachingCenter();
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
-            TeachingSetup first = prepareCourse(owner, fixture, 3);
+            TeachingSetup first = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), first.classId(), fixture.teacherAId());
-            TeachingSetup second = prepareSecondClass(owner, fixture, 3);
+            TeachingSetup second = prepareSecondClass(owner, fixture, 1);
             assertEquals(
                     3,
                     getJson(
@@ -608,10 +608,8 @@ class TeachingAuthorizationIT extends TeachingFixture {
         for (UUID subjectId : subjects) {
             courseSubjects.add(courseSubjectId(courseId, subjectId));
         }
-        List<UUID> classStudents = new ArrayList<>();
-        for (UUID studentId : fixture.studentIds()) {
-            classStudents.add(addRoster(owner, fixture.workspaceId(), classId, studentId));
-        }
+        List<UUID> classStudents =
+                addRoster(owner, fixture.workspaceId(), classId, fixture.studentIds());
         return new TeachingSetup(classId, courseId, courseSubjects, classStudents);
     }
 

@@ -126,14 +126,24 @@ abstract class TeachingFixture extends IntegrationEnvironment {
     protected UUID addRoster(
             RealSession session, UUID workspaceId, UUID classId, UUID studentUserId)
             throws Exception {
+        return addRoster(session, workspaceId, classId, List.of(studentUserId)).getFirst();
+    }
+
+    protected List<UUID> addRoster(
+            RealSession session, UUID workspaceId, UUID classId, List<UUID> studentUserIds)
+            throws Exception {
+        String students =
+                studentUserIds.stream()
+                        .map(id -> "\"" + id + "\"")
+                        .collect(Collectors.joining(","));
         UUID operationId =
                 postMutation(
                         session,
                         "/api/workspaces/" + workspaceId + "/classes/" + classId + "/students",
-                        "{\"studentUserIds\":[\"" + studentUserId + "\"]}",
+                        "{\"studentUserIds\":[" + students + "]}",
                         "POST");
         awaitOperationSucceeded(jdbc, operationId);
-        return classStudentId(classId, studentUserId);
+        return studentUserIds.stream().map(id -> classStudentId(classId, id)).toList();
     }
 
     protected void enroll(

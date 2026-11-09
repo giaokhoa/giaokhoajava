@@ -295,7 +295,7 @@ class TeachingStructureIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 6A");
-            List<UUID> subjects = subjectIds(session, 3);
+            List<UUID> subjects = subjectIds(session, 1);
             UUID courseId =
                     createCourse(
                             session, fixture.workspaceId(), classId, "Khóa hai thầy", subjects);
@@ -321,7 +321,7 @@ class TeachingStructureIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 7A");
-            List<UUID> subjects = subjectIds(session, 3);
+            List<UUID> subjects = subjectIds(session, 1);
             UUID first =
                     createCourse(session, fixture.workspaceId(), classId, "Khóa một", subjects);
             UUID second =
@@ -351,7 +351,7 @@ class TeachingStructureIT extends TeachingFixture {
         try (var session = openSession(fixture.owner())) {
             UUID firstClass = createClass(session, fixture.workspaceId(), "Lớp 8A");
             UUID secondClass = createClass(session, fixture.workspaceId(), "Lớp 8B");
-            List<UUID> subjects = subjectIds(session, 3);
+            List<UUID> subjects = subjectIds(session, 1);
             UUID secondCourse =
                     createCourse(session, fixture.workspaceId(), secondClass, "Khóa 8B", subjects);
             UUID classStudentId =
@@ -399,7 +399,7 @@ class TeachingStructureIT extends TeachingFixture {
         Fixture second = seedTeachingCenter();
         try (var session = openSession(first.owner())) {
             UUID classId = createClass(session, first.workspaceId(), "Lớp 9A");
-            List<UUID> subjects = subjectIds(session, 3);
+            List<UUID> subjects = subjectIds(session, 1);
             UUID classStudentId =
                     addRoster(session, first.workspaceId(), classId, first.studentIds().getFirst());
             UUID foreignSubject;
@@ -501,7 +501,7 @@ class TeachingStructureIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 11A");
-            List<UUID> subjects = subjectIds(session, 3);
+            List<UUID> subjects = subjectIds(session, 1);
             UUID courseId =
                     createCourse(session, fixture.workspaceId(), classId, "Khóa 11A", subjects);
             UUID classStudentId =
