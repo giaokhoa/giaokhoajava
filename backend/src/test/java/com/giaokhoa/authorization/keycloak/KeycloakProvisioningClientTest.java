@@ -1,6 +1,7 @@
 package com.giaokhoa.authorization.keycloak;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
@@ -11,6 +12,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -214,6 +217,61 @@ class KeycloakProvisioningClientTest {
                         client.setRealmGroupMembership(
                                 "opaque-user", "/gk/platform/operators/other", false));
         assertThrows(IllegalArgumentException.class, () -> client.ensureOrganization(null, "A"));
+    }
+
+    @Test
+    void readsEveryMembershipPageWithoutCachingTheNextRequest() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        KeycloakProvisioningClient client = client(builder);
+        String base = HOST + "/admin/realms/giaokhoa/users/opaque-user/groups";
+        server.expect(requestTo(base + "?first=0&max=100"))
+                .andRespond(withSuccess(groupPage(), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(base + "?first=100&max=100"))
+                .andRespond(
+                        withSuccess(
+                                "[{\"id\":\"eligible\",\"path\":\"/gk/identity/eligible\"}]",
+                                MediaType.APPLICATION_JSON));
+        server.expect(requestTo(base + "?first=0&max=100"))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        assertTrue(client.isRealmGroupMember("opaque-user", "/gk/identity/eligible"));
+        assertFalse(client.isRealmGroupMember("opaque-user", "/gk/identity/eligible"));
+        server.verify();
+    }
+
+    @Test
+    void aFailedMembershipPageDoesNotReturnAPartialSnapshot() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        KeycloakProvisioningClient client = client(builder);
+        String base = HOST + "/admin/realms/giaokhoa/users/opaque-user/groups";
+        server.expect(requestTo(base + "?first=0&max=100"))
+                .andRespond(withSuccess(groupPage(), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(base + "?first=100&max=100"))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        assertThrows(
+                org.springframework.web.client.RestClientResponseException.class,
+                () -> client.realmGroupPaths("opaque-user"));
+        server.verify();
+    }
+
+    @Test
+    void membershipPaginationPreservesTheEncodedOpaqueUserId() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(
+                        requestTo(
+                                HOST
+                                        + "/admin/realms/giaokhoa/users/opaque%20user%2F100%25/groups?first=0&max=100"))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        assertTrue(client(builder).realmGroupPaths("opaque user/100%").isEmpty());
+        server.verify();
+    }
+
+    private static String groupPage() {
+        return IntStream.range(0, 100)
+                .mapToObj(i -> "{\"id\":\"g" + i + "\",\"path\":\"/fixture/" + i + "\"}")
+                .collect(Collectors.joining(",", "[", "]"));
     }
 
     private String groupPath(String path) {

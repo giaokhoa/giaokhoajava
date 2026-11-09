@@ -157,8 +157,9 @@ jobs:
       NATIVE_GATE_APP_ORIGIN: http://127.0.0.1:8080
       TEST_FRONTEND_ORIGIN: http://127.0.0.1:8080
       BACKEND_INTERNAL_URL: http://127.0.0.1:18080
-      # Schema riêng của lượt E2E: run-backend.sh dùng đúng tên này cho backend,
-      # các spec seed kết quả mẫu qua E2E_SCHEMA phải trùng schema đó.
+      # Schema riêng của lượt E2E: playwright.config.ts đặt TEST_E2E_SCHEMA ngẫu nhiên,
+      # run-backend.sh và các spec seed kết quả mẫu đều dùng đúng tên đó cho backend.
+      # E2E_SCHEMA chỉ còn là dự phòng của run-backend.sh khi chạy ngoài Playwright.
       E2E_SCHEMA: e2e_ci
       TEST_MAILPIT_URL: http://127.0.0.1:18025
     steps:

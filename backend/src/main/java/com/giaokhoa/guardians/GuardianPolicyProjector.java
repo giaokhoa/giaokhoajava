@@ -126,11 +126,13 @@ public class GuardianPolicyProjector {
             if (studentIds.isEmpty()) {
                 return;
             }
-            List<String> groupPaths =
-                    studentIds.stream()
-                            .map(studentId ->
-                                    NativePolicyTemplates.guardiansGroup(workspaceId, studentId))
-                            .toList();
+            Set<String> groupPaths =
+                    Set.copyOf(
+                            studentIds.stream()
+                                    .map(studentId ->
+                                            NativePolicyTemplates.guardiansGroup(
+                                                    workspaceId, studentId))
+                                    .toList());
             List<Map<String, Object>> parents =
                     jdbc.queryForList(
                             "SELECT DISTINCT gl.parent_user_id, u.keycloak_sub"

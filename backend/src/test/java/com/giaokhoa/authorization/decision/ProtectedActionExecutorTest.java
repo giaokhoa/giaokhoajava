@@ -274,6 +274,42 @@ class ProtectedActionExecutorTest {
     }
 
     @Test
+    void decisionsAreMaterializedInsideTheConfirmedSnapshotWithPartialAllows() {
+        Fixture fixture = new Fixture(Map.of(KEY, "recorded-resource"));
+        fixture.confirmationsToSkip.set(1);
+        when(fixture.decisions.isAllowed(any(), any(), any()))
+                .thenAnswer(invocation ->
+                        "enter"
+                                .equals(
+                                        invocation
+                                                .getArgument(2, RequiredPermissions.class)
+                                                .permissions()
+                                                .getFirst()
+                                                .scope()));
+        AtomicInteger materializations = new AtomicInteger();
+        String result =
+                fixture.executor.evaluateAndRead(
+                        fixture.authentication,
+                        new MockHttpServletRequest(),
+                        WORKSPACE,
+                        List.of(new ProtectedActionExecutor.Target(KEY, List.of("enter", "read"))),
+                        decisions -> {
+                            assertTrue(
+                                    fixture.snapshotActive.get(),
+                                    "DTO must be read under the fence");
+                            assertTrue(decisions.allowed(KEY, "enter"));
+                            assertFalse(decisions.allowed(KEY, "read"));
+                            materializations.incrementAndGet();
+                            return "allowed rows";
+                        });
+
+        assertEquals("allowed rows", result);
+        assertEquals(1, materializations.get(), "A stale snapshot must not run the reader");
+        verify(fixture.resolver, times(2)).resolve(ACTOR, WORKSPACE, List.of(KEY));
+        assertFalse(fixture.snapshotActive.get(), "The fence closes after materialization");
+    }
+
+    @Test
     void aRevisionChangeRestartsThePipelineWithAFreshManifest() {
         Fixture fixture = new Fixture(Map.of(KEY, "recorded-resource"));
         when(fixture.decisions.isAllowed(any(), any(), any())).thenReturn(true);
@@ -386,6 +422,7 @@ class ProtectedActionExecutorTest {
                 mock(IdentityEligibilitySynchronizer.class);
         final Authentication authentication = mock(Authentication.class);
         final AtomicInteger confirmationsToSkip = new AtomicInteger();
+        final AtomicBoolean snapshotActive = new AtomicBoolean();
         final ProtectedActionExecutor executor;
 
         Fixture(Map<String, String> recordedResourceIds) {
@@ -399,7 +436,12 @@ class ProtectedActionExecutorTest {
                         if (confirmationsToSkip.getAndDecrement() > 0) {
                             throw new AuthorizationFence.ClosureChangedException();
                         }
-                        return runSupplier(invocation);
+                        snapshotActive.set(true);
+                        try {
+                            return runSupplier(invocation);
+                        } finally {
+                            snapshotActive.set(false);
+                        }
                     });
             when(jdbc.queryForList(
                             contains("FROM user_account"), eq(UUID.class), any(String.class)))

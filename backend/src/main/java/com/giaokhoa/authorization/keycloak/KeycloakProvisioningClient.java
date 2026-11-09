@@ -26,6 +26,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Component
 public class KeycloakProvisioningClient {
+    private static final int GROUP_PAGE_SIZE = 100;
     private static final String UUID_PATTERN =
             "[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}";
     private static final Pattern GROUP_SOURCE =
@@ -169,35 +170,38 @@ public class KeycloakProvisioningClient {
         return Objects.requireNonNull(parentId);
     }
 
-    /** Đọc một lần toàn bộ realm group của actor (có phân trang) để reconcile nhiều nguồn. */
-    public Set<String> realmGroupPaths(String keycloakUserId) {
-        if (keycloakUserId == null || keycloakUserId.isBlank()) {
-            throw new IllegalArgumentException("Keycloak user ID is required");
-        }
-        final int pageSize = 100;
-        Set<String> paths = new HashSet<>();
-        for (int first = 0; ; first += pageSize) {
-            URI uri =
-                    UriComponentsBuilder.fromUri(endpoint("users", keycloakUserId, "groups"))
-                            .queryParam("first", first)
-                            .queryParam("max", pageSize)
-                            .build()
-                            .encode()
-                            .toUri();
-            Group[] groups = get(uri, Group[].class);
-            Arrays.stream(groups).map(Group::path).filter(Objects::nonNull).forEach(paths::add);
-            if (groups.length < pageSize) {
-                return Set.copyOf(paths);
-            }
-        }
-    }
-
-    /** Kiểm tra group nguồn theo đường dẫn đầy đủ, không tin claim từ phiên. */
+    /** Đọc các realm group mà user là thành viên trực tiếp và đối chiếu path cố định. */
     public boolean isRealmGroupMember(String keycloakUserId, String groupPath) {
         if (groupPath == null || !GROUP_SOURCE.matcher(groupPath).matches()) {
             throw new IllegalArgumentException("Unrecognized authorization group source");
         }
         return realmGroupPaths(keycloakUserId).contains(groupPath);
+    }
+
+    /** Snapshot trực tiếp trong lần gọi này; đọc đủ trang và không lưu quyền giữa các request. */
+    public Set<String> realmGroupPaths(String keycloakUserId) {
+        if (keycloakUserId == null || keycloakUserId.isBlank()) {
+            throw new IllegalArgumentException("Keycloak user ID is required");
+        }
+        Set<String> paths = new HashSet<>();
+        for (int first = 0; ; first += GROUP_PAGE_SIZE) {
+            URI uri =
+                    UriComponentsBuilder.fromUri(endpoint("users", keycloakUserId, "groups"))
+                            .queryParam("first", first)
+                            .queryParam("max", GROUP_PAGE_SIZE)
+                            .build(true)
+                            .toUri();
+            Group[] groups = get(uri, Group[].class);
+            for (Group group : groups) {
+                if (group.path() == null || group.path().isBlank()) {
+                    throw new IllegalStateException("Keycloak group has no path");
+                }
+                paths.add(group.path());
+            }
+            if (groups.length < GROUP_PAGE_SIZE) {
+                return Set.copyOf(paths);
+            }
+        }
     }
 
     /** Membership độc lập với group của Organization; không ngụ ý policy kế thừa nào. */

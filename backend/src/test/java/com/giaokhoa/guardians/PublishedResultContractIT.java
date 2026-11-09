@@ -182,7 +182,10 @@ class PublishedResultContractIT extends GuardianFixture {
     @Test
     void parentWithoutLinkCannotReadChildResults() throws Exception {
         GuardianCenter center = seedGuardianCenter();
-        try (var parent = openSession(center.parent())) {
+        try (var owner = openSession(center.owner());
+                var parent = openSession(center.parent())) {
+            // Center seed bằng SQL chưa có projection; mutation thật đưa WORKSPACE về READY.
+            createClass(owner, center.workspaceId(), CLASS_NAME);
             MockHttpServletResponse response =
                     getRaw(parent, resultsPath(center.workspaceId(), center.studentX()));
             assertEquals(

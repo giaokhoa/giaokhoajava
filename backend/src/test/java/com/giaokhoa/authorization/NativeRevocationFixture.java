@@ -8,6 +8,7 @@ import com.giaokhoa.support.RealmFoundation;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +42,8 @@ final class NativeRevocationFixture implements AutoCloseable {
 
     private final RestClient http = RestClient.create();
     private final String base;
-    private final String adminToken;
+    private String adminToken = "";
+    private Instant adminTokenExpiresAt = Instant.EPOCH;
     private final String clientName;
     private final String clientSecret;
     private @Nullable String clientId;
@@ -62,7 +64,6 @@ final class NativeRevocationFixture implements AutoCloseable {
         }
         clientName = "revocation-" + UUID.randomUUID();
         clientSecret = "test-secret-" + UUID.randomUUID();
-        adminToken = masterToken();
         boolean provisioned = false;
         try {
             provision();
@@ -81,7 +82,7 @@ final class NativeRevocationFixture implements AutoCloseable {
     void provisionEligibilityForWorkerFixture() {
         String deepest =
                 RealmFoundation.ensureEligibilityTree(
-                        http, base + "/admin/realms/giaokhoa-it", () -> adminToken);
+                        http, base + "/admin/realms/giaokhoa-it", this::masterToken);
         addToGroup(deepest);
     }
 
@@ -509,7 +510,7 @@ final class NativeRevocationFixture implements AutoCloseable {
         String group = "a".equals(target) ? groupA : groupB;
         http.delete()
                 .uri(admin("/users/" + userId + "/groups/" + group))
-                .headers(headers -> headers.setBearerAuth(adminToken))
+                .headers(headers -> headers.setBearerAuth(masterToken()))
                 .retrieve()
                 .toBodilessEntity();
     }
@@ -649,7 +650,7 @@ final class NativeRevocationFixture implements AutoCloseable {
     void setEmailVerified(boolean verified) {
         http.put()
                 .uri(admin("/users/" + userId))
-                .headers(headers -> headers.setBearerAuth(adminToken))
+                .headers(headers -> headers.setBearerAuth(masterToken()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("emailVerified", verified))
                 .retrieve()
@@ -659,12 +660,16 @@ final class NativeRevocationFixture implements AutoCloseable {
     private void addToGroup(String group) {
         http.put()
                 .uri(admin("/users/" + userId + "/groups/" + group))
-                .headers(headers -> headers.setBearerAuth(adminToken))
+                .headers(headers -> headers.setBearerAuth(masterToken()))
                 .retrieve()
                 .toBodilessEntity();
     }
 
     private String masterToken() {
+        Instant requestedAt = Instant.now();
+        if (requestedAt.isBefore(adminTokenExpiresAt)) {
+            return adminToken;
+        }
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", "password");
         form.add("client_id", "admin-cli");
@@ -678,14 +683,20 @@ final class NativeRevocationFixture implements AutoCloseable {
                         .retrieve()
                         .body(MAP);
         assertNotNull(response);
-        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
+        adminToken = Objects.requireNonNull((String) response.get("access_token"), "access_token");
+        // Cleanup có thể dài hơn tuổi token master; làm mới trước hạn thay vì nuốt lỗi 401.
+        long lifetime =
+                ((Number) Objects.requireNonNull(response.get("expires_in"), "expires_in"))
+                        .longValue();
+        adminTokenExpiresAt = requestedAt.plusSeconds(lifetime).minusSeconds(5);
+        return adminToken;
     }
 
     private String create(String path, Map<String, ?> body) {
         var response =
                 http.post()
                         .uri(admin(path))
-                        .headers(headers -> headers.setBearerAuth(adminToken))
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(body)
                         .retrieve()
@@ -729,7 +740,7 @@ final class NativeRevocationFixture implements AutoCloseable {
         List<Map<String, Object>> result =
                 http.get()
                         .uri(admin(path))
-                        .headers(headers -> headers.setBearerAuth(adminToken))
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
                         .retrieve()
                         .body(LIST);
         assertNotNull(result);
@@ -739,7 +750,7 @@ final class NativeRevocationFixture implements AutoCloseable {
     private void delete(String path) {
         http.delete()
                 .uri(admin(path))
-                .headers(headers -> headers.setBearerAuth(adminToken))
+                .headers(headers -> headers.setBearerAuth(masterToken()))
                 .retrieve()
                 .toBodilessEntity();
     }

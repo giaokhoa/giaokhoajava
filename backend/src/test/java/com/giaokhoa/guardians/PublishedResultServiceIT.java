@@ -1,5 +1,6 @@
 package com.giaokhoa.guardians;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -7,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.doAnswer;
 
 import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
@@ -15,24 +19,34 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Kiểm chứng tầng service của phía đọc kết quả công bố: {@link ResultPolicyProjector} chiếu bundle
@@ -53,6 +67,8 @@ class PublishedResultServiceIT extends GuardianFixture {
     @Autowired private ResultPolicyProjector resultProjector;
     @Autowired private KeycloakProvisioningClient directory;
     @Autowired private IdempotencyService idempotency;
+    @Autowired private GuardianLinkService links;
+    @MockitoSpyBean private JdbcTemplate guardedJdbc;
 
     private record Scenario(UUID classId, UUID courseSubjectId, SubjectRef subject) {}
 
@@ -648,6 +664,178 @@ class PublishedResultServiceIT extends GuardianFixture {
                     byStudent.size(),
                     "Học sinh còn ghi danh trong personal đọc được kết quả của chính mình");
             assertDenied(outsider, personalWid, center.studentX());
+        }
+    }
+
+    @Test
+    void resultDtoKeepsTheFenceUntilTheConcurrentRevocationCanCommit() throws Exception {
+        GuardianCenter center = seedGuardianCenter();
+        CountDownLatch atDtoRead = new CountDownLatch(1);
+        CountDownLatch releaseDto = new CountDownLatch(1);
+        AtomicInteger readerPid = new AtomicInteger();
+        AtomicInteger revokerPid = new AtomicInteger();
+        try (var owner = openSession(center.owner());
+                var parent = openSession(center.parent())) {
+            Scenario scenario = prepareScenario(owner, center, center.workspaceId());
+            UUID linkId =
+                    seedLink(
+                            center.workspaceId(),
+                            center.parentId(),
+                            center.studentX(),
+                            "APPROVED",
+                            center.managerId());
+            putParentInGuardianGroup(center, center.studentX());
+            UUID resultId =
+                    seedResult(
+                            center,
+                            center.workspaceId(),
+                            scenario,
+                            center.studentX(),
+                            seedSubmission(
+                                    center, center.workspaceId(), scenario, center.studentX()),
+                            "PUBLISHED",
+                            "9.5",
+                            "Kết quả được bảo vệ");
+            recordResults(center, resultId);
+            doAnswer(
+                            invocation -> {
+                                readerPid.set(backendPid());
+                                atDtoRead.countDown();
+                                awaitLatch(releaseDto);
+                                return invocation.callRealMethod();
+                            })
+                    .when(guardedJdbc)
+                    .query(
+                            contains("FROM sample_result r"),
+                            ArgumentMatchers.<RowMapper<PublishedResultView>>any(),
+                            any(Object[].class));
+
+            try (var pool = Executors.newFixedThreadPool(2)) {
+                try {
+                    var reader =
+                            pool.submit(() ->
+                                    getJson(
+                                            parent,
+                                            resultsPath(center.workspaceId(), center.studentX()),
+                                            200));
+                    if (!atDtoRead.await(15, TimeUnit.SECONDS)) {
+                        reader.get(1, TimeUnit.SECONDS);
+                        throw new AssertionError("Reader did not reach DTO SQL");
+                    }
+                    CountDownLatch revokeStarted = new CountDownLatch(1);
+                    var revoke =
+                            pool.submit(() ->
+                                    tx(() -> {
+                                        revokerPid.set(backendPid());
+                                        revokeStarted.countDown();
+                                        return links.revokeLink(
+                                                center.managerId(),
+                                                center.workspaceId(),
+                                                linkId,
+                                                "read-fence-revoke-" + UUID.randomUUID(),
+                                                idempotency.payloadHash(
+                                                        "DELETE",
+                                                        linksPath(center.workspaceId())
+                                                                + "/"
+                                                                + linkId,
+                                                        JSON.createObjectNode()));
+                                    }));
+                    assertTrue(revokeStarted.await(10, TimeUnit.SECONDS));
+                    await().atMost(Duration.ofSeconds(10))
+                            .pollInterval(Duration.ofMillis(25))
+                            .untilAsserted(() -> {
+                                assertFalse(revoke.isDone(), "Revoke committed before DTO read");
+                                assertEquals(
+                                        Boolean.TRUE,
+                                        jdbc.queryForObject(
+                                                "SELECT ? = ANY(pg_blocking_pids(?))",
+                                                Boolean.class,
+                                                readerPid.get(),
+                                                revokerPid.get()),
+                                        "Reader must hold the PostgreSQL fence needed by revoke");
+                            });
+                    releaseDto.countDown();
+                    assertEquals(
+                            resultId.toString(),
+                            reader.get(15, TimeUnit.SECONDS)
+                                    .get("items")
+                                    .get(0)
+                                    .get("id")
+                                    .stringValue());
+                    awaitOperationSucceeded(jdbc, revoke.get(15, TimeUnit.SECONDS).getId());
+                    assertDenied(parent, center.workspaceId(), center.studentX());
+                } finally {
+                    releaseDto.countDown();
+                }
+            }
+        } finally {
+            releaseDto.countDown();
+        }
+    }
+
+    @Test
+    void emptySelfReadStillRequiresReadyAccountAndWorkspacePartitions() throws Exception {
+        GuardianCenter center = seedGuardianCenter();
+        try (var student = openSession(center.students().getFirst())) {
+            UUID personalWid = personalWorkspaceOf(center.studentX());
+            await().atMost(Duration.ofSeconds(90))
+                    .until(() ->
+                            Boolean.TRUE.equals(
+                                    jdbc.queryForObject(
+                                            "SELECT state = 'READY' AND desired_revision = applied_revision"
+                                                    + " FROM authz_partition WHERE owner_key = ?",
+                                            Boolean.class,
+                                            "workspace:" + personalWid)));
+            assertTrue(listAs(student, personalWid, center.studentX()).isEmpty());
+            for (String ownerKey :
+                    List.of("account:" + center.studentX(), "workspace:" + personalWid)) {
+                UUID partitionId =
+                        Objects.requireNonNull(
+                                jdbc.queryForObject(
+                                        "SELECT id FROM authz_partition WHERE owner_key = ?",
+                                        UUID.class,
+                                        ownerKey));
+                for (String state : List.of("PENDING", "FAILED")) {
+                    new TransactionTemplate(transactionManager)
+                            .executeWithoutResult(status -> {
+                                // Fault chỉ sống trong transaction này, worker không thể sửa trước
+                                // assert.
+                                status.setRollbackOnly();
+                                jdbc.update(
+                                        "UPDATE authz_partition SET state = ? WHERE id = ?",
+                                        state,
+                                        partitionId);
+                                HttpProblemException denied =
+                                        assertThrows(
+                                                HttpProblemException.class,
+                                                () ->
+                                                        listAs(
+                                                                student,
+                                                                personalWid,
+                                                                center.studentX()));
+                                assertEquals(
+                                        HttpStatus.SERVICE_UNAVAILABLE, denied.getStatus(), state);
+                                assertEquals("AUTHORIZATION_NOT_READY", denied.getCode(), state);
+                            });
+                }
+            }
+            assertTrue(listAs(student, personalWid, center.studentX()).isEmpty());
+        }
+    }
+
+    private int backendPid() {
+        return Objects.requireNonNull(
+                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(20, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for DTO reader");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted DTO reader", exception);
         }
     }
 }
