@@ -675,11 +675,12 @@ abstract class GuardianFixture extends IntegrationEnvironment {
     }
 
     protected void deleteUser(String userId) {
-        HTTP.delete()
-                .uri(admin("/users/" + userId))
-                .headers(headers -> headers.setBearerAuth(masterToken()))
-                .retrieve()
-                .toBodilessEntity();
+        deleteWithConflictRetry(() ->
+                HTTP.delete()
+                        .uri(admin("/users/" + userId))
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
+                        .retrieve()
+                        .toBodilessEntity());
     }
 
     protected String masterToken() {

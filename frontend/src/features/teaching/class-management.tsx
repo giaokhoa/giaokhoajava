@@ -232,7 +232,7 @@ function attemptKey(store: Map<string, string>, signature: string): string {
   return key;
 }
 
-function stateLabel(state: string): string {
+export function stateLabel(state: string): string {
   if (state === "ACTIVE") return "Đang hoạt động";
   if (state === "REVOKED") return "Đã thu hồi";
   return state;

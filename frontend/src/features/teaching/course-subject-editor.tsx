@@ -250,6 +250,9 @@ export function CourseSubjectEditor({
   busy,
   refreshTick,
   mutate,
+  // Không gian cá nhân không có phân công giáo viên theo center: owner tự dạy lớp
+  // của mình, nên ẩn hẳn khối phân công thay vì hiện nhãn center sai chỗ.
+  showTeacherAssignment = true,
 }: {
   workspaceId: string;
   classId: string;
@@ -262,6 +265,7 @@ export function CourseSubjectEditor({
   busy: boolean;
   refreshTick: number;
   mutate: TeachingMutate;
+  showTeacherAssignment?: boolean;
 }) {
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -499,7 +503,9 @@ export function CourseSubjectEditor({
                     disabled={busy}
                     onClick={() => setOpenSubjectId(openSubjectId === entry.id ? null : entry.id)}
                   >
-                    {openSubjectId === entry.id ? "Đóng ghi danh/phân công" : "Ghi danh và phân công"}
+                    {openSubjectId === entry.id
+                      ? "Đóng ghi danh" + (showTeacherAssignment ? "/phân công" : "")
+                      : "Ghi danh" + (showTeacherAssignment ? " và phân công" : "")}
                   </button>
                   {canManage ? (
                     <>
@@ -516,7 +522,7 @@ export function CourseSubjectEditor({
                   ) : null}
                   {openSubjectId === entry.id ? (
                     <>
-                      {canManage ? (
+                      {canManage && showTeacherAssignment ? (
                         <div className="section">
                           <h5>Phân công giáo viên cho môn {entry.name}</h5>
                           <fieldset>
@@ -561,16 +567,18 @@ export function CourseSubjectEditor({
                           </p>
                         </div>
                       ) : null}
-                      <TeacherAssignmentList
-                        workspaceId={workspaceId}
-                        courseSubjectId={entry.id}
-                        teachers={teachers}
-                        canManage={canManage}
-                        busy={busy}
-                        refreshTick={refreshTick}
-                        userId={userId}
-                        mutate={mutate}
-                      />
+                      {showTeacherAssignment ? (
+                        <TeacherAssignmentList
+                          workspaceId={workspaceId}
+                          courseSubjectId={entry.id}
+                          teachers={teachers}
+                          canManage={canManage}
+                          busy={busy}
+                          refreshTick={refreshTick}
+                          userId={userId}
+                          mutate={mutate}
+                        />
+                      ) : null}
                       <EnrollmentEditor
                         workspaceId={workspaceId}
                         classId={classId}

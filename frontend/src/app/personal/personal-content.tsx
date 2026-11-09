@@ -5,6 +5,7 @@ import { apiRequest } from "../../lib/api-client";
 import { RecoveryRequestForm } from "../../features/identity/recovery-request-form";
 import { useSession } from "../../features/identity/session-provider";
 import { WorkspaceSwitcher } from "../../features/identity/workspace-switcher";
+import { PersonalEntitlements } from "../../features/subscriptions/personal-entitlements";
 
 export type PracticeAttempt = {
   id: string;
@@ -136,6 +137,8 @@ export function PersonalContent() {
             <div className="section">
               <WorkspaceSwitcher />
             </div>
+
+            <PersonalEntitlements />
 
             <section className="section" aria-labelledby="practice-history-title">
               <h2 id="practice-history-title">Lịch sử luyện tập mẫu</h2>
