@@ -342,7 +342,8 @@ class TeachingAuthorizationIT extends TeachingFixture {
         Fixture fixture = seedCenterFixture(sharedIdentities);
         try (var owner = openSession(fixture.owner());
                 var student = openSession(fixture.students().getFirst())) {
-            TeachingSetup setup = prepareCourse(owner, fixture, 1);
+            TeachingSetup setup = prepareCourse(owner, fixture, 2);
+            UUID unenrolledSubject = setup.courseSubject(1);
             enroll(
                     owner,
                     fixture.workspaceId(),
@@ -354,7 +355,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
                                     get("/api/workspaces/"
                                                     + fixture.workspaceId()
                                                     + "/course-subjects/"
-                                                    + setup.courseSubject(2)
+                                                    + unenrolledSubject
                                                     + "/enrollments")
                                             .cookie(student.cookie()))
                             .andReturn()
