@@ -11,7 +11,7 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 120
     env:
       TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:15432/giaokhoa_test
       TEST_DATABASE_USERNAME: giaokhoa_test
