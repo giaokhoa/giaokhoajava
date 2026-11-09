@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { requestAllPages, requestWhenReady } from "../../../lib/api-client";
+import { ApiError, requestAllPages, requestWhenReady } from "../../../lib/api-client";
 import { useSession } from "../../../features/identity/session-provider";
 import {
   parseTrackedOperation,
@@ -19,6 +19,7 @@ import {
   parseClasses,
   parseRoster,
   parseSubjects,
+  stateLabel,
   submitTeachingMutation,
   teachingErrorMessage,
   type RosterEntry,
@@ -28,16 +29,12 @@ import {
 } from "../../../features/teaching/class-management";
 import { CourseSubjectEditor } from "../../../features/teaching/course-subject-editor";
 
-function stateLabel(state: string): string {
-  if (state === "ACTIVE") return "Đang hoạt động";
-  if (state === "REVOKED") return "Đã thu hồi";
-  return state;
-}
-
 export function PersonalClassesContent() {
   const { session, refreshSession } = useSession();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [workspaceReload, setWorkspaceReload] = useState(0);
   const [classes, setClasses] = useState<TeachingClass[] | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [listError, setListError] = useState<string | null>(null);
@@ -102,11 +99,15 @@ export function PersonalClassesContent() {
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setWorkspace(parsePersonalWorkspace(result.data));
+        setWorkspaceError(null);
         setWorkspaceLoaded(true);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!ignore) {
           setWorkspace(null);
+          setWorkspaceError(
+            error instanceof Error ? error.message : "Không tải được không gian cá nhân.",
+          );
           setWorkspaceLoaded(true);
         }
       });
@@ -122,7 +123,7 @@ export function PersonalClassesContent() {
       ignore = true;
       pendingMutation.current?.abort();
     };
-  }, [userId]);
+  }, [userId, workspaceReload]);
 
   useEffect(() => {
     if (!classesPath) return;
@@ -197,6 +198,9 @@ export function PersonalClassesContent() {
       }
       return data;
     } catch (error) {
+      if (error instanceof ApiError && error.code === "OPERATION_FAILED") {
+        attempts.current.delete(signature);
+      }
       setActionError(teachingErrorMessage(error));
       return null;
     } finally {
@@ -300,6 +304,22 @@ export function PersonalClassesContent() {
                 việc thu hồi vẫn thực hiện theo thẩm quyền.
               </p>
             ) : null}
+            {workspaceError ? (
+              <>
+                <p role="alert">{workspaceError}</p>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => {
+                    setWorkspaceLoaded(false);
+                    setWorkspaceError(null);
+                    setWorkspaceReload((value) => value + 1);
+                  }}
+                >
+                  Tải lại danh sách lớp
+                </button>
+              </>
+            ) : null}
             {actionError ? <p role="alert">{actionError}</p> : null}
             {operation ? (
               <section className="section" aria-labelledby="personal-operation-title">
@@ -322,7 +342,12 @@ export function PersonalClassesContent() {
 
             <section aria-labelledby="personal-class-list-title">
               <h2 id="personal-class-list-title">Danh sách lớp</h2>
-              {classes === null ? <p role="status">Đang tải danh sách lớp…</p> : null}
+              {classes === null && (workspace !== null || !workspaceLoaded) ? (
+                <p role="status">Đang tải danh sách lớp…</p>
+              ) : null}
+              {workspaceLoaded && workspace === null && !workspaceError ? (
+                <p>Chưa có không gian cá nhân. Hoàn tất xác minh danh tính để tiếp tục.</p>
+              ) : null}
               {listError ? <p role="alert">{listError}</p> : null}
               {classes !== null && classes.length === 0 && !listError ? (
                 <p>Chưa có lớp cá nhân nào trong phạm vi xem của bạn.</p>
@@ -425,7 +450,7 @@ export function PersonalClassesContent() {
                         <input
                           id="personal-student-id"
                           value={studentUserId}
-                          disabled={busy || planExpired}
+                          disabled={busy}
                           onChange={(event) => setStudentUserId(event.target.value)}
                         />
                       </div>
@@ -437,7 +462,7 @@ export function PersonalClassesContent() {
                       <button
                         className="action-button"
                         type="submit"
-                        disabled={busy || planExpired}
+                        disabled={busy}
                       >
                         Thêm học sinh
                       </button>
