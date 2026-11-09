@@ -1,7 +1,6 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
-import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
@@ -33,11 +32,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
  * workspace: tập descriptor canonical của mọi scope mà target đó quản lý, với scope danh nghĩa
- * {@code read}. Projector này vừa tính tập đó khi ghi (qua các service ghi danh/phân công), vừa
- * dựng lại đúng tập đó khi {@code ProjectionReconciler} đối chiếu desired hash, và đồng bộ
- * membership thật của từng user vào các realm group giảng dạy khi reconcile — group policy chỉ cấp
- * cho người thật sự đang ở trong group, và group giảng dạy chỉ chứa người còn membership ACTIVE kèm
- * role tiền đề đúng (TEACHER cho phân công, STUDENT cho ghi danh) tại thời điểm đối chiếu.
+ * {@code read}. Projector này tính tập đó để {@link
+ * com.giaokhoa.authorization.projection.SourceRevocationCoordinator} ghi vào operation khi các
+ * service ghi danh/phân công đổi dữ kiện nguồn, và dựng lại đúng tập đó khi {@code
+ * ProjectionReconciler} đối chiếu desired hash, và đồng bộ membership thật của từng user vào các
+ * realm group giảng dạy khi reconcile — group policy chỉ cấp cho người thật sự đang ở trong group,
+ * và group giảng dạy chỉ chứa người còn membership ACTIVE kèm role tiền đề đúng (TEACHER cho phân
+ * công, STUDENT cho ghi danh) tại thời điểm đối chiếu.
  *
  * <p>Các bảng giảng dạy nằm dưới RLS theo context workspace của transaction, mà phía reconcile
  * không có transaction bao quanh sẵn: mọi phép dựng bundle và đồng bộ group ở đây tự bọc trong một
@@ -58,17 +59,14 @@ public class TeachingPolicyProjector {
 
     private final JdbcTemplate jdbc;
     private final KeycloakProvisioningClient directory;
-    private final AuthorizationOperationService operations;
     private final TransactionTemplate transactions;
 
     public TeachingPolicyProjector(
             JdbcTemplate jdbc,
             KeycloakProvisioningClient directory,
-            AuthorizationOperationService operations,
             PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.directory = directory;
-        this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -182,45 +180,6 @@ public class TeachingPolicyProjector {
                             targetKey, BUNDLE_SCOPE, bundleDescriptors(targetKey), List.of()));
         }
         return List.copyOf(projections);
-    }
-
-    /**
-     * Ghi operation cho một thay đổi giảng dạy vừa được ghi trong cùng transaction của service:
-     * bump desired revision của WORKSPACE partition của workspace, fence nó và lưu bundle hiện hành
-     * của từng target bị ảnh hưởng. Replay cùng idempotency key và payload trả lại operation đã ghi
-     * mà không ghi lại gì, còn cùng key khác payload là 409 — cả hai do cơ chế operation dùng chung
-     * xử lý.
-     */
-    public AuthorizationOperation recordTeachingChange(
-            UUID initiatorUserId,
-            UUID workspaceId,
-            String idempotencyKey,
-            String payloadHash,
-            List<String> targetKeys) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
-        List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
-        for (String targetKey : targetKeys) {
-            projections.add(
-                    new AuthorizationOperationService.DesiredProjection(
-                            targetKey, BUNDLE_SCOPE, bundleDescriptors(targetKey), List.of()));
-        }
-        return operations.applyDesiredState(
-                initiatorUserId,
-                workspaceId,
-                idempotencyKey,
-                payloadHash,
-                List.of(
-                        new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(), List.copyOf(projections))));
     }
 
     /**

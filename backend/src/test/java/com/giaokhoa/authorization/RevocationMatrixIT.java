@@ -84,10 +84,11 @@ import tools.jackson.databind.json.JsonMapper;
  *       vẫn 200.
  *   <li>US5.2 — gỡ membership tại một center: cùng phiên cũ đọc roster center đó phải 403, danh
  *       sách workspace còn center kia mà không còn center này, thành viên khác không ảnh hưởng.
- *   <li>US5.3 — gỡ ghi danh: học sinh đọc kết quả công bố chuyển 200 thành 403, biến mất khỏi
- *       roster theo góc nhìn của giáo viên (1 mục thành 0 mục); giáo viên còn thẩm quyền vẫn đọc
- *       kết quả 200 (lịch sử giữ). Học sinh không bao giờ đọc được danh sách roster môn — xem Sổ
- *       B66.
+ *   <li>US5.3 — gỡ ghi danh: học sinh đọc kết quả công bố của mình chuyển từ 1 mục thành 0 mục
+ *       (HTTP 200 với danh sách rỗng — B56: chính học sinh nhận tập được phép, có thể rỗng, không
+ *       phải 403), biến mất khỏi roster theo góc nhìn của giáo viên (1 mục thành 0 mục); giáo viên
+ *       còn thẩm quyền vẫn đọc kết quả 200 (lịch sử giữ). Học sinh không bao giờ đọc được danh sách
+ *       roster môn — xem Sổ B66.
  *   <li>US5.4 — header {@code X-Tenant-Id} giả không ghi đè route; id môn của center khác nhúng vào
  *       route này phải 404.
  *   <li>US5.5 — nguồn quyền OR độc lập: gỡ một môn thì môn còn lại vẫn 200.
@@ -239,7 +240,19 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     center.workspaceId(),
                     teaching.courseSubjectId(),
                     identities.teacherBId());
+            UUID publishedId =
+                    seedPublishedResult(
+                            center.workspaceId(),
+                            teaching.courseSubjectId(),
+                            subject,
+                            identities.studentXId());
+            recordResults(center.workspaceId(), publishedId);
+            String results = resultsPath(center.workspaceId(), identities.studentXId());
             String roster = rosterPath(center.workspaceId(), teaching.courseSubjectId());
+            assertEquals(
+                    1,
+                    getJson(teacherA, results, 200).get("items").size(),
+                    "Giáo viên còn phân công đọc được kết quả công bố của học sinh");
             assertEquals(
                     1,
                     getJson(teacherA, roster, 200).get("items").size(),
@@ -267,6 +280,15 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     403,
                     getRaw(teacherA, roster).getStatus(),
                     "Cùng phiên cũ sau khi gỡ phân công phải bị chặn đọc roster ngay");
+            assertEquals(
+                    403,
+                    getRaw(teacherA, results).getStatus(),
+                    "Cùng phiên cũ sau khi gỡ phân công, giáo viên không còn đọc được kết quả"
+                            + " của học sinh (B56: actor khác mà tập được phép rỗng thì 403)");
+            assertEquals(
+                    1,
+                    getJson(teacherB, results, 200).get("items").size(),
+                    "Giáo viên còn phân công vẫn đọc được kết quả công bố của học sinh");
             assertEquals(
                     200,
                     getRaw(teacherB, roster).getStatus(),
@@ -296,11 +318,23 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     centerA.workspaceId(),
                     teaching.courseSubjectId(),
                     identities.teacherBId());
+            UUID publishedId =
+                    seedPublishedResult(
+                            centerA.workspaceId(),
+                            teaching.courseSubjectId(),
+                            subject,
+                            identities.studentXId());
+            recordResults(centerA.workspaceId(), publishedId);
+            String resultsA = resultsPath(centerA.workspaceId(), identities.studentXId());
             String rosterA = rosterPath(centerA.workspaceId(), teaching.courseSubjectId());
             assertEquals(
                     200,
                     getRaw(teacherA, rosterA).getStatus(),
                     "Giáo viên còn là thành viên đọc được roster");
+            assertEquals(
+                    1,
+                    getJson(teacherA, resultsA, 200).get("items").size(),
+                    "Giáo viên còn là thành viên đọc được kết quả công bố của học sinh");
             UUID membership =
                     Objects.requireNonNull(
                             centerA.teacherAMembership(), "Giáo viên A phải có membership tại A");
@@ -316,6 +350,15 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     403,
                     getRaw(teacherA, rosterA).getStatus(),
                     "Cùng phiên cũ sau khi gỡ membership phải bị chặn đọc roster ngay");
+            assertEquals(
+                    403,
+                    getRaw(teacherA, resultsA).getStatus(),
+                    "Cùng phiên cũ sau khi gỡ membership, giáo viên không còn đọc được kết quả"
+                            + " của học sinh (B56: actor khác mà tập được phép rỗng thì 403)");
+            assertEquals(
+                    1,
+                    getJson(teacherB, resultsA, 200).get("items").size(),
+                    "Giáo viên còn là thành viên vẫn đọc được kết quả công bố của học sinh");
             List<UUID> visible = workspaceIds(teacherA);
             assertTrue(
                     visible.contains(centerB.workspaceId()),
@@ -375,9 +418,11 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                                     + enrollment);
             awaitOperationSucceeded(jdbc, operationId);
             assertEquals(
-                    403,
-                    getRaw(studentX, results).getStatus(),
-                    "Cùng phiên cũ sau khi gỡ ghi danh phải bị chặn đọc kết quả");
+                    0,
+                    getJson(studentX, results, 200).get("items").size(),
+                    "Cùng phiên cũ sau khi gỡ ghi danh, học sinh không còn thấy kết quả của mình"
+                            + " (B56: chính học sinh nhận tập được phép, có thể rỗng,"
+                            + " HTTP 200 — không phải 403)");
             assertEquals(
                     0,
                     getJson(teacherA, roster, 200).get("items").size(),

@@ -7,6 +7,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
@@ -48,7 +49,7 @@ public class TeachingRouteSupport {
 
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
-    private final TeachingPolicyProjector projector;
+    private final SourceRevocationCoordinator revocations;
     private final TeachingRepository repository;
     private final WorkspaceTransaction workspaceTransaction;
     private final JdbcTemplate jdbc;
@@ -57,14 +58,14 @@ public class TeachingRouteSupport {
     public TeachingRouteSupport(
             ProtectedActionExecutor executor,
             IdempotencyService idempotency,
-            TeachingPolicyProjector projector,
+            SourceRevocationCoordinator revocations,
             TeachingRepository repository,
             WorkspaceTransaction workspaceTransaction,
             JdbcTemplate jdbc,
             ResourceMutationCoordinator coordinator) {
         this.executor = executor;
         this.idempotency = idempotency;
-        this.projector = projector;
+        this.revocations = revocations;
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
         this.jdbc = jdbc;
@@ -194,9 +195,10 @@ public class TeachingRouteSupport {
     }
 
     /**
-     * Ghi operation ghi lại bundle hiện hành của các target bị một mutation dữ kiện nguồn chạm tới,
-     * trong cùng transaction của mutation — đường ghi operation cho các service lớp/khóa vốn không
-     * tự ghi operation.
+     * Ghi operation ghi lại bundle hiện hành của các target bị một mutation dữ kiện nguồn chạm tới
+     * kèm toàn bộ bundle kết quả của workspace (thu hồi lớp/khóa/môn–khóa/roster đóng ghi danh và
+     * phân công phụ thuộc, vốn là nguồn của bundle kết quả), trong cùng transaction của mutation —
+     * đường ghi operation cho các service lớp/khóa vốn không tự ghi operation.
      */
     public AuthorizationOperation recordChange(
             UUID actorUserId,
@@ -204,7 +206,7 @@ public class TeachingRouteSupport {
             String key,
             String payloadHash,
             List<String> targetKeys) {
-        return projector.recordTeachingChange(
+        return revocations.recordTeachingRevocation(
                 actorUserId, workspaceId, key, payloadHash, targetKeys);
     }
 
