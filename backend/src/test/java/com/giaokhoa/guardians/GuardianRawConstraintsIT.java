@@ -4,28 +4,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import com.giaokhoa.support.IntegrationEnvironment;
 import java.sql.SQLException;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -40,25 +35,45 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>Seed center/membership bằng SQL thô qua kết nối ứng dụng (superuser) trong schema cô lập; phần
  * khẳng định chạy hoàn toàn qua role runtime.
  */
-@SpringBootTest
-@Transactional(propagation = Propagation.NOT_SUPPORTED)
-class GuardianRawConstraintsIT extends IntegrationEnvironment {
+// Harness tối thiểu: chỉ kiểm chứng schema/bảng bằng JDBC thuần trên schema riêng nên tự chạy
+// Flyway và tự cấp JdbcTemplate, không dựng ApplicationContext của ứng dụng.
+class GuardianRawConstraintsIT {
     private static final String SCHEMA =
             "guardian_raw_" + UUID.randomUUID().toString().replace("-", "");
     private static final String RUNTIME_ROLE = "guardian_raw_runtime";
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
+    private static JdbcTemplate jdbc;
+    private static PlatformTransactionManager transactionManager;
+
+    @BeforeAll
+    static void migrateSchema() {
+        var migrator =
+                new DriverManagerDataSource(
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL")),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_USERNAME")),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_PASSWORD")));
+        Flyway.configure()
+                .dataSource(migrator)
+                .schemas(SCHEMA)
+                .defaultSchema(SCHEMA)
+                .load()
+                .migrate();
+        var source =
+                new DriverManagerDataSource(
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL"))
+                                + "?currentSchema="
+                                + SCHEMA
+                                + ",public",
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_USERNAME")),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_PASSWORD")));
+        jdbc = new JdbcTemplate(source);
+        transactionManager = new DataSourceTransactionManager(source);
     }
 
     @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        stopSchedulerAndDropSchema(context, SCHEMA);
+    static void removeSchema() {
+        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
-
-    @Autowired private JdbcTemplate jdbc;
-    @Autowired private PlatformTransactionManager transactionManager;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
 
