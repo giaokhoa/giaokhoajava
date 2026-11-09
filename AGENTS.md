@@ -14,6 +14,20 @@
 - Phải xử lý toàn bộ lỗi **Must fix** trước khi merge và review lại phần đã sửa. Không merge nếu review chưa hoàn tất hoặc kết luận chưa đủ điều kiện merge.
 - Báo cáo kết luận review trước khi thực hiện merge. CI chạy thành công không thay thế cho bước review này.
 
+## Điều phối triển khai
+
+- Ở đầu mỗi phiên và trước mỗi story mới, đọc lại `origin/main`, parent issue và hướng dẫn điều phối được liên kết. Nếu thay đổi hướng dẫn còn ở PR chưa merge, đọc đúng commit tài liệu được parent liên kết; không giả định `main` đã chứa quy tắc mới.
+- Trước khi triển khai story kế tiếp, xác minh gate trước đã đạt, rồi rà từng dependency với code/contract hiện có: tách tiền đề bắt đầu và điều kiện hoàn tất, bỏ cạnh chờ thừa có bằng chứng, kiểm tra tên migration/file thật và đồng bộ GitHub/`tasks.md`/`github-issues.json`. Ghi bảng phân công agent, file, artifact đầu vào và gate hội tụ tại parent issue trước khi giao implementation; không tự dùng lại chuỗi tuần tự của bản phân rã gốc. Khi nới cạnh khởi động, phải giữ điều kiện hoàn tất và mọi đầu vào nghiệm thu ở gate của story.
+- Khi người dùng yêu cầu làm song song hoặc tối đa công suất, phải phân công agent bằng công cụ thực tế nếu môi trường hỗ trợ; không chỉ ghi `[P]` hoặc hứa làm đồng thời. Dùng các slot có sẵn khi còn công việc độc lập; nếu không có công cụ hoặc bị giới hạn, báo đúng giới hạn, không giả có nhiều agent.
+- Agent điều phối chọn việc trong story đã mở, giao rõ issue, file sở hữu, nhánh/worktree và đầu ra cho từng agent. Khi một phần bị chặn hoặc một agent xong việc, giao ngay phần độc lập tiếp theo trong phạm vi hiện tại. Không vượt gate sang story chưa được phép triển khai.
+- Mỗi agent sửa code trên nhánh/worktree riêng. Một owner ghép các file chung như migration, contract, `CenterService` và `ProjectionReconciler`; các agent khác bàn giao thay đổi cần ghép, không cùng sửa file đó.
+- Dependency schema/service/test là tiền đề artifact: được dùng PR/SHA đã có hợp đồng ổn định và kiểm chứng phù hợp, không phải chờ issue đóng hoặc PR merge. Phân biệt điều kiện bắt đầu với điều kiện hoàn tất; gate vẫn cần toàn bộ hành vi, review và kiểm thử thật đạt.
+- Test-first được hoàn tất khi contract được review và có bằng chứng red do thiếu hành vi; không giữ task test đến cuối story chỉ để đợi implementation green. Không merge test đỏ vào `main`; ghép test và code làm xanh trong PR tích hợp đủ điều kiện.
+- Trước kiểm chứng cuối và bàn giao PR, ghép `origin/main` hiện hành vào nhánh tích hợp, giải quyết xung đột và giữ các bản sửa/test hồi quy đã merge. Không tự rebase hoặc force-push nhánh của người khác.
+- Khi đổi dependency, đồng bộ native dependency trên GitHub, `tasks.md` và `github-issues.json` trong cùng đợt; quy tắc điều phối mới phải được ghi vào repo, không chỉ tồn tại trong prompt trò chuyện. Đọc hướng dẫn tại parent issue của feature trước khi chọn việc. Nếu snapshot repo lệch lịch GitHub đã được parent xác nhận, sửa tài liệu theo lịch hiện hành; không tái tạo cạnh cũ từ snapshot. Đọc các file điều phối ở cùng commit và ghi SHA đã dùng.
+- Báo tiến độ bằng agent → issue/phần việc → nhánh/PR/SHA → đang làm/chờ → blocker cụ thể. Nhiều PR mở hoặc nhiều test được liệt kê không chứng minh chạy song song hay nghiệm thu đạt.
+- Tách song song viết/review code khỏi số lượt kiểm thử nặng. Trên máy dùng chung, chỉ chạy một lượt Maven integration/native/Playwright nặng tại một thời điểm nếu chưa chứng minh đủ tài nguyên; các agent khác tiếp tục code/review. Mỗi lượt dùng stack TEST riêng theo README, không dùng chung dữ liệu hoặc reset stack của agent khác.
+
 ## Chất lượng backend Java
 - Trước khi bàn giao thay đổi backend, chạy `./backend/mvnw -B -ntp -f backend/pom.xml clean verify` bằng JDK 25. Lệnh này kiểm tra compiler, unit test, Spotless, PMD và SpotBugs cho cả code chính và test.
 - Tự format bằng `./backend/mvnw -B -ntp -f backend/pom.xml spotless:apply`. Không format tay theo một convention khác.
