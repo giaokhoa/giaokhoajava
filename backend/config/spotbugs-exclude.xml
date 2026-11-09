@@ -273,4 +273,22 @@
         <Method name="~lambda\$requiredArraysRejectNullBeforePersisting\$[0-9]+"/>
         <Bug pattern="NP_NULL_PARAM_DEREF_NONVIRTUAL"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, WorkspaceTransaction, IdempotencyService, GuardianPolicyProjector, ResourceMutationCoordinator); không sao chép khi inject vào service liên kết phụ huynh. -->
+    <Match>
+        <Class name="com.giaokhoa.guardians.GuardianLinkService"/>
+        <Field name="~(jdbc|workspaceTransaction|idempotency|projector|coordinator)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient, AuthorizationOperationService, CenterPolicyProjector); không sao chép khi inject vào projector phụ huynh. -->
+    <Match>
+        <Class name="com.giaokhoa.guardians.GuardianPolicyProjector"/>
+        <Field name="~(jdbc|directory|operations|centerProjector)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, WorkspaceTransaction); không sao chép khi inject vào contributor thu hồi phụ huynh. -->
+    <Match>
+        <Class name="com.giaokhoa.guardians.GuardianRevocationContributor"/>
+        <Field name="~(jdbc|workspaceTransaction)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
 </FindBugsFilter>
