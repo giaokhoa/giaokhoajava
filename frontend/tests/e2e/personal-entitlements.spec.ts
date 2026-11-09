@@ -564,6 +564,22 @@ async function phanCongGiaoVien(
   await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
 }
 
+async function phanCongChuNhiem(
+  page: Page,
+  origin: string,
+  csrf: Csrf,
+  workspaceId: string,
+  lopId: string,
+  teacherUserId: string,
+): Promise<void> {
+  const phanCong = await guiMutation(page, origin, csrf, "POST",
+    `/api/workspaces/${workspaceId}/classes/${lopId}/homeroom-assignments`,
+    { teacherUserId });
+  expect(phanCong.status()).toBe(202);
+  const traLoi = (await phanCong.json()) as MutationTraLoi;
+  await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
+}
+
 // Tạo học liệu cá nhân qua sample action CREATE_RESOURCE không gắn môn-khóa:
 // nhánh owner+gói của hợp đồng verification. Trả response thô để test khẳng định.
 async function taoHocLieuCaNhan(
@@ -864,6 +880,13 @@ test("US6.5 rời center: quyền center chấm dứt, gói và lớp cá nhân 
     const nguoiDung = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
     const { membershipId } = await moiVaChapNhan(
       page, origin, setup.csrfManager, setup.workspaceId, nguoiDung, ["TEACHER"]);
+    // Phân công A theo spec US6.5 (spec.md:119): người dùng phải có phân công ở center
+    // thì mới có quyền giảng dạy theo center để mất khi rời — giáo viên chưa phân công
+    // vốn đã không liệt kê được lớp (cổng mirror SQL đòi chủ nhiệm hoặc admin), nên
+    // khẳng định 200 trước khi rời phải đi kèm phân công chủ nhiệm một lớp.
+    const { lopId } = await taoLop(page, origin, setup.csrfManager, setup.workspaceId);
+    await phanCongChuNhiem(
+      page, origin, setup.csrfManager, setup.workspaceId, lopId, nguoiDung.appId);
     const { personalId } = await kichHoatGoiCaNhan(page, origin, env, daTao, nguoiDung);
 
     // Phiên độc lập của người dùng: đang là thành viên center và có gói cá nhân.
