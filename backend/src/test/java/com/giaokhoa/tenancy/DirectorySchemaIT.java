@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -25,7 +26,7 @@ import org.springframework.transaction.support.DefaultTransactionDefinition;
 // Harness tối thiểu: chỉ kiểm chứng schema/bảng bằng JDBC thuần trên schema riêng nên tự chạy
 // Flyway và tự cấp JdbcTemplate, không dựng ApplicationContext của ứng dụng. Mỗi test vẫn chạy
 // trong một giao dịch và rollback ở cuối như khi dùng @Transactional của Spring Test.
-class DirectorySchemaIT {
+class DirectorySchemaIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "directory_schema_" + UUID.randomUUID().toString().replace("-", "");
 
@@ -37,7 +38,7 @@ class DirectorySchemaIT {
     static void migrateSchema() {
         var migrator =
                 new DriverManagerDataSource(
-                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL")),
+                        testDatabaseUrl(),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_USERNAME")),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_PASSWORD")));
         Flyway.configure()
@@ -48,10 +49,7 @@ class DirectorySchemaIT {
                 .migrate();
         var source =
                 new DriverManagerDataSource(
-                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL"))
-                                + "?currentSchema="
-                                + SCHEMA
-                                + ",public",
+                        testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_USERNAME")),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_PASSWORD")));
         jdbc = new JdbcTemplate(source);

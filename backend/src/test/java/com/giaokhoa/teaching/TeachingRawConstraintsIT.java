@@ -60,7 +60,7 @@ class TeachingRawConstraintsIT extends TeachingFixture {
     static void migrateSchema() {
         var migrator =
                 new DriverManagerDataSource(
-                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL")),
+                        testDatabaseUrl(),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_USERNAME")),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_PASSWORD")));
         Flyway.configure()
@@ -71,10 +71,7 @@ class TeachingRawConstraintsIT extends TeachingFixture {
                 .migrate();
         var source =
                 new DriverManagerDataSource(
-                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL"))
-                                + "?currentSchema="
-                                + SCHEMA
-                                + ",public",
+                        testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_USERNAME")),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_PASSWORD")));
         harnessJdbc = new JdbcTemplate(source);

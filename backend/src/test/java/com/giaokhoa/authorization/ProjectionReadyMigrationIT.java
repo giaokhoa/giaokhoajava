@@ -3,6 +3,7 @@ package com.giaokhoa.authorization;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.giaokhoa.support.IntegrationEnvironment;
 import java.util.Objects;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -15,14 +16,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 // Chỉ kiểm chứng migration Flyway bằng JDBC thuần trên schema riêng tự tạo/dọn trong thân test;
 // không dùng bean Spring nào nên không dựng ApplicationContext.
-class ProjectionReadyMigrationIT {
+class ProjectionReadyMigrationIT extends IntegrationEnvironment {
     @Test
     void upgradeFencesLegacyNullHashesAndTheirDependentsWithoutOpeningUnverifiedRows() {
         String schema = "ready_hash_upgrade_" + UUID.randomUUID().toString().replace("-", "");
-        String url =
-                Objects.requireNonNull(System.getenv("TEST_DATABASE_URL"))
-                        + "?currentSchema="
-                        + schema;
+        String url = testDatabaseUrl() + "?currentSchema=" + schema;
         var source =
                 new DriverManagerDataSource(
                         url,

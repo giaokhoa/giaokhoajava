@@ -40,12 +40,8 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
 
     @DynamicPropertySource
     static void testServices(DynamicPropertyRegistry registry) {
-        String database = required("TEST_DATABASE_URL");
-        String issuer =
-                required("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "")
-                        + "/realms/"
-                        + required("TEST_KEYCLOAK_REALM");
-        validateTargets(database, issuer);
+        String database = testDatabaseUrl();
+        String issuer = testIssuerUri();
 
         registry.add("spring.datasource.url", () -> database);
         registry.add("spring.datasource.username", () -> required("TEST_DATABASE_USERNAME"));
@@ -59,6 +55,19 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
         registry.add(
                 "spring.security.oauth2.client.registration.keycloak.client-secret",
                 () -> required("TEST_OIDC_CLIENT_SECRET"));
+    }
+
+    /** Guard dùng chung cả khi test JDBC không nạp Spring context. */
+    protected static String testDatabaseUrl() {
+        String database = required("TEST_DATABASE_URL");
+        validateTargets(database, testIssuerUri());
+        return database;
+    }
+
+    private static String testIssuerUri() {
+        return required("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "")
+                + "/realms/"
+                + required("TEST_KEYCLOAK_REALM");
     }
 
     /**

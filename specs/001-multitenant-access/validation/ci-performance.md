@@ -19,6 +19,8 @@ Lượt CI #207 `42645751923` bị hủy: `TeachingAuthorizationIT` mất 1421 g
 `TeachingStructureIT` 355,4 giây. Nền xanh `42633602179` tương ứng 420,5 và 114,9
 giây. Đây không phải A/B kiểm soát tải; số đo không đủ để khẳng định các thay đổi
 đó làm nhanh hơn. Nhánh này giữ cách ly bằng schema/center riêng.
+Các test JDBC tối thiểu dùng lại guard `IntegrationEnvironment.testDatabaseUrl()`
+trước khi mở kết nối/migrate; việc bỏ Spring không được bỏ allowlist TEST.
 
 ## Yêu cầu và test chịu trách nhiệm
 

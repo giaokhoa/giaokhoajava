@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.giaokhoa.support.IntegrationEnvironment;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -41,7 +42,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 // Harness tối thiểu: chỉ kiểm chứng schema/bảng bằng JDBC thuần trên schema riêng nên tự chạy
 // Flyway và tự cấp JdbcTemplate, không dựng ApplicationContext của ứng dụng.
-class SampleRawConstraintsIT {
+class SampleRawConstraintsIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "sample_raw_" + UUID.randomUUID().toString().replace("-", "");
     private static final String RUNTIME_ROLE = "sample_raw_runtime";
@@ -55,7 +56,7 @@ class SampleRawConstraintsIT {
     static void migrateSchema() {
         var migrator =
                 new DriverManagerDataSource(
-                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL")),
+                        testDatabaseUrl(),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_USERNAME")),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_PASSWORD")));
         Flyway.configure()
@@ -66,10 +67,7 @@ class SampleRawConstraintsIT {
                 .migrate();
         var source =
                 new DriverManagerDataSource(
-                        Objects.requireNonNull(System.getenv("TEST_DATABASE_URL"))
-                                + "?currentSchema="
-                                + SCHEMA
-                                + ",public",
+                        testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_USERNAME")),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_PASSWORD")));
         jdbc = new JdbcTemplate(source);
