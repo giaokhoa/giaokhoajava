@@ -1,5 +1,6 @@
 package com.giaokhoa.tenancy;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -27,6 +28,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.awaitility.core.ConditionTimeoutException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -885,32 +888,42 @@ class CenterServiceIT extends IntegrationEnvironment {
     }
 
     private void awaitOperationSucceeded(UUID operationId) {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(90));
-        while (Instant.now().isBefore(deadline)) {
-            List<String> states =
-                    jdbc.queryForList(
-                            "SELECT state FROM authorization_operation WHERE id = ?",
-                            String.class,
-                            operationId);
-            if (!states.isEmpty()) {
-                String state = states.getFirst();
-                boolean succeeded = "SUCCEEDED".equals(state);
-                if (succeeded) {
-                    return;
-                }
-                boolean failed = "FAILED".equals(state);
-                if (failed) {
-                    fail("Operation FAILED: " + operationId);
-                }
-            }
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                fail("Interrupted while waiting for the operation");
-            }
+        AtomicBoolean succeeded = new AtomicBoolean();
+        AtomicBoolean failed = new AtomicBoolean();
+        try {
+            await().atMost(Duration.ofSeconds(90))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        List<String> states =
+                                jdbc.queryForList(
+                                        "SELECT state FROM authorization_operation WHERE id = ?",
+                                        String.class,
+                                        operationId);
+                        if (states.isEmpty()) {
+                            return false;
+                        }
+                        String state = states.getFirst();
+                        boolean done = "SUCCEEDED".equals(state);
+                        if (done) {
+                            succeeded.set(true);
+                            return true;
+                        }
+                        boolean isFailed = "FAILED".equals(state);
+                        if (isFailed) {
+                            failed.set(true);
+                            return true;
+                        }
+                        return false;
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 90 giây: fail ở dưới như vòng poll cũ.
         }
-        fail("Operation did not succeed in time: " + operationId);
+        if (failed.get()) {
+            fail("Operation FAILED: " + operationId);
+        }
+        if (!succeeded.get()) {
+            fail("Operation did not succeed in time: " + operationId);
+        }
     }
 
     private <T> T tx(java.util.function.Supplier<T> action) {

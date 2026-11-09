@@ -1,5 +1,6 @@
 package com.giaokhoa.teaching;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -34,7 +35,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -44,7 +44,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -745,38 +748,48 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
     }
 
     private void awaitOperationSucceeded(UUID operationId) {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(90));
-        while (Instant.now().isBefore(deadline)) {
-            List<String> states =
-                    jdbc.queryForList(
-                            "SELECT state FROM authorization_operation WHERE id = ?",
-                            String.class,
-                            operationId);
-            if (!states.isEmpty()) {
-                String state = states.getFirst();
-                boolean succeeded = "SUCCEEDED".equals(state);
-                if (succeeded) {
-                    return;
-                }
-                boolean failed = "FAILED".equals(state);
-                if (failed) {
-                    String errorCode =
-                            jdbc.queryForObject(
-                                    "SELECT last_error_code FROM authorization_operation"
-                                            + " WHERE id = ?",
-                                    String.class,
-                                    operationId);
-                    fail("Operation FAILED: " + operationId + " error=" + errorCode);
-                }
-            }
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                fail("Interrupted while waiting for the operation");
-            }
+        AtomicBoolean succeeded = new AtomicBoolean();
+        AtomicReference<String> failure = new AtomicReference<>();
+        try {
+            await().atMost(Duration.ofSeconds(90))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        List<String> states =
+                                jdbc.queryForList(
+                                        "SELECT state FROM authorization_operation WHERE id = ?",
+                                        String.class,
+                                        operationId);
+                        if (states.isEmpty()) {
+                            return false;
+                        }
+                        String state = states.getFirst();
+                        boolean done = "SUCCEEDED".equals(state);
+                        if (done) {
+                            succeeded.set(true);
+                            return true;
+                        }
+                        boolean failed = "FAILED".equals(state);
+                        if (failed) {
+                            String errorCode =
+                                    jdbc.queryForObject(
+                                            "SELECT last_error_code FROM authorization_operation"
+                                                    + " WHERE id = ?",
+                                            String.class,
+                                            operationId);
+                            failure.set("Operation FAILED: " + operationId + " error=" + errorCode);
+                            return true;
+                        }
+                        return false;
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 90 giây: fail ở dưới như vòng poll cũ.
         }
-        fail("Operation did not succeed in time: " + operationId);
+        if (failure.get() != null) {
+            fail(failure.get());
+        }
+        if (!succeeded.get()) {
+            fail("Operation did not succeed in time: " + operationId);
+        }
     }
 
     // ---------- Seed dữ kiện thư mục bằng JDBC (mẫu TeachingServiceIT) ----------

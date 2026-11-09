@@ -1,10 +1,10 @@
 package com.giaokhoa.teaching;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -29,7 +29,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
@@ -554,30 +556,26 @@ abstract class TeachingFixture extends IntegrationEnvironment {
      * giới hạn với đúng mã lỗi đó rồi mới khẳng định; ngữ nghĩa khẳng định của test không đổi.
      */
     protected MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
-        while (true) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            boolean syncing =
-                    response.getStatus() == 503
-                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
-            if (!syncing || Instant.now().isAfter(deadline)) {
-                return response;
-            }
-            sleep();
-        }
-    }
-
-    protected static void sleep() {
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
         try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Interrupted while waiting for the operation");
+            await().atMost(Duration.ofSeconds(60))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(get("/api/me/workspaces").cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        return response.getStatus() != 503
+                                || !response.getContentAsString()
+                                        .contains("AUTHORIZATION_NOT_READY");
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 60 giây mà account chưa sẵn sàng: trả phản hồi cuối như vòng poll cũ để
+            // khẳng định phía trên tự báo đúng trạng thái.
         }
+        return Objects.requireNonNull(last.get());
     }
 
     protected <T> T tx(java.util.function.Supplier<T> action) {

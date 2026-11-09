@@ -1,5 +1,6 @@
 package com.giaokhoa.tenancy;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,8 +43,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -1240,21 +1244,26 @@ class CenterAdministrationIT extends IntegrationEnvironment {
      * của test không đổi.
      */
     private MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
-        while (true) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            boolean syncing =
-                    response.getStatus() == 503
-                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
-            if (!syncing || Instant.now().isAfter(deadline)) {
-                return response;
-            }
-            sleep();
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
+        try {
+            await().atMost(Duration.ofSeconds(60))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(get("/api/me/workspaces").cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        return response.getStatus() != 503
+                                || !response.getContentAsString()
+                                        .contains("AUTHORIZATION_NOT_READY");
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 60 giây mà account chưa sẵn sàng: trả phản hồi cuối như vòng poll cũ để
+            // khẳng định phía trên tự báo đúng trạng thái.
         }
+        return Objects.requireNonNull(last.get());
     }
 
     private long membershipVersion(RealSession session, UUID workspaceId, UUID membershipId)
@@ -1314,36 +1323,44 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     private void awaitOperationSucceeded(RealSession session, UUID operationId) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(90));
-        while (Instant.now().isBefore(deadline)) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/me/operations/" + operationId)
-                                            .cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(200, response.getStatus(), "Đường poll operation phải đọc được");
-            JsonNode body = JSON.readTree(response.getContentAsString());
-            if (body.get("completed").booleanValue()) {
-                assertEquals(
-                        "SUCCEEDED",
-                        body.get("state").stringValue(),
-                        "Operation hoàn tất nhưng không thành công");
-                return;
-            }
-            sleep();
-        }
-        fail("Operation did not succeed in time: " + operationId);
-    }
-
-    private static void sleep() {
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
+        AtomicBoolean completed = new AtomicBoolean();
         try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Interrupted while waiting for the operation");
+            await().atMost(Duration.ofSeconds(90))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(
+                                                get("/api/me/operations/" + operationId)
+                                                        .cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        boolean readable = response.getStatus() == 200;
+                        if (!readable) {
+                            return true;
+                        }
+                        JsonNode body = JSON.readTree(response.getContentAsString());
+                        boolean done = body.get("completed").booleanValue();
+                        if (done) {
+                            completed.set(true);
+                        }
+                        return done;
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 90 giây: các khẳng định phía dưới báo đúng trạng thái như vòng poll cũ.
         }
+        MockHttpServletResponse response = Objects.requireNonNull(last.get());
+        assertEquals(200, response.getStatus(), "Đường poll operation phải đọc được");
+        if (!completed.get()) {
+            fail("Operation did not succeed in time: " + operationId);
+        }
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals(
+                "SUCCEEDED",
+                body.get("state").stringValue(),
+                "Operation hoàn tất nhưng không thành công");
     }
 
     private <T> T tx(java.util.function.Supplier<T> action) {
