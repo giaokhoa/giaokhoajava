@@ -43,13 +43,19 @@ import org.springframework.transaction.annotation.Transactional;
 @Tag("e2e-backend")
 class TeachingAuthorizationIT extends TeachingFixture {
 
-    // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt); mỗi test
-    // vẫn dựng center riêng trên danh tính đó để giữ cô lập dữ kiện.
+    // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt). Center chuẩn
+    // cũng dựng một lần và dùng chung cho các test seed bằng seedCenterFixture: cô lập nằm ở
+    // phân vùng thực thể con — mỗi test tự tạo class/course của mình với tên duy nhất (xem
+    // prepareCourseInClass) và chỉ khẳng định trên vùng đó, không test nào sửa membership
+    // hay gói của center dùng chung. Hai test dùng seedTeachingCenter giữ fixture riêng vì
+    // chúng cần danh tính riêng và tự dọn ở finally.
     private SharedIdentities sharedIdentities;
+    private Fixture sharedCenter;
 
     @BeforeAll
     void seedSharedIdentitiesOnce() {
         sharedIdentities = seedSharedIdentities();
+        sharedCenter = seedCenterFixture(sharedIdentities);
     }
 
     @AfterAll
@@ -59,7 +65,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void teacherReadsOwnSubjectRoster() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
@@ -82,7 +88,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void teacherOfOneSubjectCannotAssignTeacherOfAnother() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 2);
@@ -120,7 +126,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void teacherOfOneSubjectCannotReadOtherSubjectRoster() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 2);
@@ -147,7 +153,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void teacherCannotReadOtherClassRoster() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {
             TeachingSetup first = prepareCourse(owner, fixture, 1);
@@ -177,7 +183,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void homeroomCanReadClassRosterButCannotAssignTeachers() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
@@ -224,7 +230,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void homeroomCannotAddEnrollments() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
@@ -255,7 +261,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void homeroomCannotCreateCourses() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
@@ -287,7 +293,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void homeroomCannotAssignHomeroom() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
@@ -321,7 +327,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void studentCannotReadUnenrolledSubjectRoster() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var student = openSession(fixture.students().getFirst())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 2);
@@ -351,7 +357,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void actorFromAnotherCenterCannotReadClass() throws Exception {
-        Fixture first = seedCenterFixture(sharedIdentities);
+        Fixture first = sharedCenter;
         Fixture second = seedTeachingCenter();
         try (var owner = openSession(first.owner());
                 var outsider = openSession(second.teacherA())) {
@@ -377,7 +383,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void sameSessionAfterTeacherRevokeIsDenied() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
                 var teacherA = openSession(fixture.teacherA());
                 var teacherB = openSession(fixture.teacherB())) {
@@ -438,7 +444,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
 
     @Test
     void managerCanAssignHomeroom() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var manager = openSession(fixture.manager());
                 var owner = openSession(fixture.owner())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
@@ -583,10 +589,15 @@ class TeachingAuthorizationIT extends TeachingFixture {
     private TeachingSetup prepareCourseInClass(
             RealSession owner, Fixture fixture, String className, int subjectCount)
             throws Exception {
-        UUID classId = createClass(owner, fixture.workspaceId(), className);
+        // Center dùng chung cho cả class nên tên lớp phải duy nhất theo từng lần dựng: lớp
+        // được tra cứu theo (workspace, tên) và mỗi test chỉ khẳng định trên class/course
+        // của chính nó.
+        String uniqueClassName = className + "-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID classId = createClass(owner, fixture.workspaceId(), uniqueClassName);
         List<UUID> subjects = subjectIds(owner, subjectCount);
         UUID courseId =
-                createCourse(owner, fixture.workspaceId(), classId, "Khóa " + className, subjects);
+                createCourse(
+                        owner, fixture.workspaceId(), classId, "Khóa " + uniqueClassName, subjects);
         List<UUID> courseSubjects = new ArrayList<>();
         for (UUID subjectId : subjects) {
             courseSubjects.add(courseSubjectId(courseId, subjectId));

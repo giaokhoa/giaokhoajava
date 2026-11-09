@@ -324,8 +324,11 @@ abstract class TeachingFixture extends IntegrationEnvironment {
 
     /**
      * Danh tính dùng chung cho cả class test: tạo user Keycloak và tài khoản là phần seed đắt (mỗi
-     * user tạo ra là một lần Keycloak băm mật khẩu), còn center, membership và gói là JDBC rẻ và
-     * phải riêng từng test để giữ cô lập dữ kiện giữa các test.
+     * user tạo ra là một lần Keycloak băm mật khẩu), còn center, membership và gói là JDBC rẻ.
+     * Center mặc định riêng từng test; riêng TeachingAuthorizationIT và TeachingStructureIT dùng
+     * chung một center cho cả class theo mô hình phân vùng thực thể con (mỗi test tự tạo
+     * class/course với tên duy nhất và chỉ khẳng định trên vùng của mình, không test nào sửa
+     * membership hay gói của center dùng chung).
      */
     protected record SharedIdentities(
             KeycloakLogin owner,
