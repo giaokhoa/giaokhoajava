@@ -291,4 +291,16 @@
         <Field name="~(jdbc|workspaceTransaction)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào projector dựng bundle kết quả. -->
+    <Match>
+        <Class name="com.giaokhoa.verification.ResultPolicyProjector"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào service đọc kết quả công bố. -->
+    <Match>
+        <Class name="com.giaokhoa.guardians.PublishedResultService"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
 </FindBugsFilter>

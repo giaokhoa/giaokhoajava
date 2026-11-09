@@ -12,6 +12,7 @@ import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.verification.ResultPolicyProjector;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -82,6 +83,7 @@ public class ProjectionReconciler {
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
     private final GuardianPolicyProjector guardianProjector;
+    private final ResultPolicyProjector resultProjector;
     private final TransactionTemplate transactions;
     private final ResourceMutationCoordinator coordinator;
 
@@ -92,6 +94,7 @@ public class ProjectionReconciler {
             CenterPolicyProjector centerProjector,
             TeachingPolicyProjector teachingProjector,
             GuardianPolicyProjector guardianProjector,
+            ResultPolicyProjector resultProjector,
             PlatformTransactionManager transactionManager,
             ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
@@ -100,6 +103,7 @@ public class ProjectionReconciler {
         this.centerProjector = centerProjector;
         this.teachingProjector = teachingProjector;
         this.guardianProjector = guardianProjector;
+        this.resultProjector = resultProjector;
         this.transactions = new TransactionTemplate(transactionManager);
         this.coordinator = coordinator;
     }
@@ -558,6 +562,9 @@ public class ProjectionReconciler {
                 && isCenterWorkspace(workspaceKeyOf(projection.targetKey()))) {
             return resolveTeachingBundle(projection);
         }
+        if (type == NativePolicyTemplates.TargetType.RESULT) {
+            return resolveResultBundle(projection);
+        }
         for (String scope : type.scopes()) {
             if (desiredHash(projection.targetKey(), scope, List.of())
                     .equals(projection.desiredHash())) {
@@ -678,6 +685,36 @@ public class ProjectionReconciler {
         Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
         for (String scope : managedScopes) {
             List<String> sources = teachingProjector.sourcesFor(projection.targetKey(), scope);
+            if (!sources.isEmpty()) {
+                graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
+            }
+        }
+        return new Resolved.ApplyBundle(graphs, managedScopes);
+    }
+
+    /**
+     * Bundle của một target kết quả thuộc workspace (center hoặc personal): cùng hình dạng với
+     * bundle giảng dạy — desired hash đã ghi phải khớp đúng tập descriptor mà {@link
+     * ResultPolicyProjector} dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa READ của
+     * projector.
+     */
+    private Resolved resolveResultBundle(ProjectionRow projection) {
+        List<String> bundle = resultProjector.bundleDescriptors(projection.targetKey());
+        List<String> managedScopes = ResultPolicyProjector.managedScopes();
+        if (bundle.isEmpty()) {
+            return new Resolved.RetractBundle(managedScopes);
+        }
+        String bundleScope = ResultPolicyProjector.bundleScope();
+        if (!desiredHash(projection.targetKey(), bundleScope, bundle)
+                .equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the result sources rebuilt from durable rows: "
+                            + projection.targetKey());
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : managedScopes) {
+            List<String> sources = resultProjector.sourcesFor(projection.targetKey(), scope);
             if (!sources.isEmpty()) {
                 graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
             }
@@ -811,6 +848,9 @@ public class ProjectionReconciler {
         }
         if (descriptor.startsWith("TEACHING_GROUP")) {
             return new PolicyGraph.Source(TeachingPolicyProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("RESULT_")) {
+            return new PolicyGraph.Source(ResultPolicyProjector.gatesFor(descriptor));
         }
         if (descriptor.startsWith("GUARDIAN_GROUP")) {
             return new PolicyGraph.Source(GuardianPolicyProjector.gatesFor(descriptor));
