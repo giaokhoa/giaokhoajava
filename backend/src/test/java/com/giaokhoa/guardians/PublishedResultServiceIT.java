@@ -17,9 +17,11 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.SubscriptionService;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
@@ -65,6 +67,7 @@ class PublishedResultServiceIT extends GuardianFixture {
 
     @Autowired private PublishedResultService results;
     @Autowired private ResultPolicyProjector resultProjector;
+    @Autowired private SubscriptionService subscriptions;
     @Autowired private KeycloakProvisioningClient directory;
     @Autowired private IdempotencyService idempotency;
     @Autowired private GuardianLinkService links;
@@ -621,11 +624,25 @@ class PublishedResultServiceIT extends GuardianFixture {
     void personalOwnerReadsPublishedResultButOutsiderCannot() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         UUID personalWid = personalWorkspaceOf(center.ownerId());
-        // Personal chưa có kỳ gói: seed một kỳ để seedSubmission có subscription_period_id.
-        // Kỳ phải có trước lần đăng nhập đầu tiên: bootstrap ghi bundle entitlement lúc
-        // đăng nhập, seed sau sẽ làm desired hash cũ thiếu descriptor kỳ gói và reconcile
-        // chết DESIRED_SOURCE_MISMATCH khi tạo lớp.
-        seedSubscription(personalWid, center.ownerId());
+        // Kỳ gói personal phải đi qua đường xác nhận thật của SubscriptionService, không seed
+        // thẳng bằng JDBC: danh tính owner dùng chung cho cả class nên lần đăng nhập đầu tiên
+        // ở một ca kiểm thử trước đã ghi bundle entitlement khi personal chưa có kỳ; đồng bộ
+        // eligibility chỉ ghi bundle khi chưa có projection row nên lần đăng nhập sau không ghi
+        // lại, seed JDBC làm desired đã ghi thiếu descriptor kỳ gói và reconcile chết
+        // DESIRED_SOURCE_MISMATCH khi tạo lớp. Xác nhận qua service ghi kỳ kèm bundle mới
+        // trong cùng operation; chờ operation SUCCEEDED rồi mới tạo lớp.
+        Instant from = OffsetDateTime.now(ZoneOffset.UTC).minusDays(1).toInstant();
+        Instant until = OffsetDateTime.now(ZoneOffset.UTC).plusDays(365).toInstant();
+        AuthorizationOperation confirmOperation =
+                subscriptions.confirm(
+                        center.ownerId(),
+                        personalWid,
+                        from,
+                        until,
+                        "guardian-personal-confirm-" + UUID.randomUUID(),
+                        "personal-confirm-" + UUID.randomUUID(),
+                        "a".repeat(64));
+        awaitOperationSucceeded(jdbc, confirmOperation.getId());
         try (var owner = openSession(center.owner());
                 var student = openSession(center.students().get(0));
                 var outsider = openSession(center.otherParent())) {
