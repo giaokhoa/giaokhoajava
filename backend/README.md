@@ -31,6 +31,25 @@ docker compose -p giaokhoa-test -f infra/compose.test.yaml up -d
 
 Build mặc định không cần PostgreSQL/Keycloak và không chạy integration test. CI chạy riêng profile `integration` sau khi khởi tạo stack TEST, tự tìm test mới thay vì giữ danh sách tên lớp.
 
+CI chia backend thành hai runner có stack TEST riêng: `-Pintegration,it-pure verify`
+và `-Pintegration,e2e-backend verify`. Hai profile là hai tập bù nhau theo tag
+`e2e-backend` đã có từ PR #207; ghép kết quả của cả hai mới đủ suite. Lệnh
+`-Pintegration verify` ở local vẫn chạy toàn bộ. Mỗi runner vẫn chạy `clean verify`
+bằng JDK 25 và toàn bộ quality gates; check `backend` chỉ xanh khi cả hai tập đạt.
+Playwright chia hai project bù nhau trên hai runner độc lập: `chromium-teaching-guardians`
+chạy hai file giảng dạy/phụ huynh, `chromium-core` chạy mọi file còn lại (kể cả file mới).
+Mỗi runner giữ một worker và stack TEST riêng; native Keycloak và OIDC logout chạy một
+lần ở `chromium-core`. Check `integration` chỉ xanh khi cả hai project đạt. XML backend và JSON/trace E2E
+được tải lên cả khi test đạt để đối chiếu số ca và thời gian, tối đa 7 ngày;
+lỗi quota artifact không thay đổi kết quả kiểm thử.
+
+Test khóa kết quả nghiệp vụ và hợp đồng công khai. Test phân trang chạy PostgreSQL
+thật, kiểm tra dữ kiện/trang/cursor thay vì bắt chuỗi SQL. Mỗi yêu cầu có test chịu
+trách nhiệm chính; gộp test trùng phải giữ assertion riêng của các tầng khác như
+cookie/session, HTTP serialization, RLS và browser Back. Fixture có thể dùng chung
+danh tính trong một class, còn center, membership, schema và session của từng ca
+vẫn riêng. Không chia sẻ center để tiết kiệm setup khi mutation làm graph tích lũy.
+
 ## VS Code và agent
 
 Mở thư mục gốc của worktree. `backend/.settings/org.eclipse.jdt.core.prefs` là cấu hình JDT dùng chung; các file `.settings` còn lại do IDE tự sinh được Git ignore. Giữ một `package-info.java` cho mỗi package trong `src/main/java`; không tạo bản trùng trong `src/test/java`. Package chỉ dành cho test có thể khai báo riêng. Với package JPA `@NullUnmarked`, đặt `@NullMarked` trực tiếp trên class test nếu cần kiểm tra null mà không tạo thêm `package-info.java` trùng. Nếu IDE chưa cập nhật, chạy **Java: Update Project Configuration**.

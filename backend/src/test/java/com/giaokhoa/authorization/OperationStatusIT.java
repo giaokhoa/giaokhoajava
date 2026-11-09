@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,6 +44,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@Tag("e2e-backend")
 class OperationStatusIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
     private static final String SCHEMA =

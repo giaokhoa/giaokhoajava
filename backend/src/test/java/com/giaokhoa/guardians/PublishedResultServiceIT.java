@@ -79,10 +79,8 @@ class PublishedResultServiceIT extends GuardianFixture {
         UUID courseId =
                 createCourse(owner, workspaceId, classId, COURSE_NAME, List.of(subject.id()));
         UUID courseSubjectId = courseSubjectId(courseId, subject.id());
-        UUID rosterX = addRoster(owner, workspaceId, classId, center.studentX());
-        UUID rosterY = addRoster(owner, workspaceId, classId, center.studentY());
-        enroll(owner, workspaceId, rosterX, courseSubjectId);
-        enroll(owner, workspaceId, rosterY, courseSubjectId);
+        List<UUID> roster = addRoster(owner, workspaceId, classId, center.studentIds());
+        enroll(owner, workspaceId, roster, courseSubjectId);
         return new Scenario(classId, courseSubjectId, subject);
     }
 
@@ -436,8 +434,6 @@ class PublishedResultServiceIT extends GuardianFixture {
             assertEquals("9.0", first.score());
             assertEquals("Làm tốt", first.comment());
             assertNotNull(first.publishedAt());
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -470,8 +466,6 @@ class PublishedResultServiceIT extends GuardianFixture {
             recordResults(center, publishedId);
             assertDenied(parent, center.workspaceId(), center.studentX());
             assertDenied(otherParent, center.workspaceId(), center.studentX());
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -532,8 +526,6 @@ class PublishedResultServiceIT extends GuardianFixture {
                     1, byTeacher.size(), "Giáo viên đúng môn–khóa đọc được kết quả đã công bố");
             assertDenied(manager, center.workspaceId(), center.studentX());
             assertDenied(homeroom, center.workspaceId(), center.studentX());
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -581,8 +573,6 @@ class PublishedResultServiceIT extends GuardianFixture {
                     false);
             recordResults(center, publishedId);
             assertDenied(parent, center.workspaceId(), center.studentX());
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -624,8 +614,6 @@ class PublishedResultServiceIT extends GuardianFixture {
                     0,
                     listAs(student, center.workspaceId(), center.studentX()).size(),
                     "Học sinh tự đọc khi chưa có kết quả công bố nào thì được danh sách rỗng");
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -676,8 +664,6 @@ class PublishedResultServiceIT extends GuardianFixture {
                     byStudent.size(),
                     "Học sinh còn ghi danh trong personal đọc được kết quả của chính mình");
             assertDenied(outsider, personalWid, center.studentX());
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 }

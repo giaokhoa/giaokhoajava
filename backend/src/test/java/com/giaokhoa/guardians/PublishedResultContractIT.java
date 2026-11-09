@@ -78,10 +78,8 @@ class PublishedResultContractIT extends GuardianFixture {
         UUID courseId =
                 createCourse(owner, workspaceId, classId, COURSE_NAME, List.of(subject.id()));
         UUID courseSubjectId = courseSubjectId(courseId, subject.id());
-        UUID rosterX = addRoster(owner, workspaceId, classId, center.studentX());
-        UUID rosterY = addRoster(owner, workspaceId, classId, center.studentY());
-        enroll(owner, workspaceId, rosterX, courseSubjectId);
-        enroll(owner, workspaceId, rosterY, courseSubjectId);
+        List<UUID> roster = addRoster(owner, workspaceId, classId, center.studentIds());
+        enroll(owner, workspaceId, roster, courseSubjectId);
         return new Scenario(courseSubjectId, subject);
     }
 
@@ -209,8 +207,6 @@ class PublishedResultContractIT extends GuardianFixture {
                     403,
                     response.getStatus(),
                     "Vai trò PARENT trong membership tự nó không mở quyền xem kết quả của con");
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -225,8 +221,6 @@ class PublishedResultContractIT extends GuardianFixture {
                     403,
                     response.getStatus(),
                     "Liên kết đang REQUESTED chưa được duyệt thì chưa đọc được kết quả");
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -308,8 +302,6 @@ class PublishedResultContractIT extends GuardianFixture {
                         raw.contains(hidden),
                         "Phản hồi cho phụ huynh không được chứa trường ẩn: " + hidden);
             }
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -335,8 +327,6 @@ class PublishedResultContractIT extends GuardianFixture {
                     response.getStatus(),
                     "Liên kết với X không mở quyền đọc kết quả của học sinh khác dù kết quả đã"
                             + " công bố");
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -356,8 +346,6 @@ class PublishedResultContractIT extends GuardianFixture {
                     403,
                     response.getStatus(),
                     "Liên kết đã duyệt tại center A không tự cấp quyền đọc kết quả tại center B");
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -401,8 +389,6 @@ class PublishedResultContractIT extends GuardianFixture {
                     getRaw(student, resultsPath(center.workspaceId(), center.studentY()));
             assertEquals(
                     403, other.getStatus(), "Học sinh không đọc được kết quả của học sinh khác");
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
@@ -440,8 +426,6 @@ class PublishedResultContractIT extends GuardianFixture {
                     after.getStatus(),
                     "Sau khi gỡ liên kết, lần đọc tiếp theo bị chặn dù kết quả vẫn còn cho người"
                             + " có thẩm quyền khác");
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 }

@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
 const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? "http://localhost:3001";
+const teachingAndGuardians = /(?:guardian-results|teaching-administration)\.spec\.ts$/;
 if (process.env.CI && !appOrigin) {
   throw new Error("CI phải đặt NATIVE_GATE_APP_ORIGIN để chạy E2E thật, không được bỏ qua gate.");
 }
@@ -11,10 +12,17 @@ if (appOrigin && (appOrigin !== "http://127.0.0.1:8080" || frontendOrigin !== ap
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalTimeout: process.env.CI ? 20 * 60_000 : 0,
+  reporter: process.env.CI
+    ? [["line"], ["json", { outputFile: "playwright-report/results.json" }]]
+    : "list",
   // Các file dùng chung realm TEST; test race tự tạo request đồng thời trong từng ca.
   workers: 1,
   use: { baseURL: frontendOrigin, trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium-core", testIgnore: teachingAndGuardians, use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium-teaching-guardians", testMatch: teachingAndGuardians, use: { ...devices["Desktop Chrome"] } },
+  ],
   webServer: [
     ...(appOrigin ? [{
       command: "bash ../infra/testing/run-backend.sh",

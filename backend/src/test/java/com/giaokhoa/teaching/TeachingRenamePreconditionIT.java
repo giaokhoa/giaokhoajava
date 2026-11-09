@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +28,7 @@ import tools.jackson.databind.JsonNode;
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@Tag("e2e-backend")
 class TeachingRenamePreconditionIT extends TeachingFixture {
     private static final String SCHEMA =
             "teaching_rename_" + UUID.randomUUID().toString().replace("-", "");

@@ -32,6 +32,8 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -67,6 +69,7 @@ import tools.jackson.databind.json.JsonMapper;
  * theo hợp đồng. Dựng theo cùng mẫu với fixture giảng dạy; không chứa quyết định quyền nào, không
  * chứa test.
  */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 abstract class GuardianFixture extends IntegrationEnvironment {
     protected static final JsonMapper JSON = new JsonMapper();
     protected static final ParameterizedTypeReference<Map<String, Object>> MAP =
@@ -121,25 +124,23 @@ abstract class GuardianFixture extends IntegrationEnvironment {
     }
 
     protected GuardianCenter seedGuardianCenter() {
-        KeycloakLogin ownerLogin = createVerifiedUser("guardian-owner");
-        KeycloakLogin managerLogin = createVerifiedUser("guardian-manager");
-        KeycloakLogin homeroomLogin = createVerifiedUser("guardian-homeroom");
-        KeycloakLogin teacherLogin = createVerifiedUser("guardian-teacher");
-        KeycloakLogin parentLogin = createVerifiedUser("guardian-parent");
-        KeycloakLogin otherParentLogin = createVerifiedUser("guardian-parent-b");
+        KeycloakLogin ownerLogin = sharedLogin("guardian-owner");
+        KeycloakLogin managerLogin = sharedLogin("guardian-manager");
+        KeycloakLogin homeroomLogin = sharedLogin("guardian-homeroom");
+        KeycloakLogin teacherLogin = sharedLogin("guardian-teacher");
+        KeycloakLogin parentLogin = sharedLogin("guardian-parent");
+        KeycloakLogin otherParentLogin = sharedLogin("guardian-parent-b");
         List<KeycloakLogin> studentLogins =
-                List.of(
-                        createVerifiedUser("guardian-student-x"),
-                        createVerifiedUser("guardian-student-y"));
-        UUID ownerId = seedAccount(ownerLogin);
-        UUID managerId = seedAccount(managerLogin);
-        UUID homeroomId = seedAccount(homeroomLogin);
-        UUID teacherId = seedAccount(teacherLogin);
-        UUID parentId = seedAccount(parentLogin);
-        UUID otherParentId = seedAccount(otherParentLogin);
+                List.of(sharedLogin("guardian-student-x"), sharedLogin("guardian-student-y"));
+        UUID ownerId = sharedAccount(ownerLogin);
+        UUID managerId = sharedAccount(managerLogin);
+        UUID homeroomId = sharedAccount(homeroomLogin);
+        UUID teacherId = sharedAccount(teacherLogin);
+        UUID parentId = sharedAccount(parentLogin);
+        UUID otherParentId = sharedAccount(otherParentLogin);
         List<UUID> studentIds = new ArrayList<>();
         for (KeycloakLogin student : studentLogins) {
-            studentIds.add(seedAccount(student));
+            studentIds.add(sharedAccount(student));
         }
         UUID workspaceId = seedCenter(ownerId);
         addMembership(workspaceId, managerId, "MANAGER");
@@ -179,15 +180,22 @@ abstract class GuardianFixture extends IntegrationEnvironment {
         return workspaceId;
     }
 
-    protected void deleteGuardianCenter(GuardianCenter center) {
-        deleteUser(center.owner().subject());
-        deleteUser(center.manager().subject());
-        deleteUser(center.homeroom().subject());
-        deleteUser(center.teacher().subject());
-        deleteUser(center.parent().subject());
-        deleteUser(center.otherParent().subject());
-        for (KeycloakLogin student : center.students()) {
-            deleteUser(student.subject());
+    // Chỉ dùng chung danh tính trong một class; mỗi ca vẫn có center/membership/nhóm quyền riêng.
+    private final Map<String, KeycloakLogin> sharedLogins = new HashMap<>();
+    private final Map<String, UUID> sharedAccounts = new HashMap<>();
+
+    private KeycloakLogin sharedLogin(String prefix) {
+        return sharedLogins.computeIfAbsent(prefix, this::createVerifiedUser);
+    }
+
+    private UUID sharedAccount(KeycloakLogin login) {
+        return sharedAccounts.computeIfAbsent(login.subject(), _ -> seedAccount(login));
+    }
+
+    @AfterAll
+    void deleteSharedGuardianUsers() {
+        for (KeycloakLogin login : sharedLogins.values()) {
+            deleteUser(login.subject());
         }
     }
 
@@ -333,25 +341,45 @@ abstract class GuardianFixture extends IntegrationEnvironment {
     protected UUID addRoster(
             RealSession session, UUID workspaceId, UUID classId, UUID studentUserId)
             throws Exception {
+        return addRoster(session, workspaceId, classId, List.of(studentUserId)).getFirst();
+    }
+
+    protected List<UUID> addRoster(
+            RealSession session, UUID workspaceId, UUID classId, List<UUID> studentUserIds)
+            throws Exception {
+        String students =
+                studentUserIds.stream()
+                        .map(id -> "\"" + id + "\"")
+                        .collect(Collectors.joining(","));
         UUID operationId =
                 postOperation(
                         session,
                         "/api/workspaces/" + workspaceId + "/classes/" + classId + "/students",
-                        "{\"studentUserIds\":[\"" + studentUserId + "\"]}");
+                        "{\"studentUserIds\":[" + students + "]}");
         awaitOperationSucceeded(jdbc, operationId);
-        return classStudentId(classId, studentUserId);
+        return studentUserIds.stream().map(id -> classStudentId(classId, id)).toList();
     }
 
     protected void enroll(
             RealSession session, UUID workspaceId, UUID classStudentId, UUID courseSubjectId)
             throws Exception {
+        enroll(session, workspaceId, List.of(classStudentId), courseSubjectId);
+    }
+
+    protected void enroll(
+            RealSession session, UUID workspaceId, List<UUID> classStudentIds, UUID courseSubjectId)
+            throws Exception {
+        String students =
+                classStudentIds.stream()
+                        .map(id -> "\"" + id + "\"")
+                        .collect(Collectors.joining(","));
         UUID operationId =
                 postOperation(
                         session,
                         "/api/workspaces/" + workspaceId + "/enrollments",
-                        "{\"classStudentIds\":[\""
-                                + classStudentId
-                                + "\"],\"courseSubjectIds\":[\""
+                        "{\"classStudentIds\":["
+                                + students
+                                + "],\"courseSubjectIds\":[\""
                                 + courseSubjectId
                                 + "\"]}");
         awaitOperationSucceeded(jdbc, operationId);

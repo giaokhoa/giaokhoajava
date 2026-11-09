@@ -3,7 +3,6 @@ package com.giaokhoa.resources;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.resources.model.Resource;
 import com.giaokhoa.resources.model.ResourceVersion;
 import com.giaokhoa.support.IntegrationEnvironment;
@@ -16,18 +15,24 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.transaction.annotation.Transactional;
 
 // Schema riêng cho lớp test vì code của branch chưa biết migration V006 đang nằm ở schema mặc
 // định của DB TEST dùng chung; không được chạm dữ liệu migration của schema mặc định.
-@SpringBootTest
-@Transactional
+// Slice JPA của Boot 4 trên PostgreSQL thật của stack TEST: replace = NONE giữ nguyên
+// datasource đã khai (không thay bằng embedded); Flyway không thuộc slice nên phải import
+// tường minh để migration chạy trước khi Hibernate validate schema. Slice không nạp
+// worker/scheduler nên không còn actor nào khóa chéo với DROP SCHEMA ở @AfterAll.
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ImportAutoConfiguration(FlywayAutoConfiguration.class)
 class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "resource_primitives_" + UUID.randomUUID().toString().replace("-", "");
@@ -41,12 +46,6 @@ class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
     static void removeSchema(@Autowired JdbcTemplate jdbc) {
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
-
-    // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua JDBC/entity
-    // đồng bộ), nhưng worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong
-    // khi @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và
-    // PostgreSQL hủy DROP bằng deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
-    @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;

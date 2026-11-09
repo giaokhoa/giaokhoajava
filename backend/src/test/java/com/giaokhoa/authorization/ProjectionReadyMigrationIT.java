@@ -7,41 +7,20 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import java.util.Objects;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
 
-@SpringBootTest
+// Chỉ kiểm chứng migration Flyway bằng JDBC thuần trên schema riêng tự tạo/dọn trong thân test;
+// không dùng bean Spring nào nên không dựng ApplicationContext.
 class ProjectionReadyMigrationIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "projection_migration_" + UUID.randomUUID().toString().replace("-", "");
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void cleanSchema(@Autowired ApplicationContext context) {
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
-
     @Test
     void upgradeFencesLegacyNullHashesAndTheirDependentsWithoutOpeningUnverifiedRows() {
         String schema = "ready_hash_upgrade_" + UUID.randomUUID().toString().replace("-", "");
-        String url =
-                Objects.requireNonNull(System.getenv("TEST_DATABASE_URL"))
-                        + "?currentSchema="
-                        + schema;
+        String url = testDatabaseUrl() + "?currentSchema=" + schema;
         var source =
                 new DriverManagerDataSource(
                         url,

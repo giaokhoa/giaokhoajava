@@ -14,6 +14,12 @@
 - Phải xử lý toàn bộ lỗi **Must fix** trước khi merge và review lại phần đã sửa. Không merge nếu review chưa hoàn tất hoặc kết luận chưa đủ điều kiện merge.
 - Báo cáo kết luận review trước khi thực hiện merge. CI chạy thành công không thay thế cho bước review này.
 
+## Thiết kế kiểm thử
+- Khóa kết quả nghiệp vụ, hành vi quan sát được và hợp đồng công khai. Refactor giữ nguyên hành vi không được buộc đổi assertion chỉ vì đổi helper, thứ tự gọi nội bộ hoặc cú pháp SQL.
+- Test SQL phải chứng minh dữ kiện trả về và các ràng buộc trên PostgreSQL thật; kiểm tra chuỗi SQL không thay thế kiểm chứng phân trang, scope hoặc RLS.
+- Gộp test trùng theo yêu cầu và lỗi mà test bắt được, cập nhật bảng nghiệm thu; giữ những assertion riêng của transaction, giao thức, session và browser. Số test hay coverage không thay thế bằng chứng hành vi.
+- Fixture chỉ dựng tiền đề cần cho ca kiểm thử. Tái dùng danh tính phải giữ cô lập dữ kiện và phiên; thao tác đang được kiểm thử luôn đi qua đường chạy thật của tầng đó.
+
 ## Điều phối triển khai
 
 - Ở đầu mỗi phiên và trước mỗi story mới, đọc lại `origin/main`, parent issue và hướng dẫn điều phối được liên kết. Nếu thay đổi hướng dẫn còn ở PR chưa merge, đọc đúng commit tài liệu được parent liên kết; không giả định `main` đã chứa quy tắc mới.

@@ -4,49 +4,72 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Objects;
 import java.util.UUID;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
 
-@SpringBootTest
-@Transactional
+// Harness tối thiểu: chỉ kiểm chứng schema/bảng bằng JDBC thuần trên schema riêng nên tự chạy
+// Flyway và tự cấp JdbcTemplate, không dựng ApplicationContext của ứng dụng. Mỗi test vẫn chạy
+// trong một giao dịch và rollback ở cuối như khi dùng @Transactional của Spring Test.
 class DirectorySchemaIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "directory_schema_" + UUID.randomUUID().toString().replace("-", "");
 
-    // Schema cô lập riêng thay vì public dùng chung: dữ kiện của class này không còn lẫn với
-    // class khác và không cần ai RESET public sau lượt chạy.
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
+    private static JdbcTemplate jdbc;
+    private static DataSourceTransactionManager txManager;
+    private TransactionStatus txStatus;
+
+    @BeforeAll
+    static void migrateSchema() {
+        var migrator =
+                new DriverManagerDataSource(
+                        testDatabaseUrl(),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_USERNAME")),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_PASSWORD")));
+        Flyway.configure()
+                .dataSource(migrator)
+                .schemas(SCHEMA)
+                .defaultSchema(SCHEMA)
+                .load()
+                .migrate();
+        var source =
+                new DriverManagerDataSource(
+                        testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_USERNAME")),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_PASSWORD")));
+        jdbc = new JdbcTemplate(source);
+        txManager = new DataSourceTransactionManager(source);
+    }
+
+    @BeforeEach
+    void beginTestTransaction() {
+        txStatus = txManager.getTransaction(new DefaultTransactionDefinition());
+    }
+
+    @AfterEach
+    void rollbackTestTransaction() {
+        txManager.rollback(txStatus);
     }
 
     @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
+    static void removeSchema() {
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
-
-    // Worker thật chạy theo lịch sẽ mở giao dịch trên chính schema cô lập này trong khi
-    // @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL
-    // hủy DROP bằng deadlock (cùng cơ chế BootstrapProfileIT). Mọi khẳng định của class này
-    // đều đồng bộ nên mock worker không đổi ý nghĩa kiểm thử.
-    @MockitoBean ProjectionWorker scheduledWorker;
-
-    @Autowired JdbcTemplate jdbc;
 
     @Test
     void bootstrapsCenterWithOneOwnerAndAdditionalRoles() {

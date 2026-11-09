@@ -20,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +32,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 /** Hồi quy eligibility và thứ tự kiểm tra role/khóa workspace với phiên Keycloak thật. */
 @SpringBootTest
+@Tag("e2e-backend")
 class TeachingAccessIT extends TeachingFixture {
     private static final String SCHEMA =
             "teaching_access_" + UUID.randomUUID().toString().replace("-", "");

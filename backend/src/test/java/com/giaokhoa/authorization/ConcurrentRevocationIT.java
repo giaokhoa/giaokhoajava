@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.awaitility.core.ConditionTimeoutException;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -52,6 +53,7 @@ import tools.jackson.databind.json.JsonMapper;
 /** Hợp đồng thu hồi: thứ tự commit của PostgreSQL cộng các hợp đồng HTTP Foundation. */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@Tag("e2e-backend")
 class ConcurrentRevocationIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
     private static final String SCHEMA =

@@ -80,80 +80,76 @@ class GuardianLinkServiceIT extends GuardianFixture {
     @Test
     void lifecycleSyncsGuardianGroupMembershipThroughOperations() {
         GuardianCenter center = seedGuardianCenter();
-        try {
-            String group =
-                    NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
-            awaitOperationSucceeded(
-                    jdbc,
-                    links.requestLink(
-                                    center.parentId(),
-                                    center.workspaceId(),
-                                    center.studentX(),
-                                    key(),
-                                    hash())
-                            .getId());
-            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
-            assertEquals("REQUESTED", requested.state());
-            assertEquals(0, requested.version());
-            assertFalse(
-                    directory.isRealmGroupMember(center.parent().subject(), group),
-                    "Request chưa duyệt thì parent chưa vào guardian group");
+        String group =
+                NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
+        awaitOperationSucceeded(
+                jdbc,
+                links.requestLink(
+                                center.parentId(),
+                                center.workspaceId(),
+                                center.studentX(),
+                                key(),
+                                hash())
+                        .getId());
+        LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+        assertEquals("REQUESTED", requested.state());
+        assertEquals(0, requested.version());
+        assertFalse(
+                directory.isRealmGroupMember(center.parent().subject(), group),
+                "Request chưa duyệt thì parent chưa vào guardian group");
 
-            awaitOperationSucceeded(
-                    jdbc,
-                    links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    "APPROVE",
-                                    requested.version(),
-                                    key(),
-                                    hash())
-                            .getId());
-            LinkSnapshot approved = linkSnapshot(center.workspaceId(), center.studentX());
-            assertEquals("APPROVED", approved.state());
-            assertEquals(1, approved.version());
-            assertEquals(
-                    center.managerId(),
-                    jdbc.queryForObject(
-                            "SELECT approved_by FROM guardian_link WHERE id = ?",
-                            UUID.class,
-                            approved.id()),
-                    "Duyệt ghi đúng người quyết định lên hàng link");
-            assertTrue(
-                    directory.isRealmGroupMember(center.parent().subject(), group),
-                    "Sau operation duyệt SUCCEEDED, parent ở trong guardian group của đúng con");
+        awaitOperationSucceeded(
+                jdbc,
+                links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "APPROVE",
+                                requested.version(),
+                                key(),
+                                hash())
+                        .getId());
+        LinkSnapshot approved = linkSnapshot(center.workspaceId(), center.studentX());
+        assertEquals("APPROVED", approved.state());
+        assertEquals(1, approved.version());
+        assertEquals(
+                center.managerId(),
+                jdbc.queryForObject(
+                        "SELECT approved_by FROM guardian_link WHERE id = ?",
+                        UUID.class,
+                        approved.id()),
+                "Duyệt ghi đúng người quyết định lên hàng link");
+        assertTrue(
+                directory.isRealmGroupMember(center.parent().subject(), group),
+                "Sau operation duyệt SUCCEEDED, parent ở trong guardian group của đúng con");
 
-            awaitOperationSucceeded(
-                    jdbc,
-                    links.revokeLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    approved.id(),
-                                    key(),
-                                    hash())
-                            .getId());
-            LinkSnapshot revoked = linkSnapshot(center.workspaceId(), center.studentX());
-            assertEquals("REVOKED", revoked.state());
-            assertNotNull(
-                    jdbc.queryForObject(
-                            "SELECT revoked_at FROM guardian_link WHERE id = ?",
-                            OffsetDateTime.class,
-                            revoked.id()),
-                    "Gỡ link ghi revoked_at, giữ nguyên lịch sử");
-            assertFalse(
-                    directory.isRealmGroupMember(center.parent().subject(), group),
-                    "Sau operation gỡ SUCCEEDED, parent rời guardian group ngay");
-            assertEquals(
-                    3,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM audit_event WHERE target_id = ?",
-                            Integer.class,
-                            approved.id()),
-                    "Mỗi mutation vòng đời ghi một audit event gắn operation của nó");
-        } finally {
-            deleteGuardianCenter(center);
-        }
+        awaitOperationSucceeded(
+                jdbc,
+                links.revokeLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                approved.id(),
+                                key(),
+                                hash())
+                        .getId());
+        LinkSnapshot revoked = linkSnapshot(center.workspaceId(), center.studentX());
+        assertEquals("REVOKED", revoked.state());
+        assertNotNull(
+                jdbc.queryForObject(
+                        "SELECT revoked_at FROM guardian_link WHERE id = ?",
+                        OffsetDateTime.class,
+                        revoked.id()),
+                "Gỡ link ghi revoked_at, giữ nguyên lịch sử");
+        assertFalse(
+                directory.isRealmGroupMember(center.parent().subject(), group),
+                "Sau operation gỡ SUCCEEDED, parent rời guardian group ngay");
+        assertEquals(
+                3,
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM audit_event WHERE target_id = ?",
+                        Integer.class,
+                        approved.id()),
+                "Mỗi mutation vòng đời ghi một audit event gắn operation của nó");
     }
 
     @Test
@@ -215,277 +211,256 @@ class GuardianLinkServiceIT extends GuardianFixture {
         } finally {
             deleteUser(outsider.subject());
             deleteUser(otherOwner.subject());
-            deleteGuardianCenter(center);
         }
     }
 
     @Test
     void decisionChecksVersionStateAndRejectionIsTerminal() {
         GuardianCenter center = seedGuardianCenter();
-        try {
-            links.requestLink(
-                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
-            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+        links.requestLink(
+                center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+        LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
 
-            HttpProblemException invalid =
-                    problemOf(() ->
-                            links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    "MAYBE",
-                                    requested.version(),
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.BAD_REQUEST, invalid.getStatus());
-            assertEquals("GUARDIAN_DECISION_INVALID", invalid.getCode());
+        HttpProblemException invalid =
+                problemOf(() ->
+                        links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "MAYBE",
+                                requested.version(),
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.BAD_REQUEST, invalid.getStatus());
+        assertEquals("GUARDIAN_DECISION_INVALID", invalid.getCode());
 
-            HttpProblemException stale =
-                    problemOf(() ->
-                            links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    "APPROVE",
-                                    requested.version() + 100,
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.CONFLICT, stale.getStatus());
-            assertEquals("VERSION_CONFLICT", stale.getCode());
-            assertEquals(
-                    "REQUESTED",
-                    linkSnapshot(center.workspaceId(), center.studentX()).state(),
-                    "Quyết định xung đột version không đổi trạng thái link");
+        HttpProblemException stale =
+                problemOf(() ->
+                        links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "APPROVE",
+                                requested.version() + 100,
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.CONFLICT, stale.getStatus());
+        assertEquals("VERSION_CONFLICT", stale.getCode());
+        assertEquals(
+                "REQUESTED",
+                linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                "Quyết định xung đột version không đổi trạng thái link");
 
-            HttpProblemException revokeRequested =
-                    problemOf(() ->
-                            links.revokeLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.CONFLICT, revokeRequested.getStatus());
-            assertEquals("GUARDIAN_LINK_NOT_APPROVED", revokeRequested.getCode());
+        HttpProblemException revokeRequested =
+                problemOf(() ->
+                        links.revokeLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.CONFLICT, revokeRequested.getStatus());
+        assertEquals("GUARDIAN_LINK_NOT_APPROVED", revokeRequested.getCode());
 
-            links.decideLink(
-                    center.managerId(),
-                    center.workspaceId(),
-                    requested.id(),
-                    "REJECT",
-                    requested.version(),
-                    key(),
-                    hash());
-            LinkSnapshot rejected = linkSnapshot(center.workspaceId(), center.studentX());
-            assertEquals("REJECTED", rejected.state());
-            HttpProblemException decideAgain =
-                    problemOf(() ->
-                            links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    rejected.id(),
-                                    "APPROVE",
-                                    rejected.version(),
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.CONFLICT, decideAgain.getStatus());
-            assertEquals("GUARDIAN_LINK_ALREADY_DECIDED", decideAgain.getCode());
+        links.decideLink(
+                center.managerId(),
+                center.workspaceId(),
+                requested.id(),
+                "REJECT",
+                requested.version(),
+                key(),
+                hash());
+        LinkSnapshot rejected = linkSnapshot(center.workspaceId(), center.studentX());
+        assertEquals("REJECTED", rejected.state());
+        HttpProblemException decideAgain =
+                problemOf(() ->
+                        links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                rejected.id(),
+                                "APPROVE",
+                                rejected.version(),
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.CONFLICT, decideAgain.getStatus());
+        assertEquals("GUARDIAN_LINK_ALREADY_DECIDED", decideAgain.getCode());
 
-            links.requestLink(
-                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
-            LinkSnapshot renewed = linkSnapshot(center.workspaceId(), center.studentX());
-            assertEquals("REQUESTED", renewed.state());
-            assertNotEquals(
-                    rejected.id(),
-                    renewed.id(),
-                    "Sau từ chối, request mới là hàng mới chứ không hồi sinh hàng đã đóng");
+        links.requestLink(
+                center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+        LinkSnapshot renewed = linkSnapshot(center.workspaceId(), center.studentX());
+        assertEquals("REQUESTED", renewed.state());
+        assertNotEquals(
+                rejected.id(),
+                renewed.id(),
+                "Sau từ chối, request mới là hàng mới chứ không hồi sinh hàng đã đóng");
 
-            HttpProblemException unknown =
-                    problemOf(() ->
-                            links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    UUID.randomUUID(),
-                                    "APPROVE",
-                                    1L,
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.NOT_FOUND, unknown.getStatus());
-            assertEquals("GUARDIAN_LINK_NOT_FOUND", unknown.getCode());
+        HttpProblemException unknown =
+                problemOf(() ->
+                        links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                UUID.randomUUID(),
+                                "APPROVE",
+                                1L,
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.NOT_FOUND, unknown.getStatus());
+        assertEquals("GUARDIAN_LINK_NOT_FOUND", unknown.getCode());
 
-            List<GuardianLinkView> ownLinks =
-                    links.listLinksOfParent(center.workspaceId(), center.parentId());
-            assertEquals(2, ownLinks.size(), "Parent thấy cả link đã từ chối và link mới của mình");
-            List<GuardianLinkView> review = links.listLinksForReview(center.workspaceId());
-            assertEquals(1, review.size(), "Danh sách cần xử lý chỉ còn link đang chờ duyệt");
-            assertEquals(renewed.id(), review.getFirst().id());
-        } finally {
-            deleteGuardianCenter(center);
-        }
+        List<GuardianLinkView> ownLinks =
+                links.listLinksOfParent(center.workspaceId(), center.parentId());
+        assertEquals(2, ownLinks.size(), "Parent thấy cả link đã từ chối và link mới của mình");
+        List<GuardianLinkView> review = links.listLinksForReview(center.workspaceId());
+        assertEquals(1, review.size(), "Danh sách cần xử lý chỉ còn link đang chờ duyệt");
+        assertEquals(renewed.id(), review.getFirst().id());
     }
 
     @Test
     void teacherCannotDecideOrRevokeLinkThroughServiceDirectly() {
         GuardianCenter center = seedGuardianCenter();
-        try {
-            links.requestLink(
-                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
-            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+        links.requestLink(
+                center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+        LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
 
-            HttpProblemException decide =
-                    problemOf(() ->
-                            links.decideLink(
-                                    center.teacherId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    "APPROVE",
-                                    requested.version(),
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.FORBIDDEN, decide.getStatus());
-            assertEquals("PERMISSION_DENIED", decide.getCode());
-            assertEquals(
-                    "REQUESTED",
-                    linkSnapshot(center.workspaceId(), center.studentX()).state(),
-                    "Giáo viên quyết trực tiếp không đổi trạng thái link");
+        HttpProblemException decide =
+                problemOf(() ->
+                        links.decideLink(
+                                center.teacherId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "APPROVE",
+                                requested.version(),
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.FORBIDDEN, decide.getStatus());
+        assertEquals("PERMISSION_DENIED", decide.getCode());
+        assertEquals(
+                "REQUESTED",
+                linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                "Giáo viên quyết trực tiếp không đổi trạng thái link");
 
-            HttpProblemException revoke =
-                    problemOf(() ->
-                            links.revokeLink(
-                                    center.teacherId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.FORBIDDEN, revoke.getStatus());
-            assertEquals("PERMISSION_DENIED", revoke.getCode());
-        } finally {
-            deleteGuardianCenter(center);
-        }
+        HttpProblemException revoke =
+                problemOf(() ->
+                        links.revokeLink(
+                                center.teacherId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.FORBIDDEN, revoke.getStatus());
+        assertEquals("PERMISSION_DENIED", revoke.getCode());
     }
 
     @Test
     void removingParentRoleClosesApprovedLinkInSameOperation() {
         GuardianCenter center = seedGuardianCenter();
-        try {
-            String group =
-                    NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
-            links.requestLink(
-                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
-            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
-            awaitOperationSucceeded(
-                    jdbc,
-                    links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    "APPROVE",
-                                    requested.version(),
-                                    key(),
-                                    hash())
-                            .getId());
-            assertTrue(directory.isRealmGroupMember(center.parent().subject(), group));
+        String group =
+                NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
+        links.requestLink(
+                center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+        LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+        awaitOperationSucceeded(
+                jdbc,
+                links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "APPROVE",
+                                requested.version(),
+                                key(),
+                                hash())
+                        .getId());
+        assertTrue(directory.isRealmGroupMember(center.parent().subject(), group));
 
-            UUID membershipId = membershipIdOf(center.workspaceId(), center.parentId());
-            awaitOperationSucceeded(
-                    jdbc,
-                    centers.replaceRoles(
-                                    center.ownerId(),
-                                    center.workspaceId(),
-                                    membershipId,
-                                    Set.of(),
-                                    "\"" + membershipVersionOf(membershipId) + "\"",
-                                    key(),
-                                    hash())
-                            .getId());
-            assertEquals(
-                    "REVOKED",
-                    linkSnapshot(center.workspaceId(), center.studentX()).state(),
-                    "Gỡ role PARENT đóng link đã duyệt trong cùng operation");
-            assertFalse(
-                    directory.isRealmGroupMember(center.parent().subject(), group),
-                    "Guardian group rời parent ngay khi operation gỡ role SUCCEEDED");
-        } finally {
-            deleteGuardianCenter(center);
-        }
+        UUID membershipId = membershipIdOf(center.workspaceId(), center.parentId());
+        awaitOperationSucceeded(
+                jdbc,
+                centers.replaceRoles(
+                                center.ownerId(),
+                                center.workspaceId(),
+                                membershipId,
+                                Set.of(),
+                                "\"" + membershipVersionOf(membershipId) + "\"",
+                                key(),
+                                hash())
+                        .getId());
+        assertEquals(
+                "REVOKED",
+                linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                "Gỡ role PARENT đóng link đã duyệt trong cùng operation");
+        assertFalse(
+                directory.isRealmGroupMember(center.parent().subject(), group),
+                "Guardian group rời parent ngay khi operation gỡ role SUCCEEDED");
     }
 
     @Test
     void revokingStudentMembershipClosesApprovedLinkInSameOperation() {
         GuardianCenter center = seedGuardianCenter();
-        try {
-            String group =
-                    NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
-            links.requestLink(
-                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
-            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
-            awaitOperationSucceeded(
-                    jdbc,
-                    links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    "APPROVE",
-                                    requested.version(),
-                                    key(),
-                                    hash())
-                            .getId());
-            assertTrue(directory.isRealmGroupMember(center.parent().subject(), group));
+        String group =
+                NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
+        links.requestLink(
+                center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+        LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+        awaitOperationSucceeded(
+                jdbc,
+                links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "APPROVE",
+                                requested.version(),
+                                key(),
+                                hash())
+                        .getId());
+        assertTrue(directory.isRealmGroupMember(center.parent().subject(), group));
 
-            awaitOperationSucceeded(
-                    jdbc,
-                    centers.revokeMembership(
-                                    center.ownerId(),
-                                    center.workspaceId(),
-                                    membershipIdOf(center.workspaceId(), center.studentX()),
-                                    key(),
-                                    hash())
-                            .getId());
-            assertEquals(
-                    "REVOKED",
-                    linkSnapshot(center.workspaceId(), center.studentX()).state(),
-                    "Thu hồi membership của học sinh đóng link đã duyệt trong cùng operation");
-            assertFalse(directory.isRealmGroupMember(center.parent().subject(), group));
-        } finally {
-            deleteGuardianCenter(center);
-        }
+        awaitOperationSucceeded(
+                jdbc,
+                centers.revokeMembership(
+                                center.ownerId(),
+                                center.workspaceId(),
+                                membershipIdOf(center.workspaceId(), center.studentX()),
+                                key(),
+                                hash())
+                        .getId());
+        assertEquals(
+                "REVOKED",
+                linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                "Thu hồi membership của học sinh đóng link đã duyệt trong cùng operation");
+        assertFalse(directory.isRealmGroupMember(center.parent().subject(), group));
     }
 
     @Test
     void approvalRechecksPrerequisitesAtDecisionTime() {
         GuardianCenter center = seedGuardianCenter();
-        try {
-            links.requestLink(
-                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
-            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
-            awaitOperationSucceeded(
-                    jdbc,
-                    centers.revokeMembership(
-                                    center.ownerId(),
-                                    center.workspaceId(),
-                                    membershipIdOf(center.workspaceId(), center.parentId()),
-                                    key(),
-                                    hash())
-                            .getId());
-            assertEquals(
-                    "REQUESTED",
-                    linkSnapshot(center.workspaceId(), center.studentX()).state(),
-                    "Request chờ duyệt chưa phải nguồn nên không bị đóng theo membership");
-            HttpProblemException approve =
-                    problemOf(() ->
-                            links.decideLink(
-                                    center.managerId(),
-                                    center.workspaceId(),
-                                    requested.id(),
-                                    "APPROVE",
-                                    requested.version(),
-                                    key(),
-                                    hash()));
-            assertEquals(HttpStatus.CONFLICT, approve.getStatus());
-            assertEquals("GUARDIAN_PREREQUISITE_NOT_CURRENT", approve.getCode());
-        } finally {
-            deleteGuardianCenter(center);
-        }
+        links.requestLink(
+                center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+        LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+        awaitOperationSucceeded(
+                jdbc,
+                centers.revokeMembership(
+                                center.ownerId(),
+                                center.workspaceId(),
+                                membershipIdOf(center.workspaceId(), center.parentId()),
+                                key(),
+                                hash())
+                        .getId());
+        assertEquals(
+                "REQUESTED",
+                linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                "Request chờ duyệt chưa phải nguồn nên không bị đóng theo membership");
+        HttpProblemException approve =
+                problemOf(() ->
+                        links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "APPROVE",
+                                requested.version(),
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.CONFLICT, approve.getStatus());
+        assertEquals("GUARDIAN_PREREQUISITE_NOT_CURRENT", approve.getCode());
     }
 
     @Test
@@ -619,7 +594,6 @@ class GuardianLinkServiceIT extends GuardianFixture {
             }
         } finally {
             deleteUser(otherOwner.subject());
-            deleteGuardianCenter(center);
         }
     }
 

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.model.AuthorizationProjection;
-import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.persistence.EntityManager;
 import java.util.Arrays;
@@ -15,16 +14,22 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.transaction.annotation.Transactional;
 
-@SpringBootTest
-@Transactional
+// Slice JPA của Boot 4 trên PostgreSQL thật của stack TEST: replace = NONE giữ nguyên
+// datasource đã khai (không thay bằng embedded); Flyway không thuộc slice nên phải import
+// tường minh để migration chạy trước khi Hibernate validate schema. Slice không nạp
+// worker/scheduler nên không còn actor nào khóa chéo với DROP SCHEMA ở @AfterAll.
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ImportAutoConfiguration(FlywayAutoConfiguration.class)
 class AuthorizationControlSchemaIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "authorization_control_" + UUID.randomUUID().toString().replace("-", "");
@@ -40,12 +45,6 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
     static void removeSchema(@Autowired JdbcTemplate jdbc) {
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
-
-    // Worker thật chạy theo lịch sẽ mở giao dịch trên chính schema cô lập này trong khi
-    // @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL
-    // hủy DROP bằng deadlock (cùng cơ chế BootstrapProfileIT). Mọi khẳng định của class này
-    // đều đồng bộ nên mock worker không đổi ý nghĩa kiểm thử.
-    @MockitoBean ProjectionWorker scheduledWorker;
 
     private static final String HASH_A = "a".repeat(64);
     private static final String HASH_B = "b".repeat(64);
