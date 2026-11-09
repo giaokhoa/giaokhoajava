@@ -16,20 +16,26 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.giaokhoa.authorization.fence.AuthorizationFence;
+import com.giaokhoa.authorization.fence.DependencyManifestResolver;
 import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.DesiredProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
+import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
+import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
+import com.giaokhoa.support.ProjectionFaultInjection;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -52,6 +58,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -80,6 +87,8 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
     @Autowired ProjectionReconciler reconciler;
     @Autowired AuthorizationOperationService operations;
     @Autowired IdentityEligibilitySynchronizer eligibility;
+    @Autowired AuthorizationFence fence;
+    @Autowired DependencyManifestResolver resolver;
     @MockitoBean PolicyGraphWriter writer;
     @MockitoBean KeycloakProvisioningClient directory;
     @MockitoBean CurrentIdentityClient identities;
@@ -273,6 +282,177 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         }
     }
 
+    @Test
+    void aCrashAfterTheGraphIsAppliedRetriesTheSameGraphInsteadOfDuplicatingTheGrant()
+            throws Exception {
+        Actor actor = actor();
+        seedWorkspace(actor, List.of());
+        reconciler.reconcilePartition(actor.workspacePartition());
+        stubVerifiedIdentity(actor, true);
+        AuthorizationOperation initial =
+                eligibility.synchronizeEligibility(actor.user()).orElseThrow();
+        worker().poll();
+        assertEquals("SUCCEEDED", operationState(initial.getId()));
+        assertEquals("READY", state(actor.account()));
+        assertEquals(Boolean.TRUE, memberships.get(actor.subject()));
+        stubVerifiedIdentity(actor, false);
+        AuthorizationOperation loss =
+                eligibility.synchronizeEligibility(actor.user()).orElseThrow();
+        worker().poll();
+        assertEquals("SUCCEEDED", operationState(loss.getId()));
+        assertEquals("READY", state(actor.account()));
+        assertEquals(Boolean.FALSE, memberships.get(actor.subject()));
+
+        ProjectionFaultInjection faults = new ProjectionFaultInjection();
+        doAnswer(faults.applyAnswer()).when(writer).apply(any());
+        doAnswer(faults.directorySetAnswer(memberships))
+                .when(directory)
+                .setRealmGroupMembership(anyString(), anyString(), anyBoolean());
+        faults.failNextDirectorySets(1);
+        stubVerifiedIdentity(actor, true);
+        AuthorizationOperation gain =
+                eligibility.synchronizeEligibility(actor.user()).orElseThrow();
+        worker().poll();
+        // Graph đã áp vào Keycloak nhưng commit revision chưa kịp chạy: operation chỉ được retry,
+        // không SUCCEEDED, partition vẫn bị fence.
+        assertEquals("RETRYABLE_FAILURE", operationState(gain.getId()));
+        assertEquals("PENDING", state(actor.account()));
+        // Một lần áp graph cho mỗi scope đọc của target account: workspace.list + history.read.
+        assertEquals(2, accountApplies(faults, actor).size());
+        assertEquals(Boolean.FALSE, memberships.get(actor.subject()));
+
+        forceDue(gain.getId());
+        worker().poll();
+        assertEquals("SUCCEEDED", operationState(gain.getId()));
+        assertEquals("READY", state(actor.account()));
+        assertEquals(Boolean.TRUE, memberships.get(actor.subject()));
+        // Retry áp lại đúng hai graph đã áp dở, không tạo thêm grant: tập graph của lần retry
+        // bằng đúng tập graph của lần crash, theo cùng thứ tự scope.
+        List<PolicyGraph> applies = accountApplies(faults, actor);
+        assertEquals(4, applies.size());
+        assertEquals(applies.subList(0, 2), applies.subList(2, 4));
+    }
+
+    @Test
+    void aTerminalFailureKeepsTheFenceClosedUntilAnExplicitReconcileReopensIt() throws Exception {
+        Actor actor = actor();
+        seedWorkspace(actor, List.of());
+        reconciler.reconcilePartition(actor.workspacePartition());
+
+        ProjectionFaultInjection faults = new ProjectionFaultInjection();
+        doAnswer(faults.applyAnswer()).when(writer).apply(any());
+        faults.failNextApplies(Integer.MAX_VALUE);
+        AuthorizationOperation operation =
+                operations.applyDesiredState(
+                        actor.user(),
+                        actor.workspace(),
+                        "terminal-" + actor.user(),
+                        "b".repeat(64),
+                        List.of(
+                                new PartitionChange(
+                                        actor.workspacePartition(),
+                                        List.of(desired(actor, List.of())))));
+        // Cạn ngân sách lần thử ở đúng lần này: việc đếm đủ 5 lần đã khóa bằng unit test worker.
+        tx().executeWithoutResult(_ ->
+                jdbc.update(
+                        "UPDATE authorization_operation SET attempt_count = 4 WHERE id = ?",
+                        operation.getId()));
+        worker().poll();
+        assertEquals("FAILED", operationState(operation.getId()));
+        assertEquals("FAILED", state(actor.workspacePartition()));
+        assertEquals("FAILED", projectionState(actor.workspacePartition()));
+        mvc().perform(
+                        get("/api/me/operations/{operationId}", operation.getId())
+                                .with(user(actor.subject())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("FAILED"))
+                .andExpect(jsonPath("$.completed").value(false))
+                .andExpect(jsonPath("$.errorCode").value(ProjectionWorker.ERROR_RECONCILE_FAILED));
+        // Request sau fail-closed 503 thay vì quyết định trên dữ kiện cũ.
+        HttpProblemException notReady =
+                assertThrows(
+                        HttpProblemException.class,
+                        () ->
+                                fence.acquire(
+                                        resolver.resolve(
+                                                actor.user(),
+                                                actor.workspace(),
+                                                List.of(actor.target()))));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, notReady.getStatus());
+        // Worker tự chạy cũng không mở lại fence FAILED: partition vẫn FAILED và request sau
+        // vẫn fail-closed 503, dù các partition khác trong cùng schema có được worker chạm tới.
+        worker().poll();
+        assertEquals("FAILED", state(actor.workspacePartition()));
+        assertEquals("FAILED", projectionState(actor.workspacePartition()));
+        assertThrows(
+                HttpProblemException.class,
+                () ->
+                        fence.acquire(
+                                resolver.resolve(
+                                        actor.user(), actor.workspace(), List.of(actor.target()))));
+
+        // Đường mở lại duy nhất là explicit reconcile sau khi sửa ngoài luồng xong.
+        faults.clear();
+        reconciler.reconcilePartition(actor.workspacePartition());
+        assertEquals("READY", state(actor.workspacePartition()));
+        assertEquals("READY", projectionState(actor.workspacePartition()));
+        assertTrue(reconciler.verifyStoredGraph(actor.workspacePartition()));
+        fence.acquire(resolver.resolve(actor.user(), actor.workspace(), List.of(actor.target())));
+    }
+
+    @Test
+    void aCrashedRetryNeverAppliesTheOldRevisionAfterANewerRevisionLanded() {
+        Actor actor = actor();
+        seedWorkspace(actor, List.of());
+        reconciler.reconcilePartition(actor.workspacePartition());
+        stubVerifiedIdentity(actor, false);
+        AuthorizationOperation initial =
+                eligibility.synchronizeEligibility(actor.user()).orElseThrow();
+        worker().poll();
+        assertEquals("SUCCEEDED", operationState(initial.getId()));
+
+        ProjectionFaultInjection faults = new ProjectionFaultInjection();
+        doAnswer(faults.applyAnswer()).when(writer).apply(any());
+        doAnswer(faults.retractAnswer()).when(writer).retractRoot(anyString(), anyString());
+        faults.failNextApplies(1);
+        // Operation cũ áp graph eligibility mới nhưng crash ngay lần áp đầu tiên.
+        stubVerifiedIdentity(actor, true);
+        AuthorizationOperation old = eligibility.synchronizeEligibility(actor.user()).orElseThrow();
+        worker().poll();
+        assertEquals("RETRYABLE_FAILURE", operationState(old.getId()));
+        assertEquals(1, accountApplies(faults, actor).size());
+
+        // Trong lúc operation cũ còn retry, một revision mới hơn thu hồi eligibility.
+        stubVerifiedIdentity(actor, false);
+        AuthorizationOperation newer =
+                eligibility.synchronizeEligibility(actor.user()).orElseThrow();
+        forceDue(old.getId());
+        worker().poll();
+        // Retry của revision cũ bị superseded trước mọi side effect: graph cũ không bao giờ
+        // được áp lại sau khi revision mới đã thu hồi nó.
+        assertEquals("FAILED", operationState(old.getId()));
+        assertEquals(
+                ProjectionWorker.ERROR_SUPERSEDED,
+                jdbc.queryForObject(
+                        "SELECT last_error_code FROM authorization_operation WHERE id = ?",
+                        String.class,
+                        old.getId()));
+        assertEquals("SUCCEEDED", operationState(newer.getId()));
+        assertEquals(1, accountApplies(faults, actor).size());
+        assertEquals(
+                List.of(
+                        "account:" + actor.user() + "|workspace.list",
+                        "account:" + actor.user() + "|history.read"),
+                accountRetracts(faults, actor));
+        assertEquals("READY", state(actor.account()));
+        assertEquals(
+                3L,
+                jdbc.queryForObject(
+                        "SELECT applied_revision FROM authz_partition WHERE id = ?",
+                        Long.class,
+                        actor.account()));
+    }
+
     private Actor actor() {
         return tx().execute(_ -> {
             UUID user = UUID.randomUUID();
@@ -326,6 +506,47 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
     private String descriptor(Actor actor) {
         return ProjectionReconciler.personalOwnerDescriptor(
                 actor.workspace(), actor.user(), actor.subject(), actor.target(), "enter");
+    }
+
+    private List<PolicyGraph> accountApplies(ProjectionFaultInjection faults, Actor actor) {
+        return faults.appliedGraphs().stream()
+                .filter(graph -> ("account:" + actor.user()).equals(graph.targetKey()))
+                .toList();
+    }
+
+    private List<String> accountRetracts(ProjectionFaultInjection faults, Actor actor) {
+        return faults.retractedRoots().stream()
+                .filter(root -> root.startsWith("account:" + actor.user() + "|"))
+                .toList();
+    }
+
+    private void stubVerifiedIdentity(Actor actor, boolean verified) {
+        when(identities.readCurrentIdentity(actor.subject()))
+                .thenReturn(
+                        new CurrentIdentity(
+                                actor.subject(),
+                                "learner",
+                                "learner@example.test",
+                                verified,
+                                true));
+    }
+
+    private void forceDue(UUID operation) {
+        jdbc.update(
+                "UPDATE authorization_operation SET next_attempt_at = NULL WHERE id = ?",
+                operation);
+    }
+
+    private String projectionState(UUID partition) {
+        return jdbc.queryForList(
+                        "SELECT state FROM authz_projection WHERE partition_id = ?",
+                        String.class,
+                        partition)
+                .getFirst();
+    }
+
+    private MockMvc mvc() {
+        return MockMvcBuilders.webAppContextSetup(webContext).apply(springSecurity()).build();
     }
 
     private ProjectionWorker worker() {
