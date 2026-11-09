@@ -648,6 +648,7 @@ async function dungCenterLopKhoa(
   tenCenter: string;
   operator: NguoiDungTest;
   owner: NguoiDungTest;
+  ownerAppId: string;
   manager: NguoiDungTest;
   csrfManager: Csrf;
   lopId: string;
