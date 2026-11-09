@@ -98,7 +98,15 @@ class ListingPaginationIT extends IntegrationEnvironment {
         schoolClass(workspace, 1);
         UUID first = schoolClass(workspace, 2);
         UUID second = schoolClass(workspace, 3);
-        UUID foreign = schoolClass(center(), 4);
+        UUID foreignWorkspace = center();
+        membership(foreignWorkspace, UUID.randomUUID(), teacher, "TEACHER");
+        UUID foreign = schoolClass(foreignWorkspace, 4);
+        jdbc.update(
+                "INSERT INTO homeroom_assignment(id,workspace_id,class_id,teacher_user_id,state) VALUES (?,?,?,?,'ACTIVE')",
+                UUID.randomUUID(),
+                foreignWorkspace,
+                foreign,
+                teacher);
         for (UUID classId : List.of(first, second)) {
             jdbc.update(
                     "INSERT INTO homeroom_assignment(id,workspace_id,class_id,teacher_user_id,state) VALUES (?,?,?,?,'ACTIVE')",
@@ -189,6 +197,19 @@ class ListingPaginationIT extends IntegrationEnvironment {
                     teacher);
             homerooms.add(id(i));
         }
+        UUID otherStudent = user();
+        membership(workspace, UUID.randomUUID(), otherStudent, "STUDENT");
+        jdbc.update(
+                "INSERT INTO course(id,workspace_id,class_id,name,state) VALUES (?,?,?,'Khóa khác','ACTIVE')",
+                id(4),
+                workspace,
+                otherClass);
+        jdbc.update(
+                "INSERT INTO class_student(id,workspace_id,class_id,student_user_id,state) VALUES (?,?,?,?,'ACTIVE')",
+                id(4),
+                workspace,
+                otherClass,
+                otherStudent);
         assertPages(
                 cursor -> repository.pageCourses(workspace, classId, cursor, 1),
                 TeachingRepository.CourseRow::id,
