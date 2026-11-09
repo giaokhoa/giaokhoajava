@@ -216,26 +216,9 @@ public class TeachingRouteSupport {
         return idempotency.responseFor(operation);
     }
 
-    /** Cắt một trang theo cursor là id của phần tử cuối trang trước, như danh sách thành viên. */
-    public <T> Page<T> page(
-            List<T> all, @Nullable String cursor, @Nullable Integer limit, Function<T, UUID> idOf) {
-        int pageSize = limit == null ? 20 : Math.min(Math.max(limit, 1), 100);
-        int start = 0;
-        if (cursor != null) {
-            start = all.size();
-            for (int i = 0; i < all.size(); i++) {
-                if (idOf.apply(all.get(i)).toString().equals(cursor)) {
-                    start = i + 1;
-                    break;
-                }
-            }
-        }
-        List<T> items = all.subList(start, Math.min(start + pageSize, all.size()));
-        String nextCursor =
-                !items.isEmpty() && start + items.size() < all.size()
-                        ? idOf.apply(items.getLast()).toString()
-                        : null;
-        return new Page<>(items, nextCursor);
+    /** Dùng trang đã giới hạn và lọc tại DB, giữ nguyên HTTP DTO và cache policy. */
+    public <T> ResponseEntity<Page<T>> page(TeachingRepository.Page<T> page) {
+        return ok(new Page<>(page.items(), page.nextCursor()));
     }
 
     /** Đáp án đọc được bảo vệ: không cache theo đúng hợp đồng HTTP. */

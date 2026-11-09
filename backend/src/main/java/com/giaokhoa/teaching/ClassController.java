@@ -72,18 +72,13 @@ public class ClassController {
                 servletRequest,
                 workspaceId,
                 actor -> {
-                    List<ClassService.ClassView> all = classes.listClasses(workspaceId);
-                    if (!support.isAdmin(actor, workspaceId)) {
-                        // Danh sách chỉ chứa các lớp actor đọc được: chủ nhiệm thấy lớp của
-                        // mình; actor không đọc được lớp nào thì danh sách bị cấm hẳn.
-                        List<UUID> homeroom =
-                                repository.currentHomeroomClassIdsOfUser(workspaceId, actor);
-                        all = all.stream().filter(view -> homeroom.contains(view.id())).toList();
-                        if (all.isEmpty()) {
-                            throw TeachingRouteSupport.denied();
-                        }
+                    boolean admin = support.isAdmin(actor, workspaceId);
+                    if (!admin && !repository.hasCurrentHomeroomClass(workspaceId, actor)) {
+                        // Không có lớp được đọc: không trả danh sách trống như một center admin.
+                        throw TeachingRouteSupport.denied();
                     }
-                    return support.ok(support.page(all, cursor, limit, item -> item.id()));
+                    return support.page(
+                            classes.pageClasses(workspaceId, cursor, limit, admin ? null : actor));
                 });
     }
 
@@ -233,12 +228,7 @@ public class ClassController {
                         classes.getClass(workspaceId, classId);
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.ok(
-                            support.page(
-                                    classes.listStudents(workspaceId, classId),
-                                    cursor,
-                                    limit,
-                                    item -> item.id()));
+                    return support.page(classes.pageStudents(workspaceId, classId, cursor, limit));
                 });
     }
 

@@ -78,13 +78,9 @@ public class AssignmentController {
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.ok(
-                            support.page(
-                                    assignments.listTeacherAssignments(
-                                            workspaceId, courseSubjectId),
-                                    cursor,
-                                    limit,
-                                    item -> item.id()));
+                    return support.page(
+                            assignments.pageTeachingAssignments(
+                                    workspaceId, courseSubjectId, cursor, limit));
                 });
     }
 
@@ -174,12 +170,9 @@ public class AssignmentController {
                                                 "Không tìm thấy lớp trong workspace" + " này."));
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.ok(
-                            support.page(
-                                    assignments.listHomeroomAssignments(workspaceId, classId),
-                                    cursor,
-                                    limit,
-                                    item -> item.id()));
+                    return support.page(
+                            assignments.pageHomeroomAssignments(
+                                    workspaceId, classId, cursor, limit));
                 });
     }
 

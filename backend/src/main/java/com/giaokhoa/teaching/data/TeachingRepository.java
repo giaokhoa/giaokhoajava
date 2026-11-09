@@ -1,9 +1,17 @@
 package com.giaokhoa.teaching.data;
 
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -27,9 +35,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class TeachingRepository {
     private final JdbcTemplate jdbc;
+    private final TeachingPageQueries pages;
 
     public TeachingRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+        this.pages = new TeachingPageQueries(jdbc);
     }
 
     /** Thông tin tối thiểu của workspace để service kiểm tra tiền điều kiện dữ kiện. */
@@ -113,26 +123,62 @@ public class TeachingRepository {
                 .findFirst();
     }
 
-    /**
-     * Gói còn hiệu lực theo đúng mẫu đã chốt ở route tạo lớp của US2: workspace chưa từng có kỳ gói
-     * nào thì không bị chặn; đã có kỳ thì phải có ít nhất một kỳ đang trong hiệu lực.
-     */
-    public boolean subscriptionCurrent(UUID workspaceId) {
-        Integer total =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM subscription_period WHERE workspace_id = ?",
-                        Integer.class,
-                        workspaceId);
-        if (total == null || total == 0) {
-            return true;
+    /** Page cursor là UUID của hàng trước, kể cả khi hàng đó đã được thu hồi. */
+    public record Page<T>(List<T> items, @Nullable String nextCursor) {
+        public Page {
+            items = List.copyOf(items);
         }
-        Integer active =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM subscription_period WHERE workspace_id = ?"
-                                + " AND valid_from <= now() AND expires_at > now()",
-                        Integer.class,
-                        workspaceId);
-        return active != null && active > 0;
+
+        public <R> Page<R> map(Function<T, R> mapping) {
+            return new Page<>(items.stream().map(mapping).toList(), nextCursor);
+        }
+    }
+
+    public boolean hasCurrentHomeroomClass(UUID workspaceId, UUID teacherUserId) {
+        return pages.hasCurrentHomeroomClass(workspaceId, teacherUserId);
+    }
+
+    public Page<ClassRow> pageClasses(
+            UUID workspaceId,
+            @Nullable String cursor,
+            @Nullable Integer limit,
+            @Nullable UUID homeroomTeacherId) {
+        return pages.pageClasses(workspaceId, cursor, limit, homeroomTeacherId);
+    }
+
+    public Page<RosterRow> pageRoster(
+            UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
+        return pages.pageRoster(workspaceId, classId, cursor, limit);
+    }
+
+    public Page<CourseRow> pageCourses(
+            UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
+        return pages.pageCourses(workspaceId, classId, cursor, limit);
+    }
+
+    public Page<EnrollmentListRow> pageEnrollments(
+            UUID workspaceId,
+            UUID courseSubjectId,
+            @Nullable String cursor,
+            @Nullable Integer limit) {
+        return pages.pageEnrollments(workspaceId, courseSubjectId, cursor, limit);
+    }
+
+    public Page<TeachingAssignmentRow> pageTeachingAssignments(
+            UUID workspaceId,
+            UUID courseSubjectId,
+            @Nullable String cursor,
+            @Nullable Integer limit) {
+        return pages.pageTeachingAssignments(workspaceId, courseSubjectId, cursor, limit);
+    }
+
+    public Page<HomeroomAssignmentRow> pageHomeroomAssignments(
+            UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
+        return pages.pageHomeroomAssignments(workspaceId, classId, cursor, limit);
+    }
+
+    public boolean subscriptionCurrent(UUID workspaceId) {
+        return SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspaceId);
     }
 
     public boolean accountExists(UUID userId) {
@@ -386,6 +432,34 @@ public class TeachingRepository {
                 (rs, _) -> mapCourseSubject(rs),
                 workspaceId,
                 courseId);
+    }
+
+    /** Nạp môn của tối đa một trang khóa bằng một SQL thay vì một query cho mỗi khóa. */
+    public Map<UUID, List<CourseSubjectRow>> currentSubjectsByCourse(
+            UUID workspaceId, List<UUID> courseIds) {
+        if (courseIds.isEmpty()) {
+            return Map.of();
+        }
+        List<CourseSubjectRow> subjects =
+                new NamedParameterJdbcTemplate(jdbc)
+                        .query(
+                                "SELECT cs.id, cs.course_id, cs.subject_id,"
+                                        + " s.name AS subject_name, cs.state"
+                                        + " FROM course_subject cs"
+                                        + " JOIN subject s ON s.id = cs.subject_id"
+                                        + " WHERE cs.workspace_id = :workspaceId"
+                                        + " AND cs.course_id IN (:courseIds)"
+                                        + " AND cs.state IN ('PENDING', 'ACTIVE')"
+                                        + " ORDER BY cs.course_id, s.code, cs.id",
+                                new MapSqlParameterSource()
+                                        .addValue("workspaceId", workspaceId)
+                                        .addValue("courseIds", courseIds),
+                                (rs, _) -> mapCourseSubject(rs));
+        Map<UUID, List<CourseSubjectRow>> byCourse = new HashMap<>();
+        for (CourseSubjectRow subject : subjects) {
+            byCourse.computeIfAbsent(subject.courseId(), _ -> new ArrayList<>()).add(subject);
+        }
+        return byCourse;
     }
 
     public Optional<CourseSubjectRow> findCurrentCourseSubject(
@@ -915,13 +989,13 @@ public class TeachingRepository {
                 .findFirst();
     }
 
-    private static String rosterSelect() {
+    static String rosterSelect() {
         return "SELECT cs.id, cs.workspace_id, cs.class_id, cs.student_user_id, u.username,"
                 + " cs.state, cs.version FROM class_student cs"
                 + " JOIN user_account u ON u.id = cs.student_user_id";
     }
 
-    private static ClassRow mapClass(java.sql.ResultSet rs) throws java.sql.SQLException {
+    static ClassRow mapClass(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new ClassRow(
                 rs.getObject("id", UUID.class),
                 rs.getObject("workspace_id", UUID.class),
@@ -930,7 +1004,7 @@ public class TeachingRepository {
                 rs.getLong("version"));
     }
 
-    private static RosterRow mapRoster(java.sql.ResultSet rs) throws java.sql.SQLException {
+    static RosterRow mapRoster(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new RosterRow(
                 rs.getObject("id", UUID.class),
                 rs.getObject("workspace_id", UUID.class),
@@ -941,7 +1015,7 @@ public class TeachingRepository {
                 rs.getLong("version"));
     }
 
-    private static CourseRow mapCourse(java.sql.ResultSet rs) throws java.sql.SQLException {
+    static CourseRow mapCourse(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new CourseRow(
                 rs.getObject("id", UUID.class),
                 rs.getObject("workspace_id", UUID.class),
@@ -971,7 +1045,7 @@ public class TeachingRepository {
                 rs.getLong("version"));
     }
 
-    private static TeachingAssignmentRow mapTeachingAssignment(java.sql.ResultSet rs)
+    static TeachingAssignmentRow mapTeachingAssignment(java.sql.ResultSet rs)
             throws java.sql.SQLException {
         return new TeachingAssignmentRow(
                 rs.getObject("id", UUID.class),
@@ -982,7 +1056,7 @@ public class TeachingRepository {
                 rs.getLong("version"));
     }
 
-    private static HomeroomAssignmentRow mapHomeroomAssignment(java.sql.ResultSet rs)
+    static HomeroomAssignmentRow mapHomeroomAssignment(java.sql.ResultSet rs)
             throws java.sql.SQLException {
         return new HomeroomAssignmentRow(
                 rs.getObject("id", UUID.class),

@@ -1,22 +1,27 @@
 package com.giaokhoa.teaching;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.ClassService.ClassView;
 import com.giaokhoa.teaching.ClassService.RosterEntryView;
 import com.giaokhoa.teaching.CourseService.CourseView;
 import com.giaokhoa.teaching.data.TeachingRepository;
+import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.tenancy.model.MembershipRole;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
@@ -70,6 +75,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired ClassService classes;
     @Autowired CourseService courses;
+    @Autowired MembershipService memberships;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
 
@@ -88,6 +94,86 @@ class TeachingServiceIT extends IntegrationEnvironment {
                 assertThrows(
                         HttpProblemException.class, () -> classes.getClass(other, created.id()));
         assertEquals(HttpStatus.NOT_FOUND, problem.getStatus(), "Lớp không lộ sang workspace khác");
+    }
+
+    @Test
+    void membershipKeysetSurvivesRevocationAndKeepsMultipleRolesTogether() {
+        UUID owner = seedAccount();
+        UUID workspace = seedCenter(owner);
+        UUID firstUser = seedAccount();
+        UUID secondUser = seedAccount();
+        addMembership(workspace, firstUser, "MANAGER");
+        addMembership(workspace, secondUser, "STUDENT");
+        UUID firstMembership =
+                Objects.requireNonNull(
+                        jdbc.queryForObject(
+                                "SELECT id FROM center_membership WHERE workspace_id = ? AND user_id = ?",
+                                UUID.class,
+                                workspace,
+                                firstUser));
+        UUID secondMembership =
+                Objects.requireNonNull(
+                        jdbc.queryForObject(
+                                "SELECT id FROM center_membership WHERE workspace_id = ? AND user_id = ?",
+                                UUID.class,
+                                workspace,
+                                secondUser));
+        jdbc.update(
+                "INSERT INTO membership_role(membership_id, role) VALUES (?, 'TEACHER')",
+                firstMembership);
+
+        var page = memberships.pageMemberships(workspace, null, 2);
+        assertEquals(2, page.items().size());
+        assertEquals(firstMembership, page.items().getLast().id());
+        assertEquals(
+                Set.of(MembershipRole.Role.MANAGER, MembershipRole.Role.TEACHER),
+                Set.copyOf(page.items().getLast().roles()));
+
+        jdbc.update(
+                "UPDATE center_membership SET state = 'REVOKED', revoked_at = now()"
+                        + " WHERE id = ?",
+                firstMembership);
+        var remaining = memberships.pageMemberships(workspace, page.nextCursor(), 2);
+        assertEquals(1, remaining.items().size());
+        assertEquals(secondMembership, remaining.items().getFirst().id());
+    }
+
+    @Test
+    void classKeysetSurvivesRevocationAndRejectsCursorFromAnotherRoster() {
+        UUID workspace = seedCenter(seedAccount());
+        ClassView first = classes.createClass(workspace, "Lớp A");
+        ClassView second = classes.createClass(workspace, "Lớp B");
+        classes.createClass(workspace, "Lớp C");
+
+        List<ClassView> before = classes.listClasses(workspace);
+        var page = classes.pageClasses(workspace, null, 1, null);
+        assertEquals(before.getFirst().id(), page.items().getFirst().id());
+        classes.revokeClass(workspace, page.items().getFirst().id());
+
+        var next = classes.pageClasses(workspace, page.nextCursor(), 1, null);
+        assertEquals(1, next.items().size());
+        assertEquals(before.get(1).id(), next.items().getFirst().id());
+
+        UUID learner = seedAccount();
+        addMembership(workspace, learner, "STUDENT");
+        UUID classStudentId =
+                classes.addStudents(workspace, second.id(), List.of(learner)).getFirst().id();
+        var wrongRoster =
+                classes.pageStudents(workspace, first.id(), classStudentId.toString(), 20);
+        assertTrue(wrongRoster.items().isEmpty());
+    }
+
+    @Test
+    void subscriptionPolicyMatchesRealPostgresLifecycle() {
+        UUID owner = seedAccount();
+        UUID workspace = seedCenter(owner);
+        assertTrue(SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspace));
+
+        seedSubscription(workspace, -20, -1, owner);
+        assertFalse(SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspace));
+
+        seedSubscription(workspace, -1, 20, owner);
+        assertTrue(SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspace));
     }
 
     @Test

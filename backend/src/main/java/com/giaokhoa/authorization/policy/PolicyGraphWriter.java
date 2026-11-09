@@ -1,5 +1,6 @@
 package com.giaokhoa.authorization.policy;
 
+import com.giaokhoa.authorization.keycloak.KeycloakProvisionerFactory;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,15 +18,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
-import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
-import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -73,9 +67,12 @@ public class PolicyGraphWriter {
         this(
                 RestClient.builder(),
                 baseUrl,
-                realmOf(issuerUri),
-                provisionerManager(
-                        baseUrl.replaceAll("/+$", ""), realmOf(issuerUri), clientId, clientSecret),
+                KeycloakProvisionerFactory.realmOf(issuerUri),
+                KeycloakProvisionerFactory.clientManager(
+                        baseUrl.replaceAll("/+$", ""),
+                        KeycloakProvisionerFactory.realmOf(issuerUri),
+                        clientId,
+                        clientSecret),
                 audienceClientId,
                 mutationCoordinator);
     }
@@ -111,44 +108,6 @@ public class PolicyGraphWriter {
         this.manager = manager;
         this.audienceClientId = audienceClientId;
         this.mutationCoordinator = mutationCoordinator;
-    }
-
-    /**
-     * Realm là segment path cuối cùng của OIDC issuer đã cấu hình, nguồn duy nhất mà ứng dụng đã
-     * tin cậy cho cả tên realm production lẫn TEST.
-     */
-    private static String realmOf(@Nullable String issuerUri) {
-        if (issuerUri == null) {
-            throw new IllegalStateException("Keycloak issuer URI has no realm: null");
-        }
-        String marker = "/realms/";
-        int start = issuerUri.lastIndexOf(marker);
-        String realm =
-                start < 0 ? "" : issuerUri.substring(start + marker.length()).replaceAll("/+$", "");
-        if (realm.isBlank() || realm.contains("/")) {
-            throw new IllegalStateException("Keycloak issuer URI has no realm: " + issuerUri);
-        }
-        return realm;
-    }
-
-    private static OAuth2AuthorizedClientManager provisionerManager(
-            String baseUrl, String realm, String clientId, String secret) {
-        ClientRegistration registration =
-                ClientRegistration.withRegistrationId("giaokhoa-provisioner")
-                        .clientId(clientId)
-                        .clientSecret(secret)
-                        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
-                        .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-                        .tokenUri(baseUrl + "/realms/" + realm + "/protocol/openid-connect/token")
-                        .build();
-        InMemoryClientRegistrationRepository repository =
-                new InMemoryClientRegistrationRepository(registration);
-        AuthorizedClientServiceOAuth2AuthorizedClientManager manager =
-                new AuthorizedClientServiceOAuth2AuthorizedClientManager(
-                        repository, new InMemoryOAuth2AuthorizedClientService(repository));
-        manager.setAuthorizedClientProvider(
-                OAuth2AuthorizedClientProviderBuilder.builder().clientCredentials().build());
-        return manager;
     }
 
     /** Thứ một lần apply thành công để lại: projection resource ID và các policy name của nó. */

@@ -10,6 +10,7 @@ import com.giaokhoa.teaching.data.TeachingRepository.SubjectRow;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -111,6 +112,19 @@ public class CourseService {
         return view(row, repository.listCurrentCourseSubjects(workspaceId, courseId));
     }
 
+    @Transactional(readOnly = true)
+    public TeachingRepository.Page<CourseView> pageCourses(
+            UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
+        workspaceTransaction.applyContext(workspaceId);
+        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
+        TeachingRepository.Page<CourseRow> page =
+                repository.pageCourses(workspaceId, classId, cursor, limit);
+        Map<UUID, List<CourseSubjectRow>> subjects =
+                repository.currentSubjectsByCourse(
+                        workspaceId, page.items().stream().map(row -> row.id()).toList());
+        return page.map(row -> view(row, subjects.getOrDefault(row.id(), List.of())));
+    }
+
     /** Các khóa hiện hành của một lớp trong workspace, cũ nhất trước, kèm môn hiện hành. */
     @Transactional(readOnly = true)
     public List<CourseView> listCourses(UUID workspaceId, UUID classId) {
@@ -118,8 +132,12 @@ public class CourseService {
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
         repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        return repository.listCourses(workspaceId, classId).stream()
-                .map(row -> view(row, repository.listCurrentCourseSubjects(workspaceId, row.id())))
+        List<CourseRow> rows = repository.listCourses(workspaceId, classId);
+        Map<UUID, List<CourseSubjectRow>> subjects =
+                repository.currentSubjectsByCourse(
+                        workspaceId, rows.stream().map(row -> row.id()).toList());
+        return rows.stream()
+                .map(row -> view(row, subjects.getOrDefault(row.id(), List.of())))
                 .toList();
     }
 

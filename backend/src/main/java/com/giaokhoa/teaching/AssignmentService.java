@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -262,6 +263,27 @@ public class AssignmentService {
                 homeroomAffectedTargets(workspaceId, classId));
     }
 
+    @Transactional(readOnly = true)
+    public TeachingRepository.Page<TeachingAssignmentView> pageTeachingAssignments(
+            UUID workspaceId,
+            UUID courseSubjectId,
+            @Nullable String cursor,
+            @Nullable Integer limit) {
+        workspaceTransaction.applyContext(workspaceId);
+        repository
+                .findCourseSubjectScope(workspaceId, courseSubjectId)
+                .orElseThrow(() -> courseSubjectNotFound());
+        return repository
+                .pageTeachingAssignments(workspaceId, courseSubjectId, cursor, limit)
+                .map(row ->
+                        new TeachingAssignmentView(
+                                row.id(),
+                                row.courseSubjectId(),
+                                row.teacherUserId(),
+                                row.state(),
+                                row.version()));
+    }
+
     /** Các phân công giảng dạy hiện hành của một môn–khóa. Chỉ đọc dữ kiện nguồn. */
     @Transactional(readOnly = true)
     public List<TeachingAssignmentView> listTeacherAssignments(
@@ -281,6 +303,22 @@ public class AssignmentService {
                                 row.state(),
                                 row.version()))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public TeachingRepository.Page<HomeroomAssignmentView> pageHomeroomAssignments(
+            UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
+        workspaceTransaction.applyContext(workspaceId);
+        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
+        return repository
+                .pageHomeroomAssignments(workspaceId, classId, cursor, limit)
+                .map(row ->
+                        new HomeroomAssignmentView(
+                                row.id(),
+                                row.classId(),
+                                row.teacherUserId(),
+                                row.state(),
+                                row.version()));
     }
 
     /** Các phân công chủ nhiệm hiện hành của một lớp. Chỉ đọc dữ kiện nguồn. */
