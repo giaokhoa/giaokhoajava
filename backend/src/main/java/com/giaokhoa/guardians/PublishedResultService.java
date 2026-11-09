@@ -185,12 +185,15 @@ public class PublishedResultService {
             }
         }
 
-        // Kể cả không có PUBLISHED row vẫn phải đồng bộ eligibility + ACCOUNT fence.
-        // Không được trả 200 [] cho tài khoản đang PENDING/FAILED trước khi xác minh.
+        // Kể cả không có PUBLISHED row vẫn phải đồng bộ eligibility + ACCOUNT/WORKSPACE fence.
+        // Không được trả 200 [] khi tài khoản hoặc workspace đang PENDING/FAILED chưa xác minh.
+        // Nhánh rỗng phải đi qua fence của đúng workspace đang đọc (không dùng executeForActor
+        // với workspace null, vì manifest khi đó thiếu partition workspace).
         if (admitted.isEmpty()) {
-            return executor.executeForActor(
+            return executor.execute(
                     authentication,
                     request,
+                    workspaceId,
                     List.of(
                             new ProtectedActionExecutor.Target(
                                     NativePolicyTemplates.profileKey(actorUserId),

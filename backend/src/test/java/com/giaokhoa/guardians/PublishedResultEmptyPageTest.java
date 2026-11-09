@@ -23,7 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
-/** Không có hàng PUBLISHED cũng phải qua eligibility/PDP/ACCOUNT fence của executor. */
+/** Không có hàng PUBLISHED cũng phải qua eligibility/PDP/ACCOUNT và WORKSPACE fence. */
 class PublishedResultEmptyPageTest {
     private static final UUID ACTOR = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID OTHER = UUID.fromString("33333333-3333-3333-3333-333333333333");
@@ -43,22 +43,22 @@ class PublishedResultEmptyPageTest {
         doAnswer(call -> ((Supplier<?>) call.getArgument(1)).get())
                 .when(workspaces)
                 .inWorkspace(eq(WORKSPACE), any());
-        doAnswer(call -> ((Supplier<?>) call.getArgument(3)).get())
+        doAnswer(call -> ((Supplier<?>) call.getArgument(4)).get())
                 .when(executor)
-                .executeForActor(eq(authentication), any(), anyList(), any());
+                .execute(eq(authentication), any(), any(), anyList(), any());
         return new Fixture(
                 new PublishedResultService(executor, workspaces, jdbc), executor, authentication);
     }
 
     @Test
-    void ownEmptyResultPageStillUsesAccountFence() {
+    void ownEmptyResultPageStillUsesAccountAndWorkspaceFence() {
         Fixture f = fixture();
         var page =
                 f.service.pagePublishedResults(
                         f.authentication, new MockHttpServletRequest(), WORKSPACE, ACTOR, null, 20);
         assertEquals(0, page.items().size());
         assertNull(page.nextCursor());
-        verify(f.executor).executeForActor(eq(f.authentication), any(), anyList(), any());
+        verify(f.executor).execute(eq(f.authentication), any(), eq(WORKSPACE), anyList(), any());
         verify(f.executor, never()).evaluateAndRead(any(), any(), any(), anyList(), any());
     }
 
@@ -73,7 +73,7 @@ class PublishedResultEmptyPageTest {
                                     "Quyền đang đồng bộ.");
                         })
                 .when(f.executor)
-                .executeForActor(eq(f.authentication), any(), anyList(), any());
+                .execute(eq(f.authentication), any(), any(), anyList(), any());
         HttpProblemException ex =
                 assertThrows(
                         HttpProblemException.class,
