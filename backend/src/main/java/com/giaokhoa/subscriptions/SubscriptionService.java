@@ -7,6 +7,7 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import java.nio.charset.StandardCharsets;
@@ -57,6 +58,8 @@ public class SubscriptionService {
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
+    private final PersonalEntitlementProjector entitlementProjector;
+    private final PersonalTeachingPolicyProjector personalTeachingProjector;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -66,13 +69,17 @@ public class SubscriptionService {
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
             ResourceMutationCoordinator coordinator,
-            TeachingPolicyProjector teachingProjector) {
+            TeachingPolicyProjector teachingProjector,
+            PersonalEntitlementProjector entitlementProjector,
+            PersonalTeachingPolicyProjector personalTeachingProjector) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
         this.centerProjector = centerProjector;
         this.coordinator = coordinator;
         this.teachingProjector = teachingProjector;
+        this.entitlementProjector = entitlementProjector;
+        this.personalTeachingProjector = personalTeachingProjector;
     }
 
     /**
@@ -136,7 +143,7 @@ public class SubscriptionService {
                 ref,
                 operatorUserId);
         Optional<AuthorizationOperationService.PartitionChange> change =
-                centerPartitionChange(workspaceId, kind);
+                partitionChange(workspaceId, kind);
         if (change.isPresent()) {
             return operations.applyDesiredState(
                     operatorUserId,
@@ -145,44 +152,20 @@ public class SubscriptionService {
                     payloadHash,
                     List.of(change.get()));
         }
-        if (CENTER_KIND.equals(kind)) {
-            // Trigger của DB luôn tạo partition cho mọi workspace; thiếu là dữ liệu hỏng,
-            // không được âm thầm ghi kỳ mà không chiếu hiệu lực.
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
-        // Workspace personal chưa có bundle projection ở CenterPolicyProjector: kỳ là dữ kiện
-        // nguồn bền, nguồn entitlement cá nhân dựng lên nó thuộc về projector riêng của
-        // personal. Nhưng bất
-        // biến DB (V002) bắt operation phải tham chiếu ít nhất một partition, với desired_revision
-        // bằng revision đầu tiên của vector, nên không thể ghi operation rỗng partition: operation
-        // neo vào partition của chính workspace ở revision hiện tại — không bump revision, không
-        // ghi desired mới. Worker đối chiếu như no-op khi partition đã READY; nếu một mutation
-        // mới hơn bump revision trước, operation này bị superseded (kỳ đã ghi không ảnh hưởng).
-        PartitionAnchor anchor = workspacePartition(workspaceId);
-        AuthorizationOperation operation =
-                new AuthorizationOperation(
-                        UUID.randomUUID(),
-                        operatorUserId,
-                        workspaceId,
-                        idempotencyKey,
-                        payloadHash,
-                        new UUID[] {anchor.id()},
-                        new Long[] {anchor.desiredRevision()},
-                        anchor.desiredRevision());
-        return idempotency.executeOnce(operation, () -> {});
+        // Trigger của DB luôn tạo partition cho mọi workspace; thiếu là dữ liệu hỏng,
+        // không được âm thầm ghi kỳ mà không chiếu hiệu lực.
+        throw new IllegalStateException(
+                "Workspace authorization partition is missing: " + workspaceId);
     }
 
     /**
      * Thay đổi partition cần ghi cho một thay đổi gói trên workspace này: bundle trọn vẹn của
-     * {@link CenterPolicyProjector} trên WORKSPACE partition của chính workspace. Rỗng khi
-     * workspace không phải CENTER hoặc khi partition chưa tồn tại.
+     * projector theo loại workspace trên WORKSPACE partition của chính workspace, kèm bundle của
+     * mọi target giảng dạy — kỳ gói đổi hiệu lực mà các scope giảng dạy cổng gói tham chiếu nên
+     * chúng phải ghi lại trong cùng operation. Rỗng khi partition chưa tồn tại.
      */
-    private Optional<AuthorizationOperationService.PartitionChange> centerPartitionChange(
+    private Optional<AuthorizationOperationService.PartitionChange> partitionChange(
             UUID workspaceId, String kind) {
-        if (!CENTER_KIND.equals(kind)) {
-            return Optional.empty();
-        }
         List<UUID> partitions =
                 jdbc.queryForList(
                         "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
@@ -193,39 +176,26 @@ public class SubscriptionService {
             return Optional.empty();
         }
         List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
-        projections.add(
-                new AuthorizationOperationService.DesiredProjection(
-                        NativePolicyTemplates.workspaceKey(workspaceId),
-                        PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
-                        centerProjector.bundleDescriptors(workspaceId),
-                        List.of()));
-        // Kỳ gói đổi hiệu lực mà các scope giảng dạy cổng gói tham chiếu, nên bundle của mọi
-        // target giảng dạy ghi lại trong cùng operation như bundle workspace.
-        projections.addAll(teachingProjector.allBundleProjections(workspaceId));
+        if (CENTER_KIND.equals(kind)) {
+            projections.add(
+                    new AuthorizationOperationService.DesiredProjection(
+                            NativePolicyTemplates.workspaceKey(workspaceId),
+                            PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
+                            centerProjector.bundleDescriptors(workspaceId),
+                            List.of()));
+            projections.addAll(teachingProjector.allBundleProjections(workspaceId));
+        } else {
+            projections.add(
+                    new AuthorizationOperationService.DesiredProjection(
+                            NativePolicyTemplates.workspaceKey(workspaceId),
+                            PersonalEntitlementProjector.bundleScope(),
+                            entitlementProjector.bundleDescriptors(workspaceId),
+                            List.of()));
+            projections.addAll(personalTeachingProjector.allBundleProjections(workspaceId));
+        }
         return Optional.of(
                 new AuthorizationOperationService.PartitionChange(
                         partitions.getFirst(), List.copyOf(projections)));
-    }
-
-    private record PartitionAnchor(UUID id, long desiredRevision) {}
-
-    /** Partition WORKSPACE của workspace, khóa dòng để đọc revision hiện tại. */
-    private PartitionAnchor workspacePartition(UUID workspaceId) {
-        List<PartitionAnchor> rows =
-                jdbc.query(
-                        "SELECT id, desired_revision FROM authz_partition"
-                                + " WHERE kind = 'WORKSPACE' AND owner_key = ? FOR UPDATE",
-                        (rs, _) ->
-                                new PartitionAnchor(
-                                        rs.getObject("id", UUID.class),
-                                        rs.getLong("desired_revision")),
-                        "workspace:" + workspaceId);
-        if (rows.isEmpty()) {
-            // Trigger của DB luôn tạo partition cho mọi workspace; thiếu là dữ liệu hỏng.
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
-        return rows.getFirst();
     }
 
     private void requireAccount(UUID userId) {

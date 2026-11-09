@@ -9,6 +9,7 @@ import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -48,14 +49,17 @@ public class IdentityEligibilitySynchronizer {
     private final JdbcTemplate jdbc;
     private final CurrentIdentityClient identities;
     private final AuthorizationOperationService operations;
+    private final PersonalEntitlementProjector entitlementProjector;
 
     public IdentityEligibilitySynchronizer(
             JdbcTemplate jdbc,
             CurrentIdentityClient identities,
-            AuthorizationOperationService operations) {
+            AuthorizationOperationService operations,
+            PersonalEntitlementProjector entitlementProjector) {
         this.jdbc = jdbc;
         this.identities = identities;
         this.operations = operations;
+        this.entitlementProjector = entitlementProjector;
     }
 
     /**
@@ -137,14 +141,7 @@ public class IdentityEligibilitySynchronizer {
                                         new AuthorizationOperationService.DesiredProjection(
                                                 workspaceTarget,
                                                 scope,
-                                                List.of(
-                                                        ProjectionReconciler
-                                                                .personalOwnerDescriptor(
-                                                                        workspaceId,
-                                                                        actorUserId,
-                                                                        keycloakSub,
-                                                                        workspaceTarget,
-                                                                        scope)),
+                                                entitlementProjector.bundleDescriptors(workspaceId),
                                                 List.of(accountPartition)))));
             }
         }

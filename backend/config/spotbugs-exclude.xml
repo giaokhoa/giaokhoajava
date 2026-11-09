@@ -315,4 +315,16 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào projector entitlement cá nhân. -->
+    <Match>
+        <Class name="com.giaokhoa.subscriptions.PersonalEntitlementProjector"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào projector giảng dạy cá nhân. -->
+    <Match>
+        <Class name="com.giaokhoa.teaching.PersonalTeachingPolicyProjector"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
 </FindBugsFilter>

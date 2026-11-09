@@ -486,6 +486,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             runtimeOperations,
                             new CenterPolicyProjector(runtimeJdbc, directory),
                             runtimeProjector,
+                            new PersonalTeachingPolicyProjector(runtimeJdbc, runtimeTxManager),
                             new ResultPolicyProjector(
                                     runtimeJdbc, runtimeOperations, runtimeTxManager));
             ResourceMutationCoordinator runtimeCoordinator =

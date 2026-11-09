@@ -10,6 +10,8 @@ import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter.AppliedGraph;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
+import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
@@ -84,6 +86,8 @@ public class ProjectionReconciler {
     private final TeachingPolicyProjector teachingProjector;
     private final GuardianPolicyProjector guardianProjector;
     private final ResultPolicyProjector resultProjector;
+    private final PersonalEntitlementProjector personalEntitlementProjector;
+    private final PersonalTeachingPolicyProjector personalTeachingProjector;
     private final TransactionTemplate transactions;
     private final ResourceMutationCoordinator coordinator;
 
@@ -95,6 +99,8 @@ public class ProjectionReconciler {
             TeachingPolicyProjector teachingProjector,
             GuardianPolicyProjector guardianProjector,
             ResultPolicyProjector resultProjector,
+            PersonalEntitlementProjector personalEntitlementProjector,
+            PersonalTeachingPolicyProjector personalTeachingProjector,
             PlatformTransactionManager transactionManager,
             ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
@@ -104,6 +110,8 @@ public class ProjectionReconciler {
         this.teachingProjector = teachingProjector;
         this.guardianProjector = guardianProjector;
         this.resultProjector = resultProjector;
+        this.personalEntitlementProjector = personalEntitlementProjector;
+        this.personalTeachingProjector = personalTeachingProjector;
         this.transactions = new TransactionTemplate(transactionManager);
         this.coordinator = coordinator;
     }
@@ -553,6 +561,10 @@ public class ProjectionReconciler {
                 && isCenterWorkspace(projection.targetKey())) {
             return resolveCenterBundle(projection);
         }
+        if (type == NativePolicyTemplates.TargetType.WORKSPACE
+                && isPersonalWorkspace(projection.targetKey())) {
+            return resolvePersonalBundle(projection);
+        }
         if (type == NativePolicyTemplates.TargetType.PLATFORM) {
             return resolvePlatformBundle(projection);
         }
@@ -561,6 +573,12 @@ public class ProjectionReconciler {
                         || type == NativePolicyTemplates.TargetType.COURSE_SUBJECT)
                 && isCenterWorkspace(workspaceKeyOf(projection.targetKey()))) {
             return resolveTeachingBundle(projection);
+        }
+        if ((type == NativePolicyTemplates.TargetType.CLASS
+                        || type == NativePolicyTemplates.TargetType.COURSE
+                        || type == NativePolicyTemplates.TargetType.COURSE_SUBJECT)
+                && isPersonalWorkspace(workspaceKeyOf(projection.targetKey()))) {
+            return resolvePersonalTeachingBundle(projection);
         }
         if (type == NativePolicyTemplates.TargetType.RESULT) {
             return resolveResultBundle(projection);
@@ -648,6 +666,90 @@ public class ProjectionReconciler {
                         UUID.class,
                         workspaceId)
                 .isEmpty();
+    }
+
+    private boolean isPersonalWorkspace(String targetKey) {
+        UUID workspaceId = UUID.fromString(targetKey.substring("workspace:".length()));
+        return !jdbc.queryForList(
+                        "SELECT id FROM workspace WHERE id = ? AND kind = 'PERSONAL'",
+                        UUID.class,
+                        workspaceId)
+                .isEmpty();
+    }
+
+    /**
+     * Bundle của một PERSONAL workspace: cùng hình dạng với bundle của center — desired hash đã ghi
+     * phải khớp đúng tập descriptor mà {@link PersonalEntitlementProjector} dựng lại từ dữ kiện
+     * nguồn hiện hành cho mọi scope, với scope danh nghĩa ENTER của projector.
+     */
+    private Resolved resolvePersonalBundle(ProjectionRow projection) {
+        UUID workspaceId = UUID.fromString(projection.targetKey().substring("workspace:".length()));
+        String bundleScope = PersonalEntitlementProjector.bundleScope();
+        // Nguồn owner của personal không bao giờ tự rỗng khi workspace còn tồn tại, nên desired
+        // đã ghi là tập rỗng chỉ đến từ một lần ghi thu hồi toàn bộ: rút cả bundle, cùng hình
+        // dạng với bundle platform.
+        if (desiredHash(projection.targetKey(), bundleScope, List.of())
+                .equals(projection.desiredHash())) {
+            return new Resolved.RetractBundle(PersonalEntitlementProjector.managedScopes());
+        }
+        List<String> bundle = personalEntitlementProjector.bundleDescriptors(workspaceId);
+        if (bundle.isEmpty()) {
+            return new Resolved.RetractBundle(PersonalEntitlementProjector.managedScopes());
+        }
+        if (!desiredHash(projection.targetKey(), bundleScope, bundle)
+                .equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the personal sources rebuilt from durable rows: "
+                            + projection.targetKey());
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : PersonalEntitlementProjector.managedScopes()) {
+            List<String> sources = personalEntitlementProjector.sourcesFor(workspaceId, scope);
+            if (!sources.isEmpty()) {
+                graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
+            }
+        }
+        return new Resolved.ApplyBundle(graphs, PersonalEntitlementProjector.managedScopes());
+    }
+
+    /**
+     * Bundle của một target giảng dạy (lớp/khóa/môn–khóa) thuộc PERSONAL workspace: cùng hình dạng
+     * với bundle giảng dạy của center — desired hash đã ghi phải khớp đúng tập descriptor mà {@link
+     * PersonalTeachingPolicyProjector} dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa
+     * READ của projector.
+     */
+    private Resolved resolvePersonalTeachingBundle(ProjectionRow projection) {
+        NativePolicyTemplates.TargetType type =
+                NativePolicyTemplates.targetTypeOf(projection.targetKey())
+                        .orElseThrow(() ->
+                                new ReconciliationException(
+                                        ERROR_DESIRED_SOURCE_MISMATCH,
+                                        "Target key matches no fixed template: "
+                                                + projection.targetKey()));
+        List<String> bundle = personalTeachingProjector.bundleDescriptors(projection.targetKey());
+        List<String> managedScopes = PersonalTeachingPolicyProjector.managedScopes(type);
+        if (bundle.isEmpty()) {
+            return new Resolved.RetractBundle(managedScopes);
+        }
+        String bundleScope = PersonalTeachingPolicyProjector.bundleScope();
+        if (!desiredHash(projection.targetKey(), bundleScope, bundle)
+                .equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the personal teaching sources rebuilt from"
+                            + " durable rows: "
+                            + projection.targetKey());
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : managedScopes) {
+            List<String> sources =
+                    personalTeachingProjector.sourcesFor(projection.targetKey(), scope);
+            if (!sources.isEmpty()) {
+                graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
+            }
+        }
+        return new Resolved.ApplyBundle(graphs, managedScopes);
     }
 
     /** Target key của workspace chứa một target con (lớp/khóa/môn–khóa) của cùng workspace đó. */
@@ -857,6 +959,12 @@ public class ProjectionReconciler {
         }
         if (descriptor.startsWith("PLATFORM_OPERATOR")) {
             return new PolicyGraph.Source(PlatformPolicyProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("PERSONAL_OWNER_PERIOD")) {
+            return new PolicyGraph.Source(PersonalEntitlementProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("PERSONAL_TEACHING")) {
+            return new PolicyGraph.Source(PersonalTeachingPolicyProjector.gatesFor(descriptor));
         }
         return new PolicyGraph.Source(List.of(actorGate(descriptor)));
     }

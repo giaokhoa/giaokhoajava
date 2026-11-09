@@ -10,6 +10,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Duration;
 import java.util.List;
@@ -516,13 +517,6 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             nativeGate.partiallyProvisionApplicationResource(
                                     "account:" + actor.actor(), "workspace.list")) {
                 prepareEligibility(actor, nativeGate, identityGraph);
-                String descriptor =
-                        ProjectionReconciler.personalOwnerDescriptor(
-                                actor.workspace(),
-                                actor.actor(),
-                                nativeGate.userSubject(),
-                                target,
-                                "enter");
                 tx(() -> {
                     jdbc.update(
                             "UPDATE authz_partition SET state='PENDING' WHERE id=?",
@@ -531,7 +525,11 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             "UPDATE authz_projection SET desired_hash = ?,"
                                     + " dependency_partition_ids = ARRAY[?]::uuid[], state = 'PENDING'"
                                     + " WHERE partition_id = ? AND target_key = ?",
-                            ProjectionReconciler.desiredHash(target, "enter", List.of(descriptor)),
+                            ProjectionReconciler.desiredHash(
+                                    target,
+                                    "enter",
+                                    new PersonalEntitlementProjector(jdbc)
+                                            .bundleDescriptors(actor.workspace())),
                             actor.account(),
                             actor.workspacePartition(),
                             target);
