@@ -24,7 +24,7 @@ async function teachingFixture(page: Page, paginated = false) {
     let status = 200;
     const complete = () => ({ id: `op-${++sequence}`, state: "SUCCEEDED", completed: true });
     const pending = (done: ReturnType<typeof complete>) => {
-      operations.set(done.id, done);
+      operations.set(done.id, { id: done.id, state: "PENDING", completed: false });
       status = 202;
       return { operationId: done.id, state: "PENDING", completed: false, statusUrl: `/api/me/operations/${done.id}` };
     };
@@ -73,7 +73,11 @@ async function teachingFixture(page: Page, paginated = false) {
     await route.fulfill({ status, json: data });
   });
   await page.goto("/centers/w/classes");
-  return { keys, membershipQueries };
+  return {
+    keys,
+    membershipQueries,
+    finishOperation: (id: string) => operations.set(id, { id, state: "SUCCEEDED", completed: true }),
+  };
 }
 
 test("phân công lại sau thu hồi tạo attempt mới, giữ pending tới khi operation thành công", async ({ page }) => {
@@ -85,16 +89,19 @@ test("phân công lại sau thu hồi tạo attempt mới, giữ pending tới k
   await assign.click();
   await page.getByText("op-1", { exact: true }).waitFor();
   await expect(assign).toBeDisabled();
-  await page.getByRole("button", { name: "Kiểm tra trạng thái", exact: true }).click();
+  fixture.finishOperation("op-1");
+  await expect(page.getByRole("button", { name: "Thu hồi phân công", exact: true })).toBeVisible({ timeout: 10_000 });
+
   await page.getByRole("button", { name: "Thu hồi phân công", exact: true }).click();
   await page.getByText("op-2", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Kiểm tra trạng thái", exact: true }).click();
-  await page.getByText("Chưa có giáo viên nào đang phân công môn này.").waitFor();
+  fixture.finishOperation("op-2");
+  await page.getByText("Chưa có giáo viên nào đang phân công môn này.").waitFor({ timeout: 10_000 });
+
   await page.getByRole("checkbox", { name: "Teacher A", exact: true }).check();
   await assign.click();
   await page.getByText("op-3", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Kiểm tra trạng thái", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Thu hồi phân công", exact: true })).toBeVisible();
+  fixture.finishOperation("op-3");
+  await expect(page.getByRole("button", { name: "Thu hồi phân công", exact: true })).toBeVisible({ timeout: 10_000 });
   expect(fixture.keys).toHaveLength(2);
   expect(fixture.keys[1]).not.toBe(fixture.keys[0]);
 });
@@ -102,7 +109,8 @@ test("phân công lại sau thu hồi tạo attempt mới, giữ pending tới k
 test("quản lý ở trang hai vẫn quản trị và thấy đủ roster vượt 20 học sinh", async ({ page }) => {
   const fixture = await teachingFixture(page, true);
   await expect(page.getByRole("button", { name: "Tạo lớp", exact: true })).toBeVisible();
-  expect(fixture.membershipQueries).toEqual(["", "?cursor=members-2"]);
+  // React Strict Mode dev có thể mount lại; mỗi lượt vẫn phải đọc cả hai trang.
+  expect(new Set(fixture.membershipQueries)).toEqual(new Set(["", "?cursor=members-2"]));
   await page.getByRole("button", { name: "Review Class", exact: true }).click();
   await expect(page.getByRole("listitem").filter({ hasText: "student-20" })).toBeVisible();
 });

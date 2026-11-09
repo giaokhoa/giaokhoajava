@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { requestWhenReady } from "../../lib/api-client";
+import { requestAllPages } from "../../lib/api-client";
 import { useSession } from "../identity/session-provider";
 
 // Hình hiển thị duy nhất của đường đọc kết quả: đúng các trường của
@@ -126,10 +126,10 @@ export function ChildResultsContent({
     if (!userId) return;
     let ignore = false;
     const controller = new AbortController();
-    requestWhenReady(resultsPath, { signal: controller.signal })
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setLoaded({ key: contextKey, results: parsePublishedResults(result.data) });
+    requestAllPages(resultsPath, { signal: controller.signal })
+      .then((items) => {
+        if (ignore) return;
+        setLoaded({ key: contextKey, results: parsePublishedResults(items) });
         setLoadError(null);
       })
       .catch((error: unknown) => {

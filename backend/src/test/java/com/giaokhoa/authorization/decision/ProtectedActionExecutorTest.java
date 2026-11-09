@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -24,8 +25,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -152,6 +157,104 @@ class ProtectedActionExecutorTest {
 
         assertEquals(HttpStatus.FORBIDDEN, problem.getStatus());
         assertFalse(ran.get(), "A denied action must never run");
+    }
+
+    @Test
+    void evaluateAndReadKeepsFilteredMaterializationInsideTheFence() {
+        Fixture fixture = new Fixture(Map.of(KEY, "recorded-resource"));
+        when(fixture.decisions.isAllowed(any(), any(), any())).thenReturn(false);
+        AtomicBoolean insideFence = new AtomicBoolean();
+        doAnswer(
+                        invocation -> {
+                            insideFence.set(true);
+                            try {
+                                return runSupplier(invocation);
+                            } finally {
+                                insideFence.set(false);
+                            }
+                        })
+                .when(fixture.fence)
+                .atSnapshot(any(), any());
+
+        String result =
+                fixture.executor.evaluateAndRead(
+                        fixture.authentication,
+                        new MockHttpServletRequest(),
+                        WORKSPACE,
+                        List.of(TARGET),
+                        decisions -> {
+                            assertTrue(insideFence.get(), "Read must run before the fence unlocks");
+                            assertFalse(decisions.allowed(KEY, "enter"));
+                            return "filtered";
+                        });
+
+        assertEquals("filtered", result);
+        assertFalse(insideFence.get());
+        verify(fixture.fence).atSnapshot(any(), any());
+    }
+
+    @Test
+    void revocationCannotEnterSameFenceBeforePublishedDtoMaterializes() throws Exception {
+        Fixture fixture = new Fixture(Map.of(KEY, "recorded-resource"));
+        when(fixture.decisions.isAllowed(any(), any(), any())).thenReturn(true);
+        ReentrantLock partitionLock = new ReentrantLock(true);
+        CountDownLatch materializing = new CountDownLatch(1);
+        CountDownLatch releaseMaterialization = new CountDownLatch(1);
+        CountDownLatch revokeAttempted = new CountDownLatch(1);
+        AtomicBoolean revoked = new AtomicBoolean();
+        doAnswer(
+                        call -> {
+                            partitionLock.lock();
+                            try {
+                                return runSupplier(call);
+                            } finally {
+                                partitionLock.unlock();
+                            }
+                        })
+                .when(fixture.fence)
+                .atSnapshot(any(), any());
+        try (var threads = Executors.newFixedThreadPool(2)) {
+            var result =
+                    threads.submit(() ->
+                            fixture.executor.evaluateAndRead(
+                                    fixture.authentication,
+                                    new MockHttpServletRequest(),
+                                    WORKSPACE,
+                                    List.of(TARGET),
+                                    decisions -> {
+                                        assertTrue(decisions.allowed(KEY, "enter"));
+                                        materializing.countDown();
+                                        try {
+                                            assertTrue(
+                                                    releaseMaterialization.await(
+                                                            5, TimeUnit.SECONDS));
+                                        } catch (InterruptedException ex) {
+                                            Thread.currentThread().interrupt();
+                                            throw new IllegalStateException("Test interrupted", ex);
+                                        }
+                                        assertFalse(
+                                                revoked.get(),
+                                                "Revoke must not commit during DTO materialization");
+                                        return "safe";
+                                    }));
+            assertTrue(materializing.await(5, TimeUnit.SECONDS));
+            var revoke =
+                    threads.submit(() -> {
+                        revokeAttempted.countDown();
+                        partitionLock.lock();
+                        try {
+                            revoked.set(true);
+                        } finally {
+                            partitionLock.unlock();
+                        }
+                    });
+            assertTrue(revokeAttempted.await(5, TimeUnit.SECONDS));
+            assertFalse(revoke.isDone());
+            releaseMaterialization.countDown();
+            assertEquals("safe", result.get(5, TimeUnit.SECONDS));
+            revoke.get(5, TimeUnit.SECONDS);
+            assertTrue(revoked.get());
+        }
     }
 
     @Test

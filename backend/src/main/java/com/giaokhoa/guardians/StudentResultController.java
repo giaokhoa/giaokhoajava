@@ -1,14 +1,17 @@
 package com.giaokhoa.guardians;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -26,7 +29,9 @@ public class StudentResultController {
     }
 
     /** Trang kết quả đã công bố: chỉ items, không totalCount. */
-    public record PublishedResultPage(List<PublishedResultView> items) {
+    public record PublishedResultPage(
+            List<PublishedResultView> items,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String nextCursor) {
         public PublishedResultPage {
             items = List.copyOf(items);
         }
@@ -36,12 +41,20 @@ public class StudentResultController {
     public ResponseEntity<PublishedResultPage> listResults(
             @PathVariable UUID workspaceId,
             @PathVariable UUID studentUserId,
+            @RequestParam(value = "cursor", required = false) @Nullable String cursor,
+            @RequestParam(value = "limit", required = false) @Nullable Integer limit,
             Authentication authentication,
             HttpServletRequest request) {
-        List<PublishedResultView> items =
-                results.listPublishedResults(authentication, request, workspaceId, studentUserId);
+        PublishedResultService.ResultPage page =
+                results.pagePublishedResults(
+                        authentication,
+                        request,
+                        workspaceId,
+                        studentUserId,
+                        cursor,
+                        limit == null ? 20 : limit);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-                .body(new PublishedResultPage(items));
+                .body(new PublishedResultPage(page.items(), page.nextCursor()));
     }
 }

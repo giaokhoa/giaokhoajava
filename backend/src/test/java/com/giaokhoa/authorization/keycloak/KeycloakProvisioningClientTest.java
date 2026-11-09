@@ -2,6 +2,7 @@ package com.giaokhoa.authorization.keycloak;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -27,7 +28,10 @@ class KeycloakProvisioningClientTest {
     private static final UUID WORKSPACE = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     private static final String NAME = "center-" + WORKSPACE;
     private static final String ORG_QUERY =
-            HOST + "/admin/realms/giaokhoa/organizations?search=" + NAME + "&max=100";
+            HOST
+                    + "/admin/realms/giaokhoa/organizations?search="
+                    + NAME
+                    + "&exact=true&first=0&max=100";
 
     @Test
     void createsOrganizationOnceAndReturnsStableOpaqueIdOnRetry() {
@@ -72,6 +76,40 @@ class KeycloakProvisioningClientTest {
 
         assertEquals("opaque-keycloak-id", client.ensureOrganization(WORKSPACE, "Center A"));
         assertEquals("opaque-keycloak-id", client.ensureOrganization(WORKSPACE, "Center A"));
+        server.verify();
+    }
+
+    @Test
+    void readsAllPagesOfUserGroupsBeforeDecidingMembership() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        KeycloakProvisioningClient client = client(builder);
+        String prefix = "/gk/workspaces/" + WORKSPACE + "/students/";
+        String firstPage =
+                "["
+                        + java.util.stream.IntStream.range(0, 100)
+                                .mapToObj(i ->
+                                        "{\"path\":\""
+                                                + prefix
+                                                + "00000000-0000-0000-0000-"
+                                                + String.format("%012d", i)
+                                                + "/guardians\"}")
+                                .collect(java.util.stream.Collectors.joining(","))
+                        + "]";
+        String lastPath = prefix + "ffffffff-ffff-ffff-ffff-ffffffffffff/guardians";
+        server.expect(
+                        requestTo(
+                                HOST
+                                        + "/admin/realms/giaokhoa/users/opaque-user/groups?first=0&max=100"))
+                .andRespond(withSuccess(firstPage, MediaType.APPLICATION_JSON));
+        server.expect(
+                        requestTo(
+                                HOST
+                                        + "/admin/realms/giaokhoa/users/opaque-user/groups?first=100&max=100"))
+                .andRespond(
+                        withSuccess(
+                                "[{\"path\":\"" + lastPath + "\"}]", MediaType.APPLICATION_JSON));
+        assertTrue(client.realmGroupPaths("opaque-user").contains(lastPath));
         server.verify();
     }
 

@@ -7,16 +7,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.UUID;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.client.RestClient;
 
 /** Kiểm tra integration profile thật của Spring và các dịch vụ PostgreSQL/OIDC tách biệt của nó. */
 @SpringBootTest
 class IntegrationEnvironmentIT extends IntegrationEnvironment {
+    private static final String SCHEMA =
+            "integration_environment_" + UUID.randomUUID().toString().replace("-", "");
+
+    @DynamicPropertySource
+    static void isolatedSchema(DynamicPropertyRegistry registry) {
+        isolatedSchema(registry, SCHEMA);
+    }
+
+    @AfterAll
+    static void cleanSchema(@Autowired ApplicationContext context) {
+        stopSchedulerAndDropSchema(context, SCHEMA);
+    }
+
     @Autowired DataSource dataSource;
 
     @Autowired Environment environment;

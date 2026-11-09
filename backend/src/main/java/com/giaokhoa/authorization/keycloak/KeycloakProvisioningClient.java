@@ -2,8 +2,10 @@ package com.giaokhoa.authorization.keycloak;
 
 import java.net.URI;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -167,16 +169,35 @@ public class KeycloakProvisioningClient {
         return Objects.requireNonNull(parentId);
     }
 
-    /** Đọc các realm group mà user là thành viên trực tiếp và đối chiếu path cố định. */
-    public boolean isRealmGroupMember(String keycloakUserId, String groupPath) {
+    /** Đọc một lần toàn bộ realm group của actor (có phân trang) để reconcile nhiều nguồn. */
+    public Set<String> realmGroupPaths(String keycloakUserId) {
         if (keycloakUserId == null || keycloakUserId.isBlank()) {
             throw new IllegalArgumentException("Keycloak user ID is required");
         }
+        final int pageSize = 100;
+        Set<String> paths = new HashSet<>();
+        for (int first = 0; ; first += pageSize) {
+            URI uri =
+                    UriComponentsBuilder.fromUri(endpoint("users", keycloakUserId, "groups"))
+                            .queryParam("first", first)
+                            .queryParam("max", pageSize)
+                            .build()
+                            .encode()
+                            .toUri();
+            Group[] groups = get(uri, Group[].class);
+            Arrays.stream(groups).map(Group::path).filter(Objects::nonNull).forEach(paths::add);
+            if (groups.length < pageSize) {
+                return Set.copyOf(paths);
+            }
+        }
+    }
+
+    /** Kiểm tra group nguồn theo đường dẫn đầy đủ, không tin claim từ phiên. */
+    public boolean isRealmGroupMember(String keycloakUserId, String groupPath) {
         if (groupPath == null || !GROUP_SOURCE.matcher(groupPath).matches()) {
             throw new IllegalArgumentException("Unrecognized authorization group source");
         }
-        Group[] groups = get(endpoint("users", keycloakUserId, "groups"), Group[].class);
-        return Arrays.stream(groups).anyMatch(group -> groupPath.equals(group.path()));
+        return realmGroupPaths(keycloakUserId).contains(groupPath);
     }
 
     /** Membership độc lập với group của Organization; không ngụ ý policy kế thừa nào. */
@@ -208,18 +229,32 @@ public class KeycloakProvisioningClient {
     }
 
     private @Nullable Organization findOrganization(String name) {
-        URI uri =
-                UriComponentsBuilder.fromUri(endpoint("organizations"))
-                        .queryParam("search", name)
-                        .queryParam("max", 100)
-                        .build()
-                        .encode()
-                        .toUri();
-        Organization[] organizations = get(uri, Organization[].class);
-        return Arrays.stream(organizations)
-                .filter(org -> name.equals(org.name()) || name.equals(org.alias()))
-                .findFirst()
-                .orElse(null);
+        // Keycloak "search" mặc định là substring; exact + paging tránh trượt tên khi
+        // nhiều organization có cùng tiền tố (và không bao giờ chọn nhầm tên gần giống).
+        final int pageSize = 100;
+        for (int first = 0; ; first += pageSize) {
+            URI uri =
+                    UriComponentsBuilder.fromUri(endpoint("organizations"))
+                            .queryParam("search", name)
+                            .queryParam("exact", true)
+                            .queryParam("first", first)
+                            .queryParam("max", pageSize)
+                            .build()
+                            .encode()
+                            .toUri();
+            Organization[] organizations = get(uri, Organization[].class);
+            Organization matched =
+                    Arrays.stream(organizations)
+                            .filter(org -> name.equals(org.name()) || name.equals(org.alias()))
+                            .findFirst()
+                            .orElse(null);
+            if (matched != null) {
+                return matched;
+            }
+            if (organizations.length < pageSize) {
+                return null;
+            }
+        }
     }
 
     private @Nullable Group findGroup(String path) {

@@ -249,12 +249,23 @@ async function xoaNguoiDung(env: TestEnvironment, daTao: NguoiDungTest[]): Promi
 }
 
 async function layDanhSachCenter(page: Page, origin: string): Promise<CenterView[]> {
-  const response = await guiGet(page, origin, "/api/platform/centers");
-  expect(response.status()).toBe(200);
-  // GET /api/platform/centers trả mảng trần, không phải trang {items}.
-  const body = (await response.json()) as CenterView[];
-  expect(Array.isArray(body)).toBe(true);
-  return body;
+  const centers: CenterView[] = [];
+  let cursor: string | undefined;
+  const seen = new Set<string>();
+  do {
+    const path = `/api/platform/centers${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const response = await guiGet(page, origin, path);
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as { items: CenterView[]; nextCursor?: string };
+    expect(Array.isArray(body.items)).toBe(true);
+    centers.push(...body.items);
+    cursor = body.nextCursor;
+    if (cursor) {
+      expect(seen.has(cursor)).toBe(false);
+      seen.add(cursor);
+    }
+  } while (cursor);
+  return centers;
 }
 
 async function layDanhSachThanhVien(

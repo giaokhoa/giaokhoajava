@@ -146,9 +146,11 @@ public class GuardianPolicyProjector {
                 String subject =
                         Objects.requireNonNull((String) parent.get("keycloak_sub"), "keycloak_sub");
                 Set<String> desired = desiredGroups(workspaceId, parentUserId);
+                // Một request nhóm cho mỗi phụ huynh, thay vì N_student lần cùng GET.
+                Set<String> current = directory.realmGroupPaths(subject);
                 for (String groupPath : groupPaths) {
                     boolean shouldBeMember = desired.contains(groupPath);
-                    if (directory.isRealmGroupMember(subject, groupPath) != shouldBeMember) {
+                    if (current.contains(groupPath) != shouldBeMember) {
                         directory.setRealmGroupMembership(subject, groupPath, shouldBeMember);
                     }
                 }
