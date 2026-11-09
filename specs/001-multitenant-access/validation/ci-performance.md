@@ -45,12 +45,18 @@ setup; các ca kiểm tra chính API theo lô vẫn giữ nguyên hành vi/asser
 
 - Hai runner backend chạy `clean verify`, rồi `-Pintegration,it-pure verify` hoặc
   `-Pintegration,e2e-backend verify`; hợp hai tập bằng lượt `-Pintegration verify`.
-- Hai shard Playwright vẫn giữ toàn bộ 48 E2E. Mỗi shard có PostgreSQL, Keycloak,
+- Hai project Playwright bù nhau vẫn giữ toàn bộ 48 E2E. Mỗi project có PostgreSQL, Keycloak,
   Mailpit, backend, Next và gateway riêng trên runner riêng, một worker mỗi runner.
-- Native Keycloak và signed OIDC logout chạy một lần ở shard 1. Check tổng hợp
+- Native Keycloak và signed OIDC logout chạy một lần ở `chromium-core`. Check tổng hợp
   `backend`/`integration` thất bại nếu bất kỳ thành phần tương ứng thất bại/hủy.
 - Timeout Playwright dừng trước timeout job để xuất report. XML/JSON/trace được lưu
   cả khi xanh; không coi artifact upload thành công là kiểm chứng test.
 
 Số ca/thời gian và các lệnh đã chạy được ghi trong PR theo đúng SHA kiểm chứng.
 Chưa thay đổi đường quét resource/policy của code production trong đợt này.
+
+Đo lượt đầu: sharding theo số ca 24/24 mất 6,3 và 13,4 phút E2E. Vì hai file
+`teaching-administration` và `revocation` bị gom vào cùng shard, đã chuyển sang
+hai project chuẩn của Playwright: giảng dạy/phụ huynh (12 ca) và phần còn lại
+(36 ca). `testMatch`/`testIgnore` dùng cùng regex để không trùng hoặc bỏ sót file;
+file mới mặc định thuộc nhóm core. Đây là phân tải CI, không thay đổi assertion.

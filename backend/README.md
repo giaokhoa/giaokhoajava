@@ -36,9 +36,10 @@ và `-Pintegration,e2e-backend verify`. Hai profile là hai tập bù nhau theo 
 `e2e-backend` đã có từ PR #207; ghép kết quả của cả hai mới đủ suite. Lệnh
 `-Pintegration verify` ở local vẫn chạy toàn bộ. Mỗi runner vẫn chạy `clean verify`
 bằng JDK 25 và toàn bộ quality gates; check `backend` chỉ xanh khi cả hai tập đạt.
-Playwright chia hai shard trên hai runner độc lập, mỗi runner giữ một worker và
-stack TEST riêng; native Keycloak và OIDC logout chạy một lần ở shard 1.
-Check `integration` chỉ xanh khi cả hai shard đạt. XML backend và JSON/trace E2E
+Playwright chia hai project bù nhau trên hai runner độc lập: `chromium-teaching-guardians`
+chạy hai file giảng dạy/phụ huynh, `chromium-core` chạy mọi file còn lại (kể cả file mới).
+Mỗi runner giữ một worker và stack TEST riêng; native Keycloak và OIDC logout chạy một
+lần ở `chromium-core`. Check `integration` chỉ xanh khi cả hai project đạt. XML backend và JSON/trace E2E
 được tải lên cả khi test đạt để đối chiếu số ca và thời gian, tối đa 7 ngày;
 lỗi quota artifact không thay đổi kết quả kiểm thử.
 
