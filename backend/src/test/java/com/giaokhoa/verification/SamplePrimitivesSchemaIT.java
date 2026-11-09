@@ -3,7 +3,6 @@ package com.giaokhoa.verification;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.verification.model.SampleActivity;
 import com.giaokhoa.verification.model.SampleResult;
@@ -17,13 +16,14 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Kiểm chứng ba entity mẫu (hoạt động, bài nộp, kết quả) round-trip qua JPA trên schema V019 trong
@@ -31,8 +31,13 @@ import org.springframework.transaction.annotation.Transactional;
  * và các ràng buộc DB chính (unique lượt nộp, CHECK công bố) bắt được cả khi ghi qua entity. Phần
  * RLS/FK/trigger qua role runtime nằm ở SampleRawConstraintsIT.
  */
-@SpringBootTest
-@Transactional
+// Slice JPA của Boot 4 trên PostgreSQL thật của stack TEST: replace = NONE giữ nguyên
+// datasource đã khai (không thay bằng embedded); Flyway không thuộc slice nên phải import
+// tường minh để migration chạy trước khi Hibernate validate schema. Slice không nạp
+// worker/scheduler nên không còn actor nào khóa chéo với DROP SCHEMA ở @AfterAll.
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@ImportAutoConfiguration(FlywayAutoConfiguration.class)
 class SamplePrimitivesSchemaIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "sample_primitives_" + UUID.randomUUID().toString().replace("-", "");
@@ -46,11 +51,6 @@ class SamplePrimitivesSchemaIT extends IntegrationEnvironment {
     static void removeSchema(@Autowired JdbcTemplate jdbc) {
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
-
-    // Worker không thuộc phạm vi kiểm thử của class này nhưng worker thật chạy theo lịch sẽ mở
-    // giao dịch trên chính schema này trong khi @AfterAll DROP SCHEMA cần khóa độc quyền —
-    // mock để không còn actor đồng thời nào chạm schema, đúng mẫu ResourcePrimitivesSchemaIT.
-    @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
