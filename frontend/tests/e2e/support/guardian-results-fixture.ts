@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 type ResultSeed = {
@@ -23,12 +23,20 @@ export function seedGuardianResult(seed: ResultSeed): string {
   ].some(([database, keycloak]) => process.env.TEST_DATABASE_URL === database
     && process.env.TEST_KEYCLOAK_BASE_URL === keycloak);
   const schema = process.env.TEST_E2E_SCHEMA ?? "";
-  const project = process.env.TEST_COMPOSE_PROJECT ?? "giaokhoa-test";
   if (!pairedTarget || process.env.TEST_KEYCLOAK_REALM !== "giaokhoa-it"
-      || !/^e2e_[a-f0-9]{32}$/.test(schema)
-      || !/^giaokhoa-(?:[a-z0-9]+-)*test$/.test(project)) {
+      || !/^e2e_[a-f0-9]{32}$/.test(schema)) {
     throw new Error("Fixture chỉ chạy trên cặp DB/Keycloak TEST và schema riêng của Playwright.");
   }
+  const username = process.env.TEST_DATABASE_USERNAME;
+  const password = process.env.TEST_DATABASE_PASSWORD;
+  const match = (process.env.TEST_DATABASE_URL ?? "")
+    .match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
+  const host = match?.[1];
+  const database = match?.[3];
+  if (!username || !password || !host || !database) {
+    throw new Error("Fixture cần TEST_DATABASE_URL/USERNAME/PASSWORD của làn TEST.");
+  }
+  const port = match?.[2] ?? "5432";
   for (const value of [seed.workspaceId, seed.teacherUserId, seed.studentUserId,
     seed.courseSubjectId, seed.subjectId]) {
     if (!uuid.test(value)) throw new Error("Fixture cần UUID hợp lệ.");
@@ -68,8 +76,26 @@ VALUES ('${result}', ${w}, '${submission}', ${student}, ${courseSubject},
   ${literal(seed.score)}, ${literal(seed.comment)}, '${seed.published ? "PUBLISHED" : "DRAFT"}',
   ${seed.published ? "now()" : "NULL"}, ${teacher});
 COMMIT;`;
-  execFileSync("docker", ["exec", "-i", `${project}-test-app-db-1`, "psql", "-X",
-    "-v", "ON_ERROR_STOP=1", "-U", "giaokhoa_test", "-d", "giaokhoa_test", "-qAt"],
-  { input: sql, encoding: "utf8" });
+  const ketQua = spawnSync("psql",
+    ["-X", "-v", "ON_ERROR_STOP=1", "-qAt", "-f", "-"],
+    {
+      input: sql,
+      env: {
+        ...process.env,
+        PGHOST: host,
+        PGPORT: port,
+        PGDATABASE: database,
+        PGUSER: username,
+        PGPASSWORD: password,
+      },
+      timeout: 60_000,
+      encoding: "utf8",
+    });
+  if (ketQua.error) {
+    throw new Error(`Không chạy được psql để seed kết quả: ${ketQua.error.message}`);
+  }
+  if (ketQua.status !== 0) {
+    throw new Error(`Seed kết quả thất bại (psql ${ketQua.status}): ${(ketQua.stderr ?? "").trim()}`);
+  }
   return result;
 }
