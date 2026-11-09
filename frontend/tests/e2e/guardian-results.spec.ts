@@ -911,27 +911,34 @@ async function dungSanSangPhuHuynh(
   const setup = await dungCenterLopKhoa(page, origin, env, daTao, 2);
   const [mon1, mon2] = setup.monKhoa;
 
+  // moiVaChapNhan kết thúc ở phiên người được mời: trước mutation tiếp theo bằng
+  // vai manager phải đăng nhập lại manager để lấy CSRF của phiên hiện tại.
+  let csrfManager = setup.csrfManager;
+
   const giaoVien = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
   const { userAppId: idGiaoVien } = await moiVaChapNhan(page, origin,
-    setup.csrfManager, setup.workspaceId, giaoVien, ["TEACHER"]);
-  await phanCongGiaoVien(page, origin, setup.csrfManager, setup.workspaceId,
+    csrfManager, setup.workspaceId, giaoVien, ["TEACHER"]);
+  csrfManager = await dangNhapLai(page, origin, setup.manager);
+  await phanCongGiaoVien(page, origin, csrfManager, setup.workspaceId,
     mon1.id, [idGiaoVien]);
-  await phanCongGiaoVien(page, origin, setup.csrfManager, setup.workspaceId,
+  await phanCongGiaoVien(page, origin, csrfManager, setup.workspaceId,
     mon2.id, [idGiaoVien]);
 
   const chuNhiem = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
   const { userAppId: idChuNhiem } = await moiVaChapNhan(page, origin,
-    setup.csrfManager, setup.workspaceId, chuNhiem, ["TEACHER"]);
-  await phanCongChuNhiem(page, origin, setup.csrfManager, setup.workspaceId,
+    csrfManager, setup.workspaceId, chuNhiem, ["TEACHER"]);
+  csrfManager = await dangNhapLai(page, origin, setup.manager);
+  await phanCongChuNhiem(page, origin, csrfManager, setup.workspaceId,
     setup.lopId, idChuNhiem);
 
   const phuHuynh = await taoNguoiDung(env, NHOM_ELIGIBLE, daTao);
   const { userAppId: parentAppId } = await moiVaChapNhan(page, origin,
-    setup.csrfManager, setup.workspaceId, phuHuynh, ["PARENT"]);
+    csrfManager, setup.workspaceId, phuHuynh, ["PARENT"]);
+  csrfManager = await dangNhapLai(page, origin, setup.manager);
 
-  const hocSinhX = await capHocSinhDayDu(page, origin, setup.csrfManager,
+  const hocSinhX = await capHocSinhDayDu(page, origin, csrfManager,
     setup.workspaceId, setup.lopId, setup.monKhoa);
-  const hocSinhY = await capHocSinhDayDu(page, origin, setup.csrfManager,
+  const hocSinhY = await capHocSinhDayDu(page, origin, csrfManager,
     setup.workspaceId, setup.lopId, setup.monKhoa);
 
   const nhanXetCongBo = `nhan-xet-cong-bo-${randomUUID().slice(0, 8)}`;
