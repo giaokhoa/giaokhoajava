@@ -121,7 +121,7 @@ public class CourseService {
                 repository.pageCourses(workspaceId, classId, cursor, limit);
         Map<UUID, List<CourseSubjectRow>> subjects =
                 repository.currentSubjectsByCourse(
-                        workspaceId, page.items().stream().map(CourseRow::id).toList());
+                        workspaceId, page.items().stream().map(row -> row.id()).toList());
         return page.map(row -> view(row, subjects.getOrDefault(row.id(), List.of())));
     }
 
@@ -135,7 +135,7 @@ public class CourseService {
         List<CourseRow> rows = repository.listCourses(workspaceId, classId);
         Map<UUID, List<CourseSubjectRow>> subjects =
                 repository.currentSubjectsByCourse(
-                        workspaceId, rows.stream().map(CourseRow::id).toList());
+                        workspaceId, rows.stream().map(row -> row.id()).toList());
         return rows.stream()
                 .map(row -> view(row, subjects.getOrDefault(row.id(), List.of())))
                 .toList();

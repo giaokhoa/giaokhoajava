@@ -133,7 +133,7 @@ final class TeachingPageQueries {
                 "c",
                 query,
                 (rs, _) -> mapClass(rs),
-                ClassRow::id,
+                row -> row.id(),
                 workspaceId,
                 cursor,
                 limit,
@@ -153,7 +153,7 @@ final class TeachingPageQueries {
                         + " WHERE cs.workspace_id = ? AND cs.class_id = ?"
                         + " AND cs.state IN ('PENDING', 'ACTIVE')",
                 (rs, _) -> mapRoster(rs),
-                RosterRow::id,
+                row -> row.id(),
                 workspaceId,
                 cursor,
                 limit,
@@ -172,7 +172,7 @@ final class TeachingPageQueries {
                         + " FROM course c WHERE c.workspace_id = ? AND c.class_id = ?"
                         + " AND c.state = 'ACTIVE'",
                 (rs, _) -> mapCourse(rs),
-                CourseRow::id,
+                row -> row.id(),
                 workspaceId,
                 cursor,
                 limit,
@@ -203,7 +203,7 @@ final class TeachingPageQueries {
                                 rs.getObject("student_user_id", UUID.class),
                                 rs.getString("state"),
                                 rs.getLong("version")),
-                EnrollmentListRow::id,
+                row -> row.id(),
                 workspaceId,
                 cursor,
                 limit,
@@ -225,7 +225,7 @@ final class TeachingPageQueries {
                         + " FROM teaching_assignment t WHERE t.workspace_id = ?"
                         + " AND t.course_subject_id = ? AND t.state IN ('PENDING', 'ACTIVE')",
                 (rs, _) -> mapTeachingAssignment(rs),
-                TeachingAssignmentRow::id,
+                row -> row.id(),
                 workspaceId,
                 cursor,
                 limit,
@@ -244,7 +244,7 @@ final class TeachingPageQueries {
                         + " FROM homeroom_assignment h WHERE h.workspace_id = ?"
                         + " AND h.class_id = ? AND h.state IN ('PENDING', 'ACTIVE')",
                 (rs, _) -> mapHomeroomAssignment(rs),
-                HomeroomAssignmentRow::id,
+                row -> row.id(),
                 workspaceId,
                 cursor,
                 limit,
