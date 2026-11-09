@@ -421,7 +421,6 @@ class GuardianAccessIT extends GuardianFixture {
             }
         } finally {
             releaseList.countDown();
-            deleteGuardianCenter(center);
         }
     }
 

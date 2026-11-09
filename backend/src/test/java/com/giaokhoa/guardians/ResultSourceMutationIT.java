@@ -189,8 +189,6 @@ class ResultSourceMutationIT extends GuardianFixture {
                     assertResultVisible(reader, center, scenario.resultId());
                 }
             }
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 

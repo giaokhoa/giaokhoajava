@@ -770,7 +770,6 @@ class PublishedResultServiceIT extends GuardianFixture {
             }
         } finally {
             releaseDto.countDown();
-            deleteGuardianCenter(center);
         }
     }
 
@@ -821,8 +820,6 @@ class PublishedResultServiceIT extends GuardianFixture {
                 }
             }
             assertTrue(listAs(student, personalWid, center.studentX()).isEmpty());
-        } finally {
-            deleteGuardianCenter(center);
         }
     }
 
