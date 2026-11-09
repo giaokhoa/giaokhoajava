@@ -240,7 +240,19 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     center.workspaceId(),
                     teaching.courseSubjectId(),
                     identities.teacherBId());
+            UUID publishedId =
+                    seedPublishedResult(
+                            center.workspaceId(),
+                            teaching.courseSubjectId(),
+                            subject,
+                            identities.studentXId());
+            recordResults(center.workspaceId(), publishedId);
+            String results = resultsPath(center.workspaceId(), identities.studentXId());
             String roster = rosterPath(center.workspaceId(), teaching.courseSubjectId());
+            assertEquals(
+                    1,
+                    getJson(teacherA, results, 200).get("items").size(),
+                    "Giáo viên còn phân công đọc được kết quả công bố của học sinh");
             assertEquals(
                     1,
                     getJson(teacherA, roster, 200).get("items").size(),
@@ -268,6 +280,15 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     403,
                     getRaw(teacherA, roster).getStatus(),
                     "Cùng phiên cũ sau khi gỡ phân công phải bị chặn đọc roster ngay");
+            assertEquals(
+                    403,
+                    getRaw(teacherA, results).getStatus(),
+                    "Cùng phiên cũ sau khi gỡ phân công, giáo viên không còn đọc được kết quả"
+                            + " của học sinh (B56: actor khác mà tập được phép rỗng thì 403)");
+            assertEquals(
+                    1,
+                    getJson(teacherB, results, 200).get("items").size(),
+                    "Giáo viên còn phân công vẫn đọc được kết quả công bố của học sinh");
             assertEquals(
                     200,
                     getRaw(teacherB, roster).getStatus(),
@@ -297,11 +318,23 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     centerA.workspaceId(),
                     teaching.courseSubjectId(),
                     identities.teacherBId());
+            UUID publishedId =
+                    seedPublishedResult(
+                            centerA.workspaceId(),
+                            teaching.courseSubjectId(),
+                            subject,
+                            identities.studentXId());
+            recordResults(centerA.workspaceId(), publishedId);
+            String resultsA = resultsPath(centerA.workspaceId(), identities.studentXId());
             String rosterA = rosterPath(centerA.workspaceId(), teaching.courseSubjectId());
             assertEquals(
                     200,
                     getRaw(teacherA, rosterA).getStatus(),
                     "Giáo viên còn là thành viên đọc được roster");
+            assertEquals(
+                    1,
+                    getJson(teacherA, resultsA, 200).get("items").size(),
+                    "Giáo viên còn là thành viên đọc được kết quả công bố của học sinh");
             UUID membership =
                     Objects.requireNonNull(
                             centerA.teacherAMembership(), "Giáo viên A phải có membership tại A");
@@ -317,6 +350,15 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                     403,
                     getRaw(teacherA, rosterA).getStatus(),
                     "Cùng phiên cũ sau khi gỡ membership phải bị chặn đọc roster ngay");
+            assertEquals(
+                    403,
+                    getRaw(teacherA, resultsA).getStatus(),
+                    "Cùng phiên cũ sau khi gỡ membership, giáo viên không còn đọc được kết quả"
+                            + " của học sinh (B56: actor khác mà tập được phép rỗng thì 403)");
+            assertEquals(
+                    1,
+                    getJson(teacherB, resultsA, 200).get("items").size(),
+                    "Giáo viên còn là thành viên vẫn đọc được kết quả công bố của học sinh");
             List<UUID> visible = workspaceIds(teacherA);
             assertTrue(
                     visible.contains(centerB.workspaceId()),
