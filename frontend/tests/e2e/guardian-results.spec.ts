@@ -445,7 +445,8 @@ async function capStudent(
     { idempotencyKey: khoaIdempotency });
   expect(tao.status()).toBe(202);
   const traLoi = (await tao.json()) as MutationTraLoi;
-  expect(traLoi.completed).toBe(false);
+  // StudentIssueView bọc biên nhận trong operation (http-api.md), khác các mutation phẳng.
+  expect(traLoi.operation?.completed).toBe(false);
   expect(traLoi.handoff?.username).toBe(username);
   const matKhauTam = traLoi.handoff?.temporaryPassword ?? "";
   expect(matKhauTam.length).toBeGreaterThan(0);
