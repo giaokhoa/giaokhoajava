@@ -184,8 +184,20 @@ Tổng lượt 2: **5/6, 39,1 phút** (log
   bằng chứng full IT + E2E trên cây nghiệm thu lúc đó (cây PR chỉ khác
   main `2ce4a5eb` đúng file tài liệu này). Main sau đó nhích qua #207
   (chỉ đổi test, không chạm code production — xem §1) nên PR gate
-  rebase lên `b0e79b1c`; run CI mới trên đúng cây nghiệm thu cuối sẽ
-  điền vào đây trước khi merge (§5).
+  rebase lên `b0e79b1c`; hai run CI trên đúng cây nghiệm thu cuối đã
+  điền bổ sung vào đây sau khi merge:
+  - **CI của PR gate này, trên cây nghiệm thu cuối `b0e79b1c` +
+    file này, run `42681617877`: kết luận `success` — cả 7 job đều
+    `completed success` (`backend (it-pure)`, `backend (e2e-backend)`,
+    `backend` (tổng hợp), `frontend`, `integration (chromium-core)`,
+    `integration (chromium-teaching-guardians)`, `integration` (tổng hợp),
+    kiểm chứng trực tiếp qua GitHub API ngày 2026-11-10).** Đây là bằng
+    chứng full IT + E2E trên đúng cây nghiệm thu cuối (cây PR chỉ khác
+    main `b0e79b1c` đúng file tài liệu này).
+  - **CI trên main, cây nghiệm thu cuối `b0e79b1c`, run `42679274082`:
+    kết luận `success` — cả 7 job đều `completed success` (cùng 7 job
+    như trên, kiểm chứng trực tiếp qua GitHub API ngày 2026-11-10).**
+    Đây là bằng chứng full IT + E2E trên đúng cây main đã nghiệm thu.
 
 ### 3.4 Kiểm chứng tĩnh của #69 (frontend)
 
@@ -219,7 +231,8 @@ Tổng lượt 2: **5/6, 39,1 phút** (log
    (3 check bắt buộc backend / frontend / integration) — **đã đạt**
    (§3.3). Main sau đó nhích qua #208 và #207 (không đổi hành vi US5);
    bằng chứng full-suite trên đúng cây nghiệm thu cuối `b0e79b1c` là
-   run CI của chính PR gate này — số run sẽ điền vào §3.3 sau khi xanh.
+   run CI của chính PR gate này (`42681617877`, xanh 7/7) và run CI
+   main trên cùng cây (`42679274082`, xanh 7/7) — đã điền đủ ở §3.3.
 2. Sổ B62–B73 + C6 đủ trên main, ma trận 6/6, E2E 5/6 với US5.6 đỏ là
    nhiễu tải đã phân loại (§3.2) — **đã đạt**.
 3. File này (`specs/001-multitenant-access/validation/us5.md`) được đưa
