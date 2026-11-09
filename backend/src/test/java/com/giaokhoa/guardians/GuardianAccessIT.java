@@ -1,14 +1,28 @@
 package com.giaokhoa.guardians;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doAnswer;
 
+import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.tenancy.CenterService;
+import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -35,6 +49,9 @@ import tools.jackson.databind.JsonNode;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class GuardianAccessIT extends GuardianFixture {
+    @Autowired private IdempotencyService idempotency;
+    @Autowired private CenterService centers;
+    @MockitoSpyBean private GuardianLinkService guardedLinks;
 
     @Test
     void parentRequestsLinkAndSeesItPendingInOwnList() throws Exception {
@@ -316,6 +333,111 @@ class GuardianAccessIT extends GuardianFixture {
                     findLink(listLinks(manager, center.workspaceId()), center.studentX());
             decideSucceeded(manager, center.workspaceId(), current, "APPROVE");
             assertEquals("APPROVED", linkStateOf(parent, center.workspaceId(), center.studentX()));
+        }
+    }
+
+    @Test
+    void guardianReviewListKeepsTheSourceLockAfterCheckingTheManagerRole() throws Exception {
+        GuardianCenter center = seedGuardianCenter();
+        CountDownLatch roleChecked = new CountDownLatch(1);
+        CountDownLatch releaseList = new CountDownLatch(1);
+        AtomicInteger readerPid = new AtomicInteger();
+        AtomicInteger writerPid = new AtomicInteger();
+        try (var parent = openSession(center.parent());
+                var manager = openSession(center.manager())) {
+            requestLinkSucceeded(parent, center.workspaceId(), center.studentX());
+            UUID membershipId =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT id FROM center_membership WHERE workspace_id = ? AND user_id = ?"
+                                            + " AND state = 'ACTIVE'",
+                                    UUID.class,
+                                    center.workspaceId(),
+                                    center.managerId()));
+            Long version =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT version FROM center_membership WHERE id = ?",
+                                    Long.class,
+                                    membershipId));
+            doAnswer(
+                            invocation -> {
+                                readerPid.set(backendPid());
+                                roleChecked.countDown();
+                                awaitLatch(releaseList);
+                                return invocation.callRealMethod();
+                            })
+                    .when(guardedLinks)
+                    .listLinksForReview(center.workspaceId());
+
+            try (var pool = Executors.newFixedThreadPool(2)) {
+                try {
+                    var reader = pool.submit(() -> listLinks(manager, center.workspaceId()));
+                    assertTrue(roleChecked.await(15, TimeUnit.SECONDS), "Manager role was checked");
+                    CountDownLatch changeStarted = new CountDownLatch(1);
+                    var removeManager =
+                            pool.submit(() ->
+                                    tx(() -> {
+                                        writerPid.set(backendPid());
+                                        changeStarted.countDown();
+                                        return centers.replaceRoles(
+                                                center.ownerId(),
+                                                center.workspaceId(),
+                                                membershipId,
+                                                Set.of(),
+                                                "\"" + version + "\"",
+                                                "guardian-review-role-" + UUID.randomUUID(),
+                                                idempotency.payloadHash(
+                                                        "PUT",
+                                                        "/test/guardian-role",
+                                                        JSON.createObjectNode()));
+                                    }));
+                    assertTrue(changeStarted.await(10, TimeUnit.SECONDS));
+                    await().atMost(Duration.ofSeconds(10))
+                            .pollInterval(Duration.ofMillis(25))
+                            .untilAsserted(() -> {
+                                assertFalse(
+                                        removeManager.isDone(),
+                                        "Manager role changed before the authorized list was read");
+                                assertEquals(
+                                        Boolean.TRUE,
+                                        jdbc.queryForObject(
+                                                "SELECT ? = ANY(pg_blocking_pids(?))",
+                                                Boolean.class,
+                                                readerPid.get(),
+                                                writerPid.get()),
+                                        "Role mutation must wait for the reader's workspace source lock");
+                            });
+                    releaseList.countDown();
+                    assertEquals(1, reader.get(15, TimeUnit.SECONDS).size());
+                    awaitOperationSucceeded(jdbc, removeManager.get(15, TimeUnit.SECONDS).getId());
+                    assertEquals(
+                            403,
+                            getRaw(manager, linksPath(center.workspaceId())).getStatus(),
+                            "The old session must not read review links after its manager role is removed");
+                } finally {
+                    releaseList.countDown();
+                }
+            }
+        } finally {
+            releaseList.countDown();
+            deleteGuardianCenter(center);
+        }
+    }
+
+    private int backendPid() {
+        return Objects.requireNonNull(
+                jdbc.queryForObject("SELECT pg_backend_pid()", Integer.class));
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(20, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for guardian list reader");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted guardian list reader", exception);
         }
     }
 }

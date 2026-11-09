@@ -18,7 +18,8 @@ export KEYCLOAK_AUTHZ_AUDIENCE="${TEST_KEYCLOAK_AUTHZ_AUDIENCE:?}"
 export KEYCLOAK_ADMIN_BASE_URL="$TEST_KEYCLOAK_BASE_URL"
 export KEYCLOAK_PROVISIONER_CLIENT_ID="${TEST_KEYCLOAK_PROVISIONER_CLIENT_ID:?}"
 export KEYCLOAK_PROVISIONER_CLIENT_SECRET="${TEST_KEYCLOAK_PROVISIONER_CLIENT_SECRET:?}"
-SCHEMA="${E2E_SCHEMA:-e2e_${RANDOM}_${RANDOM}}"
+SCHEMA="${TEST_E2E_SCHEMA:-${E2E_SCHEMA:-e2e_${RANDOM}_${RANDOM}}}"
+[[ "$SCHEMA" =~ ^e2e_[a-z0-9_]+$ ]] || { echo 'Schema E2E phải là schema TEST riêng.' >&2; exit 1; }
 # Heap có giới hạn vì backend, frontend và Keycloak chạy cùng runner TEST.
 exec java -Xmx384m -jar "$ROOT/backend/target/giaokhoa-backend-0.0.1-SNAPSHOT.jar" \
   --server.port=18080 \

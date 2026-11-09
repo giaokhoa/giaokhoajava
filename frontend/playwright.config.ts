@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
 const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? "http://localhost:3001";
@@ -8,6 +9,10 @@ if (process.env.CI && !appOrigin) {
 }
 if (appOrigin && (appOrigin !== "http://127.0.0.1:8080" || frontendOrigin !== appOrigin)) {
   throw new Error("E2E dùng một origin TEST 127.0.0.1:8080 cho cả frontend/backend.");
+}
+if (appOrigin) {
+  // Backend và fixture Node dùng cùng schema ngẫu nhiên, không đưa cấu hình DB vào browser.
+  process.env.TEST_E2E_SCHEMA ??= `e2e_${randomUUID().replaceAll("-", "")}`;
 }
 
 export default defineConfig({
