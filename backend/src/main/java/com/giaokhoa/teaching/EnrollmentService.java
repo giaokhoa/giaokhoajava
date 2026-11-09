@@ -4,6 +4,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectScopeRow;
@@ -25,9 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Nghiệp vụ ghi danh ở tầng dữ kiện nguồn và nguồn quyền: ghi danh theo lô (mọi dòng roster đã chọn
  * nhân mọi môn–khóa đã chọn) và thu hồi một ghi danh. Ghi danh là thay đổi nguồn quyền — học sinh
  * thành nguồn của group học sinh thuộc môn–khóa — nên mỗi mutation ghi một authorization operation
- * qua {@link TeachingPolicyProjector} với bundle hiện hành của từng môn–khóa bị ảnh hưởng, và ghi
- * danh chỉ được coi là đã đồng bộ khi operation SUCCEEDED; service không tự quyết quyền thay
- * Keycloak PDP (quyết định cho phép ở route) và không báo hoàn tất khi operation còn PENDING.
+ * qua {@link SourceRevocationCoordinator} với bundle hiện hành của từng môn–khóa bị ảnh hưởng kèm
+ * toàn bộ bundle kết quả của workspace (ghi danh là nguồn của {@code read.published}), và ghi danh
+ * chỉ được coi là đã đồng bộ khi operation SUCCEEDED; service không tự quyết quyền thay Keycloak
+ * PDP (quyết định cho phép ở route) và không báo hoàn tất khi operation còn PENDING.
  *
  * <p>Toàn bộ lô được kiểm tra trước khi ghi bất cứ dòng nào (theo mẫu lô roster): danh sách hai
  * phía không được rỗng, mọi dòng roster phải hiện hành và thuộc đúng workspace, mọi môn–khóa phải
@@ -52,19 +54,19 @@ public class EnrollmentService {
     private final TeachingRepository repository;
     private final WorkspaceTransaction workspaceTransaction;
     private final IdempotencyService idempotency;
-    private final TeachingPolicyProjector projector;
+    private final SourceRevocationCoordinator revocations;
     private final ResourceMutationCoordinator coordinator;
 
     public EnrollmentService(
             TeachingRepository repository,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,
-            TeachingPolicyProjector projector,
+            SourceRevocationCoordinator revocations,
             ResourceMutationCoordinator coordinator) {
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
         this.idempotency = idempotency;
-        this.projector = projector;
+        this.revocations = revocations;
         this.coordinator = coordinator;
     }
 
@@ -187,13 +189,14 @@ public class EnrollmentService {
                         .map(subject ->
                                 NativePolicyTemplates.courseSubjectKey(workspaceId, subject.id()))
                         .toList();
-        return projector.recordTeachingChange(
+        return revocations.recordTeachingRevocation(
                 initiatorUserId, workspaceId, idempotencyKey, payloadHash, targets);
     }
 
     /**
      * Thu hồi một ghi danh: đổi state/revoked_at, giữ lịch sử, và ghi lại bundle của môn–khóa của
-     * nó trong cùng operation. Thu hồi không bị chặn bởi gói hết hạn.
+     * nó kèm toàn bộ bundle kết quả của workspace trong cùng operation (ghi danh là nguồn của
+     * {@code read.published}). Thu hồi không bị chặn bởi gói hết hạn.
      */
     @Transactional
     public AuthorizationOperation revokeEnrollment(
@@ -225,7 +228,7 @@ public class EnrollmentService {
                     "Ghi danh đã bị thu hồi trước đó.");
         }
         repository.revokeEnrollment(enrollmentId);
-        return projector.recordTeachingChange(
+        return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
                 idempotencyKey,

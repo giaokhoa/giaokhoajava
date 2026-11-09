@@ -2,20 +2,16 @@ package com.giaokhoa.tenancy;
 
 import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
-import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
-import com.giaokhoa.authorization.permission.PermissionCatalog;
-import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.guardians.GuardianRevocationContributor;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingRevocationContributor;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
@@ -50,11 +46,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class CenterService {
     private final JdbcTemplate jdbc;
     private final IdempotencyService idempotency;
-    private final AuthorizationOperationService operations;
-    private final CenterPolicyProjector projector;
+    private final SourceRevocationCoordinator revocations;
     private final KeycloakProvisioningClient directory;
     private final TeachingRevocationContributor teachingRevocations;
-    private final TeachingPolicyProjector teachingProjector;
     private final GuardianRevocationContributor guardianRevocations;
 
     private final ResourceMutationCoordinator coordinator;
@@ -62,21 +56,17 @@ public class CenterService {
     public CenterService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
-            AuthorizationOperationService operations,
-            CenterPolicyProjector projector,
+            SourceRevocationCoordinator revocations,
             KeycloakProvisioningClient directory,
             ResourceMutationCoordinator coordinator,
             TeachingRevocationContributor teachingRevocations,
-            TeachingPolicyProjector teachingProjector,
             GuardianRevocationContributor guardianRevocations) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
-        this.operations = operations;
-        this.projector = projector;
+        this.revocations = revocations;
         this.directory = directory;
         this.coordinator = coordinator;
         this.teachingRevocations = teachingRevocations;
-        this.teachingProjector = teachingProjector;
         this.guardianRevocations = guardianRevocations;
     }
 
@@ -319,41 +309,19 @@ public class CenterService {
     }
 
     /**
-     * Ghi operation cho một thay đổi trên workspace: toàn bộ bundle desired của projector tại dữ
-     * kiện nguồn hiện hành, trên WORKSPACE partition của chính workspace đó. Gắn kèm bundle của mọi
-     * target giảng dạy của workspace, vì thay đổi membership ở đây có thể đổi nguồn quản trị
-     * (owner/manager) mà mọi bundle giảng dạy đều tham chiếu, và phép đóng nguồn phụ thuộc của
-     * {@link TeachingRevocationContributor} vừa đổi dữ kiện nguồn của các bundle đó trong cùng
-     * transaction.
+     * Ghi operation cho một thay đổi trên workspace qua {@link SourceRevocationCoordinator}: toàn
+     * bộ bundle desired của workspace tại dữ kiện nguồn hiện hành — bundle workspace, mọi bundle
+     * giảng dạy và mọi bundle kết quả — trên WORKSPACE partition của chính workspace đó. Ghi kèm
+     * bundle kết quả vì thay đổi membership ở đây có thể đổi nguồn quản trị (owner/manager) mà mọi
+     * bundle giảng dạy đều tham chiếu, và phép đóng nguồn phụ thuộc của {@link
+     * TeachingRevocationContributor} vừa đổi dữ kiện nguồn của các bundle đó trong cùng
+     * transaction; membership/role cũng là tiền đề của nguồn học sinh và nguồn phụ huynh trong
+     * bundle kết quả.
      */
     private AuthorizationOperation recordWorkspaceOperation(
             UUID initiatorUserId, UUID workspaceId, String idempotencyKey, String payloadHash) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
-        List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
-        projections.add(
-                new AuthorizationOperationService.DesiredProjection(
-                        NativePolicyTemplates.workspaceKey(workspaceId),
-                        PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
-                        projector.bundleDescriptors(workspaceId),
-                        List.of()));
-        projections.addAll(teachingProjector.allBundleProjections(workspaceId));
-        return operations.applyDesiredState(
-                initiatorUserId,
-                workspaceId,
-                idempotencyKey,
-                payloadHash,
-                List.of(
-                        new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(), List.copyOf(projections))));
+        return revocations.recordMembershipRevocation(
+                initiatorUserId, workspaceId, idempotencyKey, payloadHash);
     }
 
     private void requireAccount(UUID userId) {

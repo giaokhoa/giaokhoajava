@@ -4,6 +4,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectScopeRow;
@@ -26,9 +27,11 @@ import org.springframework.transaction.annotation.Transactional;
  * môn–khóa và phân công/thu hồi chủ nhiệm cho một lớp, chỉ trong CENTER workspace (route phân công
  * không áp dụng cho personal). Phân công là thay đổi nguồn quyền — giáo viên thành nguồn của group
  * giáo viên thuộc môn–khóa hoặc group chủ nhiệm của lớp — nên mỗi mutation ghi một authorization
- * operation qua {@link TeachingPolicyProjector} với bundle hiện hành của target bị ảnh hưởng, và
- * phân công chỉ được coi là đã đồng bộ khi operation SUCCEEDED; service không tự quyết quyền thay
- * Keycloak PDP và không báo hoàn tất khi operation còn PENDING.
+ * operation qua {@link SourceRevocationCoordinator} với bundle hiện hành của target bị ảnh hưởng
+ * kèm toàn bộ bundle kết quả của workspace (phân công giảng dạy là nguồn của {@code read}/{@code
+ * grade}/{@code publish}/{@code read.published} trên kết quả), và phân công chỉ được coi là đã đồng
+ * bộ khi operation SUCCEEDED; service không tự quyết quyền thay Keycloak PDP và không báo hoàn tất
+ * khi operation còn PENDING.
  *
  * <p>Tiền đề role đúng center được kiểm tra ở đây trước khi ghi để trả 400 nghiệp vụ (trigger ở DB
  * chỉ kiểm tra membership ACTIVE cho chủ nhiệm, không kiểm tra role): người được phân công phải có
@@ -50,19 +53,19 @@ public class AssignmentService {
     private final TeachingRepository repository;
     private final WorkspaceTransaction workspaceTransaction;
     private final IdempotencyService idempotency;
-    private final TeachingPolicyProjector projector;
+    private final SourceRevocationCoordinator revocations;
     private final ResourceMutationCoordinator coordinator;
 
     public AssignmentService(
             TeachingRepository repository,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,
-            TeachingPolicyProjector projector,
+            SourceRevocationCoordinator revocations,
             ResourceMutationCoordinator coordinator) {
         this.repository = repository;
         this.workspaceTransaction = workspaceTransaction;
         this.idempotency = idempotency;
-        this.projector = projector;
+        this.revocations = revocations;
         this.coordinator = coordinator;
     }
 
@@ -120,7 +123,7 @@ public class AssignmentService {
                         UUID.randomUUID(), workspaceId, courseSubjectId, teacherUserId);
             }
         }
-        return projector.recordTeachingChange(
+        return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
                 idempotencyKey,
@@ -161,7 +164,7 @@ public class AssignmentService {
                     "Phân công giảng dạy đã bị thu hồi trước đó.");
         }
         repository.revokeTeachingAssignment(assignmentId);
-        return projector.recordTeachingChange(
+        return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
                 idempotencyKey,
@@ -210,7 +213,7 @@ public class AssignmentService {
             repository.insertHomeroomAssignment(
                     UUID.randomUUID(), workspaceId, classId, teacherUserId);
         }
-        return projector.recordTeachingChange(
+        return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
                 idempotencyKey,
@@ -251,7 +254,7 @@ public class AssignmentService {
                     "Phân công chủ nhiệm đã bị thu hồi trước đó.");
         }
         repository.revokeHomeroomAssignment(assignmentId);
-        return projector.recordTeachingChange(
+        return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
                 idempotencyKey,

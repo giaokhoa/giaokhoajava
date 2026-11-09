@@ -13,6 +13,7 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.AssignmentService.HomeroomAssignmentView;
@@ -22,9 +23,11 @@ import com.giaokhoa.teaching.ClassService.RosterEntryView;
 import com.giaokhoa.teaching.CourseService.CourseView;
 import com.giaokhoa.teaching.EnrollmentService.EnrollmentView;
 import com.giaokhoa.teaching.data.TeachingRepository;
+import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -488,8 +491,15 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
             AuthorizationOperationService runtimeOperations =
                     new AuthorizationOperationService(runtimeJdbc, runtimeIdempotency);
             TeachingPolicyProjector runtimeProjector =
-                    new TeachingPolicyProjector(
-                            runtimeJdbc, directory, runtimeOperations, runtimeTxManager);
+                    new TeachingPolicyProjector(runtimeJdbc, directory, runtimeTxManager);
+            SourceRevocationCoordinator runtimeRevocations =
+                    new SourceRevocationCoordinator(
+                            runtimeJdbc,
+                            runtimeOperations,
+                            new CenterPolicyProjector(runtimeJdbc, directory),
+                            runtimeProjector,
+                            new ResultPolicyProjector(
+                                    runtimeJdbc, runtimeOperations, runtimeTxManager));
             ResourceMutationCoordinator runtimeCoordinator =
                     new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);
             EnrollmentService runtimeEnrollments =
@@ -497,14 +507,14 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             runtimeRepository,
                             runtimeWorkspaceTx,
                             runtimeIdempotency,
-                            runtimeProjector,
+                            runtimeRevocations,
                             runtimeCoordinator);
             AssignmentService runtimeAssignments =
                     new AssignmentService(
                             runtimeRepository,
                             runtimeWorkspaceTx,
                             runtimeIdempotency,
-                            runtimeProjector,
+                            runtimeRevocations,
                             runtimeCoordinator);
             TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
             TransactionTemplate appTx = new TransactionTemplate(transactionManager);

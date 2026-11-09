@@ -73,6 +73,30 @@ class DependencyManifestResolverTest {
     }
 
     @Test
+    void resultTargetManifestIsFencedByOwningWorkspacePartitionWithNoUpstreamDependencies() {
+        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
+        String resultKey = "workspace:" + WORKSPACE + ":result:" + UUID.randomUUID();
+        Map<String, Object> resultProjection =
+                Map.of(
+                        "partition_id",
+                        WORKSPACE_PARTITION,
+                        "keycloak_resource_id",
+                        "result-resource",
+                        "dependency_partition_ids",
+                        new UUID[] {});
+        when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
+                .thenReturn(List.of(resultProjection));
+        when(jdbc.queryForList(contains("WHERE partition_id"), any(UUID.class)))
+                .thenReturn(List.of());
+
+        var manifest =
+                new DependencyManifestResolver(jdbc).resolve(ACTOR, WORKSPACE, List.of(resultKey));
+
+        assertEquals(List.of(ACCOUNT, WORKSPACE_PARTITION), sorted(manifest.partitionIds()));
+        assertEquals("result-resource", manifest.recordedResourceIds().get(resultKey));
+    }
+
+    @Test
     void manifestClosesUpstreamThroughOwnersButNeverSidewaysToIndependentDependents() {
         JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
         Map<String, Object> grantProjection =

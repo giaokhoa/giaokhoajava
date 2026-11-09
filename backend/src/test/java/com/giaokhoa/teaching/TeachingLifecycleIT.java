@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
+import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.InvitationService;
@@ -34,6 +35,7 @@ class TeachingLifecycleIT extends TeachingFixture {
     @Autowired private EnrollmentService enrollments;
     @Autowired private CenterService centers;
     @Autowired private TeachingPolicyProjector projector;
+    @Autowired private SourceRevocationCoordinator revocations;
     @Autowired private InvitationService invitations;
 
     @DynamicPropertySource
@@ -94,7 +96,7 @@ class TeachingLifecycleIT extends TeachingFixture {
         Setup setup = setup();
         String target = NativePolicyTemplates.classKey(setup.workspace(), setup.schoolClass());
         tx(() ->
-                projector.recordTeachingChange(
+                revocations.recordTeachingRevocation(
                         setup.owner(),
                         setup.workspace(),
                         UUID.randomUUID().toString(),
