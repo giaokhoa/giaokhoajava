@@ -351,8 +351,13 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
       linksPath,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)) {
-      setStudentUserId("");
+    // Chỉ dọn draft sau thao tác THÀNH CÔNG: PENDING/FAILED giữ nguyên dữ kiện
+    // đã nhập để người dùng theo dõi hoặc sửa rồi gửi lại.
+    if (data !== null) {
+      const nextOperation = parseTrackedOperation(data);
+      if (nextOperation?.completed && nextOperation.state === "SUCCEEDED") {
+        setStudentUserId("");
+      }
     }
   }
 

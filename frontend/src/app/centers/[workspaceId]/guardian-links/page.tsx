@@ -12,7 +12,7 @@ export default async function CenterGuardianLinksPage({
   const { workspaceId } = await params;
   return (
     <SessionProvider>
-      <GuardianLinksContent workspaceId={workspaceId} />
+      <GuardianLinksContent key={workspaceId} workspaceId={workspaceId} />
     </SessionProvider>
   );
 }

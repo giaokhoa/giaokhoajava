@@ -127,6 +127,9 @@ jobs:
       NATIVE_GATE_APP_ORIGIN: http://127.0.0.1:8080
       TEST_FRONTEND_ORIGIN: http://127.0.0.1:8080
       BACKEND_INTERNAL_URL: http://127.0.0.1:18080
+      # Schema riêng của lượt E2E: run-backend.sh dùng đúng tên này cho backend,
+      # các spec seed kết quả mẫu qua E2E_SCHEMA phải trùng schema đó.
+      E2E_SCHEMA: e2e_ci
       TEST_MAILPIT_URL: http://127.0.0.1:18025
     steps:
       - uses: actions/checkout@v4

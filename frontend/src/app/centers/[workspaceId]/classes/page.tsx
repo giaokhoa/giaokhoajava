@@ -12,7 +12,12 @@ export default async function CenterClassesPage({
   const { workspaceId } = await params;
   return (
     <SessionProvider>
-      <CenterClassesContent workspaceId={workspaceId} />
+      {/*
+        key theo workspace: đổi trung tâm thì component là instance mới nên toàn
+        bộ state riêng (panel thao tác, draft, lựa chọn) reset, không bao giờ
+        hiện dữ kiện của trung tâm trước.
+      */}
+      <CenterClassesContent key={workspaceId} workspaceId={workspaceId} />
     </SessionProvider>
   );
 }

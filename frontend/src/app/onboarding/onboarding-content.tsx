@@ -86,7 +86,11 @@ export function OnboardingContent() {
       }
       setOperation(nextOperation);
       if (action === "recovery") {
-        setReason("");
+        // Chỉ dọn draft sau thao tác THÀNH CÔNG: PENDING/FAILED giữ nguyên lý do
+        // đã nhập để người dùng theo dõi hoặc sửa rồi gửi lại.
+        if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
+          setReason("");
+        }
         recoveryAttempt.current = null;
       }
     } catch (error) {

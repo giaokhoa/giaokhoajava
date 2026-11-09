@@ -393,9 +393,11 @@ export function PlatformCentersContent() {
       const nextOperation = parseTrackedOperation(data);
       if (!nextOperation) throw new Error("Phản hồi thao tác không hợp lệ.");
       setOperation(nextOperation);
-      setCenterName("");
-      setOwnerUserId("");
+      // Chỉ dọn draft sau thao tác THÀNH CÔNG: PENDING/FAILED giữ nguyên dữ kiện
+      // đã nhập để người dùng theo dõi hoặc sửa rồi gửi lại.
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
+        setCenterName("");
+        setOwnerUserId("");
         await loadCenters();
       }
     } catch (error) {
@@ -426,8 +428,9 @@ export function PlatformCentersContent() {
       const nextOperation = parseTrackedOperation(data);
       if (!nextOperation) throw new Error("Phản hồi thao tác không hợp lệ.");
       setOperation(nextOperation);
-      setConfirmationRef("");
+      // Chỉ dọn draft sau thao tác THÀNH CÔNG (như createCenter ở trên).
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
+        setConfirmationRef("");
         await loadCenters();
       }
     } catch (error) {
@@ -752,9 +755,14 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
       `/api/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
       { method: "POST", body: JSON.stringify(body) },
     );
-    if (data !== null && parseTrackedOperation(data)) {
-      setInviteEmail("");
-      setInviteUserId("");
+    if (data !== null) {
+      const nextOperation = parseTrackedOperation(data);
+      // Chỉ dọn draft sau thao tác THÀNH CÔNG: PENDING/FAILED giữ nguyên dữ kiện
+      // đã nhập để người dùng theo dõi hoặc sửa rồi gửi lại.
+      if (nextOperation?.completed && nextOperation.state === "SUCCEEDED") {
+        setInviteEmail("");
+        setInviteUserId("");
+      }
     }
   }
 
@@ -780,9 +788,13 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
     // Chỉ lần tạo có handoff mới được hiển thị; gửi lại cùng key trả biên nhận không
     // kèm handoff nên không bao giờ hiện lại mật khẩu tạm.
     if (parsed.handoff) setHandoff(parsed.handoff);
-    setStudentUsername("");
-    setStudentDisplayName("");
-    setStudentEmail("");
+    // Chỉ dọn draft sau thao tác THÀNH CÔNG: PENDING/FAILED giữ nguyên dữ kiện
+    // đã nhập để người dùng theo dõi hoặc sửa rồi gửi lại.
+    if (parsed.operation.completed && parsed.operation.state === "SUCCEEDED") {
+      setStudentUsername("");
+      setStudentDisplayName("");
+      setStudentEmail("");
+    }
   }
 
   async function saveRoles(member: Membership) {
