@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("e2e-backend")
 class TeachingAuthorizationIT extends TeachingFixture {
     private static final String SCHEMA =
             "teaching_authz_" + UUID.randomUUID().toString().replace("-", "");

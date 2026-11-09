@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,7 @@ import tools.jackson.databind.JsonNode;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("e2e-backend")
 class TeachingStructureIT extends TeachingFixture {
     private static final String SCHEMA =
             "teaching_struct_" + UUID.randomUUID().toString().replace("-", "");
