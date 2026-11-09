@@ -35,8 +35,9 @@ Lỗi thống nhất dạng `application/problem+json`: `type`, `title`, `status
 | `EnrollmentBatch` | `classStudentIds[]`, `courseSubjectIds[]`; mỗi phần tử phải cùng lớp; không có all-future-subjects |
 | `TeacherAssignment` | `teacherUserIds[]`; courseSubject lấy từ route |
 | `HomeroomAssignment` | `teacherUserId`; class lấy từ route |
-| `GuardianRequest` | `studentUserId`; requester là actor hiện hành; không được nhập parent khác |
+| `GuardianRequest` | `studentUserId`; requester là actor hiện hành; field lạ (ví dụ `parentUserId` của người khác) bị bỏ qua, không tạo link cho phụ huynh khác |
 | `GuardianDecision` | `decision:APPROVE/REJECT`, `expectedVersion`; approver do server ghi |
+| `GuardianLinkView` | `id`, `workspaceId`, `parentUserId`, `studentUserId`, `state`, `version`; danh sách trả dạng `{items}`, không `totalCount` |
 | `PublishedResultView` | `id`, `student:{id,displayName}`, `className`, `courseName`, `subjectName`, `score?`, `comment?`, `publishedAt`; không chứa submission/body/answer/draft fields |
 | `CapabilitiesRequest` | `targets:[{type,id,versionId?,scopes[]}]`; chỉ đối tượng trong route workspace và actor hiện hành |
 | `CapabilitiesView` | từng target/scope có `allowed`, `reasonCode`; metadata cần cho UI, không có native policy/group ID hoặc grant cho người khác |
@@ -127,11 +128,11 @@ Trong PERSONAL workspace, owner thực hiện class/course/roster/ghi danh và g
 
 | Method / path | Body / response | Scope / invariant |
 | --- | --- | --- |
-| `POST /api/workspaces/{wid}/guardian-links` | GuardianRequest → OperationView | workspace `guardian.request`; parent là actor, không nhận parentId khác |
-| `GET /api/workspaces/{wid}/guardian-links` | Danh sách theo quyền | Parent chỉ các request của mình; owner/manager được danh sách cần duyệt; không lộ kết quả qua route này |
-| `POST /api/workspaces/{wid}/guardian-links/{id}/decision` | GuardianDecision → OperationView | workspace `guardian.approve`; teacher/homeroom đứng riêng bị từ chối |
-| `DELETE /api/workspaces/{wid}/guardian-links/{id}` | OperationView | workspace `guardian.revoke`; vẫn cho revoke khi gói hết hạn |
-| `GET /api/workspaces/{wid}/students/{sid}/results` | PublishedResultView page | Từng result `read.published`; parent đúng child/center/link và published |
+| `POST /api/workspaces/{wid}/guardian-links` | GuardianRequest → OperationView | workspace `guardian.request`; parent là actor, không nhận parentId khác; lỗi nghiệp vụ: `GUARDIAN_PARENT_NOT_CURRENT` 403, `GUARDIAN_STUDENT_NOT_FOUND` 404, `GUARDIAN_LINK_ALREADY_CURRENT` 409, `GUARDIAN_PREREQUISITE_NOT_CURRENT` 409 |
+| `GET /api/workspaces/{wid}/guardian-links` | Danh sách theo quyền | Parent chỉ các request của mình; owner/manager được danh sách cần duyệt; không lộ kết quả qua route này; không có quyền xem → 403 `PERMISSION_DENIED` |
+| `POST /api/workspaces/{wid}/guardian-links/{id}/decision` | GuardianDecision → OperationView | workspace `guardian.approve`; teacher/homeroom đứng riêng bị từ chối; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_DECISION_INVALID` 400, `GUARDIAN_LINK_ALREADY_DECIDED` 409, `VERSION_CONFLICT` 409 khi `expectedVersion` lệch, `GUARDIAN_PREREQUISITE_NOT_CURRENT` 409, `SUBSCRIPTION_INACTIVE` 403 chỉ khi APPROVE |
+| `DELETE /api/workspaces/{wid}/guardian-links/{id}` | OperationView | workspace `guardian.revoke`; vẫn cho revoke khi gói hết hạn; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_LINK_NOT_APPROVED` 409, `GUARDIAN_LINK_ALREADY_CLOSED` 409, `GUARDIAN_LINK_ALREADY_REVOKED` 409 |
+| `GET /api/workspaces/{wid}/students/{sid}/results` | PublishedResultView page | Từng result `read.published`; parent đúng child/center/link và published; tập được phép rỗng → học sinh tự đọc 200 rỗng, actor khác 403 `PERMISSION_DENIED` |
 
 Kết quả bản đầu là sample_result cùng policy path sẽ dùng cho nghiệp vụ sau. Không xây sổ điểm, không có endpoint parent lấy bài làm/đáp án. Parent không được thay sid để đọc người khác hoặc thay wid để dùng liên kết A tại B.
 

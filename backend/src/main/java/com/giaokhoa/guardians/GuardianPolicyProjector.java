@@ -7,6 +7,8 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.verification.ResultPolicyProjector;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,6 +45,7 @@ public class GuardianPolicyProjector {
     private final KeycloakProvisioningClient directory;
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
+    private final ResultPolicyProjector resultProjector;
     private final TransactionTemplate transactions;
 
     public GuardianPolicyProjector(
@@ -50,11 +53,13 @@ public class GuardianPolicyProjector {
             KeycloakProvisioningClient directory,
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
+            ResultPolicyProjector resultProjector,
             PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.directory = directory;
         this.operations = operations;
         this.centerProjector = centerProjector;
+        this.resultProjector = resultProjector;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -63,8 +68,13 @@ public class GuardianPolicyProjector {
      * service: bump desired revision của WORKSPACE partition và ghi lại bundle hiện hành của
      * workspace target — bundle không đổi vì link không phải nguồn của scope workspace, nhưng
      * revision mới buộc một vòng reconcile, và chính vòng đó đồng bộ membership của guardian group
-     * trước khi partition publish READY. Replay cùng idempotency key và payload do cơ chế operation
-     * dùng chung xử lý.
+     * trước khi partition publish READY. Cùng operation ghi lại cả bundle hiện hành của mọi kết quả
+     * của workspace: nguồn {@code read.published} của một kết quả chỉ tồn tại khi còn liên kết
+     * APPROVED, nên duyệt/gỡ link đổi bundle của kết quả đó; ghi lại cùng lúc để desired hash của
+     * nó luôn khớp dữ kiện nguồn hiện hành — nếu không, vòng reconcile của operation này sẽ lật
+     * projection kết quả sang PENDING rồi đối chiếu thất bại với hash cũ ({@code
+     * DESIRED_SOURCE_MISMATCH}). Replay cùng idempotency key và payload do cơ chế operation dùng
+     * chung xử lý.
      */
     public AuthorizationOperation recordGuardianChange(
             UUID initiatorUserId, UUID workspaceId, String idempotencyKey, String payloadHash) {
@@ -78,6 +88,14 @@ public class GuardianPolicyProjector {
             throw new IllegalStateException(
                     "Workspace authorization partition is missing: " + workspaceId);
         }
+        List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
+        projections.add(
+                new AuthorizationOperationService.DesiredProjection(
+                        NativePolicyTemplates.workspaceKey(workspaceId),
+                        PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
+                        centerProjector.bundleDescriptors(workspaceId),
+                        List.of()));
+        projections.addAll(resultProjector.allBundleProjections(workspaceId));
         return operations.applyDesiredState(
                 initiatorUserId,
                 workspaceId,
@@ -85,13 +103,7 @@ public class GuardianPolicyProjector {
                 payloadHash,
                 List.of(
                         new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(),
-                                List.of(
-                                        new AuthorizationOperationService.DesiredProjection(
-                                                NativePolicyTemplates.workspaceKey(workspaceId),
-                                                PermissionCatalog.WorkspaceScope.ENTER.scopeName(),
-                                                centerProjector.bundleDescriptors(workspaceId),
-                                                List.of())))));
+                                partitions.getFirst(), List.copyOf(projections))));
     }
 
     /**

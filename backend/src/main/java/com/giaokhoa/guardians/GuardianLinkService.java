@@ -139,7 +139,8 @@ public class GuardianLinkService {
     /**
      * Quyết định một request đang chờ: APPROVE mở nguồn guardian group của học sinh cho parent,
      * REJECT đóng request vĩnh viễn. {@code expectedVersion} phải khớp row version hiện tại — lệch
-     * trả 409 như mọi precondition version của repo.
+     * trả 409 như mọi precondition version của repo. Chỉ owner/manager hiện hành của center mới
+     * quyết định được; service kiểm tra lại role này trước khi ghi, không chỉ dựa vào controller.
      */
     @Transactional
     public AuthorizationOperation decideLink(
@@ -170,6 +171,7 @@ public class GuardianLinkService {
         }
         requireCenterWorkspace(workspaceId);
         LinkRow row = lockLink(workspaceId, linkId);
+        requireAdmin(workspaceId, actorUserId);
         if (!"REQUESTED".equals(row.state())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
@@ -205,7 +207,8 @@ public class GuardianLinkService {
     /**
      * Gỡ một link đã duyệt: chuyển REVOKED kèm revoked_at, giữ lịch sử, và đóng nguồn guardian
      * group trong cùng revision qua operation. Thu hồi không đòi version và không bị chặn bởi gói
-     * hết hạn.
+     * hết hạn. Chỉ owner/manager hiện hành của center mới gỡ được; service kiểm tra lại role này
+     * trước khi ghi, không chỉ dựa vào controller.
      */
     @Transactional
     public AuthorizationOperation revokeLink(
@@ -227,6 +230,7 @@ public class GuardianLinkService {
         }
         requireCenterWorkspace(workspaceId);
         LinkRow row = lockLink(workspaceId, linkId);
+        requireAdmin(workspaceId, actorUserId);
         switch (row.state()) {
             case "APPROVED" -> {
                 // Trạng thái duy nhất thu hồi được; xử lý ở dưới sau switch.
@@ -338,6 +342,20 @@ public class GuardianLinkService {
                     "GUARDIAN_PREREQUISITE_NOT_CURRENT",
                     "Phụ huynh hoặc học sinh không còn là thành viên hiện hành đúng vai trò"
                             + " của trung tâm.");
+        }
+    }
+
+    /**
+     * Chỉ owner/manager hiện hành của center mới quyết định hoặc gỡ link — kiểm tra lại ở tầng
+     * service, theo đúng tiền lệ MembershipService, để lời gọi thẳng service cũng bị chặn.
+     */
+    private void requireAdmin(UUID workspaceId, UUID actorUserId) {
+        if (!hasCurrentRole(workspaceId, actorUserId, "OWNER")
+                && !hasCurrentRole(workspaceId, actorUserId, "MANAGER")) {
+            throw new HttpProblemException(
+                    HttpStatus.FORBIDDEN,
+                    "PERMISSION_DENIED",
+                    "Actor không phải owner hoặc manager của center này.");
         }
     }
 

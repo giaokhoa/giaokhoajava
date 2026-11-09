@@ -174,6 +174,7 @@ abstract class GuardianFixture extends IntegrationEnvironment {
         UUID workspaceId = seedCenter(center.ownerId());
         addMembership(workspaceId, center.parentId(), "PARENT");
         addMembership(workspaceId, center.studentX(), "STUDENT");
+        addMembership(workspaceId, center.studentY(), "STUDENT");
         seedSubscription(workspaceId, center.ownerId());
         return workspaceId;
     }
@@ -458,12 +459,18 @@ abstract class GuardianFixture extends IntegrationEnvironment {
     }
 
     protected JsonNode findLink(JsonNode items, UUID studentUserId) {
+        // Danh sách trả cũ nhất trước và gồm cả lịch sử đã đóng, nên link hiện hành của một học
+        // sinh là phần tử khớp CUỐI CÙNG, không phải đầu tiên.
+        JsonNode found = null;
         for (JsonNode item : items) {
             if (studentUserId.toString().equals(item.get("studentUserId").stringValue())) {
-                return item;
+                found = item;
             }
         }
-        return fail("Không thấy liên kết cho học sinh " + studentUserId + " trong danh sách");
+        if (found == null) {
+            return fail("Không thấy liên kết cho học sinh " + studentUserId + " trong danh sách");
+        }
+        return found;
     }
 
     protected MockHttpServletResponse decide(

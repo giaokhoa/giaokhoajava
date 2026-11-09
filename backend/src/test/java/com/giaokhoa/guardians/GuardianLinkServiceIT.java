@@ -17,6 +17,7 @@ import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -324,6 +325,46 @@ class GuardianLinkServiceIT extends GuardianFixture {
     }
 
     @Test
+    void teacherCannotDecideOrRevokeLinkThroughServiceDirectly() {
+        GuardianCenter center = seedGuardianCenter();
+        try {
+            links.requestLink(
+                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+
+            HttpProblemException decide =
+                    problemOf(() ->
+                            links.decideLink(
+                                    center.teacherId(),
+                                    center.workspaceId(),
+                                    requested.id(),
+                                    "APPROVE",
+                                    requested.version(),
+                                    key(),
+                                    hash()));
+            assertEquals(HttpStatus.FORBIDDEN, decide.getStatus());
+            assertEquals("PERMISSION_DENIED", decide.getCode());
+            assertEquals(
+                    "REQUESTED",
+                    linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                    "Giáo viên quyết trực tiếp không đổi trạng thái link");
+
+            HttpProblemException revoke =
+                    problemOf(() ->
+                            links.revokeLink(
+                                    center.teacherId(),
+                                    center.workspaceId(),
+                                    requested.id(),
+                                    key(),
+                                    hash()));
+            assertEquals(HttpStatus.FORBIDDEN, revoke.getStatus());
+            assertEquals("PERMISSION_DENIED", revoke.getCode());
+        } finally {
+            deleteGuardianCenter(center);
+        }
+    }
+
+    @Test
     void removingParentRoleClosesApprovedLinkInSameOperation() {
         GuardianCenter center = seedGuardianCenter();
         try {
@@ -468,7 +509,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                             + RUNTIME_ROLE);
             jdbc.execute(
                     "GRANT SELECT ON workspace, center_membership, membership_role,"
-                            + " subscription_period, user_account TO "
+                            + " subscription_period, user_account, sample_result TO "
                             + RUNTIME_ROLE);
             jdbc.execute("GRANT INSERT ON audit_event TO " + RUNTIME_ROLE);
             String url =
@@ -492,6 +533,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 directory,
                                 runtimeOperations,
                                 new CenterPolicyProjector(runtimeJdbc, directory),
+                                new ResultPolicyProjector(
+                                        runtimeJdbc, runtimeOperations, runtimeTxManager),
                                 runtimeTxManager);
                 GuardianLinkService runtimeLinks =
                         new GuardianLinkService(
