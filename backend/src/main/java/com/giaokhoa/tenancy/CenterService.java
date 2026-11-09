@@ -12,6 +12,7 @@ import com.giaokhoa.tenancy.model.MembershipRole;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
@@ -44,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class CenterService {
+    private static final int CURSOR_PART_COUNT = 3;
     private final JdbcTemplate jdbc;
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator revocations;
@@ -129,19 +131,76 @@ public class CenterService {
         return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
     }
 
-    /** Mọi center đã tạo, cũ nhất trước; chỉ metadata, không kèm dữ liệu học thuật. */
+    /** Danh sách metadata dành cho operator; keyset theo (created_at, id). */
+    public record CenterPage(List<CenterView> items, @Nullable String nextCursor) {
+        public CenterPage {
+            items = List.copyOf(items);
+        }
+    }
+
     @Transactional(readOnly = true)
-    public List<CenterView> listCenters() {
-        return jdbc.query(
+    public CenterPage pageCenters(UUID actor, @Nullable String cursor, int requestedLimit) {
+        Objects.requireNonNull(actor, "actor");
+        int limit = Math.min(Math.max(requestedLimit, 1), 100);
+        UUID anchorId = null;
+        OffsetDateTime createdAt = null;
+        if (cursor != null) {
+            String[] parts = cursor.split("\\.", -1);
+            if (parts.length != CURSOR_PART_COUNT
+                    || !actor.toString().equals(parts[0])
+                    || !Integer.toString(limit).equals(parts[1])) {
+                throw new HttpProblemException(
+                        HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+            }
+            try {
+                anchorId = UUID.fromString(parts[2]);
+                if (!anchorId.toString().equals(parts[2])) {
+                    throw new IllegalArgumentException("Non-canonical UUID");
+                }
+            } catch (IllegalArgumentException ex) {
+                throw new HttpProblemException(
+                        HttpStatus.BAD_REQUEST,
+                        "INVALID_CURSOR",
+                        "Cursor danh sách không hợp lệ.",
+                        ex);
+            }
+            List<OffsetDateTime> anchors =
+                    jdbc.queryForList(
+                            "SELECT created_at FROM center WHERE id = ?",
+                            OffsetDateTime.class,
+                            anchorId);
+            if (anchors.isEmpty()) {
+                throw new HttpProblemException(
+                        HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+            }
+            createdAt = anchors.getFirst();
+        }
+        String sql =
                 "SELECT id, workspace_id, name, owner_user_id, state FROM center"
-                        + " ORDER BY created_at ASC, id ASC",
-                (rs, _) ->
-                        new CenterView(
-                                rs.getObject("id", UUID.class),
-                                rs.getObject("workspace_id", UUID.class),
-                                rs.getString("name"),
-                                rs.getObject("owner_user_id", UUID.class),
-                                rs.getString("state")));
+                        + (anchorId == null ? "" : " WHERE (created_at, id) > (?, ?)")
+                        + " ORDER BY created_at ASC, id ASC LIMIT ?";
+        Object[] params =
+                anchorId == null
+                        ? new Object[] {limit + 1}
+                        : new Object[] {createdAt, anchorId, limit + 1};
+        List<CenterView> rows =
+                jdbc.query(
+                        sql,
+                        (rs, _) ->
+                                new CenterView(
+                                        rs.getObject("id", UUID.class),
+                                        rs.getObject("workspace_id", UUID.class),
+                                        rs.getString("name"),
+                                        rs.getObject("owner_user_id", UUID.class),
+                                        rs.getString("state")),
+                        params);
+        boolean hasMore = rows.size() > limit;
+        List<CenterView> items = List.copyOf(rows.subList(0, Math.min(rows.size(), limit)));
+        return new CenterPage(
+                items,
+                hasMore && !items.isEmpty()
+                        ? actor + "." + limit + "." + items.getLast().id()
+                        : null);
     }
 
     /**

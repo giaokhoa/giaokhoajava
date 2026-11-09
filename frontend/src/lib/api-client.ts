@@ -89,8 +89,9 @@ export async function readApiResponse<T>(
   return { kind: "data", status: response.status, data: body as T };
 }
 
-async function getCsrf(): Promise<[string, string]> {
+async function getCsrf(signal?: AbortSignal): Promise<[string, string]> {
   const response = await fetch("/api/session", {
+    signal,
     method: "GET",
     credentials: "same-origin",
     cache: "no-store",
@@ -121,7 +122,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 
   const method = (init.method ?? "GET").toUpperCase();
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    const [name, token] = await getCsrf();
+    const [name, token] = await getCsrf(init.signal ?? undefined);
     headers.set(name, token);
     if (!headers.has("Idempotency-Key")) headers.set("Idempotency-Key", crypto.randomUUID());
   }
@@ -141,9 +142,27 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 const FENCE_RETRY_LIMIT_MS = 60_000;
 const FENCE_RETRY_INTERVAL_MS = 1_000;
 
+/** Chờ có thể hủy khi đổi phiên/workspace, không tiếp tục request bằng ngữ cảnh cũ. */
+export function waitForRetry(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export async function requestWhenReady<T = unknown>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
   const startedAt = Date.now();
   for (;;) {
+    if (init.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     try {
       return await apiRequest<T>(path, init);
     } catch (error) {
@@ -152,7 +171,7 @@ export async function requestWhenReady<T = unknown>(path: string, init: RequestI
         && error.code === "AUTHORIZATION_NOT_READY"
         && Date.now() - startedAt < FENCE_RETRY_LIMIT_MS;
       if (!retryable) throw error;
-      await new Promise((resolve) => setTimeout(resolve, FENCE_RETRY_INTERVAL_MS));
+      await waitForRetry(FENCE_RETRY_INTERVAL_MS, init.signal ?? undefined);
     }
   }
 }

@@ -135,7 +135,7 @@ public class MembershipController {
         return withEligibleActor(
                 authentication,
                 request,
-                null,
+                workspaceId,
                 actor -> {
                     if (memberships.activeRoles(actor, workspaceId).isEmpty()) {
                         throw denied(

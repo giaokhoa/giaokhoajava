@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { apiRequest, requestWhenReady } from "../../lib/api-client";
-import { operationStatus } from "../operations/operation-status";
+import { apiRequest, requestAllPages, requestWhenReady } from "../../lib/api-client";
+import { operationStatus, pollOperationUntilSettled } from "../operations/operation-status";
 import {
   parseTrackedOperation,
   type TrackedOperation,
@@ -212,6 +212,12 @@ function SessionGate({
 }
 
 export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
+  const { session } = useSession();
+  const userId = session.status === "authenticated" ? session.user.id : null;
+  return <GuardianLinksInner key={`${userId ?? "anonymous"}|${workspaceId}`} workspaceId={workspaceId} />;
+}
+
+function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
   const { session, refreshSession } = useSession();
   const userId = session.status === "authenticated" ? session.user.id : null;
   // Mọi dữ liệu đã tải đều gắn khóa ngữ cảnh (actor + workspace): đổi trung tâm thì
@@ -239,16 +245,19 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
 
   async function loadLinks() {
     setLoadError(null);
-    try {
-      const result = await requestWhenReady(linksPath);
-      if (result.kind !== "data") throw new Error("Phản hồi danh sách liên kết không hợp lệ.");
-      setLoadedLinks({ key: contextKey, links: parseGuardianLinks(result.data) });
-    } catch (error) {
+    const [linksResult, membersResult] = await Promise.allSettled([
+      requestWhenReady(linksPath),
+      requestAllPages(membersPath),
+    ]);
+    setLoadedMemberships({ key: contextKey,
+      items: membersResult.status === "fulfilled" ? parseMemberships(membersResult.value) : [] });
+    if (linksResult.status === "fulfilled" && linksResult.value.kind === "data") {
+      setLoadedLinks({ key: contextKey, links: parseGuardianLinks(linksResult.value.data) });
+    } else {
       setLoadedLinks({ key: contextKey, links: [] });
-      setLoadError({
-        key: contextKey,
-        message: error instanceof Error ? error.message : "Không tải được danh sách liên kết.",
-      });
+      setLoadError({ key: contextKey,
+        message: linksResult.status === "rejected" && linksResult.reason instanceof Error
+          ? linksResult.reason.message : "Không tải được danh sách liên kết." });
     }
   }
 
@@ -272,10 +281,10 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
       });
     // Quyền hiển thị suy từ membership của chính actor; lỗi tải danh sách thành viên
     // chỉ làm ẩn nút, không chặn danh sách liên kết mà server đã quyết quyền.
-    requestWhenReady(membersPath, { signal: controller.signal })
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setLoadedMemberships({ key: contextKey, items: parseMemberships(result.data) });
+    requestAllPages(membersPath, { signal: controller.signal })
+      .then((items) => {
+        if (ignore) return;
+        setLoadedMemberships({ key: contextKey, items: parseMemberships(items) });
       })
       .catch(() => {
         if (!ignore) setLoadedMemberships({ key: contextKey, items: [] });
@@ -285,6 +294,42 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
       controller.abort();
     };
   }, [userId, workspaceId, contextKey, linksPath, membersPath]);
+
+  // Operation 202 chỉ thành công sau poll SUCCEEDED; refresh lại nguồn quyền hiện hành.
+  useEffect(() => {
+    if (!operation || operationStatus(operation).kind !== "pending" || !userId) return;
+    const controller = new AbortController();
+    const signature = operationSignature;
+    void pollOperationUntilSettled(operation.id, parseTrackedOperation, controller.signal)
+      .then(async (next) => {
+        if (controller.signal.aborted) return;
+        if (next.completed && next.state === "SUCCEEDED") {
+          const [linkResponse, memberResponse] = await Promise.allSettled([
+            requestWhenReady(linksPath, { signal: controller.signal }),
+            requestAllPages(membersPath, { signal: controller.signal }),
+          ]);
+          if (controller.signal.aborted) return;
+          if (linkResponse.status === "fulfilled" && linkResponse.value.kind === "data") {
+            setLoadedLinks({ key: contextKey, links: parseGuardianLinks(linkResponse.value.data) });
+            setLoadError(null);
+          } else {
+            setLoadedLinks({ key: contextKey, links: [] });
+            setLoadError({ key: contextKey, message: "Không làm mới được danh sách liên kết sau thay đổi quyền." });
+          }
+          // Nếu membership chưa tải lại được, ẩn quyền UI thay vì giữ role cũ.
+          setLoadedMemberships({ key: contextKey,
+            items: memberResponse.status === "fulfilled" ? parseMemberships(memberResponse.value) : [] });
+        }
+        setTracked({ key: contextKey, operation: next, signature: signature ?? "" });
+        if (signature) closeAttempt(attempts.current, signature, next);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setActionError(error instanceof Error ? error.message : "Không kiểm tra được trạng thái thao tác.");
+        }
+      });
+    return () => controller.abort();
+  }, [operation, contextKey, userId, operationSignature, linksPath, membersPath]);
 
   async function checkOperation() {
     if (!operation) return;

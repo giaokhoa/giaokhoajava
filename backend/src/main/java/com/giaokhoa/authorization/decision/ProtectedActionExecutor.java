@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -94,6 +95,20 @@ public class ProtectedActionExecutor {
             UUID workspaceId,
             List<Target> targets) {
         return run(authentication, request, workspaceId, targets, (_, result) -> result);
+    }
+
+    /**
+     * Đọc dữ liệu có lọc theo từng quyết định PDP ngay trong fence transaction chốt. Caller phải
+     * chỉ trả các hàng được cho phép; không đọc dữ liệu nhạy cảm sau khi transaction kết thúc.
+     */
+    public <T> T evaluateAndRead(
+            Authentication authentication,
+            HttpServletRequest request,
+            UUID workspaceId,
+            List<Target> targets,
+            Function<Decisions, T> read) {
+        return run(
+                authentication, request, workspaceId, targets, (_, result) -> read.apply(result));
     }
 
     /**

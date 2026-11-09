@@ -6,12 +6,20 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
@@ -40,72 +48,261 @@ public class PublishedResultService {
     private final ProtectedActionExecutor executor;
     private final WorkspaceTransaction workspaces;
     private final JdbcTemplate jdbc;
+    private static final SecureRandom CURSOR_RANDOM = new SecureRandom();
+    private static final int SCAN_BATCH = 100;
+    private static final int MAX_CURSOR_LENGTH = 256;
+    private static final int CURSOR_PART_COUNT = 2;
+    private final byte[] cursorKey = new byte[32];
+
+    public record ResultPage(List<PublishedResultView> items, @Nullable String nextCursor) {
+        public ResultPage {
+            items = List.copyOf(items);
+        }
+    }
+
+    private record Candidate(UUID id, OffsetDateTime publishedAt) {}
 
     public PublishedResultService(
             ProtectedActionExecutor executor, WorkspaceTransaction workspaces, JdbcTemplate jdbc) {
         this.executor = executor;
         this.workspaces = workspaces;
         this.jdbc = jdbc;
+        CURSOR_RANDOM.nextBytes(cursorKey);
     }
 
-    /** Các kết quả đã công bố của học sinh mà actor hiện tại được phép đọc, mới công bố trước. */
+    /** Giữ API service cũ cho các caller nội bộ; HTTP sử dụng bản phân trang. */
     public List<PublishedResultView> listPublishedResults(
             Authentication authentication,
             HttpServletRequest request,
             UUID workspaceId,
             UUID studentUserId) {
-        UUID actorUserId = executor.actorUserId(authentication);
-        List<UUID> candidates =
-                Objects.requireNonNull(
-                        workspaces.inWorkspace(
-                                workspaceId,
-                                () ->
-                                        jdbc.queryForList(
-                                                "SELECT id FROM sample_result"
-                                                        + " WHERE workspace_id = ?"
-                                                        + " AND student_user_id = ?"
-                                                        + " AND state = 'PUBLISHED'",
-                                                UUID.class,
-                                                workspaceId,
-                                                studentUserId)),
-                        "candidates");
-        List<UUID> allowedIds = List.of();
-        if (!candidates.isEmpty()) {
-            List<ProtectedActionExecutor.Target> targets =
-                    candidates.stream()
-                            .map(resultId ->
-                                    new ProtectedActionExecutor.Target(
-                                            NativePolicyTemplates.resultKey(workspaceId, resultId),
-                                            List.of(READ_PUBLISHED)))
-                            .toList();
-            ProtectedActionExecutor.Decisions decisions =
-                    executor.evaluate(authentication, request, workspaceId, targets);
-            allowedIds =
-                    candidates.stream()
-                            .filter(resultId ->
-                                    decisions.allowed(
-                                            NativePolicyTemplates.resultKey(workspaceId, resultId),
-                                            READ_PUBLISHED))
-                            .toList();
-        }
-        if (allowedIds.isEmpty()) {
-            if (actorUserId.equals(studentUserId)) {
-                return List.of();
-            }
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "PERMISSION_DENIED",
-                    "Không có quyền xem kết quả đã công bố của học sinh này.");
-        }
-        List<UUID> ids = allowedIds;
-        return Objects.requireNonNull(
-                workspaces.inWorkspace(workspaceId, () -> readViews(workspaceId, ids)), "views");
+        return pagePublishedResults(authentication, request, workspaceId, studentUserId, null, 100)
+                .items();
     }
 
-    private List<PublishedResultView> readViews(UUID workspaceId, List<UUID> resultIds) {
+    /**
+     * Keyset theo (published_at, id). Mỗi batch tối đa 100 ID; PDP kiểm tra từng kết quả, không đọc
+     * DTO khi mới chỉ có quyết định ngoài transaction. Trước khi dựng trang cuối, kiểm tra lại mọi
+     * ID được chọn và đọc DTO trong cùng fence chốt để chặn revoke đua nhau.
+     */
+    public ResultPage pagePublishedResults(
+            Authentication authentication,
+            HttpServletRequest request,
+            UUID workspaceId,
+            UUID studentUserId,
+            @Nullable String cursor,
+            int requestedLimit) {
+        UUID actorUserId = executor.actorUserId(authentication);
+        int limit = Math.min(Math.max(requestedLimit, 1), 100);
+        @Nullable UUID anchorId =
+                decodeCursor(cursor, actorUserId, workspaceId, studentUserId, limit);
+        @Nullable Candidate anchor = null;
+        if (anchorId != null) {
+            UUID id = anchorId;
+            anchor =
+                    workspaces.inWorkspace(
+                            workspaceId,
+                            () -> {
+                                List<Candidate> anchors =
+                                        jdbc.query(
+                                                "SELECT id, published_at FROM sample_result"
+                                                        + " WHERE workspace_id = ? AND student_user_id = ?"
+                                                        + " AND state = 'PUBLISHED' AND id = ?",
+                                                (rs, _) ->
+                                                        new Candidate(
+                                                                rs.getObject("id", UUID.class),
+                                                                rs.getObject(
+                                                                        "published_at",
+                                                                        OffsetDateTime.class)),
+                                                workspaceId,
+                                                studentUserId,
+                                                id);
+                                return anchors.isEmpty() ? null : anchors.getFirst();
+                            });
+            if (anchor == null) {
+                throw invalidCursor();
+            }
+        }
+
+        List<Candidate> admitted = new ArrayList<>(limit + 1);
+        while (admitted.size() <= limit) {
+            Candidate from = anchor;
+            List<Candidate> candidates =
+                    Objects.requireNonNull(
+                            workspaces.inWorkspace(
+                                    workspaceId,
+                                    () -> {
+                                        String sql =
+                                                "SELECT id, published_at FROM sample_result"
+                                                        + " WHERE workspace_id = ? AND student_user_id = ?"
+                                                        + " AND state = 'PUBLISHED'"
+                                                        + (from == null
+                                                                ? ""
+                                                                : " AND (published_at, id) < (?, ?)")
+                                                        + " ORDER BY published_at DESC, id DESC LIMIT ?";
+                                        Object[] params =
+                                                from == null
+                                                        ? new Object[] {
+                                                            workspaceId, studentUserId, SCAN_BATCH
+                                                        }
+                                                        : new Object[] {
+                                                            workspaceId,
+                                                            studentUserId,
+                                                            from.publishedAt(),
+                                                            from.id(),
+                                                            SCAN_BATCH
+                                                        };
+                                        return jdbc.query(
+                                                sql,
+                                                (rs, _) ->
+                                                        new Candidate(
+                                                                rs.getObject("id", UUID.class),
+                                                                rs.getObject(
+                                                                        "published_at",
+                                                                        OffsetDateTime.class)),
+                                                params);
+                                    }),
+                            "candidates");
+            if (candidates.isEmpty()) {
+                break;
+            }
+            List<ProtectedActionExecutor.Target> targets = targets(workspaceId, candidates);
+            ProtectedActionExecutor.Decisions decisions =
+                    executor.evaluate(authentication, request, workspaceId, targets);
+            for (Candidate candidate : candidates) {
+                if (decisions.allowed(
+                        NativePolicyTemplates.resultKey(workspaceId, candidate.id()),
+                        READ_PUBLISHED)) {
+                    admitted.add(candidate);
+                    if (admitted.size() > limit) {
+                        break;
+                    }
+                }
+            }
+            anchor = candidates.getLast();
+            if (candidates.size() < SCAN_BATCH || admitted.size() > limit) {
+                break;
+            }
+        }
+
+        // Kể cả không có PUBLISHED row vẫn phải đồng bộ eligibility + ACCOUNT fence.
+        // Không được trả 200 [] cho tài khoản đang PENDING/FAILED trước khi xác minh.
+        if (admitted.isEmpty()) {
+            return executor.executeForActor(
+                    authentication,
+                    request,
+                    List.of(
+                            new ProtectedActionExecutor.Target(
+                                    NativePolicyTemplates.profileKey(actorUserId),
+                                    List.of(
+                                            PermissionCatalog.ProfileScope.WORKSPACE_LIST
+                                                    .scopeName()))),
+                    () -> new ResultPage(emptyOrDenied(actorUserId, studentUserId), null));
+        }
+        List<Candidate> candidatePage = List.copyOf(admitted);
+        return executor.evaluateAndRead(
+                authentication,
+                request,
+                workspaceId,
+                targets(workspaceId, candidatePage),
+                confirmed -> {
+                    List<Candidate> allowed =
+                            candidatePage.stream()
+                                    .filter(candidate ->
+                                            confirmed.allowed(
+                                                    NativePolicyTemplates.resultKey(
+                                                            workspaceId, candidate.id()),
+                                                    READ_PUBLISHED))
+                                    .toList();
+                    if (allowed.isEmpty()) {
+                        return new ResultPage(emptyOrDenied(actorUserId, studentUserId), null);
+                    }
+                    List<Candidate> visible = allowed.subList(0, Math.min(limit, allowed.size()));
+                    workspaces.applyContext(workspaceId);
+                    List<PublishedResultView> items =
+                            readViews(
+                                    workspaceId,
+                                    studentUserId,
+                                    visible.stream().map(Candidate::id).toList());
+                    String next =
+                            allowed.size() > limit
+                                    ? encodeCursor(
+                                            actorUserId,
+                                            workspaceId,
+                                            studentUserId,
+                                            visible.getLast().id(),
+                                            limit)
+                                    : null;
+                    return new ResultPage(items, next);
+                });
+    }
+
+    private static List<ProtectedActionExecutor.Target> targets(
+            UUID workspaceId, List<Candidate> candidates) {
+        return candidates.stream()
+                .map(candidate ->
+                        new ProtectedActionExecutor.Target(
+                                NativePolicyTemplates.resultKey(workspaceId, candidate.id()),
+                                List.of(READ_PUBLISHED)))
+                .toList();
+    }
+
+    /** HMAC của actor/workspace/student/anchor ngăn replay cursor qua các ngữ cảnh khác. */
+    private String encodeCursor(UUID actor, UUID workspace, UUID student, UUID id, int limit) {
+        String message = actor + "|" + workspace + "|" + student + "|" + limit + "|" + id;
+        return id + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(sign(message));
+    }
+
+    private @Nullable UUID decodeCursor(
+            @Nullable String cursor, UUID actor, UUID workspace, UUID student, int limit) {
+        if (cursor == null) return null;
+        if (cursor.length() > MAX_CURSOR_LENGTH) throw invalidCursor();
+        String[] parts = cursor.split("\\.", -1);
+        if (parts.length != CURSOR_PART_COUNT) throw invalidCursor();
+        try {
+            UUID id = UUID.fromString(parts[0]);
+            if (!id.toString().equals(parts[0])) throw invalidCursor();
+            byte[] provided = Base64.getUrlDecoder().decode(parts[1]);
+            byte[] actual = sign(actor + "|" + workspace + "|" + student + "|" + limit + "|" + id);
+            if (!MessageDigest.isEqual(actual, provided)) throw invalidCursor();
+            return id;
+        } catch (IllegalArgumentException ex) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.", ex);
+        }
+    }
+
+    private byte[] sign(String message) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(cursorKey, "HmacSHA256"));
+            return mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
+        } catch (GeneralSecurityException ex) {
+            throw new IllegalStateException("Cannot sign result page cursor", ex);
+        }
+    }
+
+    private static HttpProblemException invalidCursor() {
+        return new HttpProblemException(
+                HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+    }
+
+    private static List<PublishedResultView> emptyOrDenied(UUID actorUserId, UUID studentUserId) {
+        if (actorUserId.equals(studentUserId)) {
+            return List.of();
+        }
+        throw new HttpProblemException(
+                HttpStatus.FORBIDDEN,
+                "PERMISSION_DENIED",
+                "Không có quyền xem kết quả đã công bố của học sinh này.");
+    }
+
+    private List<PublishedResultView> readViews(
+            UUID workspaceId, UUID studentUserId, List<UUID> resultIds) {
         String placeholders = String.join(", ", Collections.nCopies(resultIds.size(), "?"));
         List<Object> args = new ArrayList<>();
         args.add(workspaceId);
+        args.add(studentUserId);
         args.addAll(resultIds);
         return jdbc.query(
                 "SELECT r.id, r.student_user_id, u.username, sc.name AS class_name,"
@@ -119,10 +316,11 @@ public class PublishedResultService {
                         + " AND sc.workspace_id = r.workspace_id"
                         + " JOIN subject s ON s.id = cs.subject_id"
                         + " JOIN user_account u ON u.id = r.student_user_id"
-                        + " WHERE r.workspace_id = ? AND r.id IN ("
+                        + " WHERE r.workspace_id = ? AND r.student_user_id = ?"
+                        + " AND r.state = 'PUBLISHED' AND r.id IN ("
                         + placeholders
                         + ")"
-                        + " ORDER BY r.published_at DESC, r.id",
+                        + " ORDER BY r.published_at DESC, r.id DESC",
                 (rs, _) -> {
                     OffsetDateTime publishedAt = rs.getObject("published_at", OffsetDateTime.class);
                     return new PublishedResultView(
