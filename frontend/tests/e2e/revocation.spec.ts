@@ -17,7 +17,7 @@
 //   mới là hoàn tất (FR-052). UI map PENDING thành "Đang cập nhật quyền. Thao tác
 //   chưa hoàn tất." (operation-status.ts), không thành thành công.
 //
-// Lưu ý khóa flow thật (B62): action "chấm" thật là sample action của US7 (B60),
+// Lưu ý khóa flow thật (B68): action "chấm" thật là sample action của US7 (B60),
 // chưa có ở US5; các kịch bản dưới khóa cùng nguồn phân công qua roster read mà
 // chính phân công đó cấp (authorization.md §11). Gate US7 chạy lại với lời gọi
 // chấm thật.
