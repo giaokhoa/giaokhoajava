@@ -279,10 +279,10 @@
         <Field name="~(jdbc|workspaceTransaction|idempotency|projector|coordinator)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient, AuthorizationOperationService, CenterPolicyProjector); không sao chép khi inject vào projector phụ huynh. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient, AuthorizationOperationService, CenterPolicyProjector, ResultPolicyProjector); không sao chép khi inject vào projector phụ huynh. -->
     <Match>
         <Class name="com.giaokhoa.guardians.GuardianPolicyProjector"/>
-        <Field name="~(jdbc|directory|operations|centerProjector)"/>
+        <Field name="~(jdbc|directory|operations|centerProjector|resultProjector)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, WorkspaceTransaction); không sao chép khi inject vào contributor thu hồi phụ huynh. -->
@@ -300,6 +300,12 @@
     <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào service đọc kết quả công bố. -->
     <Match>
         <Class name="com.giaokhoa.guardians.PublishedResultService"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào controller guardian. -->
+    <Match>
+        <Class name="com.giaokhoa.guardians.GuardianLinkController"/>
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>

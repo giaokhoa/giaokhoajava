@@ -291,3 +291,51 @@ xóa vật lý), khớp nguyên tắc không mở DELETE vật lý của hợp �
   target này đi theo biên quản trị của mục này cho tới khi một đợt riêng bổ sung scope.
 - Bên đánh giá rà lại quyết định này cùng mục 10 trước khi đóng parent issue; khi nào các route
   này chuyển sang PDP thì gỡ mục này và ghi rõ commit gỡ.
+
+## 12. Mở rộng ngoại lệ mục 10: route guardian quyết quyền bằng SQL
+
+Quyết định riêng theo đúng điều kiện của mục 10 ("Không mở rộng ngoại lệ sang route mới mà không
+ghi thêm quyết định riêng tại đây"), chốt khi cài tầng route của US4 (T060).
+
+### Phạm vi
+
+Các route guardian trong `backend/src/main/java/com/giaokhoa/guardians/` (`GuardianLinkController`,
+`StudentResultController`) quyết quyền như sau:
+
+- `POST /api/workspaces/{wid}/guardian-links`, `POST .../guardian-links/{id}/decision`,
+  `DELETE .../guardian-links/{id}`: đi qua `executeForActor` trên profile target (PDP
+  eligibility + ACCOUNT fence, đúng mục "Eligibility và tính nhất quán của ngoại lệ SQL"), rồi
+  kiểm tra role từ dữ kiện nguồn đúng nguồn mà `CenterPolicyProjector` chiếu — request ← PARENT
+  ACTIVE (thiếu role → 403 `GUARDIAN_PARENT_NOT_CURRENT`), decision/revoke ← OWNER/MANAGER
+  ACTIVE (thiếu role → 403 `PERMISSION_DENIED`). Cổng gói ở decision APPROVE do service kiểm tra
+  lại (`SUBSCRIPTION_INACTIVE` 403); revoke không cổng gói, đúng hợp đồng HTTP.
+- `GET /api/workspaces/{wid}/guardian-links`: cùng pipeline profile target; OWNER/MANAGER thấy
+  danh sách cần duyệt (REQUESTED + APPROVED), PARENT chỉ thấy link của chính mình (kể cả lịch sử
+  đã đóng), actor khác bị từ chối 403. Quản trị viên đồng thời là phụ huynh thì thấy danh sách
+  cần duyệt.
+- `GET /api/workspaces/{wid}/students/{sid}/results`: KHÔNG thuộc ngoại lệ này — ủy thác toàn
+  bộ cho `PublishedResultService`, PDP xét scope `read.published` trên từng hàng kết quả, và khi
+  tập được phép rỗng thì học sinh tự đọc nhận danh sách rỗng còn actor khác nhận 403 (B56).
+
+### Lý do
+
+Cùng lý do của mục 10: test hợp đồng guardian seed center thẳng bằng JDBC (không đi qua
+operation/worker nên không bao giờ có projection cho workspace target), và hợp đồng đó chốt hành
+vi cho phép cho POST guardian đầu tiên (202). Hỏi PDP trên workspace target sẽ deny vì không có
+Keycloak resource nào cho target đó (`ERROR_NO_RECORDED_PROJECTION` khi reconcile partition
+không có projection). Kiểm tra route từ dữ kiện nguồn cho đáp án trùng với graph mà
+`CenterPolicyProjector` dựng từ cùng dữ kiện đó; service tự kiểm tra lại mọi tiền đề trước khi
+ghi nên kiểm tra route là phòng thủ thêm, không phải nguồn quyền duy nhất.
+
+### Điểm lệch đã biết so với hợp đồng PDP
+
+Với cùng dữ kiện (center seed bằng JDBC, chưa có projection nào cho workspace target), PDP sẽ
+DENY mọi scope `guardian.*` trên workspace target trong khi các route trên CHO PHÉP theo role
+dữ kiện nguồn — cùng họ lệch có chủ đích của mục 10. Đường đọc kết quả không lệch: nó vẫn hỏi
+PDP từng hàng qua projection mà `ResultPolicyProjector` đã ghi.
+
+### Giới hạn
+
+- Chỉ các route liệt kê ở trên; mọi route khác vẫn tuân đầy đủ mục 5–7.
+- Bên đánh giá rà lại quyết định này cùng mục 10 trước khi đóng parent issue; khi nào các route
+  này chuyển sang PDP thì gỡ mục này và ghi rõ commit gỡ.

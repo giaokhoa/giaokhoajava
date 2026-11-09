@@ -17,6 +17,7 @@ import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -468,7 +469,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                             + RUNTIME_ROLE);
             jdbc.execute(
                     "GRANT SELECT ON workspace, center_membership, membership_role,"
-                            + " subscription_period, user_account TO "
+                            + " subscription_period, user_account, sample_result TO "
                             + RUNTIME_ROLE);
             jdbc.execute("GRANT INSERT ON audit_event TO " + RUNTIME_ROLE);
             String url =
@@ -492,6 +493,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 directory,
                                 runtimeOperations,
                                 new CenterPolicyProjector(runtimeJdbc, directory),
+                                new ResultPolicyProjector(
+                                        runtimeJdbc, runtimeOperations, runtimeTxManager),
                                 runtimeTxManager);
                 GuardianLinkService runtimeLinks =
                         new GuardianLinkService(
