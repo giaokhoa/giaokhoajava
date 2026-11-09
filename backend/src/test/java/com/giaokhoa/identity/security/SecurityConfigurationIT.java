@@ -17,19 +17,14 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -38,25 +33,9 @@ import org.springframework.web.context.WebApplicationContext;
 @SpringBootTest
 @Tag("e2e-backend")
 class SecurityConfigurationIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "security_configuration_" + UUID.randomUUID().toString().replace("-", "");
 
-    // Schema cô lập riêng thay vì public dùng chung: context của class này không còn dùng
-    // chung trạng thái DB với class khác và không cần ai RESET public sau lượt chạy.
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
-
-    // Worker thật chạy theo lịch sẽ mở giao dịch trên chính schema cô lập này trong khi
-    // @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL
-    // hủy DROP bằng deadlock (cùng cơ chế BootstrapProfileIT). Mọi khẳng định của class này
-    // đều qua MockMvc đồng bộ nên mock worker không đổi ý nghĩa kiểm thử.
+    // Mọi khẳng định của class này đều qua MockMvc đồng bộ nên worker nền không thuộc
+    // phạm vi kiểm thử: mock để nó không tự xử lý operation trong lúc class chạy.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired ClientRegistrationRepository registrations;

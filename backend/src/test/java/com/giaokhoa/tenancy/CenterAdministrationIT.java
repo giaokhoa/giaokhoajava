@@ -1,5 +1,6 @@
 package com.giaokhoa.tenancy;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,16 +43,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -71,8 +73,6 @@ import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -102,8 +102,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class CenterAdministrationIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "center_admin_" + UUID.randomUUID().toString().replace("-", "");
     private static final String OPERATOR_GROUP = "/gk/platform/operators";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
@@ -118,23 +116,10 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     private static final String DEFAULT_POLICY = "Default Policy";
     private static @Nullable String operatorGroupId;
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedOperatorGroup() {
         operatorGroupId = ensureGroup(OPERATOR_GROUP);
         ensureApiClient();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý (awaitOperationSucceeded tự poll) nên
-        // không mock được như BootstrapProfileIT; teardown dừng scheduler trước để không còn
-        // actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;
@@ -1240,21 +1225,26 @@ class CenterAdministrationIT extends IntegrationEnvironment {
      * của test không đổi.
      */
     private MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
-        while (true) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            boolean syncing =
-                    response.getStatus() == 503
-                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
-            if (!syncing || Instant.now().isAfter(deadline)) {
-                return response;
-            }
-            sleep();
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
+        try {
+            await().atMost(Duration.ofSeconds(60))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(get("/api/me/workspaces").cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        return response.getStatus() != 503
+                                || !response.getContentAsString()
+                                        .contains("AUTHORIZATION_NOT_READY");
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 60 giây mà account chưa sẵn sàng: trả phản hồi cuối như vòng poll cũ để
+            // khẳng định phía trên tự báo đúng trạng thái.
         }
+        return Objects.requireNonNull(last.get());
     }
 
     private long membershipVersion(RealSession session, UUID workspaceId, UUID membershipId)
@@ -1314,36 +1304,44 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     private void awaitOperationSucceeded(RealSession session, UUID operationId) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(90));
-        while (Instant.now().isBefore(deadline)) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/me/operations/" + operationId)
-                                            .cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(200, response.getStatus(), "Đường poll operation phải đọc được");
-            JsonNode body = JSON.readTree(response.getContentAsString());
-            if (body.get("completed").booleanValue()) {
-                assertEquals(
-                        "SUCCEEDED",
-                        body.get("state").stringValue(),
-                        "Operation hoàn tất nhưng không thành công");
-                return;
-            }
-            sleep();
-        }
-        fail("Operation did not succeed in time: " + operationId);
-    }
-
-    private static void sleep() {
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
+        AtomicBoolean completed = new AtomicBoolean();
         try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Interrupted while waiting for the operation");
+            await().atMost(Duration.ofSeconds(90))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(
+                                                get("/api/me/operations/" + operationId)
+                                                        .cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        boolean readable = response.getStatus() == 200;
+                        if (!readable) {
+                            return true;
+                        }
+                        JsonNode body = JSON.readTree(response.getContentAsString());
+                        boolean done = body.get("completed").booleanValue();
+                        if (done) {
+                            completed.set(true);
+                        }
+                        return done;
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 90 giây: các khẳng định phía dưới báo đúng trạng thái như vòng poll cũ.
         }
+        MockHttpServletResponse response = Objects.requireNonNull(last.get());
+        assertEquals(200, response.getStatus(), "Đường poll operation phải đọc được");
+        if (!completed.get()) {
+            fail("Operation did not succeed in time: " + operationId);
+        }
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals(
+                "SUCCEEDED",
+                body.get("state").stringValue(),
+                "Operation hoàn tất nhưng không thành công");
     }
 
     private <T> T tx(java.util.function.Supplier<T> action) {

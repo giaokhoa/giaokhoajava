@@ -1,11 +1,11 @@
 package com.giaokhoa.identity;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,12 +18,13 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.servlet.http.Cookie;
 import java.net.URI;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,7 +32,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -43,8 +43,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -70,8 +68,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class RecoveryFlowIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "recovery_flow_" + UUID.randomUUID().toString().replace("-", "");
     private static final String DIRECT_CLIENT = "recovery-flow-direct";
     private static final String WEB_CLIENT = "giaokhoa-it-web";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
@@ -87,11 +83,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
             IdentityFlowIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = IdentityFlowIT.fixture("TEST_KEYCLOAK_REALM");
     private static @Nullable String ownedDirectClientId;
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
 
     @BeforeAll
     static void seedPlatformRealmPrerequisites() {
@@ -111,14 +102,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                 }
             }
         }
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Test platform operator của class này chờ đồng bộ eligibility do worker thật xử lý
-        // (getWorkspacesWhenReady) nên không mock được như trước; teardown dừng scheduler
-        // trước để không còn actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;
@@ -628,30 +611,26 @@ class RecoveryFlowIT extends IntegrationEnvironment {
      */
     private MockHttpServletResponse getWorkspacesWhenReady(IdentityFlowIT.RealSession session)
             throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
-        while (true) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            boolean syncing =
-                    response.getStatus() == 503
-                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
-            if (!syncing || Instant.now().isAfter(deadline)) {
-                return response;
-            }
-            sleep();
-        }
-    }
-
-    private static void sleep() {
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
         try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Bị ngắt trong lúc chờ đồng bộ eligibility");
+            await().atMost(Duration.ofSeconds(60))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(get("/api/me/workspaces").cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        return response.getStatus() != 503
+                                || !response.getContentAsString()
+                                        .contains("AUTHORIZATION_NOT_READY");
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 60 giây mà account chưa sẵn sàng: trả phản hồi cuối như vòng poll cũ để
+            // khẳng định phía trên tự báo đúng trạng thái.
         }
+        return Objects.requireNonNull(last.get());
     }
 
     private void joinGroup(String subject, String groupPath) {

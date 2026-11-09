@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,8 +21,6 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,8 +39,6 @@ import org.springframework.web.client.RestClientResponseException;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class PlatformProjectionIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "platform_projection_" + UUID.randomUUID().toString().replace("-", "");
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_MAP =
@@ -57,11 +52,6 @@ class PlatformProjectionIT extends IntegrationEnvironment {
     private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedRealmPrerequisites() {
         ensureGroupPath(NativePolicyTemplates.ELIGIBILITY_GROUP);
@@ -70,15 +60,9 @@ class PlatformProjectionIT extends IntegrationEnvironment {
         ensureGrantClient();
     }
 
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
-
-    // Class này tự lái reconciler đồng bộ (seeder + reconcilePartition) nên không cần worker thật;
-    // worker thật chạy theo lịch sẽ mở giao dịch trên chính schema này trong khi @AfterAll DROP
-    // SCHEMA cần khóa độc quyền mọi bảng — hai bên khóa chéo nhau và PostgreSQL hủy DROP bằng
-    // deadlock. Mock nó để không còn actor đồng thời nào chạm schema.
+    // Class này tự lái reconciler đồng bộ (seeder + reconcilePartition) nên không cần worker
+    // thật: mock để worker nền không tự xử lý operation song song với đường lái trực tiếp
+    // của class.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired JdbcTemplate jdbc;

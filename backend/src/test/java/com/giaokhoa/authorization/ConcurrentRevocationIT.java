@@ -18,17 +18,16 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.awaitility.core.ConditionTimeoutException;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -38,8 +37,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -56,21 +53,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class ConcurrentRevocationIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "revocation_concurrent_" + UUID.randomUUID().toString().replace("-", "");
-
-    @DynamicPropertySource
-    static void isolatedCommittedTransactions(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeCommittedFixtures(@Autowired ApplicationContext context) {
-        // Class này cần worker thật nên không mock được như BootstrapProfileIT; teardown dừng
-        // scheduler trước để không còn actor đồng thời nào chạm schema khi DROP.
-        // DB thật cấm xóa từng partition riêng lẻ; chỉ drop schema do test này sở hữu.
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     @Autowired JdbcTemplate jdbc;
     @Autowired IdempotencyService idempotency;
@@ -456,27 +438,36 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             });
                     try {
                         assertTrue(writerStarted.await(10, TimeUnit.SECONDS));
-                        boolean blockedOnRevoke = false;
-                        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-                        while (System.nanoTime() < deadline && !writer.isDone()) {
-                            // Khớp đúng backend PostgreSQL của revoker, không phải chỉ độ chậm
-                            // HTTP.
-                            blockedOnRevoke =
-                                    Boolean.TRUE.equals(
-                                            jdbc.queryForObject(
-                                                    """
-                                                    SELECT EXISTS (
-                                                      SELECT 1 FROM pg_stat_activity a
-                                                      WHERE ? = ANY(pg_blocking_pids(a.pid))
-                                                        AND a.wait_event_type = 'Lock'
-                                                        AND a.query ILIKE '%authz_partition%'
-                                                    )
-                                                    """,
-                                                    Boolean.class, revokerBackendPid.get()));
-                            if (blockedOnRevoke) {
-                                break;
-                            }
-                            Thread.sleep(25);
+                        AtomicBoolean blockedOnRevoke = new AtomicBoolean();
+                        try {
+                            await().atMost(Duration.ofSeconds(10))
+                                    .pollInterval(Duration.ofMillis(25))
+                                    .until(() -> {
+                                        if (writer.isDone()) {
+                                            return true;
+                                        }
+                                        // Khớp đúng backend PostgreSQL của revoker,
+                                        // không phải chỉ độ chậm HTTP.
+                                        boolean found =
+                                                Boolean.TRUE.equals(
+                                                        jdbc.queryForObject(
+                                                                """
+                                                                SELECT EXISTS (
+                                                                  SELECT 1 FROM pg_stat_activity a
+                                                                  WHERE ? = ANY(pg_blocking_pids(a.pid))
+                                                                    AND a.wait_event_type = 'Lock'
+                                                                    AND a.query ILIKE '%authz_partition%'
+                                                                )
+                                                                """,
+                                                                Boolean.class,
+                                                                revokerBackendPid.get()));
+                                        if (found) {
+                                            blockedOnRevoke.set(true);
+                                        }
+                                        return found;
+                                    });
+                        } catch (ConditionTimeoutException ignored) {
+                            // Các assert ngay sau tự báo đúng trạng thái lệch như vòng poll cũ.
                         }
                         if (writer.isDone()) {
                             int earlyStatus = writer.get(10, TimeUnit.SECONDS);
@@ -489,7 +480,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                                     : "unexpected security/validation/business response"));
                         }
                         assertTrue(
-                                blockedOnRevoke,
+                                blockedOnRevoke.get(),
                                 "REVOCATION_CONTRACT_LOCK_NOT_OBSERVED: writer never waited on revoker PID");
                         assertFalse(
                                 writer.isDone(), "No mutation response before the revoke commits");
@@ -1297,20 +1288,32 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
 
     private void assertBlockedBy(Future<?> waiting, int waiterPid, int blockerPid)
             throws Exception {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!waiting.isDone() && System.nanoTime() < deadline) {
-            Boolean blocked =
-                    jdbc.queryForObject(
-                            "SELECT ? = ANY(pg_blocking_pids(?))",
-                            Boolean.class,
-                            blockerPid,
-                            waiterPid);
-            if (Boolean.TRUE.equals(blocked)) {
-                return;
-            }
-            Thread.sleep(25);
+        AtomicBoolean blocked = new AtomicBoolean();
+        try {
+            await().atMost(Duration.ofSeconds(10))
+                    .pollInterval(Duration.ofMillis(25))
+                    .until(() -> {
+                        if (waiting.isDone()) {
+                            return true;
+                        }
+                        boolean found =
+                                Boolean.TRUE.equals(
+                                        jdbc.queryForObject(
+                                                "SELECT ? = ANY(pg_blocking_pids(?))",
+                                                Boolean.class,
+                                                blockerPid,
+                                                waiterPid));
+                        if (found) {
+                            blocked.set(true);
+                        }
+                        return found;
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 10 giây: fail ở dưới như vòng poll cũ.
         }
-        fail("PostgreSQL did not report backend " + waiterPid + " blocked by " + blockerPid);
+        if (!blocked.get()) {
+            fail("PostgreSQL did not report backend " + waiterPid + " blocked by " + blockerPid);
+        }
     }
 
     private UUID partition() {

@@ -1,5 +1,6 @@
 package com.giaokhoa.teaching;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -34,7 +35,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -44,14 +44,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -60,8 +61,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,15 +77,14 @@ import tools.jackson.databind.json.JsonMapper;
  * hồi membership qua CenterService, và hành vi dưới role runtime không bypass RLS. Phần projector
  * chạy end-to-end với worker thật và Keycloak TEST: group của giáo viên/học sinh/chủ nhiệm chỉ phản
  * ánh quan hệ hiện hành kèm membership ACTIVE hiện hành. Seed phần service thuần bằng JDBC trong
- * schema cô lập; phần projector tạo tài khoản Keycloak thật theo mẫu CenterServiceIT. Route HTTP
- * thuộc task route riêng nên test gọi thẳng service.
+ * schema dùng chung của suite; phần projector tạo tài khoản Keycloak thật theo mẫu CenterServiceIT.
+ * Route HTTP thuộc task route riêng nên test gọi thẳng service.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class EnrollmentAssignmentIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "enrollment_assignment_" + UUID.randomUUID().toString().replace("-", "");
+    private static final String SCHEMA = "public";
     private static final String RUNTIME_ROLE = "enrollment_assignment_runtime";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
@@ -99,20 +97,10 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
     private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedRealmPrerequisites() {
         seedEligibilityGroup();
         ensureApiClient();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;
@@ -470,7 +458,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                         + "' NOSUPERUSER NOBYPASSRLS");
         jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         // Cơ chế operation chạm nhiều bảng điều khiển quyền ngoài các bảng giảng dạy nên cấp
-        // toàn bộ bảng của schema cô lập cho role runtime của riêng class này.
+        // toàn bộ bảng của schema dùng chung cho role runtime của riêng class này.
         jdbc.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         jdbc.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
@@ -745,38 +733,48 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
     }
 
     private void awaitOperationSucceeded(UUID operationId) {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(90));
-        while (Instant.now().isBefore(deadline)) {
-            List<String> states =
-                    jdbc.queryForList(
-                            "SELECT state FROM authorization_operation WHERE id = ?",
-                            String.class,
-                            operationId);
-            if (!states.isEmpty()) {
-                String state = states.getFirst();
-                boolean succeeded = "SUCCEEDED".equals(state);
-                if (succeeded) {
-                    return;
-                }
-                boolean failed = "FAILED".equals(state);
-                if (failed) {
-                    String errorCode =
-                            jdbc.queryForObject(
-                                    "SELECT last_error_code FROM authorization_operation"
-                                            + " WHERE id = ?",
-                                    String.class,
-                                    operationId);
-                    fail("Operation FAILED: " + operationId + " error=" + errorCode);
-                }
-            }
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                fail("Interrupted while waiting for the operation");
-            }
+        AtomicBoolean succeeded = new AtomicBoolean();
+        AtomicReference<String> failure = new AtomicReference<>();
+        try {
+            await().atMost(Duration.ofSeconds(90))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        List<String> states =
+                                jdbc.queryForList(
+                                        "SELECT state FROM authorization_operation WHERE id = ?",
+                                        String.class,
+                                        operationId);
+                        if (states.isEmpty()) {
+                            return false;
+                        }
+                        String state = states.getFirst();
+                        boolean done = "SUCCEEDED".equals(state);
+                        if (done) {
+                            succeeded.set(true);
+                            return true;
+                        }
+                        boolean failed = "FAILED".equals(state);
+                        if (failed) {
+                            String errorCode =
+                                    jdbc.queryForObject(
+                                            "SELECT last_error_code FROM authorization_operation"
+                                                    + " WHERE id = ?",
+                                            String.class,
+                                            operationId);
+                            failure.set("Operation FAILED: " + operationId + " error=" + errorCode);
+                            return true;
+                        }
+                        return false;
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 90 giây: fail ở dưới như vòng poll cũ.
         }
-        fail("Operation did not succeed in time: " + operationId);
+        if (failure.get() != null) {
+            fail(failure.get());
+        }
+        if (!succeeded.get()) {
+            fail("Operation did not succeed in time: " + operationId);
+        }
     }
 
     // ---------- Seed dữ kiện thư mục bằng JDBC (mẫu TeachingServiceIT) ----------

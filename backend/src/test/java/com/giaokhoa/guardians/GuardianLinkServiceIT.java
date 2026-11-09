@@ -25,20 +25,16 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -55,20 +51,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class GuardianLinkServiceIT extends GuardianFixture {
-    private static final String SCHEMA =
-            "guardian_link_service_" + UUID.randomUUID().toString().replace("-", "");
+    private static final String SCHEMA = "public";
     private static final String RUNTIME_ROLE = "guardian_link_service_runtime";
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý nên teardown dừng scheduler trước.
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     @Autowired GuardianLinkService links;
     @Autowired CenterService centers;

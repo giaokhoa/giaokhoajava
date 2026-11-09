@@ -11,7 +11,6 @@ import com.giaokhoa.support.NativeGateFixture;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,8 +23,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -47,25 +44,11 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class OperationStatusIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "operation_status_" + UUID.randomUUID().toString().replace("-", "");
-
-    @DynamicPropertySource
-    static void isolatedCommittedTransactions(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeCommittedFixtures(@Autowired JdbcTemplate jdbc) {
-        // DB thật cấm xóa từng partition riêng lẻ; chỉ drop schema do test này sở hữu.
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
 
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua dữ kiện seed
-    // trực tiếp và đường đọc đồng bộ), nhưng worker thật chạy theo lịch sẽ mở giao dịch trên
-    // chính schema này trong khi @AfterAll DROP SCHEMA cần khóa độc quyền mọi bảng — hai bên
-    // khóa chéo nhau và PostgreSQL hủy DROP bằng deadlock. Mock nó để không còn actor đồng
-    // thời nào chạm schema.
+    // trực tiếp và đường đọc đồng bộ): mock để worker nền không tự xử lý các operation mà
+    // class seed trực tiếp — trạng thái khẳng định phải do class điều khiển, không do lịch
+    // poll của worker quyết định.
     @MockitoBean ProjectionWorker scheduledWorker;
 
     @Autowired JdbcTemplate jdbc;

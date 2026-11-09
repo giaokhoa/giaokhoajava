@@ -1,5 +1,6 @@
 package com.giaokhoa.tenancy;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -15,7 +16,6 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.CenterAdministrationIT.RealSession;
 import java.net.URI;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -25,14 +25,15 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,8 +42,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -72,8 +71,6 @@ import tools.jackson.databind.json.JsonMapper;
 @Tag("e2e-backend")
 class MembershipInvitationIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String SCHEMA =
-            "member_invite_" + UUID.randomUUID().toString().replace("-", "");
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST =
@@ -87,22 +84,9 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
     @BeforeAll
     static void seedApiClient() {
         ensureApiClient();
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý (awaitOperationSucceeded tự poll) nên
-        // không mock được như BootstrapProfileIT; teardown dừng scheduler trước để không còn
-        // actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Autowired JdbcTemplate jdbc;
@@ -1163,36 +1147,44 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     }
 
     private void awaitOperationSucceeded(RealSession session, UUID operationId) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(90));
-        while (Instant.now().isBefore(deadline)) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/me/operations/" + operationId)
-                                            .cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(200, response.getStatus(), "Đường poll operation phải đọc được");
-            JsonNode body = JSON.readTree(response.getContentAsString());
-            if (body.get("completed").booleanValue()) {
-                assertEquals(
-                        "SUCCEEDED",
-                        body.get("state").stringValue(),
-                        "Operation hoàn tất nhưng không thành công");
-                return;
-            }
-            sleep();
-        }
-        fail("Operation did not succeed in time: " + operationId);
-    }
-
-    private static void sleep() {
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
+        AtomicBoolean completed = new AtomicBoolean();
         try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Interrupted while waiting for the operation");
+            await().atMost(Duration.ofSeconds(90))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(
+                                                get("/api/me/operations/" + operationId)
+                                                        .cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        boolean readable = response.getStatus() == 200;
+                        if (!readable) {
+                            return true;
+                        }
+                        JsonNode body = JSON.readTree(response.getContentAsString());
+                        boolean done = body.get("completed").booleanValue();
+                        if (done) {
+                            completed.set(true);
+                        }
+                        return done;
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 90 giây: các khẳng định phía dưới báo đúng trạng thái như vòng poll cũ.
         }
+        MockHttpServletResponse response = Objects.requireNonNull(last.get());
+        assertEquals(200, response.getStatus(), "Đường poll operation phải đọc được");
+        if (!completed.get()) {
+            fail("Operation did not succeed in time: " + operationId);
+        }
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals(
+                "SUCCEEDED",
+                body.get("state").stringValue(),
+                "Operation hoàn tất nhưng không thành công");
     }
 
     private <T> T tx(java.util.function.Supplier<T> action) {

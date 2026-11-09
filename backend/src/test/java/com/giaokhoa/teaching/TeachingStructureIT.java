@@ -18,14 +18,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -51,28 +47,21 @@ import tools.jackson.databind.JsonNode;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Tag("e2e-backend")
 class TeachingStructureIT extends TeachingFixture {
-    private static final String SCHEMA =
-            "teaching_struct_" + UUID.randomUUID().toString().replace("-", "");
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        // Class này chờ operation do worker thật xử lý nên teardown dừng scheduler trước để
-        // không còn actor đồng thời nào chạm schema khi DROP.
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
-
-    // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt); mỗi test
-    // vẫn dựng center riêng trên danh tính đó để giữ cô lập dữ kiện.
+    // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt). Center chuẩn
+    // cũng dựng một lần và dùng chung: cô lập nằm ở phân vùng thực thể con — tên lớp của mỗi
+    // test vốn đã duy nhất (Lớp 1A, 1B, 2A, ...) và mỗi test chỉ khẳng định trên class/course
+    // của chính nó, không test nào sửa membership hay gói của center dùng chung. Riêng biến
+    // thể gói hết hạn là một center thứ hai dựng một lần cho đúng một test cần nó.
     private SharedIdentities sharedIdentities;
+    private Fixture sharedCenter;
+    private Fixture sharedExpiredCenter;
 
     @BeforeAll
     void seedSharedIdentitiesOnce() {
         sharedIdentities = seedSharedIdentities();
+        sharedCenter = seedCenterFixture(sharedIdentities);
+        sharedExpiredCenter = seedCenterFixture(sharedIdentities, -60, -1);
     }
 
     @AfterAll
@@ -82,7 +71,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void ownerCreatesClassReturnsPendingOperation() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 1A");
 
@@ -105,7 +94,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void managerCreatesClassReturnsPendingOperation() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.manager())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 1B");
             assertNotNull(classId, "Quản lý tạo được lớp trong center của mình");
@@ -117,7 +106,7 @@ class TeachingStructureIT extends TeachingFixture {
         // Fixture này chỉ có kỳ gói đã hết hạn (không kỳ nào còn hiệu lực): biên quyền
         // của route tạo lớp phải từ chối 403. Bảng lớp chưa tồn tại nên test này không
         // khẳng định thêm "không để lại lớp" bằng truy vấn DB.
-        Fixture fixture = seedCenterFixture(sharedIdentities, -60, -1);
+        Fixture fixture = sharedExpiredCenter;
         try (var session = openSession(fixture.owner())) {
             MockHttpServletResponse response =
                     mockMvc()
@@ -138,7 +127,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void courseRequiresAtLeastOneSubject() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 2A");
             MockHttpServletResponse response =
@@ -169,7 +158,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void subjectsCatalogListsReferenceSubjects() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             List<UUID> subjects = subjectIds(session, 3);
             assertEquals(3, subjects.size(), "Danh mục môn tối thiểu phải có đủ ba môn");
@@ -183,7 +172,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void courseWithThreeSubjectsHasCourseView() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 3A");
             List<UUID> subjects = subjectIds(session, 3);
@@ -217,7 +206,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void studentChoosesOnlySelectedSubjects() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 4A");
             List<UUID> subjects = subjectIds(session, 3);
@@ -252,7 +241,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void addingSubjectDoesNotAutoEnroll() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 5A");
             // Khóa 2 môn + thêm môn thứ 3: đủ để chứng minh thêm môn không tự ghi danh,
@@ -292,7 +281,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void twoTeachersShareOneCourseSubject() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 6A");
             List<UUID> subjects = subjectIds(session, 1);
@@ -318,7 +307,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void sameSubjectInTwoCoursesHasDifferentScopeIdentity() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 7A");
             List<UUID> subjects = subjectIds(session, 1);
@@ -347,7 +336,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void enrollmentBatchAcrossClassesIsRejected() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID firstClass = createClass(session, fixture.workspaceId(), "Lớp 8A");
             UUID secondClass = createClass(session, fixture.workspaceId(), "Lớp 8B");
@@ -395,7 +384,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void enrollmentBatchAcrossWorkspacesIsRejected() throws Exception {
-        Fixture first = seedCenterFixture(sharedIdentities);
+        Fixture first = sharedCenter;
         Fixture second = seedTeachingCenter();
         try (var session = openSession(first.owner())) {
             UUID classId = createClass(session, first.workspaceId(), "Lớp 9A");
@@ -445,7 +434,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void rosterAddRequiresCenterMembership() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         KeycloakLogin outsiderLogin = createVerifiedUser("teaching-outsider");
         UUID outsider;
         try {
@@ -498,7 +487,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void revokeRosterKeepsHistoryAndRevokesEnrollments() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 11A");
             List<UUID> subjects = subjectIds(session, 1);
@@ -568,7 +557,7 @@ class TeachingStructureIT extends TeachingFixture {
 
     @Test
     void classMutationWithoutCsrfIsRejected() throws Exception {
-        Fixture fixture = seedCenterFixture(sharedIdentities);
+        Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             MockHttpServletResponse response =
                     mockMvc()

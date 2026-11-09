@@ -1,10 +1,10 @@
 package com.giaokhoa.teaching;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -29,7 +29,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
@@ -322,8 +324,11 @@ abstract class TeachingFixture extends IntegrationEnvironment {
 
     /**
      * Danh tính dùng chung cho cả class test: tạo user Keycloak và tài khoản là phần seed đắt (mỗi
-     * user tạo ra là một lần Keycloak băm mật khẩu), còn center, membership và gói là JDBC rẻ và
-     * phải riêng từng test để giữ cô lập dữ kiện giữa các test.
+     * user tạo ra là một lần Keycloak băm mật khẩu), còn center, membership và gói là JDBC rẻ.
+     * Center mặc định riêng từng test; riêng TeachingAuthorizationIT và TeachingStructureIT dùng
+     * chung một center cho cả class theo mô hình phân vùng thực thể con (mỗi test tự tạo
+     * class/course với tên duy nhất và chỉ khẳng định trên vùng của mình, không test nào sửa
+     * membership hay gói của center dùng chung).
      */
     protected record SharedIdentities(
             KeycloakLogin owner,
@@ -398,7 +403,7 @@ abstract class TeachingFixture extends IntegrationEnvironment {
      * Dựng một center riêng cho một test trên danh tính dùng chung của class. Fixture trả về không
      * được đưa vào {@code deleteFixture} vì sẽ xoá user dùng chung của cả class; danh tính chỉ dọn
      * một lần ở cuối class qua {@code deleteSharedIdentities}, còn dữ kiện của center nằm trong
-     * schema cô lập bị DROP ở teardown của class.
+     * schema dùng chung, được xoá sạch khi class kế tiếp bắt đầu.
      */
     protected Fixture seedCenterFixture(
             SharedIdentities identities, int validFromOffsetDays, int expiresOffsetDays) {
@@ -554,30 +559,26 @@ abstract class TeachingFixture extends IntegrationEnvironment {
      * giới hạn với đúng mã lỗi đó rồi mới khẳng định; ngữ nghĩa khẳng định của test không đổi.
      */
     protected MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
-        while (true) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            boolean syncing =
-                    response.getStatus() == 503
-                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
-            if (!syncing || Instant.now().isAfter(deadline)) {
-                return response;
-            }
-            sleep();
-        }
-    }
-
-    protected static void sleep() {
+        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
         try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Interrupted while waiting for the operation");
+            await().atMost(Duration.ofSeconds(60))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        MockHttpServletResponse response =
+                                mockMvc()
+                                        .perform(get("/api/me/workspaces").cookie(session.cookie()))
+                                        .andReturn()
+                                        .getResponse();
+                        last.set(response);
+                        return response.getStatus() != 503
+                                || !response.getContentAsString()
+                                        .contains("AUTHORIZATION_NOT_READY");
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 60 giây mà account chưa sẵn sàng: trả phản hồi cuối như vòng poll cũ để
+            // khẳng định phía trên tự báo đúng trạng thái.
         }
+        return Objects.requireNonNull(last.get());
     }
 
     protected <T> T tx(java.util.function.Supplier<T> action) {
