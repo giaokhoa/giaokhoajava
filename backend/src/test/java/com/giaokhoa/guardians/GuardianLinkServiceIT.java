@@ -325,6 +325,46 @@ class GuardianLinkServiceIT extends GuardianFixture {
     }
 
     @Test
+    void teacherCannotDecideOrRevokeLinkThroughServiceDirectly() {
+        GuardianCenter center = seedGuardianCenter();
+        try {
+            links.requestLink(
+                    center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
+            LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
+
+            HttpProblemException decide =
+                    problemOf(() ->
+                            links.decideLink(
+                                    center.teacherId(),
+                                    center.workspaceId(),
+                                    requested.id(),
+                                    "APPROVE",
+                                    requested.version(),
+                                    key(),
+                                    hash()));
+            assertEquals(HttpStatus.FORBIDDEN, decide.getStatus());
+            assertEquals("PERMISSION_DENIED", decide.getCode());
+            assertEquals(
+                    "REQUESTED",
+                    linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                    "Giáo viên quyết trực tiếp không đổi trạng thái link");
+
+            HttpProblemException revoke =
+                    problemOf(() ->
+                            links.revokeLink(
+                                    center.teacherId(),
+                                    center.workspaceId(),
+                                    requested.id(),
+                                    key(),
+                                    hash()));
+            assertEquals(HttpStatus.FORBIDDEN, revoke.getStatus());
+            assertEquals("PERMISSION_DENIED", revoke.getCode());
+        } finally {
+            deleteGuardianCenter(center);
+        }
+    }
+
+    @Test
     void removingParentRoleClosesApprovedLinkInSameOperation() {
         GuardianCenter center = seedGuardianCenter();
         try {
