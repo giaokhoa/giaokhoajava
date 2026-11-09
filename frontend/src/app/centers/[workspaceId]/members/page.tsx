@@ -12,7 +12,12 @@ export default async function CenterMembersPage({
   const { workspaceId } = await params;
   return (
     <SessionProvider>
-      <CenterMembersContent workspaceId={workspaceId} />
+      {/*
+        key theo workspace: đổi trung tâm thì component là instance mới nên toàn
+        bộ state riêng (panel thao tác, mật khẩu tạm, draft, lựa chọn) reset,
+        không bao giờ hiện dữ kiện của trung tâm trước.
+      */}
+      <CenterMembersContent key={workspaceId} workspaceId={workspaceId} />
     </SessionProvider>
   );
 }

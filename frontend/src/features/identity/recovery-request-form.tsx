@@ -105,7 +105,11 @@ export function RecoveryRequestForm({ userId }: { userId: string }) {
         throw new Error("Phản hồi thao tác không hợp lệ.");
       }
       setOperation(nextOperation);
-      setReason("");
+      // Chỉ dọn draft sau thao tác THÀNH CÔNG: PENDING/FAILED giữ nguyên lý do
+      // đã nhập để người dùng theo dõi hoặc sửa rồi gửi lại.
+      if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
+        setReason("");
+      }
       recoveryAttempt.current = null;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Thao tác không thành công.");
