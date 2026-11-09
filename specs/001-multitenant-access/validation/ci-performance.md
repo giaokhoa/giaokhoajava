@@ -2,6 +2,7 @@
 
 Nền: `origin/main` tại `54b44078b645cf1142f127178f2e525fa5fa70b2`.
 Đã đọc parent #2 và hướng dẫn tại `bf99c20`; không đổi dependency hay mở story mới.
+Trước kiểm chứng đã ghép `c5c7df3` (#210), giữ các test hồi quy phân trang và quyền.
 
 ## Tái dùng PR #207
 
