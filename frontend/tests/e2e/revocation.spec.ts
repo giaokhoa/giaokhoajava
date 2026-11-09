@@ -648,9 +648,9 @@ async function capHocSinhDayDu(
 // Seed một kết quả mẫu thẳng vào DB bằng psql, theo đúng mẫu PublishedResultContractIT:
 // resource + resource_version + sample_activity + sample_submission + sample_result
 // (đúng FK; trigger kiểm tra ghi danh của submission và nguồn của result). Kết quả
-// không công bố ở lại trạng thái DRAFT. Cần E2E_SCHEMA (schema riêng của lượt chạy,
-// run-e2e.sh xuất từ schema.txt) và TEST_DATABASE_* của làn TEST; psql lấy từ PATH
-// mà run-e2e.sh chuẩn bị. Seed chạy trước khi có liên kết: bundle kết quả được ghi
+// không công bố ở lại trạng thái DRAFT. Cần TEST_E2E_SCHEMA (schema ngẫu nhiên của lượt
+// chạy do playwright.config.ts đặt; run-backend.sh dùng cùng tên cho backend nên seed
+// mới trùng schema đã migrate) và TEST_DATABASE_* của làn TEST; psql lấy từ PATH.
 // kèm trong operation duyệt/gỡ link (B58) nên không cần ghi projection riêng ở đây.
 function seedKetQuaMau(
   workspaceId: string,
@@ -662,12 +662,12 @@ function seedKetQuaMau(
   nhanXet: string,
   congBo: boolean,
 ): void {
-  const schema = process.env.E2E_SCHEMA;
+  const schema = process.env.TEST_E2E_SCHEMA;
   const databaseUrl = process.env.TEST_DATABASE_URL;
   const username = process.env.TEST_DATABASE_USERNAME;
   const password = process.env.TEST_DATABASE_PASSWORD;
   if (!schema || !databaseUrl || !username || !password) {
-    throw new Error("Seed kết quả mẫu cần E2E_SCHEMA và TEST_DATABASE_URL/USERNAME/PASSWORD");
+    throw new Error("Seed kết quả mẫu cần TEST_E2E_SCHEMA và TEST_DATABASE_URL/USERNAME/PASSWORD");
   }
   const match = databaseUrl.match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
   const host = match?.[1];
