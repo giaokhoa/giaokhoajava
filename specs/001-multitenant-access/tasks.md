@@ -266,6 +266,10 @@ Hiện đã có artifact ở PR #181/#182 (test), #183 (guardian schema), #185 (
 5. Chạy test thuộc phạm vi đã đổi; rerun core gate/cross-source khi đổi PEP/PAP/identity hoặc dependencies.
 6. Nếu native gate không đạt, dừng mở rộng, ghi bằng chứng; không tự đổi PDP hoặc hạ yêu cầu thu hồi.
 
+### Trước khi mở story kế tiếp
+
+Quy tắc điều phối áp dụng cho mọi story, không kết thúc ở US4. Dependency US5–US8 hiện vẫn là phân rã gốc; chưa được tối ưu theo artifact của implementation tương lai. Sau khi gate trước đạt, agent điều phối phải rà code/contract và dependency của story sắp mở, ghi riêng tiền đề bắt đầu/điều kiện hoàn tất, giữ đủ đầu vào gate, đồng bộ GitHub/`tasks.md`/`github-issues.json` và phân công agent cụ thể tại parent trước khi triển khai. Đọc lại hướng dẫn hiện hành theo `AGENTS.md`, kể cả commit tài liệu đang ở PR chưa merge. Không mặc định làm cả tầng hoặc chờ issue đóng; không mở code của story sau khi gate trước chưa đạt.
+
 ### Parallel opportunities và ví dụ theo story
 
 Các cặp sau là ví dụ, không giới hạn toàn bộ cơ hội song song. Giao agent cụ thể theo `AGENTS.md`, dùng artifact đã sẵn sàng và giữ các checkpoint:

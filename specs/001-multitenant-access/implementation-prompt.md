@@ -31,5 +31,5 @@ Báo đúng kết quả và test bị skip. Không giảm rule, mock PDP, skip k
 
 8. Báo tiến độ theo bảng agent | issue/phần việc | file sở hữu | nhánh/PR/SHA | đang làm/chờ | blocker. Khi không dùng hết slot dù còn việc sẵn sàng, giải thích lý do cụ thể và phân công lại. Đồng bộ trạng thái có bằng chứng và dependency vào GitHub/tasks.md/github-issues.json; không ghi hoàn tất vì đã có file, PR hoặc CI xanh ở tầng chưa đủ.
 
-Khi US4 được nghiệm thu và được phép mở story tiếp theo, tiếp tục áp dụng cách điều phối này: rà phụ thuộc thật, chia phần việc độc lập, giao agent cụ thể và ghép dần. Không quay lại chờ cả tầng hoặc chờ issue đóng nếu artifact cần dùng đã sẵn sàng.
+9. Trước mỗi story tiếp theo, kể cả khi đổi phiên làm việc: đọc lại origin/main, parent #2 và đúng commit hướng dẫn được liên kết nếu PR điều phối chưa merge. Chỉ sau khi gate trước đạt mới rà dependency của story sắp mở theo code/contract thật, tách tiền đề bắt đầu/điều kiện hoàn tất, giữ đủ đầu vào gate và đồng bộ GitHub/tasks.md/github-issues.json. Ghi bảng phân công agent/file/nhánh/artifact đầu vào tại parent rồi mới triển khai. US5–US8 còn lịch phân rã gốc, không được tự dùng lại làm chuỗi tuần tự mặc định. Không quay lại chờ cả tầng hoặc issue đóng khi artifact đã sẵn sàng; không mở code story sau khi gate trước chưa đạt.
 ```

@@ -16,6 +16,8 @@
 
 ## Điều phối triển khai
 
+- Ở đầu mỗi phiên và trước mỗi story mới, đọc lại `origin/main`, parent issue và hướng dẫn điều phối được liên kết. Nếu thay đổi hướng dẫn còn ở PR chưa merge, đọc đúng commit tài liệu được parent liên kết; không giả định `main` đã chứa quy tắc mới.
+- Trước khi triển khai story kế tiếp, xác minh gate trước đã đạt, rồi rà từng dependency với code/contract hiện có: tách tiền đề bắt đầu và điều kiện hoàn tất, bỏ cạnh chờ thừa có bằng chứng, kiểm tra tên migration/file thật và đồng bộ GitHub/`tasks.md`/`github-issues.json`. Ghi bảng phân công agent, file, artifact đầu vào và gate hội tụ tại parent issue trước khi giao implementation; không tự dùng lại chuỗi tuần tự của bản phân rã gốc. Khi nới cạnh khởi động, phải giữ điều kiện hoàn tất và mọi đầu vào nghiệm thu ở gate của story.
 - Khi người dùng yêu cầu làm song song hoặc tối đa công suất, phải phân công agent bằng công cụ thực tế nếu môi trường hỗ trợ; không chỉ ghi `[P]` hoặc hứa làm đồng thời. Dùng các slot có sẵn khi còn công việc độc lập; nếu không có công cụ hoặc bị giới hạn, báo đúng giới hạn, không giả có nhiều agent.
 - Agent điều phối chọn việc trong story đã mở, giao rõ issue, file sở hữu, nhánh/worktree và đầu ra cho từng agent. Khi một phần bị chặn hoặc một agent xong việc, giao ngay phần độc lập tiếp theo trong phạm vi hiện tại. Không vượt gate sang story chưa được phép triển khai.
 - Mỗi agent sửa code trên nhánh/worktree riêng. Một owner ghép các file chung như migration, contract, `CenterService` và `ProjectionReconciler`; các agent khác bàn giao thay đổi cần ghép, không cùng sửa file đó.
