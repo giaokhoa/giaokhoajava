@@ -84,10 +84,11 @@ import tools.jackson.databind.json.JsonMapper;
  *       vẫn 200.
  *   <li>US5.2 — gỡ membership tại một center: cùng phiên cũ đọc roster center đó phải 403, danh
  *       sách workspace còn center kia mà không còn center này, thành viên khác không ảnh hưởng.
- *   <li>US5.3 — gỡ ghi danh: học sinh đọc kết quả công bố chuyển 200 thành 403, biến mất khỏi
- *       roster theo góc nhìn của giáo viên (1 mục thành 0 mục); giáo viên còn thẩm quyền vẫn đọc
- *       kết quả 200 (lịch sử giữ). Học sinh không bao giờ đọc được danh sách roster môn — xem Sổ
- *       B66.
+ *   <li>US5.3 — gỡ ghi danh: học sinh đọc kết quả công bố của mình chuyển từ 1 mục thành 0 mục
+ *       (HTTP 200 với danh sách rỗng — B56: chính học sinh nhận tập được phép, có thể rỗng, không
+ *       phải 403), biến mất khỏi roster theo góc nhìn của giáo viên (1 mục thành 0 mục); giáo viên
+ *       còn thẩm quyền vẫn đọc kết quả 200 (lịch sử giữ). Học sinh không bao giờ đọc được danh sách
+ *       roster môn — xem Sổ B66.
  *   <li>US5.4 — header {@code X-Tenant-Id} giả không ghi đè route; id môn của center khác nhúng vào
  *       route này phải 404.
  *   <li>US5.5 — nguồn quyền OR độc lập: gỡ một môn thì môn còn lại vẫn 200.
@@ -375,9 +376,11 @@ class RevocationMatrixIT extends IntegrationEnvironment {
                                     + enrollment);
             awaitOperationSucceeded(jdbc, operationId);
             assertEquals(
-                    403,
-                    getRaw(studentX, results).getStatus(),
-                    "Cùng phiên cũ sau khi gỡ ghi danh phải bị chặn đọc kết quả");
+                    0,
+                    getJson(studentX, results, 200).get("items").size(),
+                    "Cùng phiên cũ sau khi gỡ ghi danh, học sinh không còn thấy kết quả của mình"
+                            + " (B56: chính học sinh nhận tập được phép, có thể rỗng,"
+                            + " HTTP 200 — không phải 403)");
             assertEquals(
                     0,
                     getJson(teacherA, roster, 200).get("items").size(),
