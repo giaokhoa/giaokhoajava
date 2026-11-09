@@ -1,4 +1,4 @@
--- Stable keyset listing indexes; historical revoked rows stay addressable through primary keys.
+-- Index phân trang keyset; hàng thu hồi vẫn tra được qua khóa chính để làm mốc cursor.
 CREATE INDEX ix_class_listing_page ON school_class (workspace_id, created_at, id)
     WHERE state = 'ACTIVE';
 CREATE INDEX ix_roster_listing_page ON class_student (workspace_id, class_id, created_at, id)

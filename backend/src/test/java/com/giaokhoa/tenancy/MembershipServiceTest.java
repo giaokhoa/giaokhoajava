@@ -45,7 +45,7 @@ class MembershipServiceTest {
     @Test
     void revokedCursorStillStartsAtNextMembershipAndFetchesOnlyOnePage() throws SQLException {
         OffsetDateTime joinedAt = OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
-        // Anchor lookup must include REVOKED rows so a deletion cannot erase the next page.
+        // Mốc vẫn lấy được từ hàng REVOKED để trang sau không biến mất.
         when(jdbc.queryForList(
                         contains("SELECT joined_at"),
                         eq(OffsetDateTime.class),

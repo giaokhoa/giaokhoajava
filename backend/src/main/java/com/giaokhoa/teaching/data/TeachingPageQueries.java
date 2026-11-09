@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
-/** Read-only keyset queries; tách riêng khỏi các thao tác ghi dữ kiện giảng dạy. */
+/** Truy vấn phân trang chỉ đọc, tách khỏi các thao tác ghi dữ kiện giảng dạy. */
 final class TeachingPageQueries {
     private final JdbcTemplate jdbc;
 
@@ -60,7 +60,7 @@ final class TeachingPageQueries {
             } catch (IllegalArgumentException ex) {
                 return new Page<>(List.of(), null);
             }
-            // A cursor from another class/course subject must not advance this collection.
+            // Cursor thuộc lớp/môn–khóa khác không được làm dịch trang của danh sách hiện tại.
             String anchorSql =
                     "SELECT created_at FROM "
                             + table
