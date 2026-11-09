@@ -16,11 +16,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.awaitility.core.ConditionTimeoutException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.web.client.HttpClientErrorException;
 
 /**
  * Lớp base cho các integration test opt-in chạy trên Compose TEST stack cục bộ tách biệt. Không bao
@@ -187,6 +189,39 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
                             || !response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
                 });
         return java.util.Objects.requireNonNull(last.get());
+    }
+
+    /**
+     * Xoá user Keycloak cuối test, thử lại khi gặp 409: một thao tác khác (worker chiếu group
+     * membership) có thể đang chạm cùng user trong lúc chạy song song. 404 nghĩa là user đã không
+     * còn nên coi như dọn xong; 409 dai dẳng hoặc lỗi khác vẫn ném kèm nội dung Keycloak trả về để
+     * lần sau chẩn đoán được, thay vì chỉ còn mã trạng thái.
+     */
+    protected static void deleteWithConflictRetry(Runnable deleteOnce) {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                deleteOnce.run();
+                return;
+            } catch (HttpClientErrorException ex) {
+                if (ex.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
+                    return;
+                }
+                if (ex.getStatusCode().value() != HttpStatus.CONFLICT.value() || attempt == 2) {
+                    String body = ex.getResponseBodyAsString();
+                    throw new IllegalStateException(
+                            "Keycloak test admin DELETE: HTTP "
+                                    + ex.getStatusCode().value()
+                                    + (body == null || body.isBlank() ? "" : " — " + body),
+                            ex);
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    fail("Interrupted while retrying Keycloak user cleanup");
+                }
+            }
+        }
     }
 
     static void validateTargets(String database, String issuer) {
