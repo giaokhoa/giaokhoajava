@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { expect, type Page, type APIResponse } from "@playwright/test";
+import { expect, type Browser, type Page, type APIResponse } from "@playwright/test";
 
 type TestUser = { id: string; username: string; email: string; password: string };
 type Mail = { ID: string; Subject: string; Created: string; To: { Address: string }[] };
@@ -276,22 +276,31 @@ export class TestEnvironment {
 }
 
 
-// Chỉ thử lại ACCOUNT/target fence đang đồng bộ; caller giữ nguyên key qua mọi lần thử.
+// Helper CHUẨN DUY NHẤT của hệ E2E cho mẫu "chờ fence sẵn sàng" (docs Playwright:
+// expect.poll là mẫu polling chuẩn cho điều kiện cần thử lại): chỉ thử lại khi phản
+// hồi là 503 AUTHORIZATION_NOT_READY (ACCOUNT/target fence đang đồng bộ), tối đa 60s;
+// status/mã khác trả về ngay cho caller. Caller giữ nguyên Idempotency-Key qua mọi
+// lần thử vì options (kèm header) được dựng một lần và dùng lại nguyên vẹn.
 export async function appRequestWhenReady(
   page: Page,
   url: string,
   options: { method?: string; headers?: Record<string, string>; data?: Record<string, unknown> } = {},
 ): Promise<APIResponse> {
-  const startedAt = Date.now();
-  for (;;) {
-    const response = await page.request.fetch(url, options);
-    if (response.status() !== 503) return response;
-    let code: unknown;
-    try { code = ((await response.json()) as { code?: unknown }).code; }
-    catch { return response; }
-    if (code !== "AUTHORIZATION_NOT_READY" || Date.now() - startedAt >= 60_000) return response;
-    await page.waitForTimeout(1_000);
-  }
+  let response: APIResponse | undefined;
+  await expect
+    .poll(
+      async () => {
+        response = await page.request.fetch(url, options);
+        if (response.status() !== 503) return "SAN_SANG";
+        let code: unknown;
+        try { code = ((await response.json()) as { code?: unknown }).code; }
+        catch { return "SAN_SANG"; }
+        return code === "AUTHORIZATION_NOT_READY" ? "CON_PHAI_CHO" : "SAN_SANG";
+      },
+      { timeout: 60_000, intervals: [1_000], message: `lời gọi chưa sẵn sàng sau 60s: ${url}` },
+    )
+    .toBe("SAN_SANG");
+  return response!;
 }
 
 // Chờ một navigation mới về trang chủ, kể cả khi URL trước logout cũng là trang chủ.
@@ -313,4 +322,66 @@ export async function logoutViaApplicationForm(page: Page, origin: string, token
       form.submit();
     }, token),
   ]);
+}
+
+export type PhienHienTai = {
+  authenticated?: boolean;
+  csrf?: { headerName: string; token: string };
+  user?: { id?: string; username?: string };
+};
+
+/** Đọc /api/session của trang đang đăng nhập: lấy CSRF của phiên hiện hành. */
+export async function layPhienHienTai(page: Page, origin: string): Promise<PhienHienTai> {
+  const response = await page.request.get(`${origin}/api/session`);
+  expect(response.status()).toBe(200);
+  return (await response.json()) as PhienHienTai;
+}
+
+// Đồng bộ eligibility lần đầu: actor mới sau khi đăng nhập có thể nhận 503
+// AUTHORIZATION_NOT_READY cho tới khi ACCOUNT projection sẵn sàng (tối đa 60s).
+// Phiên thật luôn nạp workspace trước khi làm việc; 503 mã khác hoặc quá hạn là lỗi.
+// Poll bằng expect.poll như helper chuẩn appRequestWhenReady.
+export async function dongBoEligibility(page: Page, origin: string): Promise<void> {
+  let statusCuoi = 0;
+  let maCuoi: unknown;
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${origin}/api/me/workspaces`);
+        statusCuoi = response.status();
+        if (statusCuoi !== 503) return "SAN_SANG";
+        try {
+          maCuoi = ((await response.json()) as { code?: unknown }).code;
+        } catch {
+          maCuoi = undefined;
+          return "SAN_SANG";
+        }
+        return maCuoi === "AUTHORIZATION_NOT_READY" ? "CON_PHAI_CHO" : "SAN_SANG";
+      },
+      { timeout: 60_000, intervals: [1_000], message: "workspaces chưa sẵn sàng sau 60s" },
+    )
+    .toBe("SAN_SANG");
+  if (statusCuoi !== 200) {
+    throw new Error(`workspaces chưa sẵn sàng: ${statusCuoi} ${String(maCuoi)}`);
+  }
+}
+
+// Mở context trình duyệt mới và đăng nhập bằng tài khoản cho trước; phiên mới cô lập
+// hoàn toàn với trang chính (cookie/cache riêng) — dùng khi một phiên phải sống độc
+// lập trong lúc manager khác thao tác ở trang chính (vd: giữ nguyên phiên actor trong
+// lúc thu hồi quyền rồi gọi lại). Trả trang đã đăng nhập kèm CSRF của phiên đó.
+export async function moBoiCanhDangNhap(
+  browser: Browser,
+  origin: string,
+  user: { username: string; password: string },
+): Promise<{ page: Page; csrf: { headerName: string; token: string } }> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
+  await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
+  const session = await layPhienHienTai(page, origin);
+  expect(session.authenticated).toBe(true);
+  expect(session.csrf?.token).toBeTruthy();
+  await dongBoEligibility(page, origin);
+  return { page, csrf: session.csrf! };
 }
