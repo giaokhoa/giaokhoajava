@@ -32,7 +32,7 @@ trước khi mở kết nối/migrate; việc bỏ Spring không được bỏ a
 | Reload/Back không lộ kết quả cũ | Giữ nguyên E2E thứ tư trong `guardian-results.spec.ts` |
 | Trang membership giữ mọi vai trò; cursor REVOKED còn dùng được; cursor lạ không lộ dữ kiện | `ListingPaginationIT.membershipPageKeepsEveryRoleAndAdvancesPastRevokedCursor` |
 | Lọc giáo viên/workspace trước khi chọn trang, cursor lớp bị thu hồi còn dùng được | `ListingPaginationIT.classPagesFilterTeacherAndWorkspaceBeforeChoosingThePage` |
-| Các trang lớp/roster/khóa/ghi danh/phân công không lặp, không mất hàng khi trùng timestamp; cursor sai lớp bị từ chối | `ListingPaginationIT`, PostgreSQL thật thay các assertion bắt cú pháp SQL |
+| Các trang lớp/roster/khóa/ghi danh/phân công không lặp, không mất hàng; cursor sai lớp bị từ chối; trang membership không lặp, không mất hàng cả khi mọi hàng trùng mốc thời gian | `ListingPaginationIT`, PostgreSQL thật thay các assertion bắt cú pháp SQL. Điều kiện trùng timestamp mới được cưỡng bức ở trang membership (`joined_at` cố định cho mọi member); các danh sách còn lại chưa có test cưỡng bức mốc thời gian bằng nhau kèm chèn lệch thứ tự id, nên tie-break `(created_at, id)` khi timestamp bằng nhau tường minh chưa được khẳng định — điểm chờ bổ sung |
 | Nội dung công khai và link đăng nhập hiển thị được | Giữ `home.spec.ts`, bỏ unit assertion trùng khóa nguyên câu khẩu hiệu |
 | Lớp/khóa nhiều môn, phạm vi khác môn/khóa, nguồn độc lập sau thu hồi | Giữ các ca nhiều môn và toàn bộ assertion; giảm số môn chỉ ở ca không cần nhiều môn |
 
