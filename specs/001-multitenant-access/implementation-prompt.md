@@ -5,7 +5,7 @@ Sao chép phần dưới cho bên triển khai. Đây là chỉ dẫn thực thi
 ```text
 Tiếp tục triển khai giaokhoa/giaokhoa trong phạm vi US4 hiện tại. Dùng tối đa khả năng phân công agent thực tế cho các phần độc lập, giữ đầy đủ nghiệp vụ, bảo mật, review và kiểm thử. Không chuyển US5 trước khi gate US4 #64 đạt.
 
-1. Đọc AGENTS.md, áp dụng ponytail mức full, đọc parent #2, tasks.md và github-issues.json. Dùng gh kiểm tra lại issue/PR và origin/main. Báo số agent thực sự có thể dùng; phải gọi công cụ tạo/phân công agent khi có công cụ và công việc độc lập. Không thay việc phân công bằng một danh sách dự định.
+1. Đọc AGENTS.md, áp dụng ponytail mức full và dùng gh đọc parent #2 trước khi chọn việc. Xác định commit hướng dẫn được parent liên kết; đọc tasks.md và github-issues.json ở cùng commit đó, hoặc origin/main khi đã chứa bản đồng bộ. Đối chiếu dependency và nhãn với GitHub hiện hành. Nếu snapshot lệch, giữ DAG cùng quy tắc điều phối tại #2 và sửa hai file trên nhánh tích hợp; không dùng snapshot cũ để tái tạo dependency GitHub. Báo SHA tài liệu đã đọc và số agent thực sự có thể dùng; phải gọi công cụ tạo/phân công agent khi có công cụ và công việc độc lập. Không thay việc phân công bằng một danh sách dự định.
 
 2. Tái dùng PR #181, #182, #183, #185, #187, #189 hoặc nhánh kế nhiệm; không viết lại phần đã có. Agent điều phối chuẩn bị nhánh tích hợp có origin/main hiện hành và ghép các commit đang triển khai, giữ các bản sửa #179/#184/#186/#188 và test hồi quy. Không force-push nhánh của người khác. Ghi SHA nền và artifact đầu vào của từng phần.
 

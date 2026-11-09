@@ -150,7 +150,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Execution flow**: Order and dependency requirements
 
 6. Execute implementation following the task plan:
-   - **Điều phối hiện hành**: Đọc `AGENTS.md` và parent issue của feature. Áp dụng yêu cầu song song của người dùng bằng công cụ phân công agent thực tế; giao issue, file, worktree và đầu ra rõ ràng, bổ sung việc độc lập khi agent rảnh.
+   - **Điều phối hiện hành**: Đọc `AGENTS.md` và parent issue của feature, lấy các file điều phối ở cùng commit hướng dẫn được liên kết và đối chiếu dependency/nhãn với GitHub. Nếu snapshot repo lệch lịch đã được parent xác nhận, đồng bộ tài liệu; không dùng snapshot cũ ghi ngược DAG. Áp dụng yêu cầu song song của người dùng bằng công cụ phân công agent thực tế; giao issue, file, worktree và đầu ra rõ ràng, bổ sung việc độc lập khi agent rảnh.
    - **Trước mỗi story mới**: Thực hiện bước chuyển story trong `AGENTS.md`: xác minh gate trước, rà dependency theo code/contract thực tế, đồng bộ lịch và ghi phân công tại parent trước implementation. Không dùng chuỗi gốc US5–US8 như lịch tuần tự mặc định; không triển khai story chưa mở.
    - **Phase-by-phase execution**: Giữ gate giữa các story; trong story đã mở, triển khai từng phần xuyên schema/service/quyền/API/test khi đầu vào của phần đó sẵn sàng, không đợi hoàn tất cả tầng cho toàn story.
    - **Respect dependencies**: Phân biệt tiền đề artifact với gate nghiệm thu. PR/SHA có contract ổn định và kiểm chứng phù hợp cho phép bắt đầu phần tiêu thụ dù issue còn mở; `[P]` là gợi ý, không giới hạn việc phân công các phần độc lập khác. Đồng bộ dependency mới vào GitHub, `tasks.md` và `github-issues.json`.
