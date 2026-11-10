@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./support/test-environment";
+import {
+  TestEnvironment, loginViaKeycloakForm, appRequestWhenReady,
+  luuPhienHienTai, khoiPhucPhienDaLuu,
+} from "./support/test-environment";
 
 // E2E quản trị center ở biên trình duyệt: operator tạo center/xác nhận gói, owner bổ nhiệm
 // manager, manager mời/cấp student, mutation 202 và bí mật handoff chỉ ở response CREATE
@@ -79,6 +82,7 @@ async function dangNhapQuaUngDung(
 ): Promise<void> {
   await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
+  await luuPhienHienTai(page, user.username);
 }
 
 async function laySessionView(page: Page, origin: string): Promise<SessionView> {
@@ -89,11 +93,18 @@ async function laySessionView(page: Page, origin: string): Promise<SessionView> 
 
 // Đăng nhập lại bằng tài khoản khác trên cùng trang: đổi phiên rồi lấy CSRF mới.
 // GET /api/session đồng thời bootstrap tài khoản/personal workspace của actor.
+// Nếu actor đã có phiên lưu từ lần đăng nhập form thật trong cùng lượt chạy thì
+// khôi phục storageState thay vì qua form Keycloak lần nữa; phiên lưu không còn
+// hiệu lực (hết hạn/bị hủy phía server) thì rơi xuống đăng nhập form thật.
 async function dangNhapLai(
   page: Page,
   origin: string,
   user: { username: string; password: string },
 ): Promise<Csrf> {
+  if (await khoiPhucPhienDaLuu(page, user.username)) {
+    const session = await laySessionView(page, origin);
+    if (session.authenticated && session.csrf?.token) return session.csrf;
+  }
   await page.context().clearCookies();
   await dangNhapQuaUngDung(page, origin, user);
   const session = await laySessionView(page, origin);
@@ -391,7 +402,7 @@ async function kiemTraMatKhauTam(
   }
 }
 
-test("operator tạo center: mutation 202 rồi poll tới SUCCEEDED, center có trong danh sách platform", async ({
+test("operator tạo center qua giao diện platform: thao tác hoàn tất trên UI, center có trong danh sách platform", async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -401,15 +412,28 @@ test("operator tạo center: mutation 202 rồi poll tới SUCCEEDED, center có
   try {
     const operator = await taoNguoiDung(page, origin, env, NHOM_OPERATOR, daTao);
     const owner = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
-    const csrf = await dangNhapLai(page, origin, operator);
-    const { workspaceId, tenCenter } = await taoCenter(page, origin, csrf, owner.appId);
+    await dangNhapLai(page, origin, operator);
 
+    // Thao tác được kiểm thử đi qua UI như operator thật: điền form "Tạo trung tâm"
+    // trên trang platform rồi chờ UI báo thao tác hoàn tất (UI tự theo dõi operation,
+    // trạng thái chờ không được tính là xong). Hợp đồng 202/poll của chính endpoint
+    // tạo center do CenterAdministrationIT khóa ở tầng backend.
+    const tenCenter = `center-e2e-${randomUUID().slice(0, 8)}`;
+    await page.goto(`${frontendOrigin}/platform`);
+    await page.locator("#center-name").fill(tenCenter);
+    await page.locator("#center-owner").fill(owner.appId);
+    await page.getByRole("button", { name: "Tạo trung tâm" }).click();
+    await expect(page.getByText("Thao tác đã hoàn tất.")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("definition").filter({ hasText: tenCenter })).toBeVisible();
+
+    // Khẳng định phụ về dữ liệu qua API: center có trong danh sách platform.
     const centers = await layDanhSachCenter(page, origin);
-    expect(centers.some((center) => center.name === tenCenter)).toBe(true);
+    const center = centers.find((item) => item.name === tenCenter);
+    expect(center).toBeTruthy();
 
     // Tạo center đồng thời tạo owner membership; owner tự thấy membership của mình.
     await dangNhapLai(page, origin, owner);
-    const thanhVien = await layDanhSachThanhVien(page, origin, workspaceId);
+    const thanhVien = await layDanhSachThanhVien(page, origin, center!.workspaceId);
     const ownerMembership = thanhVien.find((item) => item.user.id === owner.appId);
     expect(ownerMembership).toBeTruthy();
     expect(ownerMembership!.roles).toContain("OWNER");

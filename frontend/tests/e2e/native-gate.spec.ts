@@ -8,6 +8,11 @@ import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environmen
 // runner riêng. Hành vi đầy đủ của endpoint (initiator đọc operation PENDING/SUCCEEDED của
 // chính mình, operation của người khác thành 404) do OperationStatusIT kiểm chứng trong
 // profile integration; spec này bổ sung bằng chứng phiên trình duyệt thật và fail-closed.
+// PHÂN TẦNG: giữ ở tầng App E2E vì giá trị riêng của spec là bằng chứng PHIÊN
+// TRÌNH DUYỆT thật (chưa đăng nhập thì bị chuyển tới đăng nhập; phiên Keycloak
+// thật nhưng identity chưa có thư mục thì fail-closed, không lộ secret) — phần
+// IT thuần không có phiên trình duyệt để khóa hai hành vi này. Khác
+// auth-code.spec.ts (giao thức thuần, đã ghi đề xuất chuyển tầng ở đầu file đó).
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
 
 function gateOrigin(): string {
