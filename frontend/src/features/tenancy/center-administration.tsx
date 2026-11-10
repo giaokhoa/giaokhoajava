@@ -6,6 +6,7 @@ import {
   isRecord,
   listItems,
   requestAllPages,
+  requestWhenReady,
   requestWorkspaces,
 } from "../../lib/api-client";
 import { SessionGate } from "../identity/session-gate";
@@ -101,6 +102,14 @@ export function parseMemberships(data: unknown): Membership[] {
     });
   }
   return memberships;
+}
+
+// Cursor của trang thành viên vừa tải, null là đã hết trang; cùng hình
+// {items, nextCursor} mà parsePage ở tính năng giảng dạy đọc cho danh sách lớp.
+function pageNextCursor(data: unknown): string | null {
+  return isRecord(data) && typeof data.nextCursor === "string" && data.nextCursor
+    ? data.nextCursor
+    : null;
 }
 
 export function centerCreateBody(
@@ -579,6 +588,7 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
   const checkOperationStatus = useOperationCheck();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
+  const [membersNextCursor, setMembersNextCursor] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteUserId, setInviteUserId] = useState("");
@@ -598,19 +608,25 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
   const { canManage, canAssignManager } = memberPermissions(memberships ?? [], userId);
   const subscriptionExpired = workspace?.kind === "CENTER" && !workspace.subscription.effective;
 
+  // Làm mới trở về trang đầu, đúng cách danh sách lớp xử lý sau mỗi thao tác:
+  // các trang đã tải thêm được thay bằng trạng thái mới nhất từ đầu danh sách.
   const loadMemberships = useCallback(async (signal?: AbortSignal) => {
     if (!userId) return;
     setListError(null);
     const [memberResult, workspaceResult] = await Promise.allSettled([
-      requestAllPages(membersPath, { signal }),
+      requestWhenReady<unknown>(membersPath, { signal }),
       requestWorkspaces(userId, signal),
     ]);
     if (signal?.aborted) return;
-    setMemberships(memberResult.status === "fulfilled" ? parseMemberships(memberResult.value) : []);
+    const membersPage = memberResult.status === "fulfilled" && memberResult.value.kind === "data"
+      ? memberResult.value.data
+      : null;
+    setMemberships(membersPage !== null ? parseMemberships(membersPage) : []);
+    setMembersNextCursor(membersPage !== null ? pageNextCursor(membersPage) : null);
     setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
       ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
       : null);
-    if (memberResult.status === "rejected" || workspaceResult.status === "rejected") {
+    if (membersPage === null || workspaceResult.status === "rejected") {
       setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
     }
   }, [userId, membersPath, workspaceId]);
@@ -619,15 +635,18 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
     if (!userId) return;
     let ignore = false;
     const controller = new AbortController();
-    requestAllPages(membersPath, { signal: controller.signal })
-      .then((items) => {
+    requestWhenReady<unknown>(membersPath, { signal: controller.signal })
+      .then((result) => {
         if (ignore) return;
-        setMemberships(parseMemberships(items));
+        if (result.kind !== "data") throw new Error("Phản hồi danh sách thành viên không hợp lệ.");
+        setMemberships(parseMemberships(result.data));
+        setMembersNextCursor(pageNextCursor(result.data));
         setListError(null);
       })
       .catch((error: unknown) => {
         if (ignore) return;
         setMemberships([]);
+        setMembersNextCursor(null);
         setListError(error instanceof Error ? error.message : "Không tải được danh sách thành viên.");
       });
     requestWorkspaces(userId, controller.signal)
@@ -664,6 +683,20 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
       });
     return () => controller.abort();
   }, [operation, userId, workspaceId, membersPath, loadMemberships]);
+
+  async function loadMoreMembers() {
+    if (!membersNextCursor) return;
+    try {
+      const result = await requestWhenReady<unknown>(
+        `${membersPath}?cursor=${encodeURIComponent(membersNextCursor)}`,
+      );
+      if (result.kind !== "data") throw new Error("Phản hồi danh sách thành viên không hợp lệ.");
+      setMemberships((current) => [...(current ?? []), ...parseMemberships(result.data)]);
+      setMembersNextCursor(pageNextCursor(result.data));
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : "Không tải thêm được danh sách thành viên.");
+    }
+  }
 
   async function checkOperation() {
     if (!operation) return;
@@ -905,6 +938,15 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
                   );
                 })}
               </ul>
+            ) : null}
+            {membersNextCursor ? (
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => void loadMoreMembers()}
+              >
+                Tải thêm thành viên
+              </button>
             ) : null}
             <div className="section">
               <button
