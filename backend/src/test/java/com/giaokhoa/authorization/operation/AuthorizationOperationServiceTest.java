@@ -81,6 +81,9 @@ class AuthorizationOperationServiceTest {
             closurePartition = primary;
             primary = swap;
         }
+        // Bản chốt sau khi xếp thứ tự: lambda stub ResultSet bên dưới chỉ bắt được biến
+        // effectively final.
+        UUID orderedPartition = closurePartition;
         List<UUID> lockOrder = new ArrayList<>();
         when(jdbc.queryForList(contains("FOR UPDATE"), eq(Long.class), any(UUID.class)))
                 .thenAnswer(invocation -> {
@@ -99,7 +102,7 @@ class AuthorizationOperationServiceTest {
                     RowMapper<Object> mapper = invocation.getArgument(2);
                     ResultSet rs = mock(ResultSet.class);
                     when(rs.getObject("id", UUID.class)).thenReturn(UUID.randomUUID());
-                    when(rs.getObject("partition_id", UUID.class)).thenReturn(closurePartition);
+                    when(rs.getObject("partition_id", UUID.class)).thenReturn(orderedPartition);
                     return List.of(mapper.mapRow(rs, 0));
                 });
         when(jdbc.queryForList(startsWith("SELECT id, partition_id"), anyString()))
