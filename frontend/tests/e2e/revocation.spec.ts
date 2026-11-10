@@ -1,4 +1,4 @@
-// E2E thu hồi quyền — [T064][US5] US5.1–US5.6, SC-005, FR-048–FR-053.
+// E2E thu hồi quyền — [US5] US5.1–US5.6, SC-005, FR-048–FR-053.
 // Mỗi kịch bản giữ nguyên browser context của actor (cùng phiên/cookie cũ), một
 // manager KHÁC thực hiện thu hồi, rồi actor gọi lại và bị từ chối từ yêu cầu tiếp theo.
 // Không dùng UI cache hay hidden button làm authorization; phản hồi 202 (operation

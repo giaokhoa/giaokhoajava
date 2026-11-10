@@ -59,12 +59,8 @@ import tools.jackson.databind.json.JsonMapper;
  * một lần và phải đúng người, cấp học sinh mới là create mới (username trùng không chiếm user đã
  * có), handoff không email chỉ xuất hiện trong response CREATE đầu tiên.
  *
- * <p>Đây là task test-first: các endpoint US2 chưa được triển khai nên test khẳng định đúng hợp
- * đồng HTTP và hiện đỏ với 404 vì route chưa tồn tại — đỏ đó là có ý nghĩa. Test mời account đã có
- * ở đây bao phủ đúng hợp đồng của test invitations đang tạm tắt trong IdentityFlowIT, nên không bật
- * lại test đó để tránh trùng lặp. Đường chấp nhận lời mời cần token thật do endpoint tạo lời mời
- * trả về, vì vậy happy-path accept đầy đủ chờ task triển khai rồi mới kiểm chứng được; ở đây chỉ
- * khóa trường hợp token lạ phải bị từ chối.
+ * <p>Test mời account đã có ở đây bao phủ đúng hợp đồng của test invitations đang tạm tắt trong
+ * IdentityFlowIT, nên không bật lại test đó để tránh trùng lặp.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
