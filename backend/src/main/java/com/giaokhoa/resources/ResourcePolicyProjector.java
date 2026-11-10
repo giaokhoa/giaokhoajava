@@ -792,7 +792,7 @@ public class ResourcePolicyProjector {
         return allowed.isEmpty() || allowed.contains(workspaceId.toString());
     }
 
-    private AuthorizationOperationService.DesiredProjection desiredProjection(
+    AuthorizationOperationService.DesiredProjection desiredProjection(
             UUID workspaceId, String targetKey) {
         String[] segments = targetKey.split(":");
         UUID resourceId = UUID.fromString(segments[3]);

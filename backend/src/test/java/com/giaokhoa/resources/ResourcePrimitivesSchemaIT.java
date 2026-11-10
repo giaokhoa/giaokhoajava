@@ -182,6 +182,76 @@ class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @Test
+    void shareGrantActionsCatalogCoversVersionLevelTokens() {
+        UUID resourceId = resource();
+        UUID versionId = version(resourceId, 1, "DRAFT", null);
+        UUID grantorId = user();
+        UUID recipientWorkspace = personalWorkspaceOf(user());
+        jdbc.update(
+                "INSERT INTO share_grant"
+                        + " (id, source_resource_id, source_version_id, grantor_user_id,"
+                        + " recipient_workspace_id, mode, state, actions,"
+                        + " allowed_workspace_ids, valid_from)"
+                        + " VALUES (?, ?, ?, ?, ?, 'REVOCABLE', 'OFFERED',"
+                        + " '{content.read,use,library.save,fork}'::text[], '{}'::uuid[], now())",
+                UUID.randomUUID(),
+                resourceId,
+                versionId,
+                grantorId,
+                recipientWorkspace);
+        jdbc.update("SAVEPOINT unknown_action");
+        assertThatThrownBy(() ->
+                        jdbc.update(
+                                "INSERT INTO share_grant"
+                                        + " (id, source_resource_id, source_version_id,"
+                                        + " grantor_user_id, recipient_workspace_id, mode,"
+                                        + " state, actions, allowed_workspace_ids, valid_from)"
+                                        + " VALUES (?, ?, ?, ?, ?, 'REVOCABLE', 'OFFERED',"
+                                        + " '{bogus}'::text[], '{}'::uuid[], now())",
+                                UUID.randomUUID(),
+                                resourceId,
+                                versionId,
+                                grantorId,
+                                recipientWorkspace))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update("ROLLBACK TO SAVEPOINT unknown_action");
+    }
+
+    @Test
+    void sampleActionReceiptAcceptsLibraryAndShareTargets() {
+        UUID actorId = user();
+        UUID workspaceId = personalWorkspaceOf(actorId);
+        jdbc.update(
+                "INSERT INTO sample_action_mutation"
+                        + " (actor_user_id, idempotency_key, payload_hash, workspace_id,"
+                        + " target_type, target_id) VALUES (?, 'k-share', 'h', ?,"
+                        + " 'SHARE_GRANT', ?)",
+                actorId,
+                workspaceId,
+                UUID.randomUUID());
+        jdbc.update(
+                "INSERT INTO sample_action_mutation"
+                        + " (actor_user_id, idempotency_key, payload_hash, workspace_id,"
+                        + " target_type, target_id) VALUES (?, 'k-library', 'h', ?,"
+                        + " 'LIBRARY_ITEM', ?)",
+                actorId,
+                workspaceId,
+                UUID.randomUUID());
+        jdbc.update("SAVEPOINT unknown_target_type");
+        assertThatThrownBy(() ->
+                        jdbc.update(
+                                "INSERT INTO sample_action_mutation"
+                                        + " (actor_user_id, idempotency_key, payload_hash,"
+                                        + " workspace_id, target_type, target_id) VALUES (?,"
+                                        + " 'k-other', 'h', ?, 'WHATEVER', ?)",
+                                actorId,
+                                workspaceId,
+                                UUID.randomUUID()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update("ROLLBACK TO SAVEPOINT unknown_target_type");
+    }
+
     private UUID user() {
         UUID id = UUID.randomUUID();
         jdbc.update(

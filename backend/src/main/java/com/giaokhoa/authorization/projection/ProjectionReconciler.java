@@ -6,11 +6,12 @@ import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
-import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter.AppliedGraph;
+import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
 import com.giaokhoa.resources.ResourcePolicyProjector;
+import com.giaokhoa.resources.SharePolicyProjector;
 import com.giaokhoa.shared.Sha256;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
@@ -89,6 +90,7 @@ public class ProjectionReconciler {
     private final GuardianPolicyProjector guardianProjector;
     private final ResultPolicyProjector resultProjector;
     private final ResourcePolicyProjector resourceProjector;
+    private final SharePolicyProjector shareProjector;
     private final PersonalEntitlementProjector personalEntitlementProjector;
     private final PersonalTeachingPolicyProjector personalTeachingProjector;
     private final TransactionTemplate transactions;
@@ -103,6 +105,7 @@ public class ProjectionReconciler {
             GuardianPolicyProjector guardianProjector,
             ResultPolicyProjector resultProjector,
             ResourcePolicyProjector resourceProjector,
+            SharePolicyProjector shareProjector,
             PersonalEntitlementProjector personalEntitlementProjector,
             PersonalTeachingPolicyProjector personalTeachingProjector,
             PlatformTransactionManager transactionManager,
@@ -115,6 +118,7 @@ public class ProjectionReconciler {
         this.guardianProjector = guardianProjector;
         this.resultProjector = resultProjector;
         this.resourceProjector = resourceProjector;
+        this.shareProjector = shareProjector;
         this.personalEntitlementProjector = personalEntitlementProjector;
         this.personalTeachingProjector = personalTeachingProjector;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -623,6 +627,9 @@ public class ProjectionReconciler {
         if (type == NativePolicyTemplates.TargetType.RESOURCE_VERSION) {
             return resolveResourceBundle(projection);
         }
+        if (type == NativePolicyTemplates.TargetType.GRANT) {
+            return resolveShareBundle(projection);
+        }
         for (String scope : type.scopes()) {
             if (desiredHash(projection.targetKey(), scope, List.of())
                     .equals(projection.desiredHash())) {
@@ -887,6 +894,35 @@ public class ProjectionReconciler {
         Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
         for (String scope : managedScopes) {
             List<String> sources = resourceProjector.sourcesFor(projection.targetKey(), scope);
+            if (!sources.isEmpty()) {
+                graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
+            }
+        }
+        return new Resolved.ApplyBundle(graphs, managedScopes);
+    }
+
+    /**
+     * Bundle của một share grant: cùng kỷ luật với bundle resource version — desired hash đã ghi
+     * phải khớp đúng tập descriptor mà {@link SharePolicyProjector} dựng lại từ dòng grant hiện
+     * hành; bundle rỗng (grant đã đóng hoặc không còn nguồn) thì retract cả hai scope.
+     */
+    private Resolved resolveShareBundle(ProjectionRow projection) {
+        List<String> bundle = shareProjector.bundleDescriptors(projection.targetKey());
+        List<String> managedScopes = SharePolicyProjector.managedScopes();
+        if (bundle.isEmpty()) {
+            return new Resolved.RetractBundle(managedScopes);
+        }
+        String bundleScope = SharePolicyProjector.bundleScope();
+        if (!desiredHash(projection.targetKey(), bundleScope, bundle)
+                .equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the share sources rebuilt from durable rows: "
+                            + projection.targetKey());
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : managedScopes) {
+            List<String> sources = shareProjector.sourcesFor(projection.targetKey(), scope);
             if (!sources.isEmpty()) {
                 graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
             }
