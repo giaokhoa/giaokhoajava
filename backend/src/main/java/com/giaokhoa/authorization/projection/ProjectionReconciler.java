@@ -207,9 +207,7 @@ public class ProjectionReconciler {
                                 ps.setArray(
                                         1,
                                         ps.getConnection()
-                                                .createArrayOf(
-                                                        "uuid",
-                                                        partitionIds.toArray(new UUID[0]))),
+                                                .createArrayOf("uuid", partitionIds.toArray(new UUID[0]))),
                         PARTITION_MAPPER)) {
             byId.put(row.id(), row);
         }

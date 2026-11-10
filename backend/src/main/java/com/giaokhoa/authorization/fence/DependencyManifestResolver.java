@@ -161,8 +161,7 @@ public class DependencyManifestResolver {
                         ps.setArray(
                                 1,
                                 ps.getConnection()
-                                        .createArrayOf(
-                                                "uuid", partitionIds.toArray(new UUID[0]))),
+                                        .createArrayOf("uuid", partitionIds.toArray(new UUID[0]))),
                 (rs, _) -> uuids(rs.getArray("dependency_partition_ids")));
     }
 
