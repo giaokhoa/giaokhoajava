@@ -5,13 +5,20 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
-import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectScopeRow;
-import com.giaokhoa.teaching.data.TeachingRepository.EnrollmentRow;
-import com.giaokhoa.teaching.data.TeachingRepository.RosterRow;
-import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction.WorkspaceInfo;
+import com.giaokhoa.teaching.model.ClassStudent;
+import com.giaokhoa.teaching.model.CourseSubject;
+import com.giaokhoa.teaching.model.Enrollment;
+import com.giaokhoa.teaching.repository.ClassStudentRepository;
+import com.giaokhoa.teaching.repository.CourseRepository;
+import com.giaokhoa.teaching.repository.CourseSubjectRepository;
+import com.giaokhoa.teaching.repository.EnrollmentListItem;
+import com.giaokhoa.teaching.repository.EnrollmentRepository;
+import com.giaokhoa.teaching.repository.SchoolClassRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,19 +59,39 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class EnrollmentService {
-    private final TeachingRepository repository;
+    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
+
+    private final ClassStudentRepository classStudents;
+    private final CourseSubjectRepository courseSubjects;
+    private final SchoolClassRepository schoolClasses;
+    private final CourseRepository courses;
+    private final EnrollmentRepository enrollments;
+    private final TeachingPageRepository pages;
+    private final TeachingScopePreconditions preconditions;
     private final WorkspaceTransaction workspaceTransaction;
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator revocations;
     private final ResourceMutationCoordinator coordinator;
 
     public EnrollmentService(
-            TeachingRepository repository,
+            ClassStudentRepository classStudents,
+            CourseSubjectRepository courseSubjects,
+            SchoolClassRepository schoolClasses,
+            CourseRepository courses,
+            EnrollmentRepository enrollments,
+            TeachingPageRepository pages,
+            TeachingScopePreconditions preconditions,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,
             SourceRevocationCoordinator revocations,
             ResourceMutationCoordinator coordinator) {
-        this.repository = repository;
+        this.classStudents = classStudents;
+        this.courseSubjects = courseSubjects;
+        this.schoolClasses = schoolClasses;
+        this.courses = courses;
+        this.enrollments = enrollments;
+        this.pages = pages;
+        this.preconditions = preconditions;
         this.workspaceTransaction = workspaceTransaction;
         this.idempotency = idempotency;
         this.revocations = revocations;
@@ -113,23 +140,22 @@ public class EnrollmentService {
                     "ENROLLMENT_BATCH_REQUIRED",
                     "Lô ghi danh cần ít nhất một học sinh và một môn–khóa.");
         }
-        WorkspaceInfo workspace =
-                TeachingRouteSupport.requireTeachingWorkspace(repository, workspaceId);
-        List<RosterRow> roster = new ArrayList<>();
+        WorkspaceInfo workspace = preconditions.requireTeachingWorkspace(workspaceId);
+        List<ClassStudent> roster = new ArrayList<>();
         for (UUID rosterId : rosterIds) {
-            RosterRow entry =
-                    repository
-                            .findRosterEntryById(workspaceId, rosterId)
+            ClassStudent entry =
+                    classStudents
+                            .findByWorkspaceIdAndId(workspaceId, rosterId)
                             .orElseThrow(() -> enrollmentTargetNotFound());
-            if (!isCurrent(entry.state())) {
+            if (!isCurrent(entry.getState())) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
                         "ROSTER_ENTRY_NOT_CURRENT",
                         "Học sinh không còn trong roster hiện hành của lớp.");
             }
             if ("CENTER".equals(workspace.kind())
-                    && !repository.hasActiveCenterMembershipWithRole(
-                            workspaceId, entry.studentUserId(), "STUDENT")) {
+                    && !preconditions.hasActiveCenterMembershipWithRole(
+                            workspaceId, entry.getStudentUserId(), "STUDENT")) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
                         "STUDENT_NOT_CENTER_STUDENT",
@@ -137,27 +163,26 @@ public class EnrollmentService {
             }
             roster.add(entry);
         }
-        List<CourseSubjectScopeRow> subjects = new ArrayList<>();
+        List<CourseSubject> subjects = new ArrayList<>();
         for (UUID courseSubjectId : subjectIds) {
-            CourseSubjectScopeRow subject =
-                    repository
-                            .findCourseSubjectScope(workspaceId, courseSubjectId)
+            CourseSubject subject =
+                    courseSubjects
+                            .findByWorkspaceIdAndId(workspaceId, courseSubjectId)
                             .orElseThrow(() -> enrollmentTargetNotFound());
-            if (!isCurrent(subject.state())) {
+            if (!isCurrent(subject.getState())) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
                         "COURSE_SUBJECT_NOT_CURRENT",
                         "Môn–khóa không còn hiện hành trong khóa.");
             }
             var clazz =
-                    repository
-                            .findClass(workspaceId, subject.classId())
+                    schoolClasses
+                            .findByWorkspaceIdAndId(workspaceId, subject.getClassId())
                             .orElseThrow(EnrollmentService::enrollmentTargetNotFound);
             var course =
-                    repository
-                            .findCourse(workspaceId, subject.courseId())
+                    courses.findByWorkspaceIdAndId(workspaceId, subject.getCourseId())
                             .orElseThrow(EnrollmentService::enrollmentTargetNotFound);
-            if (!"ACTIVE".equals(clazz.state()) || !"ACTIVE".equals(course.state())) {
+            if (!"ACTIVE".equals(clazz.getState()) || !"ACTIVE".equals(course.getState())) {
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
                         "TEACHING_CONTEXT_NOT_ACTIVE",
@@ -165,31 +190,38 @@ public class EnrollmentService {
             }
             subjects.add(subject);
         }
-        UUID classId = roster.getFirst().classId();
+        UUID classId = roster.getFirst().getClassId();
         boolean sameClass =
-                roster.stream().allMatch(entry -> classId.equals(entry.classId()))
-                        && subjects.stream().allMatch(subject -> classId.equals(subject.classId()));
+                roster.stream().allMatch(entry -> classId.equals(entry.getClassId()))
+                        && subjects.stream()
+                                .allMatch(subject -> classId.equals(subject.getClassId()));
         if (!sameClass) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
                     "ENROLLMENT_CLASS_MISMATCH",
                     "Mọi học sinh và môn–khóa trong một lô ghi danh phải cùng một lớp.");
         }
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
-        for (RosterRow entry : roster) {
-            for (CourseSubjectScopeRow subject : subjects) {
-                if (repository
-                        .findCurrentEnrollment(workspaceId, entry.id(), subject.id())
+        preconditions.requireSubscriptionCurrent(workspaceId);
+        for (ClassStudent entry : roster) {
+            for (CourseSubject subject : subjects) {
+                if (enrollments
+                        .findByWorkspaceIdAndClassStudentIdAndCourseSubjectIdAndStateIn(
+                                workspaceId, entry.getId(), subject.getId(), CURRENT_STATES)
                         .isEmpty()) {
-                    repository.insertEnrollment(
-                            UUID.randomUUID(), workspaceId, entry.id(), subject.id());
+                    enrollments.save(
+                            new Enrollment(
+                                    UUID.randomUUID(),
+                                    workspaceId,
+                                    entry.getId(),
+                                    subject.getId()));
                 }
             }
         }
         List<String> targets =
                 subjects.stream()
                         .map(subject ->
-                                NativePolicyTemplates.courseSubjectKey(workspaceId, subject.id()))
+                                NativePolicyTemplates.courseSubjectKey(
+                                        workspaceId, subject.getId()))
                         .toList();
         return revocations.recordTeachingRevocation(
                 initiatorUserId, workspaceId, idempotencyKey, payloadHash, targets);
@@ -218,18 +250,18 @@ public class EnrollmentService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        EnrollmentRow row =
-                repository
-                        .lockEnrollment(workspaceId, enrollmentId)
+        Enrollment row =
+                enrollments
+                        .lockByWorkspaceIdAndId(workspaceId, enrollmentId)
                         .orElseThrow(() -> enrollmentNotFound());
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "ENROLLMENT_ALREADY_REVOKED",
                     "Ghi danh đã bị thu hồi trước đó.");
         }
-        repository.revokeEnrollment(enrollmentId);
+        row.revoke();
         return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
@@ -237,29 +269,21 @@ public class EnrollmentService {
                 payloadHash,
                 List.of(
                         NativePolicyTemplates.courseSubjectKey(
-                                workspaceId, row.courseSubjectId())));
+                                workspaceId, row.getCourseSubjectId())));
     }
 
     @Transactional(readOnly = true)
-    public TeachingRepository.Page<EnrollmentView> pageEnrollments(
+    public Page<EnrollmentView> pageEnrollments(
             UUID workspaceId,
             UUID courseSubjectId,
             @Nullable String cursor,
             @Nullable Integer limit) {
         workspaceTransaction.applyContext(workspaceId);
-        repository
-                .findCourseSubjectScope(workspaceId, courseSubjectId)
+        courseSubjects
+                .findByWorkspaceIdAndId(workspaceId, courseSubjectId)
                 .orElseThrow(() -> enrollmentTargetNotFound());
-        return repository
-                .pageEnrollments(workspaceId, courseSubjectId, cursor, limit)
-                .map(row ->
-                        new EnrollmentView(
-                                row.id(),
-                                row.classStudentId(),
-                                row.courseSubjectId(),
-                                row.studentUserId(),
-                                row.state(),
-                                row.version()));
+        return pages.pageEnrollments(workspaceId, courseSubjectId, cursor, limit)
+                .map(EnrollmentService::toView);
     }
 
     /** Các ghi danh hiện hành của một môn–khóa, theo thứ tự tạo ổn định. Chỉ đọc dữ kiện nguồn. */
@@ -268,19 +292,25 @@ public class EnrollmentService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseSubjectId, "courseSubjectId");
         workspaceTransaction.applyContext(workspaceId);
-        repository
-                .findCourseSubjectScope(workspaceId, courseSubjectId)
+        courseSubjects
+                .findByWorkspaceIdAndId(workspaceId, courseSubjectId)
                 .orElseThrow(() -> enrollmentTargetNotFound());
-        return repository.listCurrentEnrollments(workspaceId, courseSubjectId).stream()
-                .map(row ->
-                        new EnrollmentView(
-                                row.id(),
-                                row.classStudentId(),
-                                row.courseSubjectId(),
-                                row.studentUserId(),
-                                row.state(),
-                                row.version()))
+        return enrollments
+                .findByWorkspaceIdAndCourseSubjectIdAndStateInOrderByCreatedAtAscIdAsc(
+                        workspaceId, courseSubjectId, CURRENT_STATES)
+                .stream()
+                .map(EnrollmentService::toView)
                 .toList();
+    }
+
+    private static EnrollmentView toView(EnrollmentListItem row) {
+        return new EnrollmentView(
+                row.getId(),
+                row.getClassStudentId(),
+                row.getCourseSubjectId(),
+                row.getClassStudent().getStudentUserId(),
+                row.getState(),
+                row.getVersion());
     }
 
     private static boolean isCurrent(String state) {
@@ -304,8 +334,8 @@ public class EnrollmentService {
     /**
      * Tuần tự hoá mọi mutation của một workspace trên khóa workspace thống nhất của {@link
      * ResourceMutationCoordinator} — cùng một khóa với CenterService, SubscriptionService và các
-     * service lớp/khóa — để dữ kiện nguồn mà projector chiếu không bao giờ thiếu một mutation đang
-     * chạy đồng thời của cùng workspace.
+     * service lớp/khóa — để dữ kiện nguồn mà projector tính từ dữ kiện nguồn không bao giờ thiếu
+     * một mutation đang chạy đồng thời trong cùng workspace.
      */
     private void lockWorkspace(UUID workspaceId) {
         coordinator.lockWorkspace(workspaceId);

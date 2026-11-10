@@ -5,17 +5,25 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.teaching.TeachingScopePreconditions.SubscriptionPeriod;
+import com.giaokhoa.teaching.TeachingScopePreconditions.UserAccountRef;
+import com.giaokhoa.teaching.repository.CourseRepository;
+import com.giaokhoa.teaching.repository.CourseSubjectRepository;
+import com.giaokhoa.teaching.repository.EnrollmentRepository;
+import com.giaokhoa.teaching.repository.HomeroomAssignmentRepository;
+import com.giaokhoa.teaching.repository.SchoolClassRepository;
+import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -42,9 +50,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>Các bảng giảng dạy nằm dưới RLS theo context workspace của transaction, mà phía reconcile
  * không có transaction bao quanh sẵn: mọi phép dựng bundle và đồng bộ group ở đây tự bọc trong một
- * transaction ngắn có đặt context của đúng workspace qua {@code set_config} trước truy vấn đầu
- * tiên. Phía ghi đã có transaction của service (context do service đặt cùng workspace) thì phép bọc
- * này chỉ nối vào, không đổi ngữ nghĩa.
+ * transaction ngắn có đặt context của đúng workspace qua {@link WorkspaceTransaction} trước truy
+ * vấn đầu tiên. Phía ghi đã có transaction của service (context do service đặt cùng workspace) thì
+ * phép bọc này chỉ nối vào, không đổi ngữ nghĩa. Dữ kiện giảng dạy đọc qua các repository của
+ * module; dữ kiện thuộc module khác (membership, tài khoản, kỳ gói) đọc qua {@link
+ * TeachingScopePreconditions} và được lắp ở tầng ứng dụng theo danh sách ID, không join xuyên mặt
+ * phẳng như tầng JDBC cũ.
  *
  * <p>Workspace PERSONAL chưa có bundle giảng dạy ở đây: nguồn personal (owner + ghi danh cá nhân)
  * thuộc projector riêng của personal, service ghi danh/phân công của center không ghi projection
@@ -56,17 +67,39 @@ public class TeachingPolicyProjector {
     private static final String GROUP_DESCRIPTOR = "TEACHING_GROUP";
     private static final String PERIOD_DESCRIPTOR = "TEACHING_GROUP_PERIOD";
     private static final String BUNDLE_SCOPE = PermissionCatalog.ClassScope.READ.scopeName();
+    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
 
-    private final JdbcTemplate jdbc;
+    private final SchoolClassRepository schoolClasses;
+    private final CourseRepository courses;
+    private final CourseSubjectRepository courseSubjects;
+    private final HomeroomAssignmentRepository homeroomAssignments;
+    private final TeachingAssignmentRepository teachingAssignments;
+    private final EnrollmentRepository enrollments;
+    private final TeachingScopePreconditions preconditions;
     private final KeycloakProvisioningClient directory;
+    private final WorkspaceTransaction workspaceTransaction;
     private final TransactionTemplate transactions;
 
     public TeachingPolicyProjector(
-            JdbcTemplate jdbc,
+            SchoolClassRepository schoolClasses,
+            CourseRepository courses,
+            CourseSubjectRepository courseSubjects,
+            HomeroomAssignmentRepository homeroomAssignments,
+            TeachingAssignmentRepository teachingAssignments,
+            EnrollmentRepository enrollments,
+            TeachingScopePreconditions preconditions,
             KeycloakProvisioningClient directory,
+            WorkspaceTransaction workspaceTransaction,
             PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+        this.schoolClasses = schoolClasses;
+        this.courses = courses;
+        this.courseSubjects = courseSubjects;
+        this.homeroomAssignments = homeroomAssignments;
+        this.teachingAssignments = teachingAssignments;
+        this.enrollments = enrollments;
+        this.preconditions = preconditions;
         this.directory = directory;
+        this.workspaceTransaction = workspaceTransaction;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -100,7 +133,7 @@ public class TeachingPolicyProjector {
         UUID workspaceId = workspaceIdOf(targetKey);
         List<String> bundle =
                 transactions.execute(_ -> {
-                    applyContext(workspaceId);
+                    workspaceTransaction.applyContext(workspaceId);
                     if (!isCenter(workspaceId)) {
                         return List.of();
                     }
@@ -139,26 +172,19 @@ public class TeachingPolicyProjector {
     public List<String> allBundleTargetKeys(UUID workspaceId) {
         List<String> targets =
                 transactions.execute(_ -> {
-                    applyContext(workspaceId);
+                    workspaceTransaction.applyContext(workspaceId);
                     List<String> keys = new ArrayList<>();
-                    jdbc.queryForList(
-                                    "SELECT id FROM school_class WHERE workspace_id = ?",
-                                    UUID.class,
-                                    workspaceId)
+                    schoolClasses
+                            .findIdsByWorkspaceId(workspaceId)
                             .forEach(classId ->
                                     keys.add(NativePolicyTemplates.classKey(workspaceId, classId)));
-                    jdbc.queryForList(
-                                    "SELECT id FROM course WHERE workspace_id = ?",
-                                    UUID.class,
-                                    workspaceId)
+                    courses.findIdsByWorkspaceId(workspaceId)
                             .forEach(courseId ->
                                     keys.add(
                                             NativePolicyTemplates.courseKey(
                                                     workspaceId, courseId)));
-                    jdbc.queryForList(
-                                    "SELECT id FROM course_subject WHERE workspace_id = ?",
-                                    UUID.class,
-                                    workspaceId)
+                    courseSubjects
+                            .findIdsByWorkspaceId(workspaceId)
                             .forEach(courseSubjectId ->
                                     keys.add(
                                             NativePolicyTemplates.courseSubjectKey(
@@ -191,29 +217,22 @@ public class TeachingPolicyProjector {
      */
     public void syncGroupMemberships(UUID workspaceId) {
         transactions.executeWithoutResult(_ -> {
-            applyContext(workspaceId);
+            workspaceTransaction.applyContext(workspaceId);
             List<String> groupPaths = teachingGroupPaths(workspaceId);
             if (groupPaths.isEmpty()) {
                 return;
             }
             Map<UUID, Set<String>> desiredByUser = desiredGroupsByUser(workspaceId);
-            List<Map<String, Object>> users =
-                    jdbc.queryForList(
-                            "SELECT id, keycloak_sub FROM user_account WHERE id IN"
-                                    + " (SELECT teacher_user_id FROM teaching_assignment"
-                                    + " WHERE workspace_id = ?"
-                                    + " UNION SELECT teacher_user_id FROM homeroom_assignment"
-                                    + " WHERE workspace_id = ?"
-                                    + " UNION SELECT cs.student_user_id FROM enrollment e"
-                                    + " JOIN class_student cs ON cs.id = e.class_student_id"
-                                    + " WHERE e.workspace_id = ?)",
-                            workspaceId,
-                            workspaceId,
-                            workspaceId);
-            for (Map<String, Object> user : users) {
-                UUID userId = (UUID) Objects.requireNonNull(user.get("id"), "id");
-                String subject =
-                        Objects.requireNonNull((String) user.get("keycloak_sub"), "keycloak_sub");
+            // Tập user từng có quan hệ giảng dạy được lấy theo ID ở mặt phẳng tenant trước,
+            // rồi subject Keycloak của họ được phân giải theo lô ở mặt phẳng hệ thống.
+            Set<UUID> userIds = new LinkedHashSet<>();
+            userIds.addAll(teachingAssignments.findTeacherUserIdByWorkspaceId(workspaceId));
+            userIds.addAll(homeroomAssignments.findTeacherUserIdByWorkspaceId(workspaceId));
+            userIds.addAll(enrollments.findDistinctStudentUserIdsByWorkspaceId(workspaceId));
+            List<UserAccountRef> users = preconditions.userAccountsByIds(userIds);
+            for (UserAccountRef user : users) {
+                UUID userId = user.id();
+                String subject = user.keycloakSub();
                 Set<String> desired = desiredByUser.getOrDefault(userId, Set.of());
                 for (String groupPath : groupPaths) {
                     boolean shouldBeMember = desired.contains(groupPath);
@@ -262,10 +281,7 @@ public class TeachingPolicyProjector {
     // ---------- Dựng nguồn theo từng loại target ----------
 
     private Map<String, List<String>> classSources(UUID workspaceId, UUID classId) {
-        if (!rowExists(
-                "SELECT id FROM school_class WHERE workspace_id = ? AND id = ?",
-                workspaceId,
-                classId)) {
+        if (!schoolClasses.existsByWorkspaceIdAndId(workspaceId, classId)) {
             return Map.of();
         }
         String targetKey = NativePolicyTemplates.classKey(workspaceId, classId);
@@ -276,11 +292,8 @@ public class TeachingPolicyProjector {
         boolean ownersActive = sources.adminGroupActive(workspaceId, "OWNER");
         boolean managersActive = sources.adminGroupActive(workspaceId, "MANAGER");
         boolean homeroomPresent =
-                rowExists(
-                        "SELECT id FROM homeroom_assignment WHERE workspace_id = ?"
-                                + " AND class_id = ? AND state IN ('PENDING', 'ACTIVE')",
-                        workspaceId,
-                        classId);
+                homeroomAssignments.existsByWorkspaceIdAndClassIdAndStateIn(
+                        workspaceId, classId, CURRENT_STATES);
         sources.add("read", owners, ownersActive, false);
         sources.add("read", managers, managersActive, false);
         sources.add("read", homeroom, homeroomPresent, false);
@@ -309,29 +322,20 @@ public class TeachingPolicyProjector {
     }
 
     private Map<String, List<String>> courseSources(UUID workspaceId, UUID courseId) {
-        List<UUID> classIds =
-                jdbc.queryForList(
-                        "SELECT class_id FROM course WHERE workspace_id = ? AND id = ?",
-                        UUID.class,
-                        workspaceId,
-                        courseId);
-        if (classIds.isEmpty()) {
+        var classId = courses.findClassIdByWorkspaceIdAndId(workspaceId, courseId);
+        if (classId.isEmpty()) {
             return Map.of();
         }
-        UUID classId = classIds.getFirst();
         String targetKey = NativePolicyTemplates.courseKey(workspaceId, courseId);
         Sources sources = new Sources(workspaceId, targetKey);
         String owners = NativePolicyTemplates.ownersGroup(workspaceId);
         String managers = NativePolicyTemplates.managersGroup(workspaceId);
-        String homeroom = NativePolicyTemplates.homeroomGroup(workspaceId, classId);
+        String homeroom = NativePolicyTemplates.homeroomGroup(workspaceId, classId.get());
         boolean ownersActive = sources.adminGroupActive(workspaceId, "OWNER");
         boolean managersActive = sources.adminGroupActive(workspaceId, "MANAGER");
         boolean homeroomPresent =
-                rowExists(
-                        "SELECT id FROM homeroom_assignment WHERE workspace_id = ?"
-                                + " AND class_id = ? AND state IN ('PENDING', 'ACTIVE')",
-                        workspaceId,
-                        classId);
+                homeroomAssignments.existsByWorkspaceIdAndClassIdAndStateIn(
+                        workspaceId, classId.get(), CURRENT_STATES);
         sources.add("read", owners, ownersActive, false);
         sources.add("read", managers, managersActive, false);
         sources.add("read", homeroom, homeroomPresent, false);
@@ -343,20 +347,15 @@ public class TeachingPolicyProjector {
     }
 
     private Map<String, List<String>> courseSubjectSources(UUID workspaceId, UUID courseSubjectId) {
-        List<Map<String, Object>> rows =
-                jdbc.queryForList(
-                        "SELECT class_id FROM course_subject WHERE workspace_id = ? AND id = ?",
-                        workspaceId,
-                        courseSubjectId);
-        if (rows.isEmpty()) {
+        var classId = courseSubjects.findClassIdByWorkspaceIdAndId(workspaceId, courseSubjectId);
+        if (classId.isEmpty()) {
             return Map.of();
         }
-        UUID classId = (UUID) Objects.requireNonNull(rows.getFirst().get("class_id"), "class_id");
         String targetKey = NativePolicyTemplates.courseSubjectKey(workspaceId, courseSubjectId);
         Sources sources = new Sources(workspaceId, targetKey);
         String owners = NativePolicyTemplates.ownersGroup(workspaceId);
         String managers = NativePolicyTemplates.managersGroup(workspaceId);
-        String homeroom = NativePolicyTemplates.homeroomGroup(workspaceId, classId);
+        String homeroom = NativePolicyTemplates.homeroomGroup(workspaceId, classId.get());
         String teachers =
                 NativePolicyTemplates.courseSubjectTeachersGroup(workspaceId, courseSubjectId);
         String students =
@@ -364,23 +363,14 @@ public class TeachingPolicyProjector {
         boolean ownersActive = sources.adminGroupActive(workspaceId, "OWNER");
         boolean managersActive = sources.adminGroupActive(workspaceId, "MANAGER");
         boolean homeroomPresent =
-                rowExists(
-                        "SELECT id FROM homeroom_assignment WHERE workspace_id = ?"
-                                + " AND class_id = ? AND state IN ('PENDING', 'ACTIVE')",
-                        workspaceId,
-                        classId);
+                homeroomAssignments.existsByWorkspaceIdAndClassIdAndStateIn(
+                        workspaceId, classId.get(), CURRENT_STATES);
         boolean teachersPresent =
-                rowExists(
-                        "SELECT id FROM teaching_assignment WHERE workspace_id = ?"
-                                + " AND course_subject_id = ? AND state IN ('PENDING', 'ACTIVE')",
-                        workspaceId,
-                        courseSubjectId);
+                teachingAssignments.existsByWorkspaceIdAndCourseSubjectIdAndStateIn(
+                        workspaceId, courseSubjectId, CURRENT_STATES);
         boolean studentsPresent =
-                rowExists(
-                        "SELECT id FROM enrollment WHERE workspace_id = ?"
-                                + " AND course_subject_id = ? AND state IN ('PENDING', 'ACTIVE')",
-                        workspaceId,
-                        courseSubjectId);
+                enrollments.existsByWorkspaceIdAndCourseSubjectIdAndStateIn(
+                        workspaceId, courseSubjectId, CURRENT_STATES);
         sources.add("read", owners, ownersActive, false);
         sources.add("read", managers, managersActive, false);
         sources.add("read", teachers, teachersPresent, false);
@@ -412,16 +402,12 @@ public class TeachingPolicyProjector {
 
     private List<String> teachingGroupPaths(UUID workspaceId) {
         Set<String> paths = new TreeSet<>();
-        jdbc.queryForList(
-                        "SELECT id FROM school_class WHERE workspace_id = ?",
-                        UUID.class,
-                        workspaceId)
+        schoolClasses
+                .findIdsByWorkspaceId(workspaceId)
                 .forEach(classId ->
                         paths.add(NativePolicyTemplates.homeroomGroup(workspaceId, classId)));
-        jdbc.queryForList(
-                        "SELECT id FROM course_subject WHERE workspace_id = ?",
-                        UUID.class,
-                        workspaceId)
+        courseSubjects
+                .findIdsByWorkspaceId(workspaceId)
                 .forEach(courseSubjectId -> {
                     paths.add(
                             NativePolicyTemplates.courseSubjectTeachersGroup(
@@ -434,59 +420,32 @@ public class TeachingPolicyProjector {
     }
 
     private Map<UUID, Set<String>> desiredGroupsByUser(UUID workspaceId) {
+        // Điều kiện membership ACTIVE kèm role tiền đề được kiểm ở tầng ứng dụng trên tập
+        // user theo role, thay EXISTS lồng trong từng truy vấn của tầng JDBC cũ.
+        Set<UUID> activeTeachers = preconditions.activeMemberIdsWithRole(workspaceId, "TEACHER");
+        Set<UUID> activeStudents = preconditions.activeMemberIdsWithRole(workspaceId, "STUDENT");
         Map<UUID, Set<String>> desired = new LinkedHashMap<>();
-        jdbc.queryForList(
-                        "SELECT h.teacher_user_id AS user_id, h.class_id AS object_id"
-                                + " FROM homeroom_assignment h"
-                                + " WHERE h.workspace_id = ? AND h.state IN ('PENDING', 'ACTIVE')"
-                                + " AND EXISTS (SELECT 1 FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = h.workspace_id"
-                                + " AND m.user_id = h.teacher_user_id AND m.state = 'ACTIVE'"
-                                + " AND r.role = 'TEACHER')",
-                        workspaceId)
-                .forEach(row ->
-                        desired.computeIfAbsent((UUID) row.get("user_id"), _ -> new TreeSet<>())
+        homeroomAssignments.findPairsByWorkspaceIdAndStateIn(workspaceId, CURRENT_STATES).stream()
+                .filter(pair -> activeTeachers.contains(pair.getTeacherUserId()))
+                .forEach(pair ->
+                        desired.computeIfAbsent(pair.getTeacherUserId(), _ -> new TreeSet<>())
                                 .add(
                                         NativePolicyTemplates.homeroomGroup(
-                                                workspaceId,
-                                                Objects.requireNonNull(
-                                                        (UUID) row.get("object_id")))));
-        jdbc.queryForList(
-                        "SELECT t.teacher_user_id AS user_id, t.course_subject_id AS object_id"
-                                + " FROM teaching_assignment t"
-                                + " WHERE t.workspace_id = ? AND t.state IN ('PENDING', 'ACTIVE')"
-                                + " AND EXISTS (SELECT 1 FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = t.workspace_id"
-                                + " AND m.user_id = t.teacher_user_id AND m.state = 'ACTIVE'"
-                                + " AND r.role = 'TEACHER')",
-                        workspaceId)
-                .forEach(row ->
-                        desired.computeIfAbsent((UUID) row.get("user_id"), _ -> new TreeSet<>())
+                                                workspaceId, pair.getClassId())));
+        teachingAssignments.findPairsByWorkspaceIdAndStateIn(workspaceId, CURRENT_STATES).stream()
+                .filter(pair -> activeTeachers.contains(pair.getTeacherUserId()))
+                .forEach(pair ->
+                        desired.computeIfAbsent(pair.getTeacherUserId(), _ -> new TreeSet<>())
                                 .add(
                                         NativePolicyTemplates.courseSubjectTeachersGroup(
-                                                workspaceId,
-                                                Objects.requireNonNull(
-                                                        (UUID) row.get("object_id")))));
-        jdbc.queryForList(
-                        "SELECT cs.student_user_id AS user_id, e.course_subject_id AS object_id"
-                                + " FROM enrollment e"
-                                + " JOIN class_student cs ON cs.id = e.class_student_id"
-                                + " WHERE e.workspace_id = ? AND e.state IN ('PENDING', 'ACTIVE')"
-                                + " AND EXISTS (SELECT 1 FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = e.workspace_id"
-                                + " AND m.user_id = cs.student_user_id AND m.state = 'ACTIVE'"
-                                + " AND r.role = 'STUDENT')",
-                        workspaceId)
-                .forEach(row ->
-                        desired.computeIfAbsent((UUID) row.get("user_id"), _ -> new TreeSet<>())
+                                                workspaceId, pair.getCourseSubjectId())));
+        enrollments.findEnrolledPairsByWorkspaceIdAndStateIn(workspaceId, CURRENT_STATES).stream()
+                .filter(pair -> activeStudents.contains(pair.getStudentUserId()))
+                .forEach(pair ->
+                        desired.computeIfAbsent(pair.getStudentUserId(), _ -> new TreeSet<>())
                                 .add(
                                         NativePolicyTemplates.courseSubjectStudentsGroup(
-                                                workspaceId,
-                                                Objects.requireNonNull(
-                                                        (UUID) row.get("object_id")))));
+                                                workspaceId, pair.getCourseSubjectId())));
         return desired;
     }
 
@@ -497,7 +456,7 @@ public class TeachingPolicyProjector {
         private final UUID workspaceId;
         private final String targetKey;
         private final Map<String, List<String>> sourcesByScope = new LinkedHashMap<>();
-        private List<SubscriptionPeriodRow> loadedPeriods = List.of();
+        private List<SubscriptionPeriod> loadedPeriods = List.of();
         private boolean periodsLoaded;
 
         private Sources(UUID workspaceId, String targetKey) {
@@ -506,13 +465,7 @@ public class TeachingPolicyProjector {
         }
 
         private boolean adminGroupActive(UUID workspaceId, String role) {
-            return rowExists(
-                    "SELECT m.id FROM center_membership m"
-                            + " JOIN membership_role r ON r.membership_id = m.id"
-                            + " WHERE m.workspace_id = ? AND m.state = 'ACTIVE' AND r.role = ?"
-                            + " LIMIT 1",
-                    workspaceId,
-                    role);
+            return preconditions.existsActiveMemberWithRole(workspaceId, role);
         }
 
         private void add(String scope, String groupPath, boolean present, boolean gated) {
@@ -525,31 +478,14 @@ public class TeachingPolicyProjector {
                 descriptors.add(groupDescriptor(workspaceId, groupPath, targetKey, scope));
                 return;
             }
-            for (SubscriptionPeriodRow period : periods()) {
+            for (SubscriptionPeriod period : periods()) {
                 descriptors.add(periodDescriptor(workspaceId, groupPath, period, targetKey, scope));
             }
         }
 
-        private List<SubscriptionPeriodRow> periods() {
+        private List<SubscriptionPeriod> periods() {
             if (!periodsLoaded) {
-                loadedPeriods =
-                        jdbc.query(
-                                "SELECT id, valid_from, expires_at FROM subscription_period"
-                                        + " WHERE workspace_id = ? ORDER BY valid_from, id",
-                                (rs, _) ->
-                                        new SubscriptionPeriodRow(
-                                                rs.getObject("id", UUID.class),
-                                                Objects.requireNonNull(
-                                                                rs.getObject(
-                                                                        "valid_from",
-                                                                        OffsetDateTime.class))
-                                                        .toInstant(),
-                                                Objects.requireNonNull(
-                                                                rs.getObject(
-                                                                        "expires_at",
-                                                                        OffsetDateTime.class))
-                                                        .toInstant()),
-                                workspaceId);
+                loadedPeriods = preconditions.subscriptionPeriods(workspaceId);
                 periodsLoaded = true;
             }
             return loadedPeriods;
@@ -559,8 +495,6 @@ public class TeachingPolicyProjector {
             return sourcesByScope;
         }
     }
-
-    private record SubscriptionPeriodRow(UUID id, Instant validFrom, Instant expiresAt) {}
 
     private static String groupDescriptor(
             UUID workspaceId, String groupPath, String targetKey, String scope) {
@@ -578,7 +512,7 @@ public class TeachingPolicyProjector {
     private static String periodDescriptor(
             UUID workspaceId,
             String groupPath,
-            SubscriptionPeriodRow period,
+            SubscriptionPeriod period,
             String targetKey,
             String scope) {
         return PERIOD_DESCRIPTOR
@@ -598,19 +532,11 @@ public class TeachingPolicyProjector {
                 + scope;
     }
 
-    private boolean rowExists(String sql, Object... args) {
-        return !jdbc.queryForList(sql, UUID.class, args).isEmpty();
-    }
-
     private boolean isCenter(UUID workspaceId) {
-        return rowExists("SELECT id FROM workspace WHERE id = ? AND kind = 'CENTER'", workspaceId);
-    }
-
-    private void applyContext(UUID workspaceId) {
-        jdbc.queryForObject(
-                "SELECT set_config('app.workspace_id', ?, true)",
-                String.class,
-                workspaceId.toString());
+        return preconditions
+                .workspaceInfo(workspaceId)
+                .map(info -> "CENTER".equals(info.kind()))
+                .orElse(false);
     }
 
     private static UUID workspaceIdOf(String targetKey) {

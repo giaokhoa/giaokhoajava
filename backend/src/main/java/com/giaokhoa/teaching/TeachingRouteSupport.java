@@ -8,10 +8,17 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
-import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction.WorkspaceInfo;
+import com.giaokhoa.teaching.repository.ClassStudentRepository;
+import com.giaokhoa.teaching.repository.CourseRepository;
+import com.giaokhoa.teaching.repository.CourseSubjectRepository;
+import com.giaokhoa.teaching.repository.EnrollmentRepository;
+import com.giaokhoa.teaching.repository.HomeroomAssignmentRepository;
+import com.giaokhoa.teaching.repository.SchoolClassRepository;
+import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Objects;
@@ -23,7 +30,6 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
@@ -47,30 +53,52 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 public class TeachingRouteSupport {
     private static final JsonMapper JSON = new JsonMapper();
+    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
 
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator revocations;
-    private final TeachingRepository repository;
+    private final TeachingScopePreconditions preconditions;
     private final WorkspaceTransaction workspaceTransaction;
-    private final JdbcTemplate jdbc;
     private final ResourceMutationCoordinator coordinator;
+    private final SchoolClassRepository schoolClasses;
+    private final CourseRepository courses;
+    private final CourseSubjectRepository courseSubjects;
+    private final ClassStudentRepository classStudents;
+    private final EnrollmentRepository enrollments;
+    private final HomeroomAssignmentRepository homeroomAssignments;
+    private final TeachingAssignmentRepository teachingAssignments;
+    private final TeachingPageRepository pages;
 
     public TeachingRouteSupport(
             ProtectedActionExecutor executor,
             IdempotencyService idempotency,
             SourceRevocationCoordinator revocations,
-            TeachingRepository repository,
+            TeachingScopePreconditions preconditions,
             WorkspaceTransaction workspaceTransaction,
-            JdbcTemplate jdbc,
-            ResourceMutationCoordinator coordinator) {
+            ResourceMutationCoordinator coordinator,
+            SchoolClassRepository schoolClasses,
+            CourseRepository courses,
+            CourseSubjectRepository courseSubjects,
+            ClassStudentRepository classStudents,
+            EnrollmentRepository enrollments,
+            HomeroomAssignmentRepository homeroomAssignments,
+            TeachingAssignmentRepository teachingAssignments,
+            TeachingPageRepository pages) {
         this.executor = executor;
         this.idempotency = idempotency;
         this.revocations = revocations;
-        this.repository = repository;
+        this.preconditions = preconditions;
         this.workspaceTransaction = workspaceTransaction;
-        this.jdbc = jdbc;
         this.coordinator = coordinator;
+        this.schoolClasses = schoolClasses;
+        this.courses = courses;
+        this.courseSubjects = courseSubjects;
+        this.classStudents = classStudents;
+        this.enrollments = enrollments;
+        this.homeroomAssignments = homeroomAssignments;
+        this.teachingAssignments = teachingAssignments;
+        this.pages = pages;
     }
 
     /** Một trang danh sách đã lọc quyền: chỉ các dòng actor được phép thấy, không lộ tổng số. */
@@ -123,28 +151,21 @@ public class TeachingRouteSupport {
      * chính chủ sở hữu của personal workspace — đúng hai nguồn quản trị mà projector chiếu.
      */
     public boolean isAdmin(UUID actorUserId, UUID workspaceId) {
-        List<WorkspaceAccess> rows =
-                jdbc.query(
-                        "SELECT kind, owner_user_id FROM workspace WHERE id = ?",
-                        (rs, _) ->
-                                new WorkspaceAccess(
-                                        rs.getString("kind"),
-                                        rs.getObject("owner_user_id", UUID.class)),
-                        workspaceId);
-        if (rows.isEmpty()) {
+        Optional<WorkspaceInfo> workspace = preconditions.workspaceInfo(workspaceId);
+        if (workspace.isEmpty()) {
             return false;
         }
-        WorkspaceAccess workspace = rows.getFirst();
-        boolean personal = "PERSONAL".equals(workspace.kind());
+        WorkspaceInfo info = workspace.get();
+        boolean personal = "PERSONAL".equals(info.kind());
         if (personal) {
-            return actorUserId.equals(workspace.ownerUserId());
+            return actorUserId.equals(info.ownerUserId());
         }
-        boolean center = "CENTER".equals(workspace.kind());
+        boolean center = "CENTER".equals(info.kind());
         if (!center) {
             return false;
         }
-        return repository.hasActiveCenterMembershipWithRole(workspaceId, actorUserId, "OWNER")
-                || repository.hasActiveCenterMembershipWithRole(
+        return preconditions.hasActiveCenterMembershipWithRole(workspaceId, actorUserId, "OWNER")
+                || preconditions.hasActiveCenterMembershipWithRole(
                         workspaceId, actorUserId, "MANAGER");
     }
 
@@ -155,11 +176,17 @@ public class TeachingRouteSupport {
         }
     }
 
+    /** Actor đang là chủ nhiệm hiện hành của ít nhất một lớp ACTIVE của workspace. */
+    public boolean hasCurrentHomeroomClass(UUID workspaceId, UUID actorUserId) {
+        return pages.hasCurrentHomeroomClass(workspaceId, actorUserId);
+    }
+
     /** Quyền đọc một lớp: quản trị, hoặc chủ nhiệm hiện hành của chính lớp đó. */
     public boolean canReadClass(UUID actorUserId, UUID workspaceId, UUID classId) {
         return isAdmin(actorUserId, workspaceId)
-                || repository
-                        .currentHomeroomClassIdsOfUser(workspaceId, actorUserId)
+                || homeroomAssignments
+                        .findClassIdByWorkspaceIdAndTeacherUserIdAndStateIn(
+                                workspaceId, actorUserId, CURRENT_STATES)
                         .contains(classId);
     }
 
@@ -175,9 +202,46 @@ public class TeachingRouteSupport {
     public boolean canReadCourseSubjectRoster(
             UUID actorUserId, UUID workspaceId, UUID courseSubjectId) {
         return isAdmin(actorUserId, workspaceId)
-                || repository
-                        .currentTeachingCourseSubjectIdsOfUser(workspaceId, actorUserId)
+                || teachingAssignments
+                        .findCourseSubjectIdByWorkspaceIdAndTeacherUserIdAndStateIn(
+                                workspaceId, actorUserId, CURRENT_STATES)
                         .contains(courseSubjectId);
+    }
+
+    /** Lớp có tồn tại trong đúng workspace (mọi trạng thái) — quyết 404 ở tầng route. */
+    public boolean classExists(UUID workspaceId, UUID classId) {
+        return schoolClasses.existsByWorkspaceIdAndId(workspaceId, classId);
+    }
+
+    /** Môn–khóa có tồn tại trong đúng workspace (mọi trạng thái) — quyết 404 ở tầng route. */
+    public boolean courseSubjectExists(UUID workspaceId, UUID courseSubjectId) {
+        return courseSubjects.existsByWorkspaceIdAndId(workspaceId, courseSubjectId);
+    }
+
+    /** Dòng roster có tồn tại trong đúng workspace (mọi trạng thái) — kiểm tra phạm vi của lô. */
+    public boolean rosterEntryExists(UUID workspaceId, UUID classStudentId) {
+        return classStudents.existsByWorkspaceIdAndId(workspaceId, classStudentId);
+    }
+
+    /** Mọi khóa thuộc một lớp trong workspace. */
+    public List<UUID> courseIdsOfClass(UUID workspaceId, UUID classId) {
+        return courses.findIdsByWorkspaceIdAndClassId(workspaceId, classId);
+    }
+
+    /** Mọi môn–khóa thuộc một lớp trong workspace. */
+    public List<UUID> courseSubjectIdsOfClass(UUID workspaceId, UUID classId) {
+        return courseSubjects.findIdsByWorkspaceIdAndClassId(workspaceId, classId);
+    }
+
+    /** Mọi môn–khóa thuộc một khóa trong workspace. */
+    public List<UUID> courseSubjectIdsOfCourse(UUID workspaceId, UUID courseId) {
+        return courseSubjects.findIdsByWorkspaceIdAndCourseId(workspaceId, courseId);
+    }
+
+    /** Các môn–khóa mà một dòng roster đang có ghi danh hiện hành. */
+    public List<UUID> courseSubjectIdsOfRosterEntry(UUID workspaceId, UUID classStudentId) {
+        return enrollments.findCourseSubjectIdsByClassStudentId(
+                workspaceId, classStudentId, CURRENT_STATES);
     }
 
     /** Hash payload cho idempotency, cùng cách các controller thành viên đang dùng. */
@@ -218,7 +282,7 @@ public class TeachingRouteSupport {
     }
 
     /** Dùng trang đã giới hạn và lọc tại DB, giữ nguyên HTTP DTO và cache policy. */
-    public <T> ResponseEntity<Page<T>> page(TeachingRepository.Page<T> page) {
+    public <T> ResponseEntity<Page<T>> page(TeachingPageRepository.Page<T> page) {
         return ok(new Page<>(page.items(), page.nextCursor()));
     }
 
@@ -227,37 +291,6 @@ public class TeachingRouteSupport {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .body(body);
-    }
-
-    /** Cổng gói dùng chung của các service giảng dạy: kỳ gói phải còn hiệu lực hiện hành. */
-    public static void requireSubscriptionCurrent(TeachingRepository repository, UUID workspaceId) {
-        if (!repository.subscriptionCurrent(workspaceId)) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
-                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
-        }
-    }
-
-    /** Workspace giảng dạy hợp lệ: đang ACTIVE và là center hoặc personal. */
-    public static WorkspaceInfo requireTeachingWorkspace(
-            TeachingRepository repository, UUID workspaceId) {
-        WorkspaceInfo workspace =
-                repository
-                        .findWorkspace(workspaceId)
-                        .orElseThrow(() -> teachingWorkspaceNotFound());
-        if (!"ACTIVE".equals(workspace.state())
-                || (!"CENTER".equals(workspace.kind()) && !"PERSONAL".equals(workspace.kind()))) {
-            throw teachingWorkspaceNotFound();
-        }
-        return workspace;
-    }
-
-    private static HttpProblemException teachingWorkspaceNotFound() {
-        return new HttpProblemException(
-                HttpStatus.NOT_FOUND,
-                "WORKSPACE_NOT_FOUND",
-                "Không tìm thấy workspace giảng dạy hợp lệ.");
     }
 
     public static HttpProblemException denied() {
@@ -279,6 +312,4 @@ public class TeachingRouteSupport {
     public static String courseSubjectTarget(UUID workspaceId, UUID courseSubjectId) {
         return NativePolicyTemplates.courseSubjectKey(workspaceId, courseSubjectId);
     }
-
-    private record WorkspaceAccess(String kind, @Nullable UUID ownerUserId) {}
 }

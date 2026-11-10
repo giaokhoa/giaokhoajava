@@ -2,7 +2,6 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,13 +34,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class CourseController {
     private final CourseService courses;
-    private final TeachingRepository repository;
     private final TeachingRouteSupport support;
 
-    public CourseController(
-            CourseService courses, TeachingRepository repository, TeachingRouteSupport support) {
+    public CourseController(CourseService courses, TeachingRouteSupport support) {
         this.courses = courses;
-        this.repository = repository;
         this.support = support;
     }
 
@@ -87,9 +83,9 @@ public class CourseController {
                 actor -> {
                     if (!support.canReadClass(actor, workspaceId, classId)) {
                         // Lớp không tồn tại trả 404; lớp tồn tại nhưng không được đọc trả 403.
-                        repository
-                                .findClass(workspaceId, classId)
-                                .orElseThrow(() -> classNotFound());
+                        if (!support.classExists(workspaceId, classId)) {
+                            throw classNotFound();
+                        }
                         throw TeachingRouteSupport.denied();
                     }
                     return support.page(courses.pageCourses(workspaceId, classId, cursor, limit));
@@ -207,8 +203,7 @@ public class CourseController {
                     // bundle của khóa và mọi môn–khóa ghi lại trong cùng operation.
                     List<String> targets = new ArrayList<>();
                     targets.add(TeachingRouteSupport.courseTarget(workspaceId, courseId));
-                    repository
-                            .courseSubjectIdsOfCourse(workspaceId, courseId)
+                    support.courseSubjectIdsOfCourse(workspaceId, courseId)
                             .forEach(courseSubjectId ->
                                     targets.add(
                                             TeachingRouteSupport.courseSubjectTarget(

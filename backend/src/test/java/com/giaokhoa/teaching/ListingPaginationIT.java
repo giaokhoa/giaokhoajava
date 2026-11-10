@@ -1,4 +1,4 @@
-package com.giaokhoa.teaching.data;
+package com.giaokhoa.teaching;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -12,7 +12,8 @@ import com.giaokhoa.identity.InitialCredentialHandoff;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.teaching.data.TeachingRepository.Page;
+import com.giaokhoa.teaching.repository.TeachingPageRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
 import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
@@ -33,22 +34,24 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
 
 /** Kết quả phân trang trên PostgreSQL thật; không ràng buộc cú pháp hay số câu SQL. */
-// Harness tối thiểu: class chỉ dùng JdbcTemplate và tự dựng service/repository bằng mock
-// thường, không cần bean nào của ứng dụng nên tự chạy Flyway và tự cấp JdbcTemplate trên
-// schema riêng, không dựng ApplicationContext. Mỗi test vẫn chạy trong một giao dịch và
-// rollback ở cuối như khi dùng @Transactional của Spring Test.
+// Harness tối thiểu: class tự dựng repository JPA và service bằng mock thường, không cần bean
+// nào của ứng dụng nên tự chạy Flyway và tự cấp DataSource trên schema riêng, không dựng
+// ApplicationContext. Mọi test chạy trong một transaction JPA bao ngoài (JdbcTemplate dùng
+// chung connection của transaction đó) và rollback ở cuối như khi dùng @Transactional của
+// Spring Test.
 class ListingPaginationIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "listing_pages_" + UUID.randomUUID().toString().replace("-", "");
 
     private static JdbcTemplate jdbc;
-    private static DataSourceTransactionManager txManager;
+    private static RuntimeJpaRepositories repositories;
+    private static PlatformTransactionManager txManager;
     private TransactionStatus txStatus;
 
     @BeforeAll
@@ -70,7 +73,8 @@ class ListingPaginationIT extends IntegrationEnvironment {
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_USERNAME")),
                         Objects.requireNonNull(System.getenv("TEST_DATABASE_PASSWORD")));
         jdbc = new JdbcTemplate(source);
-        txManager = new DataSourceTransactionManager(source);
+        repositories = new RuntimeJpaRepositories(source);
+        txManager = repositories.transactionManager;
     }
 
     @BeforeEach
@@ -85,6 +89,7 @@ class ListingPaginationIT extends IntegrationEnvironment {
 
     @AfterAll
     static void removeSchema() {
+        repositories.close();
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
@@ -152,18 +157,17 @@ class ListingPaginationIT extends IntegrationEnvironment {
                     classId,
                     teacher);
         }
-        TeachingRepository repository = new TeachingRepository(jdbc);
+        TeachingPageRepository pages = repositories.pages;
         assertPages(
-                cursor -> repository.pageClasses(workspace, cursor, 1, teacher),
-                row -> row.id(),
+                cursor -> pages.pageClasses(workspace, cursor, 1, teacher),
+                row -> row.getId(),
                 List.of(first, second));
         jdbc.update("UPDATE school_class SET state = 'REVOKED' WHERE id = ?", first);
-        var next = repository.pageClasses(workspace, first.toString(), 1, teacher);
-        assertEquals(List.of(second), next.items().stream().map(row -> row.id()).toList());
+        var next = pages.pageClasses(workspace, first.toString(), 1, teacher);
+        assertEquals(List.of(second), next.items().stream().map(row -> row.getId()).toList());
         assertNull(next.nextCursor());
-        assertInvalidCursor(
-                () -> repository.pageClasses(workspace, foreign.toString(), 1, teacher));
-        assertInvalidCursor(() -> repository.pageClasses(workspace, "bad", 1, teacher));
+        assertInvalidCursor(() -> pages.pageClasses(workspace, foreign.toString(), 1, teacher));
+        assertInvalidCursor(() -> pages.pageClasses(workspace, "bad", 1, teacher));
     }
 
     @DisplayName("Danh sách teaching không thiếu hay trùng dòng và từ chối cursor của parent lạ")
@@ -173,7 +177,7 @@ class ListingPaginationIT extends IntegrationEnvironment {
         UUID classId = schoolClass(workspace, 1);
         UUID otherClass = schoolClass(workspace, 2);
         UUID subject = jdbc.queryForObject("SELECT id FROM subject WHERE code = 'M1'", UUID.class);
-        TeachingRepository repository = new TeachingRepository(jdbc);
+        TeachingPageRepository pages = repositories.pages;
         List<UUID> courses = new ArrayList<>();
         List<UUID> roster = new ArrayList<>();
         List<UUID> enrollments = new ArrayList<>();
@@ -244,29 +248,29 @@ class ListingPaginationIT extends IntegrationEnvironment {
                 otherClass,
                 otherStudent);
         assertPages(
-                cursor -> repository.pageCourses(workspace, classId, cursor, 1),
-                row -> row.id(),
+                cursor -> pages.pageCourses(workspace, classId, cursor, 1),
+                row -> row.getId(),
                 courses);
         assertPages(
-                cursor -> repository.pageRoster(workspace, classId, cursor, 1),
-                row -> row.id(),
+                cursor -> pages.pageRoster(workspace, classId, cursor, 1),
+                row -> row.getId(),
                 roster);
         assertPages(
-                cursor -> repository.pageEnrollments(workspace, courseSubject, cursor, 1),
-                row -> row.id(),
+                cursor -> pages.pageEnrollments(workspace, courseSubject, cursor, 1),
+                row -> row.getId(),
                 enrollments);
         assertPages(
-                cursor -> repository.pageTeachingAssignments(workspace, courseSubject, cursor, 1),
-                row -> row.id(),
+                cursor -> pages.pageTeachingAssignments(workspace, courseSubject, cursor, 1),
+                row -> row.getId(),
                 teachers);
         assertPages(
-                cursor -> repository.pageHomeroomAssignments(workspace, classId, cursor, 1),
-                row -> row.id(),
+                cursor -> pages.pageHomeroomAssignments(workspace, classId, cursor, 1),
+                row -> row.getId(),
                 homerooms);
-        assertInvalidCursor(() ->
-                repository.pageCourses(workspace, otherClass, courses.getFirst().toString(), 1));
-        assertInvalidCursor(() ->
-                repository.pageRoster(workspace, otherClass, roster.getFirst().toString(), 1));
+        assertInvalidCursor(
+                () -> pages.pageCourses(workspace, otherClass, courses.getFirst().toString(), 1));
+        assertInvalidCursor(
+                () -> pages.pageRoster(workspace, otherClass, roster.getFirst().toString(), 1));
     }
 
     private static void assertInvalidCursor(Supplier<?> read) {

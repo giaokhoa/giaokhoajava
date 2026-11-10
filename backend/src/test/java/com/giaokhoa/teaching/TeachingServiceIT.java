@@ -14,7 +14,6 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.ClassService.ClassView;
 import com.giaokhoa.teaching.ClassService.RosterEntryView;
 import com.giaokhoa.teaching.CourseService.CourseView;
-import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.time.OffsetDateTime;
@@ -33,7 +32,6 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -482,31 +480,46 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
+        RuntimeJpaRepositories runtime = new RuntimeJpaRepositories(runtimeDataSource);
         try {
             JdbcTemplate runtimeJdbc = new JdbcTemplate(runtimeDataSource);
             runtimeJdbc.execute("SET search_path TO " + SCHEMA + ",public");
-            DataSourceTransactionManager runtimeTxManager =
-                    new DataSourceTransactionManager(runtimeDataSource);
-            TeachingRepository runtimeRepository = new TeachingRepository(runtimeJdbc);
             WorkspaceTransaction runtimeWorkspaceTx =
-                    new WorkspaceTransaction(runtimeJdbc, runtimeTxManager);
+                    new WorkspaceTransaction(runtimeJdbc, runtime.transactionManager);
+            TeachingScopePreconditions runtimePreconditions =
+                    new TeachingScopePreconditions(runtimeJdbc);
             TeachingRevocationContributor runtimeContributor =
-                    new TeachingRevocationContributor(runtimeRepository, runtimeWorkspaceTx);
+                    new TeachingRevocationContributor(
+                            runtime.classStudents,
+                            runtime.courseSubjects,
+                            runtime.enrollments,
+                            runtime.teachingAssignments,
+                            runtime.homeroomAssignments,
+                            runtimeWorkspaceTx);
             ResourceMutationCoordinator runtimeCoordinator =
-                    new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);
+                    new ResourceMutationCoordinator(runtimeJdbc, runtime.transactionManager);
             ClassService runtimeClasses =
                     new ClassService(
-                            runtimeRepository,
+                            runtime.schoolClasses,
+                            runtime.classStudents,
+                            runtime.enrollments,
+                            runtime.pages,
+                            runtimePreconditions,
                             runtimeWorkspaceTx,
                             runtimeCoordinator,
                             runtimeContributor);
             CourseService runtimeCourses =
                     new CourseService(
-                            runtimeRepository,
+                            runtime.schoolClasses,
+                            runtime.courses,
+                            runtime.courseSubjects,
+                            runtime.subjects,
+                            runtime.pages,
+                            runtimePreconditions,
                             runtimeWorkspaceTx,
                             runtimeCoordinator,
                             runtimeContributor);
-            TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
+            TransactionTemplate runtimeTx = new TransactionTemplate(runtime.transactionManager);
 
             ClassView created =
                     Objects.requireNonNull(
@@ -559,6 +572,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
                                             _ -> runtimeClasses.getClass(other, created.id())));
             assertEquals(HttpStatus.NOT_FOUND, cross.getStatus(), "Workspace khác vẫn vô hình");
         } finally {
+            runtime.close();
             if (runtimeDataSource != null) {
                 runtimeDataSource.destroy();
             }
