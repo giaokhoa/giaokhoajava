@@ -1,7 +1,7 @@
 package com.giaokhoa.guardians;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;

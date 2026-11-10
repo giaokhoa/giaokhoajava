@@ -8,7 +8,7 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.resources.data.CanonicalResourceRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.OffsetDateTime;

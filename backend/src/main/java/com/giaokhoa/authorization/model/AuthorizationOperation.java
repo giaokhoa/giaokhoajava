@@ -54,6 +54,11 @@ public class AuthorizationOperation {
     @Column(name = "desired_revision", nullable = false)
     private long desiredRevision;
 
+    // Cột sinh bởi database (GENERATED ALWAYS AS IDENTITY ở V005) ghi thứ tự ghi nhận
+    // toàn cục của operation; entity chỉ đọc, không bao giờ tự ghi.
+    @Column(name = "recorded_seq", nullable = false, insertable = false, updatable = false)
+    private long recordedSeq;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "state", nullable = false, length = 24)
     private State state;
@@ -133,6 +138,10 @@ public class AuthorizationOperation {
 
     public long getDesiredRevision() {
         return desiredRevision;
+    }
+
+    public long getRecordedSeq() {
+        return recordedSeq;
     }
 
     public State getState() {

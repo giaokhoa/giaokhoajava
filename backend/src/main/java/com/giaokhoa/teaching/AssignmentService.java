@@ -11,7 +11,7 @@ import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectScopeRow;
 import com.giaokhoa.teaching.data.TeachingRepository.HomeroomAssignmentRow;
 import com.giaokhoa.teaching.data.TeachingRepository.TeachingAssignmentRow;
 import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;

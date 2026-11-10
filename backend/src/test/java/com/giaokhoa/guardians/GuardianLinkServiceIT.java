@@ -17,7 +17,7 @@ import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.OffsetDateTime;

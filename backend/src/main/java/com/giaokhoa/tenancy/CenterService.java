@@ -6,6 +6,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.guardians.GuardianRevocationContributor;
+import com.giaokhoa.infrastructure.tenancy.TenantSchemaProvisioner;
 import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
@@ -54,6 +55,8 @@ public class CenterService {
     private final GuardianRevocationContributor guardianRevocations;
     private final AuditRecorder audit;
 
+    private final TenantSchemaProvisioner tenantProvisioner;
+
     private final ResourceMutationCoordinator coordinator;
 
     public CenterService(
@@ -64,7 +67,8 @@ public class CenterService {
             ResourceMutationCoordinator coordinator,
             TeachingRevocationContributor teachingRevocations,
             GuardianRevocationContributor guardianRevocations,
-            AuditRecorder audit) {
+            AuditRecorder audit,
+            TenantSchemaProvisioner tenantProvisioner) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.revocations = revocations;
@@ -73,6 +77,7 @@ public class CenterService {
         this.teachingRevocations = teachingRevocations;
         this.guardianRevocations = guardianRevocations;
         this.audit = audit;
+        this.tenantProvisioner = tenantProvisioner;
     }
 
     /** Metadata tối thiểu của một center cho danh sách của platform operator. */
@@ -113,6 +118,7 @@ public class CenterService {
                         + " VALUES (?, 'CENTER', NULL, ?, 'ACTIVE')",
                 workspaceId,
                 centerId);
+        tenantProvisioner.provisionAfterCommit(workspaceId);
         jdbc.update(
                 "INSERT INTO center (id, workspace_id, keycloak_organization_id, name,"
                         + " owner_user_id, state) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",

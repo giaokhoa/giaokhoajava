@@ -26,7 +26,7 @@ import com.giaokhoa.teaching.EnrollmentService.EnrollmentView;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;

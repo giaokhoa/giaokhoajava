@@ -11,7 +11,7 @@ import com.giaokhoa.resources.CorrectionService;
 import com.giaokhoa.resources.ResourceLibraryService;
 import com.giaokhoa.resources.ResourceShareService;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.OffsetDateTime;

@@ -1,6 +1,7 @@
 package com.giaokhoa.identity;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.TenantSchemaProvisioner;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.List;
 import java.util.Map;
@@ -27,9 +28,15 @@ public class IssuedStudentRegistrar {
 
     private final ResourceMutationCoordinator coordinator;
 
-    public IssuedStudentRegistrar(JdbcTemplate jdbc, ResourceMutationCoordinator coordinator) {
+    private final TenantSchemaProvisioner tenantProvisioner;
+
+    public IssuedStudentRegistrar(
+            JdbcTemplate jdbc,
+            ResourceMutationCoordinator coordinator,
+            TenantSchemaProvisioner tenantProvisioner) {
         this.jdbc = jdbc;
         this.coordinator = coordinator;
+        this.tenantProvisioner = tenantProvisioner;
     }
 
     /** Kết quả cấp: user, personal workspace và membership STUDENT, kèm cờ tạo mới. */
@@ -132,6 +139,7 @@ public class IssuedStudentRegistrar {
                             + " VALUES (?, 'PERSONAL', ?, 'ACTIVE')",
                     personalWorkspaceId,
                     userId);
+            tenantProvisioner.provisionAfterCommit(personalWorkspaceId);
             accountCreated = true;
         }
 

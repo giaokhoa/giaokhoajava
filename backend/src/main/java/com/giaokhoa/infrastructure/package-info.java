@@ -1,4 +1,4 @@
 @NullMarked
-package com.giaokhoa.tenancy.data;
+package com.giaokhoa.infrastructure;
 
 import org.jspecify.annotations.NullMarked;

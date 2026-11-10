@@ -7,7 +7,7 @@ import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseRow;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectRow;
 import com.giaokhoa.teaching.data.TeachingRepository.SubjectRow;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;

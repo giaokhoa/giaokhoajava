@@ -15,7 +15,7 @@ import com.giaokhoa.teaching.ClassService.RosterEntryView;
 import com.giaokhoa.teaching.CourseService.CourseView;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.tenancy.MembershipService;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;

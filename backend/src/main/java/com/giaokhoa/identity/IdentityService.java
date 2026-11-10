@@ -5,6 +5,7 @@ import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.infrastructure.tenancy.TenantSchemaProvisioner;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.List;
 import java.util.Map;
@@ -34,16 +35,19 @@ public class IdentityService {
 
     private final ResourceMutationCoordinator coordinator;
     private final IdentityEligibilitySynchronizer eligibility;
+    private final TenantSchemaProvisioner tenantProvisioner;
 
     public IdentityService(
             JdbcTemplate jdbc,
             CurrentIdentityClient identities,
             ResourceMutationCoordinator coordinator,
-            IdentityEligibilitySynchronizer eligibility) {
+            IdentityEligibilitySynchronizer eligibility,
+            TenantSchemaProvisioner tenantProvisioner) {
         this.jdbc = jdbc;
         this.identities = identities;
         this.coordinator = coordinator;
         this.eligibility = eligibility;
+        this.tenantProvisioner = tenantProvisioner;
     }
 
     /** Kết quả bootstrap: user và personal workspace của actor, kèm cờ account mới tạo. */
@@ -136,6 +140,7 @@ public class IdentityService {
                         + " VALUES (?, 'PERSONAL', ?, 'ACTIVE')",
                 workspaceId,
                 userId);
+        tenantProvisioner.provisionAfterCommit(workspaceId);
         return new BootstrapResult(userId, workspaceId, true);
     }
 
