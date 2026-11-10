@@ -12,10 +12,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
+import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.support.KeycloakSessionFixture;
 import com.giaokhoa.support.RealmFoundation;
-import com.giaokhoa.tenancy.WorkspaceDirectory;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService;
 import com.giaokhoa.tenancy.model.Workspace;
 import jakarta.servlet.http.Cookie;
 import java.util.HashMap;
@@ -31,7 +31,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.annotation.Propagation;
@@ -57,9 +56,9 @@ class IdentityFlowIT extends KeycloakSessionFixture {
         ensureApiClient();
     }
 
-    @Autowired IdentityEligibilitySynchronizer synchronizer;
+    @Autowired IdentityEligibilityService synchronizer;
 
-    @Autowired WorkspaceDirectory directory;
+    @Autowired WorkspaceDirectoryService directory;
 
     @Test
     void unverifiedSelfRegisteredUserHasNoEligibilityUntilEmailVerified() {
@@ -322,7 +321,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                     "ACTIVE",
                     directory.listWorkspaces(actor).stream()
                             .filter(workspace -> workspace.kind() == Workspace.Kind.PERSONAL)
-                            .map(WorkspaceDirectory.ListedWorkspace::state)
+                            .map(WorkspaceDirectoryService.ListedWorkspace::state)
                             .findFirst()
                             .orElse("MISSING"));
             assertEquals(Set.of("STUDENT"), activeRoles(centerB, actor));
@@ -335,15 +334,22 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     }
 
     @Test
-    void anonymousCallerIsRedirectedToLogin() throws Exception {
+    void anonymousCallerReceivesProblemUnauthorized() throws Exception {
         MockHttpServletResponse response =
-                mockMvc().perform(get("/api/me/workspaces")).andReturn().getResponse();
+                mockMvc()
+                        .perform(get("/api/me/workspaces").accept(MediaType.APPLICATION_JSON))
+                        .andReturn()
+                        .getResponse();
 
-        assertEquals(302, response.getStatus());
+        assertEquals(401, response.getStatus());
         assertTrue(
-                Objects.requireNonNull(response.getHeader(HttpHeaders.LOCATION), "Location")
-                        .contains("/oauth2/authorization/keycloak"),
-                "Chưa đăng nhập thì được hướng dẫn đăng nhập, không nhận dữ liệu nghiệp vụ");
+                Objects.requireNonNull(response.getContentType(), "Content-Type")
+                        .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals("UNAUTHORIZED", body.get("code").stringValue());
+        assertFalse(
+                body.get("traceId").stringValue().isBlank(),
+                "API chưa đăng nhập nhận 401 ProblemDetail, không redirect và không dữ liệu nghiệp vụ");
     }
 
     @Test
@@ -352,16 +358,16 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                 mockMvc()
                         .perform(
                                 get("/api/me/workspaces")
+                                        .accept(MediaType.APPLICATION_JSON)
                                         .cookie(
                                                 new Cookie(
                                                         "SESSION", "forged-" + UUID.randomUUID())))
                         .andReturn()
                         .getResponse();
 
-        assertEquals(302, response.getStatus());
-        assertTrue(
-                Objects.requireNonNull(response.getHeader(HttpHeaders.LOCATION), "Location")
-                        .contains("/oauth2/authorization/keycloak"));
+        assertEquals(401, response.getStatus());
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals("UNAUTHORIZED", body.get("code").stringValue());
     }
 
     @Test
@@ -428,7 +434,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                                 .getStatus());
                 webContext
                         .getBean(
-                                com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient
+                                com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient
                                         .class)
                         .setRealmGroupMembership(subject, ELIGIBLE_GROUP, false);
                 for (String path : List.of("/api/me/workspaces", "/api/me/practice-history")) {
@@ -695,7 +701,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                                 "Password1-" + UUID.randomUUID()));
         var directory =
                 webContext.getBean(
-                        com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient.class);
+                        com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient.class);
         try {
             seedAccount(subject, "SELF_REGISTERED", username + "@example.test", true);
             UUID target = seedAccount(targetSubject, "CENTER_ISSUED", null, false);

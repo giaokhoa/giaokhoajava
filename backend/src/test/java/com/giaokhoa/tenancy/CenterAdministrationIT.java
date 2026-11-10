@@ -31,7 +31,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -1021,18 +1020,21 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
     }
 
     @Test
-    void anonymousMembershipListIsRedirectedToLogin() throws Exception {
+    void anonymousMembershipListReceivesProblemUnauthorized() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
-                        .perform(get("/api/workspaces/" + UUID.randomUUID() + "/memberships"))
+                        .perform(
+                                get("/api/workspaces/" + UUID.randomUUID() + "/memberships")
+                                        .accept(MediaType.APPLICATION_JSON))
                         .andReturn()
                         .getResponse();
 
-        assertEquals(302, response.getStatus());
-        assertTrue(
-                Objects.requireNonNull(response.getHeader(HttpHeaders.LOCATION), "Location")
-                        .contains("/oauth2/authorization/keycloak"),
-                "Chưa đăng nhập thì được hướng dẫn đăng nhập, không nhận dữ liệu nghiệp vụ");
+        assertEquals(401, response.getStatus());
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals(
+                "UNAUTHORIZED",
+                body.get("code").stringValue(),
+                "Chưa đăng nhập nhận 401 ProblemDetail, không nhận dữ liệu nghiệp vụ");
     }
 
     // ---------- Dữ kiện thư mục ----------

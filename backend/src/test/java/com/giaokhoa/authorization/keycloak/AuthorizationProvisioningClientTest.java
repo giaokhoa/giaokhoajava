@@ -27,7 +27,7 @@ import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-class KeycloakProvisioningClientTest {
+class AuthorizationProvisioningClientTest {
     private static final String HOST = "http://keycloak.test";
     private static final UUID WORKSPACE = RandomIds.randomId();
     private static final String NAME = "center-" + WORKSPACE;
@@ -41,7 +41,7 @@ class KeycloakProvisioningClientTest {
     void createsOrganizationOnceAndReturnsStableOpaqueIdOnRetry() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
 
         server.expect(requestTo(ORG_QUERY))
                 .andExpect(method(HttpMethod.GET))
@@ -87,7 +87,7 @@ class KeycloakProvisioningClientTest {
     void readsAllPagesOfUserGroupsBeforeDecidingMembership() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
         String prefix = "/gk/workspaces/" + WORKSPACE + "/students/";
         String firstPage =
                 "["
@@ -121,7 +121,7 @@ class KeycloakProvisioningClientTest {
     void resolvesGroupByExactPathWithoutNameSearch() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
         String[] paths = {"/gk", "/gk/identity", "/gk/identity/eligible"};
         String[] ids = {"root", "branch", "leaf"};
         for (int i = 0; i < paths.length; i++) {
@@ -140,7 +140,7 @@ class KeycloakProvisioningClientTest {
     void revokeDoesNotSucceedWhenExactGroupIsMissing() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
         server.expect(requestTo(groupPath("/gk/identity/eligible")))
                 .andRespond(withStatus(HttpStatus.NOT_FOUND));
         assertThrows(
@@ -155,7 +155,7 @@ class KeycloakProvisioningClientTest {
     void revokeUsesExactIdAndFailsOnKeycloakError() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
         server.expect(requestTo(groupPath("/gk/identity/eligible")))
                 .andRespond(
                         withSuccess(
@@ -179,7 +179,7 @@ class KeycloakProvisioningClientTest {
     void retriesGroupCreationConflictByReadingActualId() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
         server.expect(requestTo(groupPath("/gk"))).andRespond(withStatus(HttpStatus.NOT_FOUND));
         server.expect(requestTo(HOST + "/admin/realms/giaokhoa/groups"))
                 .andExpect(method(HttpMethod.POST))
@@ -205,7 +205,7 @@ class KeycloakProvisioningClientTest {
 
     @Test
     void rejectsArbitraryGroupSourcesBeforeCallingKeycloak() {
-        KeycloakProvisioningClient client = client(RestClient.builder());
+        AuthorizationProvisioningClient client = client(RestClient.builder());
 
         assertThrows(
                 IllegalArgumentException.class, () -> client.ensureRealmGroup("/gk/roles/admin"));
@@ -224,7 +224,7 @@ class KeycloakProvisioningClientTest {
     void readsEveryMembershipPageWithoutCachingTheNextRequest() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
         String base = HOST + "/admin/realms/giaokhoa/users/opaque-user/groups";
         server.expect(requestTo(base + "?first=0&max=100"))
                 .andRespond(withSuccess(groupPage(), MediaType.APPLICATION_JSON));
@@ -244,7 +244,7 @@ class KeycloakProvisioningClientTest {
     void aFailedMembershipPageDoesNotReturnAPartialSnapshot() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        KeycloakProvisioningClient client = client(builder);
+        AuthorizationProvisioningClient client = client(builder);
         String base = HOST + "/admin/realms/giaokhoa/users/opaque-user/groups";
         server.expect(requestTo(base + "?first=0&max=100"))
                 .andRespond(withSuccess(groupPage(), MediaType.APPLICATION_JSON));
@@ -279,7 +279,7 @@ class KeycloakProvisioningClientTest {
         return HOST + "/admin/realms/giaokhoa/group-by-path" + path;
     }
 
-    private KeycloakProvisioningClient client(RestClient.Builder builder) {
+    private AuthorizationProvisioningClient client(RestClient.Builder builder) {
         ClientRegistration registration =
                 ClientRegistration.withRegistrationId("giaokhoa-provisioner")
                         .clientId("test-provisioner")
@@ -295,6 +295,6 @@ class KeycloakProvisioningClientTest {
         OAuth2AuthorizedClient authorized =
                 new OAuth2AuthorizedClient(registration, "giaokhoa-provisioner", token);
         OAuth2AuthorizedClientManager manager = _ -> authorized;
-        return new KeycloakProvisioningClient(builder, HOST, manager);
+        return new AuthorizationProvisioningClient(builder, HOST, manager);
     }
 }

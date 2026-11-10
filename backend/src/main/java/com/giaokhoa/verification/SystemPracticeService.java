@@ -1,7 +1,7 @@
 package com.giaokhoa.verification;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.giaokhoa.tenancy.WorkspaceDirectory;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.time.Instant;
 import java.util.List;
@@ -19,12 +19,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class SystemPracticeService {
     private final JdbcTemplate jdbc;
-    private final WorkspaceDirectory directory;
+    private final WorkspaceDirectoryService directory;
     private final WorkspaceTransaction workspaceTransaction;
 
     public SystemPracticeService(
             JdbcTemplate jdbc,
-            WorkspaceDirectory directory,
+            WorkspaceDirectoryService directory,
             WorkspaceTransaction workspaceTransaction) {
         this.jdbc = jdbc;
         this.directory = directory;

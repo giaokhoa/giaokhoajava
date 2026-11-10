@@ -4,24 +4,47 @@ export type ApiResult<T> =
 
 type Problem = Record<string, unknown>;
 
-const messages: Record<number, string> = {
-  403: "Bạn không có quyền thực hiện thao tác này.",
-  409: "Dữ liệu đã thay đổi hoặc yêu cầu bị trùng. Vui lòng tải lại.",
-  428: "Yêu cầu thiếu điều kiện cập nhật dữ liệu.",
-  503: "Dịch vụ hoặc quyền đang đồng bộ. Vui lòng thử lại sau.",
+export type ProblemViolation = {
+  field: string;
+  code: string;
+  message: string;
 };
+
+// violations là extension member của ProblemDetail (RFC 9457) theo hợp đồng
+// http-api.md: [{field, code, message}]; bản ghi lệch hình dạng bị bỏ như các
+// parser khác của client, không suy diễn nội dung lỗi field.
+function parseViolations(value: unknown): ProblemViolation[] {
+  if (!Array.isArray(value)) return [];
+  const violations: ProblemViolation[] = [];
+  for (const item of value) {
+    if (!isRecord(item)
+        || typeof item.field !== "string"
+        || typeof item.code !== "string"
+        || typeof item.message !== "string") {
+      continue;
+    }
+    violations.push({ field: item.field, code: item.code, message: item.message });
+  }
+  return violations;
+}
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly traceId?: string;
+  readonly violations: ProblemViolation[];
 
   constructor(status: number, problem: Problem = {}) {
-    super(messages[status] ?? (typeof problem.detail === "string" ? problem.detail : "Yêu cầu không thành công."));
+    // detail của server là thông điệp hiển thị; client không tự chế thông điệp
+    // theo status để ghi đè. Ánh xạ theo mã lỗi nằm ở các màn hình đã có.
+    super(typeof problem.detail === "string" && problem.detail
+      ? problem.detail
+      : "Yêu cầu không thành công.");
     this.name = "ApiError";
     this.status = status;
     this.code = typeof problem.code === "string" ? problem.code : undefined;
     this.traceId = typeof problem.traceId === "string" ? problem.traceId : undefined;
+    this.violations = parseViolations(problem.violations);
   }
 }
 

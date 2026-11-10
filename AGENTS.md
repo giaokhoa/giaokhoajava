@@ -42,3 +42,12 @@
 - Với thay đổi DB, session, OIDC hoặc security, chạy thêm `./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration verify` trên stack TEST riêng theo `backend/README.md`. Profile này tự tìm integration test của stack TEST theo convention `*IT`; native Keycloak chạy qua script riêng bên dưới.
 - Báo cáo rõ lệnh đã chạy và kết quả. Không báo integration test thành công nếu chỉ chạy unit test hoặc compile test.
 - Với thay đổi client Keycloak hoặc bootstrap realm, chạy thêm `bash infra/keycloak/verify-native.sh`; script tạo stack native riêng, chạy acceptance test và tự dọn container.
+
+## Quy ước cấu trúc và đặt tên backend
+
+- Package tầng 1 theo nghiệp vụ (9 domain đã chốt trong plan). Package con hoặc chia theo chức năng khi domain đủ lớn (mẫu `authorization`: `decision`, `fence`, `operation`, `permission`, `policy`, `projection`, `target`), hoặc theo tầng kỹ thuật (`model` cho type của domain, `data` cho truy cập dữ liệu và transaction); domain nhỏ giữ phẳng. Một nhãn package con chỉ mang một nghĩa trong toàn repo.
+- Stereotype khớp hậu tố vai trò: `@RestController`/`Controller`, `@Service`/`Service`, `@Repository`/`Repository`; `@Component` chỉ cho bean không thuộc ba tầng trên. Class truy cập dữ liệu do class khác tự dựng thay vì container vẫn mang hậu tố `Repository` nhưng không gắn annotation.
+- Hậu tố type lồng: `Row` cho dòng đọc từ cơ sở dữ liệu, `View` cho dữ kiện trả ra API, `Request` cho dữ kiện nhận vào; cùng họ còn có `Page`, `Receipt`, `Scope`. Tên `State`/`Kind` được tái dùng theo domain khi đặt trong type sở hữu.
+- Họ projection: `*Projector` là class chiếu policy của một domain; `Projection*` là hạ tầng pipeline projection dùng chung ở `authorization.projection`.
+- Tên phương thức mở đầu bằng động từ hoặc cụm động từ (Google Java Style Guide §5.2.3), gồm cả handler của controller. Helper private trả về giá trị tính được có thể đặt tên theo giá trị đó, nhưng code mới ưu tiên động từ.
+- Hằng `UPPER_SNAKE_CASE` chỉ dành cho giá trị bất biến sâu (Google Java Style Guide §5.2.4). Field `static final` chứa đối tượng có trạng thái thay đổi được (ví dụ `SecureRandom`) hoặc mảng dùng lowerCamelCase như field thường.

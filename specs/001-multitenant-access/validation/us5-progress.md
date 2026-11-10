@@ -7,7 +7,7 @@ Các thay đổi trong báo cáo này **chưa commit/chưa merge**; không dùng
 
 - `PublishedResultService`, `StudentResultController`, `ProtectedActionExecutor`: dựng DTO trong authorization fence; kể cả trang kết quả không có hàng vẫn kiểm tra eligibility/ACCOUNT; keyset `(published_at,id)` và HMAC cursor gắn actor/workspace/student/limit; lọc trạng thái `PUBLISHED` ở bước dựng DTO; không trả totalCount.
 - `GuardianLinkController`, `MembershipController`: đọc list dưới workspace advisory lock đồng bộ với coordinator revoke; không thay ngoại lệ quyết role bằng SQL đã chốt trong `contracts/authorization.md`.
-- `KeycloakProvisioningClient`, `GuardianPolicyProjector`: query organization theo exact+pagination, đọc các realm group theo trang và chỉ một lần trên mỗi parent khi reconcile nhiều student.
+- `AuthorizationProvisioningClient`, `GuardianPolicyProjector`: query organization theo exact+pagination, đọc các realm group theo trang và chỉ một lần trên mỗi parent khi reconcile nhiều student.
 - `CenterService`, `CenterController`: phân trang SQL keyset metadata của platform center, cursor gắn actor/limit; endpoint trả `{items,nextCursor?}` thay mảng trần; cập nhật các client/test liên quan.
 - `frontend`: operation pending được poll dựa trên trạng thái server; chỉ `SUCCEEDED`+`completed=true` mới coi là hoàn tất; dữ liệu/capabilities được refresh theo actor/workspace sau mutation; đổi phiên/workspace remount state và hủy poll; không dùng dữ liệu cấp quyền lấy từ một trang membership duy nhất.
 - `contracts/http-api.md`, `docs/diem-chua-chac-chan-va-lech-spec.md`: cập nhật hợp đồng và trạng thái các ghi nhận A2/A3/A5/A13, giữ nguyên lịch sử để đối chiếu.

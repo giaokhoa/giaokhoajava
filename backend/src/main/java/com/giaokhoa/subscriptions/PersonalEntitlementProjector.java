@@ -150,8 +150,6 @@ public class PersonalEntitlementProjector {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
-    private record SubscriptionPeriodRow(UUID id, Instant validFrom, Instant expiresAt) {}
-
     private List<SubscriptionPeriodRow> subscriptionPeriods(UUID workspaceId) {
         return jdbc.query(
                 "SELECT id, valid_from, expires_at FROM subscription_period"

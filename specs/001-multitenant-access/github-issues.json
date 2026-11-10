@@ -634,7 +634,7 @@
     "T038": {
       "number": 40,
       "url": "https://github.com/giaokhoa/giaokhoa/issues/40",
-      "title": "[T038][US2] Cài invite/accept/roles/revoke/student issue qua IssuedStudentRegistrar",
+      "title": "[T038][US2] Cài invite/accept/roles/revoke/student issue qua IssuedStudentRegistrationService",
       "story": "US2",
       "phase": "Phase 4: US2 — Khởi tạo và quản trị trung tâm (P1)",
       "parallel_candidate": false,

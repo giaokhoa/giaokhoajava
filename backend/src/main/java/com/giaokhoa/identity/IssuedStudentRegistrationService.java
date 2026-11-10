@@ -1,6 +1,7 @@
 package com.giaokhoa.identity;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.List;
 import java.util.Map;
@@ -22,12 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
  * gì.
  */
 @Service
-public class IssuedStudentRegistrar {
+public class IssuedStudentRegistrationService {
     private final JdbcTemplate jdbc;
 
     private final ResourceMutationCoordinator coordinator;
 
-    public IssuedStudentRegistrar(JdbcTemplate jdbc, ResourceMutationCoordinator coordinator) {
+    public IssuedStudentRegistrationService(
+            JdbcTemplate jdbc, ResourceMutationCoordinator coordinator) {
         this.jdbc = jdbc;
         this.coordinator = coordinator;
     }
@@ -68,7 +70,7 @@ public class IssuedStudentRegistrar {
             // Không phân biệt thiếu/không phải center/không ACTIVE: không lộ sự tồn tại.
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "WORKSPACE_NOT_FOUND",
+                    ErrorCodes.WORKSPACE_NOT_FOUND,
                     "Không tìm thấy trung tâm hợp lệ.");
         }
         List<String> operatorRoles =
@@ -83,7 +85,7 @@ public class IssuedStudentRegistrar {
         if (operatorRoles.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "OPERATOR_NOT_AUTHORIZED",
+                    ErrorCodes.OPERATOR_NOT_AUTHORIZED,
                     "Chỉ chủ sở hữu hoặc quản lý của trung tâm mới được cấp danh tính học sinh.");
         }
 
@@ -99,7 +101,7 @@ public class IssuedStudentRegistrar {
             if (!username.equals(account.get("username"))) {
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
-                        "USERNAME_MISMATCH",
+                        ErrorCodes.USERNAME_MISMATCH,
                         "Tên đăng nhập không khớp danh tính đã có.");
             }
             userId = (UUID) Objects.requireNonNull(account.get("id"), "id");
@@ -114,7 +116,7 @@ public class IssuedStudentRegistrar {
             if (!taken.isEmpty()) {
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
-                        "USERNAME_TAKEN",
+                        ErrorCodes.USERNAME_TAKEN,
                         "Tên đăng nhập đã thuộc về một danh tính khác.");
             }
             userId = UUID.randomUUID();
@@ -182,7 +184,7 @@ public class IssuedStudentRegistrar {
         if (found.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    IdentityService.IDENTITY_UNAVAILABLE_CODE,
+                    ErrorCodes.IDENTITY_UNAVAILABLE,
                     "Không xác minh được danh tính hiện hành, thử lại sau.");
         }
         return found.getFirst();

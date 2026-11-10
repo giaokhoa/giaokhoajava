@@ -3,6 +3,7 @@ package com.giaokhoa.guardians;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,7 +24,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 /**
  * Phía đọc kết quả đã công bố của một học sinh trong một workspace, phục vụ route {@code GET
@@ -39,7 +40,7 @@ import org.springframework.stereotype.Component;
  * center khác, "không có kết quả nào" và "không có quyền" không được phép trông giống nhau. Chính
  * học sinh đọc kết quả của mình thì được danh sách rỗng khi chưa có kết quả nào công bố.
  */
-@Component
+@Service
 public class PublishedResultService {
 
     private static final String READ_PUBLISHED =
@@ -271,7 +272,10 @@ public class PublishedResultService {
             return id;
         } catch (IllegalArgumentException ex) {
             throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.", ex);
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.INVALID_CURSOR,
+                    "Cursor danh sách không hợp lệ.",
+                    ex);
         }
     }
 
@@ -287,7 +291,9 @@ public class PublishedResultService {
 
     private static HttpProblemException invalidCursor() {
         return new HttpProblemException(
-                HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+                HttpStatus.BAD_REQUEST,
+                ErrorCodes.INVALID_CURSOR,
+                "Cursor danh sách không hợp lệ.");
     }
 
     private static List<PublishedResultView> emptyOrDenied(UUID actorUserId, UUID studentUserId) {
@@ -296,7 +302,7 @@ public class PublishedResultService {
         }
         throw new HttpProblemException(
                 HttpStatus.FORBIDDEN,
-                "PERMISSION_DENIED",
+                ErrorCodes.PERMISSION_DENIED,
                 "Không có quyền xem kết quả đã công bố của học sinh này.");
     }
 
