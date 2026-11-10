@@ -19,6 +19,21 @@ Dùng JDK 25 và Maven Wrapper. Chạy các lệnh từ thư mục gốc reposit
 | Surefire | Chạy unit test trong build thông thường. |
 | Failsafe, profile `integration` | Chạy integration test cho stack PostgreSQL/OIDC TEST theo convention Maven, bao gồm `*IT`; native Keycloak chạy riêng qua script bên dưới. |
 
+## Vai trò database
+
+Hai vai trò tách biệt, không dùng chung:
+
+- **Migration role** (biến `SPRING_FLYWAY_USER`): owner của schema, chỉ dùng để chạy
+  Flyway. Các role bootstrap trong compose của repo (`giaokhoa` ở DEV, `giaokhoa_test`
+  ở TEST) là owner như vậy; **không trỏ datasource runtime của ứng dụng vào role
+  owner/superuser**, vì owner và superuser luôn bypass Row Level Security nên RLS sẽ
+  không còn hiệu lực.
+- **Runtime role** `giaokhoa_runtime` (biến `SPRING_DATASOURCE_USERNAME`): migration
+  V027 tạo sẵn với `NOSUPERUSER NOBYPASSRLS NOLOGIN`, chỉ cấp DML trên các bảng của
+  schema ứng dụng. Migration không đặt mật khẩu; khi dựng một môi trường, vận hành cấp
+  riêng `ALTER ROLE giaokhoa_runtime LOGIN PASSWORD '...'` bằng credential của chính
+  môi trường đó rồi mới trỏ datasource vào role này.
+
 ## Integration test
 
 Chỉ dùng stack TEST tại `infra/compose.test.yaml`. Không dùng DB hoặc realm DEV. Chuẩn bị biến môi trường theo `.env.test.example`; xem bước khởi tạo TEST trong `.github/workflows/ci.yml`.

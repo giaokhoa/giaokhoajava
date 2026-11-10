@@ -30,8 +30,12 @@ import org.springframework.jdbc.core.RowMapper;
 final class TeachingPageQueries {
     /** Cursor không thuộc đúng danh sách đang đọc thì 400 như các đường đọc phân trang khác. */
     private static HttpProblemException invalidCursor() {
+        return invalidCursor(null);
+    }
+
+    private static HttpProblemException invalidCursor(@Nullable Throwable cause) {
         return new HttpProblemException(
-                HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+                HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.", cause);
     }
 
     private final JdbcTemplate jdbc;
@@ -66,7 +70,7 @@ final class TeachingPageQueries {
                     throw invalidCursor();
                 }
             } catch (IllegalArgumentException ex) {
-                throw invalidCursor();
+                throw invalidCursor(ex);
             }
             // Cursor thuộc lớp/môn–khóa khác không được làm dịch trang của danh sách hiện tại.
             String anchorSql =

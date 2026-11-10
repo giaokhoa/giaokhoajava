@@ -1417,7 +1417,7 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
     private static String cachedMasterToken = "";
     private static Instant masterTokenValidUntil = Instant.EPOCH;
 
-    private static String cachedMasterToken() {
+    private static String masterToken() {
         if (Instant.now().isBefore(masterTokenValidUntil)) {
             return cachedMasterToken;
         }
@@ -1463,13 +1463,13 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
      */
     private static <T> T withMasterToken(java.util.function.Function<String, T> call) {
         try {
-            return call.apply(cachedMasterToken());
+            return call.apply(masterToken());
         } catch (RestClientResponseException ex) {
             if (!ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
                 throw ex;
             }
             invalidateMasterToken();
-            return call.apply(cachedMasterToken());
+            return call.apply(masterToken());
         }
     }
 }

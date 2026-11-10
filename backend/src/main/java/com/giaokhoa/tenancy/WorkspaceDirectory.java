@@ -2,11 +2,17 @@ package com.giaokhoa.tenancy;
 
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -91,5 +97,39 @@ public class WorkspaceDirectory {
                         .stream()
                         .map(MembershipRole.Role::valueOf)
                         .toList());
+    }
+
+    /**
+     * Role của actor tại nhiều workspace bằng một truy vấn duy nhất, cho các màn hình liệt kê:
+     * workspace không có membership ACTIVE thì vắng mặt trong map trả về.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, Set<MembershipRole.Role>> rolesIn(
+            UUID actorUserId, Collection<UUID> workspaceIds) {
+        Objects.requireNonNull(actorUserId, "actorUserId");
+        Objects.requireNonNull(workspaceIds, "workspaceIds");
+        if (workspaceIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = workspaceIds.stream().map(_ -> "?").collect(Collectors.joining(", "));
+        List<Object> args = new ArrayList<>(workspaceIds.size() + 1);
+        args.add(actorUserId);
+        args.addAll(workspaceIds);
+        Map<UUID, Set<MembershipRole.Role>> roles = new HashMap<>();
+        jdbc.query(
+                "SELECT m.workspace_id, r.role FROM center_membership m"
+                        + " JOIN membership_role r ON r.membership_id = m.id"
+                        + " WHERE m.user_id = ? AND m.state = 'ACTIVE' AND m.workspace_id IN ("
+                        + placeholders
+                        + ")",
+                rs -> {
+                    UUID workspaceId = (UUID) rs.getObject("workspace_id");
+                    MembershipRole.Role role = MembershipRole.Role.valueOf(rs.getString("role"));
+                    roles.computeIfAbsent(
+                                    workspaceId, _ -> EnumSet.noneOf(MembershipRole.Role.class))
+                            .add(role);
+                },
+                args.toArray());
+        return roles;
     }
 }

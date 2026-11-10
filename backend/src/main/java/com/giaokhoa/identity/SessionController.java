@@ -9,12 +9,17 @@ import com.giaokhoa.identity.IdentityService.CurrentUser;
 import com.giaokhoa.identity.keycloak.IdentityProvisioningClient;
 import com.giaokhoa.tenancy.WorkspaceDirectory;
 import com.giaokhoa.tenancy.WorkspaceDirectory.ListedWorkspace;
+import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.SystemPracticeService;
 import com.giaokhoa.verification.SystemPracticeService.PracticeEntry;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
@@ -118,12 +123,12 @@ public class SessionController {
     public ResponseEntity<List<WorkspaceView>> workspaces(
             Authentication authentication, HttpServletRequest request) {
         UUID actor = executor.actorUserId(authentication);
-        UUID personal = identities.currentUser(actor).personalWorkspaceId();
+        CurrentUser current = identities.currentUser(actor);
         return protectedOk(
                 executor.execute(
                         authentication,
                         request,
-                        personal,
+                        current.personalWorkspaceId(),
                         List.of(
                                 new ProtectedActionExecutor.Target(
                                         NativePolicyTemplates.profileKey(actor),
@@ -131,9 +136,10 @@ public class SessionController {
                                                 PermissionCatalog.ProfileScope.WORKSPACE_LIST
                                                         .scopeName()))),
                         () ->
-                                directory.listWorkspaces(actor).stream()
-                                        .map(w -> workspaceView(actor, w))
-                                        .toList()));
+                                workspaceViews(
+                                        actor,
+                                        current.username(),
+                                        directory.listWorkspaces(actor))));
     }
 
     @GetMapping("/me/practice-history")
@@ -173,55 +179,97 @@ public class SessionController {
                 .body(new OperationReceipt(actor, "SUCCEEDED", true));
     }
 
-    private WorkspaceView workspaceView(UUID actor, ListedWorkspace workspace) {
-        String name =
-                workspace.kind() == Workspace.Kind.CENTER
-                        ? centerName(workspace.centerId())
-                        : identities.currentUser(actor).username();
-        List<String> roles =
-                directory.rolesIn(actor, workspace.id()).stream()
-                        .map(role -> role.name())
-                        .sorted()
-                        .toList();
-        return new WorkspaceView(
-                workspace.id(),
-                name,
-                workspace.kind().name(),
-                workspace.state(),
-                workspace.centerId(),
-                roles,
-                subscriptionOf(workspace.id()),
-                syncStateOf(workspace.id()));
-    }
-
-    private String centerName(@Nullable UUID centerId) {
-        if (centerId == null) {
-            return "";
+    // Mọi dữ kiện phụ (tên center, role, kỳ gói, trạng thái đồng bộ) nạp hàng loạt theo tập
+    // workspace id bằng một truy vấn cho mỗi loại, thay vì lặp truy vấn theo từng workspace.
+    private List<WorkspaceView> workspaceViews(
+            UUID actor, String username, List<ListedWorkspace> workspaces) {
+        if (workspaces.isEmpty()) {
+            return List.of();
         }
-        List<String> names =
-                jdbc.queryForList("SELECT name FROM center WHERE id = ?", String.class, centerId);
-        return names.isEmpty() ? "" : names.getFirst();
+        List<UUID> workspaceIds = workspaces.stream().map(ListedWorkspace::id).toList();
+        Map<UUID, Set<MembershipRole.Role>> rolesByWorkspace =
+                directory.rolesIn(actor, workspaceIds);
+        Map<UUID, String> centerNames = centerNamesOf(workspaces);
+        Map<UUID, Instant> subscriptionExpiries = subscriptionExpiriesOf(workspaceIds);
+        Map<String, String> syncStates = syncStatesOf(workspaceIds);
+        return workspaces.stream()
+                .map(workspace -> {
+                    String name =
+                            workspace.kind() == Workspace.Kind.CENTER
+                                    ? centerNames.getOrDefault(workspace.centerId(), "")
+                                    : username;
+                    List<String> roles =
+                            rolesByWorkspace.getOrDefault(workspace.id(), Set.of()).stream()
+                                    .map(role -> role.name())
+                                    .sorted()
+                                    .toList();
+                    Instant expiry = subscriptionExpiries.get(workspace.id());
+                    return new WorkspaceView(
+                            workspace.id(),
+                            name,
+                            workspace.kind().name(),
+                            workspace.state(),
+                            workspace.centerId(),
+                            roles,
+                            new SubscriptionView(expiry != null, expiry),
+                            syncStates.getOrDefault("workspace:" + workspace.id(), "UNKNOWN"));
+                })
+                .toList();
     }
 
-    private SubscriptionView subscriptionOf(UUID workspaceId) {
-        List<Instant> periods =
-                jdbc.query(
-                        "SELECT expires_at FROM subscription_period WHERE workspace_id = ?"
-                                + " AND valid_from <= now() AND expires_at > now()"
-                                + " ORDER BY expires_at DESC LIMIT 1",
-                        (rs, _) -> rs.getTimestamp(1).toInstant(),
-                        workspaceId);
-        return new SubscriptionView(
-                !periods.isEmpty(), periods.isEmpty() ? null : periods.getFirst());
+    private Map<UUID, String> centerNamesOf(List<ListedWorkspace> workspaces) {
+        List<UUID> centerIds =
+                workspaces.stream()
+                        .map(ListedWorkspace::centerId)
+                        .filter(id -> id != null)
+                        .distinct()
+                        .toList();
+        Map<UUID, String> names = new HashMap<>();
+        if (centerIds.isEmpty()) {
+            return names;
+        }
+        jdbc.query(
+                "SELECT id, name FROM center WHERE id IN (" + placeholders(centerIds) + ")",
+                rs -> {
+                    names.put((UUID) rs.getObject("id"), rs.getString("name"));
+                },
+                centerIds.toArray());
+        return names;
     }
 
-    private String syncStateOf(UUID workspaceId) {
-        List<String> states =
-                jdbc.queryForList(
-                        "SELECT state FROM authz_projection WHERE target_key = ?",
-                        String.class,
-                        "workspace:" + workspaceId);
-        return states.isEmpty() ? "UNKNOWN" : states.getFirst();
+    private Map<UUID, Instant> subscriptionExpiriesOf(List<UUID> workspaceIds) {
+        Map<UUID, Instant> expiries = new HashMap<>();
+        jdbc.query(
+                "SELECT workspace_id, MAX(expires_at) AS expires_at FROM subscription_period"
+                        + " WHERE workspace_id IN ("
+                        + placeholders(workspaceIds)
+                        + ") AND valid_from <= now() AND expires_at > now()"
+                        + " GROUP BY workspace_id",
+                rs -> {
+                    expiries.put(
+                            (UUID) rs.getObject("workspace_id"),
+                            rs.getTimestamp("expires_at").toInstant());
+                },
+                workspaceIds.toArray());
+        return expiries;
+    }
+
+    private Map<String, String> syncStatesOf(List<UUID> workspaceIds) {
+        List<String> targetKeys = workspaceIds.stream().map(id -> "workspace:" + id).toList();
+        Map<String, String> states = new HashMap<>();
+        jdbc.query(
+                "SELECT target_key, state FROM authz_projection WHERE target_key IN ("
+                        + placeholders(targetKeys)
+                        + ")",
+                rs -> {
+                    states.put(rs.getString("target_key"), rs.getString("state"));
+                },
+                targetKeys.toArray());
+        return states;
+    }
+
+    private static String placeholders(List<?> values) {
+        return String.join(", ", Collections.nCopies(values.size(), "?"));
     }
 
     private static CsrfView csrfOf(HttpServletRequest request) {

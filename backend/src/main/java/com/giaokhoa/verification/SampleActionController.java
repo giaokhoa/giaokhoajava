@@ -50,6 +50,7 @@ public class SampleActionController {
     private static final Duration PROJECTION_WAIT = Duration.ofSeconds(60);
     private static final String OPERATION_SUCCEEDED = "SUCCEEDED";
     private static final String OPERATION_FAILED = "FAILED";
+    private static final int SINGLE_ROW = 1;
 
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
@@ -638,7 +639,7 @@ public class SampleActionController {
                         actorUserId,
                         workspaceId,
                         request.resultId());
-        if (graded != 1) {
+        if (graded != SINGLE_ROW) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
         }
@@ -659,7 +660,7 @@ public class SampleActionController {
                                 + " WHERE workspace_id = ? AND id = ? AND state = 'DRAFT'",
                         workspaceId,
                         request.resultId());
-        if (published != 1) {
+        if (published != SINGLE_ROW) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
         }
