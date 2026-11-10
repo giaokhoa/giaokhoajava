@@ -109,6 +109,8 @@ public class PlatformProjectionSeeder {
             return;
         }
         boolean fenceFirst = !created;
+        UUID settledPartitionId = partitionId;
+        String settledDesiredHash = desiredHash;
         try {
             // Fence và insert projection trong cùng transaction riêng để fence luôn xuống cơ
             // sở dữ liệu trước insert (trigger desired kiểm tra tại từng câu lệnh), và một
@@ -116,17 +118,17 @@ public class PlatformProjectionSeeder {
             // này thay vì hỏng cả lượt seed: projection của nó mang cùng desired hash.
             requiresNew.executeWithoutResult(_ -> {
                 if (fenceFirst) {
-                    fenceAndBump(partitionId);
+                    fenceAndBump(settledPartitionId);
                 }
                 projections.saveAndFlush(
                         new AuthorizationProjection(
                                 UUID.randomUUID(),
-                                partitionId,
+                                settledPartitionId,
                                 targetKey,
                                 null,
                                 List.of(),
                                 List.of(),
-                                desiredHash,
+                                settledDesiredHash,
                                 null,
                                 AuthorizationProjection.State.PENDING));
             });

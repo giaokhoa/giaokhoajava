@@ -197,7 +197,7 @@ public class TeachingPageRepository {
         }
         UUID cursorId = parseCursorId(cursor);
         Instant createdAt = anchorLookup.apply(cursorId).orElseThrow(() -> invalidCursor());
-        return ScrollPosition.keyset(Map.of("createdAt", createdAt, "id", cursorId));
+        return ScrollPosition.forward(Map.of("createdAt", createdAt, "id", cursorId));
     }
 
     private static UUID parseCursorId(String cursor) {

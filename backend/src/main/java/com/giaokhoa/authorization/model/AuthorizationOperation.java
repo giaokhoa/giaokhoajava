@@ -75,10 +75,6 @@ public class AuthorizationOperation {
     @Column(name = "last_error_code", length = 64)
     private @Nullable String lastErrorCode;
 
-    // Thứ tự ghi nhận toàn cục do database sinh (V005), chỉ đọc: hàng đợi worker quét theo
-    // cột này để giữ đúng thứ tự claim.
-    @Column(name = "recorded_seq", insertable = false, updatable = false)
-    private long recordedSeq;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
@@ -184,9 +180,6 @@ public class AuthorizationOperation {
         this.lastErrorCode = lastErrorCode;
     }
 
-    public long getRecordedSeq() {
-        return recordedSeq;
-    }
 
     public Instant getCreatedAt() {
         return createdAt;
