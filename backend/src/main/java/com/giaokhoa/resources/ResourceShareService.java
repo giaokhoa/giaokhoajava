@@ -432,7 +432,7 @@ public class ResourceShareService {
         if (updated == 0) {
             throw notAcceptable();
         }
-        materializeCopyIfTenantShare(grant);
+        materializeCopyIfTenantShare(row);
         return grant.getId();
     }
 
@@ -444,12 +444,23 @@ public class ResourceShareService {
      * sao idempotent theo cạnh provenance: accept lại một grant đã có bản sao thì tái dùng đúng bản
      * sao và mục thư viện đó.
      */
-    private void materializeCopyIfTenantShare(ShareGrant grant) {
+    private void materializeCopyIfTenantShare(GrantRow row) {
+        ShareGrant grant = row.grant();
         UUID recipientWorkspaceId = grant.getRecipientWorkspaceId();
+        // Aggregate nguồn nằm ở mặt phẳng của workspace nguồn nên phép đọc phải ghim context
+        // vào workspace đó thay vì chạy trong context của workspace nhận như trước đây; đọc
+        // xong đặt lại context của workspace nhận cho các phép ghi bản sao phía dưới.
         VersionMetadata metadata =
-                repository
-                        .metadata(grant.getSourceResourceId(), grant.getSourceVersionId())
+                Objects.requireNonNull(
+                                workspaces.inWorkspace(
+                                        row.sourceWorkspaceId(),
+                                        () ->
+                                                repository.metadata(
+                                                        grant.getSourceResourceId(),
+                                                        grant.getSourceVersionId())),
+                                "source metadata")
                         .orElseThrow(ResourceShareService::notFound);
+        workspaces.applyContext(recipientWorkspaceId);
         if (metadata.ownerWorkspaceId().equals(recipientWorkspaceId)
                 || "SYSTEM".equals(metadata.ownerKind())) {
             return;
@@ -460,7 +471,7 @@ public class ResourceShareService {
                                 grant.getSourceVersionId(),
                                 grant.getId(),
                                 recipientWorkspaceId)
-                        .orElseGet(() -> copySourceVersion(grant, metadata));
+                        .orElseGet(() -> copySourceVersion(row, metadata));
         libraryItems
                 .findFirstByWorkspaceIdAndResourceIdAndVersionIdOrderByCreatedAtAscIdAsc(
                         recipientWorkspaceId, copy.resourceId(), copy.versionId())
@@ -475,10 +486,36 @@ public class ResourceShareService {
                                         LibraryItem.Custody.LICENSED)));
     }
 
-    private ResourceCopies.CopyRef copySourceVersion(ShareGrant grant, VersionMetadata metadata) {
+    private ResourceCopies.CopyRef copySourceVersion(GrantRow row, VersionMetadata metadata) {
+        ShareGrant grant = row.grant();
+        // Thân bài, đáp án và dòng version nguồn cũng là aggregate nguồn: đọc ghim context
+        // workspace nguồn rồi đặt lại context workspace nhận trước khi vật chất hoá bản sao.
         ResourceVersion sourceVersion =
-                versions.findById(grant.getSourceVersionId())
+                Objects.requireNonNull(
+                                workspaces.inWorkspace(
+                                        row.sourceWorkspaceId(),
+                                        () ->
+                                                versions.findById(
+                                                        grant.getSourceVersionId())),
+                                "source version")
                         .orElseThrow(ResourceShareService::notFound);
+        String sourceBody =
+                Objects.requireNonNull(
+                                workspaces.inWorkspace(
+                                        row.sourceWorkspaceId(),
+                                        () ->
+                                                repository.body(
+                                                        grant.getSourceResourceId(),
+                                                        grant.getSourceVersionId())),
+                                "source body")
+                        .orElseThrow(ResourceShareService::notFound);
+        @Nullable String sourceAnswer =
+                workspaces.inWorkspace(
+                        row.sourceWorkspaceId(),
+                        () ->
+                                repository.answer(
+                                        grant.getSourceResourceId(), grant.getSourceVersionId()));
+        workspaces.applyContext(grant.getRecipientWorkspaceId());
         String usageConstraints =
                 ResourcePolicyProjector.shareOriginMarker()
                         + ";grant="
@@ -499,10 +536,8 @@ public class ResourceShareService {
                 grant.getRecipientWorkspaceId(),
                 metadata,
                 sourceVersion.getLabel(),
-                repository
-                        .body(grant.getSourceResourceId(), grant.getSourceVersionId())
-                        .orElseThrow(ResourceShareService::notFound),
-                repository.answer(grant.getSourceResourceId(), grant.getSourceVersionId()),
+                sourceBody,
+                sourceAnswer,
                 sourceVersion.getReviewState(),
                 sourceVersion.getLockedAt(),
                 1,

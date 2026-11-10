@@ -26,6 +26,13 @@ public interface ResourceDependencyRepository extends JpaRepository<ResourceDepe
             UUID sourceResourceId, UUID sourceVersionId, UUID shareGrantId);
 
     /**
+     * Mọi cạnh provenance trỏ từ một (resource, version) nguồn, xuyên mọi grant: bề mặt cho
+     * fan-out đính chính tới các workspace đang giữ bản sao hoặc bản phái sinh của version nguồn.
+     */
+    List<ResourceDependency> findBySourceResourceIdAndSourceVersionId(
+            UUID sourceResourceId, UUID sourceVersionId);
+
+    /**
      * Cạnh provenance theo grant sớm nhất của một version phái sinh: cạnh mang grant và dấu nguồn
      * do fork ({@code origin=FORK}) hoặc copy-on-share ({@code origin=SHARE}) ghi. Pageable giới
      * hạn một dòng sau khi sắp theo thứ tự tạo, đúng phép lấy LIMIT 1 của đường JDBC cũ.
