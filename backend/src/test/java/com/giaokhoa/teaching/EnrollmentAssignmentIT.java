@@ -888,7 +888,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
 
     private record Fixture(UUID userId, String subject) {
         void delete() {
-            deleteResource(admin("/users/" + subject));
+            deleteWithConflictRetry(() -> deleteResource(admin("/users/" + subject)));
         }
     }
 

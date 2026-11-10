@@ -1405,7 +1405,7 @@ class CenterAdministrationIT extends IntegrationEnvironment {
     }
 
     private void deleteUser(String userId) {
-        deleteResource(admin("/users/" + userId));
+        deleteWithConflictRetry(() -> deleteResource(admin("/users/" + userId)));
     }
 
     private void joinGroup(String userId, String groupId) {

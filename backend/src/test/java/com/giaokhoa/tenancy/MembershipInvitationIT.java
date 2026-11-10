@@ -1273,11 +1273,12 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     }
 
     private void deleteUser(String userId) {
-        HTTP.delete()
-                .uri(admin("/users/" + userId))
-                .headers(headers -> headers.setBearerAuth(masterToken()))
-                .retrieve()
-                .toBodilessEntity();
+        deleteWithConflictRetry(() ->
+                HTTP.delete()
+                        .uri(admin("/users/" + userId))
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
+                        .retrieve()
+                        .toBodilessEntity());
     }
 
     private String admin(String path) {
