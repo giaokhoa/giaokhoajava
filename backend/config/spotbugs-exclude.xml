@@ -101,7 +101,7 @@
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate); không sao chép khi inject vào helper transaction workspace. -->
     <Match>
-        <Class name="com.giaokhoa.tenancy.data.WorkspaceTransaction"/>
+        <Class name="com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction"/>
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
