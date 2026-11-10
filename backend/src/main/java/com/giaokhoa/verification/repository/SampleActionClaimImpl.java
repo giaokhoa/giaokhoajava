@@ -7,7 +7,11 @@ import java.util.UUID;
 /** Cài đặt fragment claim: EntityManager native theo mẫu fragment của Spring Data JPA. */
 public class SampleActionClaimImpl implements SampleActionClaim {
 
-    @PersistenceContext private EntityManager entityManager;
+    // Container gán EntityManager qua @PersistenceContext trước mọi lời gọi nghiệp vụ;
+    // NullAway không thấy đường inject này nên suppression chỉ đặt tại field này.
+    @SuppressWarnings("NullAway")
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Override
     public int claim(

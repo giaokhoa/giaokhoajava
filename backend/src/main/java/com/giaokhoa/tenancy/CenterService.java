@@ -213,7 +213,10 @@ public class CenterService {
         List<Center> rows =
                 anchorId == null
                         ? centers.findAllByOrderByCreatedAtAscIdAsc(PageRequest.of(0, limit + 1))
-                        : centers.findAfter(createdAt, anchorId, PageRequest.of(0, limit + 1));
+                        : centers.findAfter(
+                                Objects.requireNonNull(createdAt, "createdAt"),
+                                anchorId,
+                                PageRequest.of(0, limit + 1));
         boolean hasMore = rows.size() > limit;
         List<CenterView> items =
                 rows.stream()

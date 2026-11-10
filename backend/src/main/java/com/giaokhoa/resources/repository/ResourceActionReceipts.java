@@ -22,7 +22,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ResourceActionReceipts {
 
-    @PersistenceContext private EntityManager entityManager;
+    // Container gán EntityManager qua @PersistenceContext trước mọi lời gọi nghiệp vụ;
+    // NullAway không thấy đường inject này nên suppression chỉ đặt tại field này.
+    @SuppressWarnings("NullAway")
+    @PersistenceContext
+    private EntityManager entityManager;
 
     /** Nội dung biên nhận đã ghi: hash của payload đầu tiên và định danh đích của nó. */
     public record Receipt(String payloadHash, UUID targetId) {}

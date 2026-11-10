@@ -210,7 +210,8 @@ public class MembershipService {
                                 new MembershipView(
                                         membership.getId(),
                                         membership.getUserId(),
-                                        usernames.get(membership.getUserId()),
+                                        Objects.requireNonNull(
+                                                usernames.get(membership.getUserId()), "username"),
                                         membership.getRoles().stream()
                                                 .sorted(
                                                         Comparator.comparing(

@@ -142,7 +142,11 @@ public class ResourcePolicyProjector {
     private final ResourceCopies copies;
     private final ResourceScopePreconditions preconditions;
 
-    @PersistenceContext private EntityManager entityManager;
+    // Container gán EntityManager qua @PersistenceContext trước mọi lời gọi nghiệp vụ;
+    // NullAway không thấy đường inject này nên suppression chỉ đặt tại field này.
+    @SuppressWarnings("NullAway")
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public ResourcePolicyProjector(
             AuthorizationOperationService operations,

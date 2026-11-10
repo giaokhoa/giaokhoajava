@@ -359,13 +359,14 @@ public class CourseService {
                 .filter(row -> catalog.containsKey(row.getSubjectId()))
                 .sorted(
                         Comparator.comparing((CourseSubject row) ->
-                                        catalog.get(row.getSubjectId()).getCode())
+                                        Objects.requireNonNull(catalog.get(row.getSubjectId()))
+                                                .getCode())
                                 .thenComparing(CourseSubject::getId))
                 .map(row ->
                         new SubjectEntry(
                                 row.getId(),
                                 row.getSubjectId(),
-                                catalog.get(row.getSubjectId()).getName()))
+                                Objects.requireNonNull(catalog.get(row.getSubjectId())).getName()))
                 .toList();
     }
 

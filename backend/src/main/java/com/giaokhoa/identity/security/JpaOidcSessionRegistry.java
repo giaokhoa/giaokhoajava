@@ -128,8 +128,10 @@ public final class JpaOidcSessionRegistry implements OidcSessionRegistry {
                                 issuer, clientId, sid, subject)
                         : sid != null
                                 ? correlations.findByIssuerAndClientIdAndSid(issuer, clientId, sid)
-                                : correlations.findByIssuerAndClientIdAndSub(
-                                        issuer, clientId, subject);
+                                : subject != null
+                                        ? correlations.findByIssuerAndClientIdAndSub(
+                                                issuer, clientId, subject)
+                                        : List.of();
         // Spring Session đã flush xong vào lúc một provider logout một trình duyệt.
         // Tương quan cũ không được chọn một session đã hết hạn/bị xóa sau khi khởi động lại:
         // SessionRepository trả null cho session không còn hoặc đã hết hạn.

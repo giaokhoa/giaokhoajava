@@ -22,7 +22,11 @@ import org.jspecify.annotations.Nullable;
  */
 public class CanonicalResourceQueriesImpl implements CanonicalResourceQueries {
 
-    @PersistenceContext private EntityManager entityManager;
+    // Container gán EntityManager qua @PersistenceContext trước mọi lời gọi nghiệp vụ;
+    // NullAway không thấy đường inject này nên suppression chỉ đặt tại field này.
+    @SuppressWarnings("NullAway")
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Override
     public Optional<VersionMetadata> metadata(UUID resourceId, UUID versionId) {

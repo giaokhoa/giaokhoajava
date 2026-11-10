@@ -165,7 +165,7 @@ public class IdentityEligibilitySynchronizer {
                 String scope = PermissionCatalog.WorkspaceScope.ENTER.scopeName();
                 changes.add(
                         new AuthorizationOperationService.PartitionChange(
-                                personalPartitionId,
+                                Objects.requireNonNull(personalPartitionId, "personalPartitionId"),
                                 List.of(
                                         new AuthorizationOperationService.DesiredProjection(
                                                 workspaceTarget,
