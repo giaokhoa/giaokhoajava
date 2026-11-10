@@ -6,12 +6,10 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.guardians.GuardianRevocationContributor;
+import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingRevocationContributor;
 import com.giaokhoa.tenancy.model.MembershipRole;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.List;
@@ -417,19 +415,6 @@ public class CenterService {
      * khoá riêng, và hai instance của ứng dụng vẫn tôn trọng nhau.
      */
     private void lockOn(String key) {
-        jdbc.query("SELECT pg_advisory_xact_lock(?)", _ -> {}, lockId(key));
-    }
-
-    private static long lockId(String key) {
-        try {
-            byte[] digest =
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(
-                                    ("giaokhoa:center-service:" + key)
-                                            .getBytes(StandardCharsets.UTF_8));
-            return java.nio.ByteBuffer.wrap(digest).getLong();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        AdvisoryLocks.lock(jdbc, "giaokhoa:center-service:", key);
     }
 }

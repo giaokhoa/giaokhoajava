@@ -3,11 +3,10 @@ package com.giaokhoa.tenancy;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.AdvisoryLocks;
+import com.giaokhoa.shared.Sha256;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.MembershipRole;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -418,14 +417,7 @@ public class InvitationService {
 
     /** Hash tra cứu của token: SHA-256 hex, đúng định dạng cột token_hash của V012. */
     private static String tokenHash(String rawToken) {
-        try {
-            return java.util.HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(rawToken.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        return Sha256.hex(rawToken);
     }
 
     private static List<String> stringArray(@Nullable Object value) {
@@ -458,19 +450,6 @@ public class InvitationService {
      * và hai instance của ứng dụng vẫn tôn trọng nhau.
      */
     private void lockOn(String key) {
-        jdbc.query("SELECT pg_advisory_xact_lock(?)", _ -> {}, lockId(key));
-    }
-
-    private static long lockId(String key) {
-        try {
-            byte[] digest =
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(
-                                    ("giaokhoa:invitation-service:" + key)
-                                            .getBytes(StandardCharsets.UTF_8));
-            return java.nio.ByteBuffer.wrap(digest).getLong();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        AdvisoryLocks.lock(jdbc, "giaokhoa:invitation-service:", key);
     }
 }

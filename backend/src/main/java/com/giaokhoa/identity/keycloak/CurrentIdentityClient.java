@@ -1,6 +1,7 @@
 package com.giaokhoa.identity.keycloak;
 
 import com.giaokhoa.authorization.keycloak.KeycloakProvisionerFactory;
+import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,7 +34,7 @@ public class CurrentIdentityClient {
             @Value("${giaokhoa.keycloak.provisioner.client-id}") String clientId,
             @Value("${giaokhoa.keycloak.provisioner.client-secret}") String clientSecret) {
         this(
-                RestClient.builder(),
+                RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
                 baseUrl,
                 KeycloakProvisionerFactory.realmOf(issuerUri),
                 KeycloakProvisionerFactory.clientManager(

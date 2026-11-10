@@ -1,5 +1,6 @@
 package com.giaokhoa.authorization.keycloak;
 
+import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -57,7 +58,7 @@ public class KeycloakProvisioningClient {
             @Value("${giaokhoa.keycloak.provisioner.client-id}") String clientId,
             @Value("${giaokhoa.keycloak.provisioner.client-secret}") String clientSecret) {
         this(
-                RestClient.builder(),
+                RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
                 baseUrl,
                 KeycloakProvisionerFactory.realmOf(issuerUri),
                 KeycloakProvisionerFactory.clientManager(

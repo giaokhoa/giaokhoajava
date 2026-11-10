@@ -6,13 +6,11 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -250,19 +248,6 @@ public class SubscriptionService {
      * khoá riêng, và hai instance của ứng dụng vẫn tôn trọng nhau.
      */
     private void lockOn(String key) {
-        jdbc.query("SELECT pg_advisory_xact_lock(?)", _ -> {}, lockId(key));
-    }
-
-    private static long lockId(String key) {
-        try {
-            byte[] digest =
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(
-                                    ("giaokhoa:subscription-service:" + key)
-                                            .getBytes(StandardCharsets.UTF_8));
-            return java.nio.ByteBuffer.wrap(digest).getLong();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        AdvisoryLocks.lock(jdbc, "giaokhoa:subscription-service:", key);
     }
 }
