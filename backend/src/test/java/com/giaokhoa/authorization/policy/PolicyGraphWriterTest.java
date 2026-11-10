@@ -1,9 +1,7 @@
 package com.giaokhoa.authorization.policy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -17,7 +15,12 @@ import com.giaokhoa.support.RandomIds;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -146,24 +149,40 @@ class PolicyGraphWriterTest {
         server.verify();
     }
 
-    @Test
-    void reapplyingTheSameGraphCreatesAndUpdatesNothing() {
-        assertReapply(false, false, false);
+    @DisplayName("Áp lại graph đã có: chỉ sửa đúng chỗ đã stale, không tạo mới thừa")
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("reapplyScenarios")
+    void reapplyingAnExistingGraphRepairsOnlyTheStalePart(
+            String scenario,
+            boolean staleRoot,
+            boolean staleOr,
+            boolean staleSource,
+            boolean staleLeaves) {
+        assertReapply(staleRoot, staleOr, staleSource, staleLeaves);
     }
 
-    @Test
-    void repairsUnsafeRootLogicAndDecisionStrategy() {
-        assertReapply(true, false, false);
-    }
-
-    @Test
-    void repairsUnsafeOrAggregateLogicAndDecisionStrategy() {
-        assertReapply(false, true, false);
-    }
-
-    @Test
-    void repairsUnsafeSourceAggregateLogicAndDecisionStrategy() {
-        assertReapply(false, false, true);
+    private static Stream<Arguments> reapplyScenarios() {
+        return Stream.of(
+                Arguments.of("graph đã đúng thì không tạo hay sửa gì", false, false, false, false),
+                Arguments.of(
+                        "root permission logic/strategy sai thì sửa root",
+                        true,
+                        false,
+                        false,
+                        false),
+                Arguments.of(
+                        "aggregate OR logic/strategy sai thì sửa aggregate OR",
+                        false,
+                        true,
+                        false,
+                        false),
+                Arguments.of(
+                        "aggregate của source logic/strategy sai thì sửa aggregate source",
+                        false,
+                        false,
+                        true,
+                        false),
+                Arguments.of("leaf group/time hỏng thì sửa leaf", false, false, false, true));
     }
 
     @Test
@@ -195,15 +214,6 @@ class PolicyGraphWriterTest {
         expectGet(server, ROOT + "/policy/group/pol-elig", wrong);
         assertThrows(IllegalStateException.class, () -> writer.apply(graph()));
         server.verify();
-    }
-
-    @Test
-    void repairsCorruptedGroupAndTimeLeafPolicies() {
-        assertReapply(false, false, false, true);
-    }
-
-    private void assertReapply(boolean staleRoot, boolean staleOr, boolean staleSource) {
-        assertReapply(staleRoot, staleOr, staleSource, false);
     }
 
     private void assertReapply(
@@ -508,14 +518,26 @@ class PolicyGraphWriterTest {
         server.verify();
     }
 
-    @Test
-    void usesTheExistingPolicyWhenAConcurrentCreateConflicts() {
+    @DisplayName("Apply đồng thời tạo trùng thì dùng lại thực thể đã có thay vì tạo mới")
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("concurrentCreateConflicts")
+    void usesTheExistingEntityWhenAConcurrentCreateConflicts(
+            String scenario, boolean aggregateConflict, List<String> expectedPolicyNames) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         PolicyGraphWriter writer = writer(builder);
         PolicyGraph graph =
-                PolicyGraph.forEligibleActor(
-                        TARGET, "enter", List.of(Source.of(new Gate.GroupMembership(OWNERS))));
+                aggregateConflict
+                        ? new PolicyGraph(
+                                TARGET,
+                                "enter",
+                                List.of(
+                                        Source.of(new Gate.GroupMembership(OWNERS)),
+                                        Source.of(new Gate.GroupMembership(MANAGERS))))
+                        : PolicyGraph.forEligibleActor(
+                                TARGET,
+                                "enter",
+                                List.of(Source.of(new Gate.GroupMembership(OWNERS))));
 
         expectClients(server);
         expectGet(server, ROOT + "/scope" + LIST, "[]");
@@ -524,106 +546,83 @@ class PolicyGraphWriterTest {
         expectCreate(server, ROOT + "/resource", "{\"_id\":\"res-1\"}");
         expectGet(server, ROOT + "/policy" + LIST, "[]");
         expectGroup(server, ELIGIBLE, "g-elig");
-        // Một apply đồng thời đã tạo shared eligibility policy trước.
-        server.expect(requestTo(ROOT + "/policy/group"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withStatus(HttpStatus.CONFLICT));
-        expectGet(
-                server,
-                ROOT + "/policy" + LIST,
-                "[{\"id\":\"pol-elig\",\"name\":\"gk-group:"
-                        + ELIGIBLE
-                        + "\",\"type\":\"group\"}]");
-        expectLeaf(server, "pol-elig");
-        expectGroup(server, OWNERS, "g-own");
-        expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-own\"}");
+        List<String> rootPolicies;
+        if (aggregateConflict) {
+            expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-elig\"}");
+            expectGroup(server, MANAGERS, "g-mgr");
+            expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-mgr\"}");
+            expectGroup(server, OWNERS, "g-own");
+            expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-own\"}");
+            // Một apply đồng thời đã tạo OR aggregate của cặp này trước.
+            server.expect(requestTo(ROOT + "/policy/aggregate"))
+                    .andExpect(method(HttpMethod.POST))
+                    .andRespond(withStatus(HttpStatus.CONFLICT));
+            expectGet(
+                    server,
+                    ROOT + "/policy" + LIST,
+                    "[{\"id\":\"pol-mgr\",\"name\":\"gk-group:"
+                            + MANAGERS
+                            + "\",\"type\":\"group\"},"
+                            + "{\"id\":\"pol-own\",\"name\":\"gk-group:"
+                            + OWNERS
+                            + "\",\"type\":\"group\"},"
+                            + "{\"id\":\"pol-any\",\"name\":\""
+                            + ANY_NAME
+                            + "\",\"type\":\"aggregate\"}]");
+            expectGet(
+                    server,
+                    ROOT + "/policy/aggregate/pol-any",
+                    "{\"id\":\"pol-any\",\"logic\":\"POSITIVE\","
+                            + "\"decisionStrategy\":\"AFFIRMATIVE\","
+                            + "\"policies\":[\"pol-mgr\",\"pol-own\"]}");
+            rootPolicies = List.of("pol-elig", "pol-any");
+        } else {
+            // Một apply đồng thời đã tạo shared eligibility policy trước.
+            server.expect(requestTo(ROOT + "/policy/group"))
+                    .andExpect(method(HttpMethod.POST))
+                    .andRespond(withStatus(HttpStatus.CONFLICT));
+            expectGet(
+                    server,
+                    ROOT + "/policy" + LIST,
+                    "[{\"id\":\"pol-elig\",\"name\":\"gk-group:"
+                            + ELIGIBLE
+                            + "\",\"type\":\"group\"}]");
+            expectLeaf(server, "pol-elig");
+            expectGroup(server, OWNERS, "g-own");
+            expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-own\"}");
+            rootPolicies = List.of("pol-elig", "pol-own");
+        }
         expectGet(server, ROOT + "/permission/scope" + LIST, "[]");
         expectCreate(
                 server,
                 ROOT + "/permission/scope",
                 "{\"id\":\"perm-1\"}",
-                "{\"name\":\"" + ROOT_NAME + "\",\"policies\":[\"pol-elig\",\"pol-own\"]}");
-        expectReadBack(server, "perm-1", List.of("pol-elig", "pol-own"));
+                "{\"name\":\""
+                        + ROOT_NAME
+                        + "\",\"policies\":[\""
+                        + String.join("\",\"", rootPolicies)
+                        + "\"]}");
+        expectReadBack(server, "perm-1", rootPolicies);
 
         PolicyGraphWriter.AppliedGraph applied = writer.apply(graph);
-        assertEquals(List.of("gk-group:" + ELIGIBLE, "gk-group:" + OWNERS), applied.policyNames());
+        assertEquals(expectedPolicyNames, applied.policyNames());
         server.verify();
     }
 
-    @Test
-    void usesTheExistingAggregateWhenAConcurrentCreateConflicts() {
-        RestClient.Builder builder = RestClient.builder();
-        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        PolicyGraphWriter writer = writer(builder);
-        PolicyGraph graph =
-                new PolicyGraph(
-                        TARGET,
-                        "enter",
+    private static Stream<Arguments> concurrentCreateConflicts() {
+        return Stream.of(
+                Arguments.of(
+                        "policy group đã có thì dùng lại policy đó",
+                        false,
+                        List.of("gk-group:" + ELIGIBLE, "gk-group:" + OWNERS)),
+                Arguments.of(
+                        "aggregate OR đã có thì dùng lại aggregate đó",
+                        true,
                         List.of(
-                                Source.of(new Gate.GroupMembership(OWNERS)),
-                                Source.of(new Gate.GroupMembership(MANAGERS))));
-
-        expectClients(server);
-        expectGet(server, ROOT + "/scope" + LIST, "[]");
-        expectCreate(server, ROOT + "/scope", "{\"id\":\"scope-enter\"}");
-        expectGet(server, ROOT + "/resource" + LIST, "[]");
-        expectCreate(server, ROOT + "/resource", "{\"_id\":\"res-1\"}");
-        expectGet(server, ROOT + "/policy" + LIST, "[]");
-        expectGroup(server, ELIGIBLE, "g-elig");
-        expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-elig\"}");
-        expectGroup(server, MANAGERS, "g-mgr");
-        expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-mgr\"}");
-        expectGroup(server, OWNERS, "g-own");
-        expectCreate(server, ROOT + "/policy/group", "{\"id\":\"pol-own\"}");
-        // Một apply đồng thời đã tạo OR aggregate của cặp này trước.
-        server.expect(requestTo(ROOT + "/policy/aggregate"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withStatus(HttpStatus.CONFLICT));
-        expectGet(
-                server,
-                ROOT + "/policy" + LIST,
-                "[{\"id\":\"pol-mgr\",\"name\":\"gk-group:"
-                        + MANAGERS
-                        + "\",\"type\":\"group\"},"
-                        + "{\"id\":\"pol-own\",\"name\":\"gk-group:"
-                        + OWNERS
-                        + "\",\"type\":\"group\"},"
-                        + "{\"id\":\"pol-any\",\"name\":\""
-                        + ANY_NAME
-                        + "\",\"type\":\"aggregate\"}]");
-        expectGet(
-                server,
-                ROOT + "/policy/aggregate/pol-any",
-                "{\"id\":\"pol-any\",\"logic\":\"POSITIVE\","
-                        + "\"decisionStrategy\":\"AFFIRMATIVE\","
-                        + "\"policies\":[\"pol-mgr\",\"pol-own\"]}");
-        expectGet(server, ROOT + "/permission/scope" + LIST, "[]");
-        expectCreate(
-                server,
-                ROOT + "/permission/scope",
-                "{\"id\":\"perm-1\"}",
-                "{\"name\":\"" + ROOT_NAME + "\",\"policies\":[\"pol-elig\",\"pol-any\"]}");
-        expectGet(
-                server,
-                ROOT + "/permission/scope/perm-1",
-                "{\"id\":\"perm-1\",\"policies\":[\"pol-elig\",\"pol-any\"],"
-                        + "\"resources\":[\"res-1\"],\"scopes\":[\"scope-enter\"]}");
-        expectGet(
-                server,
-                ROOT + "/resource/res-1",
-                "{\"_id\":\"res-1\",\"name\":\""
-                        + TARGET
-                        + "\",\"scopes\":[{\"id\":\"scope-enter\",\"name\":\"enter\"}]}");
-
-        PolicyGraphWriter.AppliedGraph applied = writer.apply(graph);
-        assertEquals(
-                List.of(
-                        ANY_NAME,
-                        "gk-group:" + ELIGIBLE,
-                        "gk-group:" + MANAGERS,
-                        "gk-group:" + OWNERS),
-                applied.policyNames());
-        server.verify();
+                                ANY_NAME,
+                                "gk-group:" + ELIGIBLE,
+                                "gk-group:" + MANAGERS,
+                                "gk-group:" + OWNERS)));
     }
 
     @Test
@@ -763,48 +762,45 @@ class PolicyGraphWriterTest {
         server.verify();
     }
 
-    @Test
-    void graphIsIntactWhenTheRootPermissionLinksExactlyTheRecordedPolicies() {
+    @DisplayName("Graph còn nguyên vẹn chỉ khi root permission liên kết đúng các policy đã ghi")
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("graphIntactnessCases")
+    void graphIntactnessDependsOnTheExactRootPermissionLinks(
+            String scenario,
+            List<String> permissionPolicyIds,
+            boolean extraPolicy,
+            boolean expected) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         PolicyGraphWriter writer = writer(builder);
 
         expectClients(server);
-        expectStoredGraph(server, List.of("pol-own"));
+        expectStoredGraph(server, permissionPolicyIds, extraPolicy);
 
-        assertTrue(writer.isGraphIntact(TARGET, "enter", "res-1", List.of("gk-group:" + OWNERS)));
+        assertEquals(
+                expected,
+                writer.isGraphIntact(TARGET, "enter", "res-1", List.of("gk-group:" + OWNERS)));
         server.verify();
     }
 
-    @Test
-    void graphIsNotIntactWhenAPolicyWasUnlinkedFromTheRootPermission() {
-        RestClient.Builder builder = RestClient.builder();
-        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        PolicyGraphWriter writer = writer(builder);
-
-        expectClients(server);
-        // Bản thân policy vẫn tồn tại; chỉ liên kết từ root permission đã bị gỡ.
-        expectStoredGraph(server, List.of());
-
-        assertFalse(writer.isGraphIntact(TARGET, "enter", "res-1", List.of("gk-group:" + OWNERS)));
-        server.verify();
-    }
-
-    @Test
-    void graphIsNotIntactWhenTheRootPermissionLinksAnExtraPolicy() {
-        RestClient.Builder builder = RestClient.builder();
-        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        PolicyGraphWriter writer = writer(builder);
-
-        expectClients(server);
-        expectStoredGraph(server, List.of("pol-own", "pol-extra"), true);
-
-        assertFalse(writer.isGraphIntact(TARGET, "enter", "res-1", List.of("gk-group:" + OWNERS)));
-        server.verify();
-    }
-
-    private void expectStoredGraph(MockRestServiceServer server, List<String> permissionPolicyIds) {
-        expectStoredGraph(server, permissionPolicyIds, false);
+    private static Stream<Arguments> graphIntactnessCases() {
+        return Stream.of(
+                Arguments.of(
+                        "root permission liên kết đúng các policy đã ghi thì còn nguyên vẹn",
+                        List.of("pol-own"),
+                        false,
+                        true),
+                // Bản thân policy vẫn tồn tại; chỉ liên kết từ root permission đã bị gỡ.
+                Arguments.of(
+                        "policy bị gỡ khỏi root permission thì không còn nguyên vẹn",
+                        List.of(),
+                        false,
+                        false),
+                Arguments.of(
+                        "root permission liên kết thêm policy thì không còn nguyên vẹn",
+                        List.of("pol-own", "pol-extra"),
+                        true,
+                        false));
     }
 
     private void expectStoredGraph(
