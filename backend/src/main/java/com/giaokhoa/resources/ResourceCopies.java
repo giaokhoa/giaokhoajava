@@ -8,8 +8,14 @@ import com.giaokhoa.resources.repository.ResourceRepository;
 import com.giaokhoa.resources.repository.ResourceVersionRepository;
 import com.giaokhoa.resources.repository.VersionMetadata;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.PageRequest;
@@ -183,6 +189,56 @@ public class ResourceCopies {
                 .filter(location -> location.ownerWorkspaceId().equals(recipientWorkspaceId))
                 .map(CopyLocation::copy)
                 .findFirst();
+    }
+
+    /**
+     * Các grant trong danh sách đã có bản sao copy-on-share của một version nguồn tại đúng
+     * workspace nhận: nạp cạnh provenance của version và các resource sao theo lô, thay cho việc
+     * tra từng grant khi dựng bundle. Resource sao bị thiếu của một cạnh thuộc các grant này vẫn là
+     * lỗi dữ kiện như đường tra lẻ {@link #copiesOf}.
+     */
+    public Set<UUID> grantsWithCopyAt(
+            UUID sourceResourceId,
+            UUID sourceVersionId,
+            Collection<UUID> grantIds,
+            UUID recipientWorkspaceId) {
+        if (grantIds.isEmpty()) {
+            return Set.of();
+        }
+        List<ResourceDependency> edges =
+                dependencies
+                        .findBySourceResourceIdAndSourceVersionId(sourceResourceId, sourceVersionId)
+                        .stream()
+                        .filter(edge ->
+                                edge.getShareGrantId() != null
+                                        && grantIds.contains(edge.getShareGrantId()))
+                        .filter(edge ->
+                                edge.getUsageConstraints()
+                                        .startsWith(ResourcePolicyProjector.shareOriginMarker()))
+                        .toList();
+        if (edges.isEmpty()) {
+            return Set.of();
+        }
+        Map<UUID, UUID> owners = new HashMap<>();
+        resources
+                .findAllById(
+                        edges.stream()
+                                .map(ResourceDependency::getDerivedResourceId)
+                                .distinct()
+                                .toList())
+                .forEach(resource -> owners.put(resource.getId(), resource.getOwnerWorkspaceId()));
+        Set<UUID> copied = new HashSet<>();
+        for (ResourceDependency edge : edges) {
+            UUID owner = owners.get(edge.getDerivedResourceId());
+            if (owner == null) {
+                throw new IllegalStateException(
+                        "Copy resource is" + " missing: " + edge.getDerivedResourceId());
+            }
+            if (owner.equals(recipientWorkspaceId)) {
+                copied.add(Objects.requireNonNull(edge.getShareGrantId(), "share_grant_id"));
+            }
+        }
+        return copied;
     }
 
     /** Cạnh provenance copy-on-share của một version sao: căn cứ nguồn của chính bản sao đó. */

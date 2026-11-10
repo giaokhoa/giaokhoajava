@@ -6,11 +6,14 @@ import com.giaokhoa.teaching.repository.EnrollmentRepository;
 import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
@@ -57,6 +60,21 @@ public class ResourceScopePreconditions {
                 .findByWorkspaceIdAndUserIdAndState(
                         workspaceId, userId, CenterMembership.State.ACTIVE)
                 .isPresent();
+    }
+
+    /**
+     * Các user trong danh sách còn là thành viên ACTIVE của workspace trung tâm này, tra một lô.
+     */
+    public Set<UUID> centerMembershipActiveUserIds(UUID workspaceId, Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Set.of();
+        }
+        return memberships
+                .findByWorkspaceIdAndUserIdInAndState(
+                        workspaceId, userIds, CenterMembership.State.ACTIVE)
+                .stream()
+                .map(CenterMembership::getUserId)
+                .collect(Collectors.toSet());
     }
 
     /** Một học sinh còn ghi danh: định danh tài khoản và subject Keycloak của học sinh. */

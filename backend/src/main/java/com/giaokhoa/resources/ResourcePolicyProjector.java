@@ -473,18 +473,33 @@ public class ResourcePolicyProjector {
                     descriptors, workspaceId, contextKind, derivedGrant.get(), targetKey);
             return descriptors.stream().sorted().distinct().toList();
         }
-        if (ownerWorkspaceId.equals(workspaceId)) {
+        boolean ownerBranch = ownerWorkspaceId.equals(workspaceId);
+        boolean systemBranch = "SYSTEM".equals(ownerKind) && "LOCKED".equals(reviewState);
+        // Kỳ gói của workspace ngữ cảnh nạp một lần cho mọi nhánh nguồn của bundle này, thay vì
+        // mỗi nhánh tự nạp lại cùng một danh sách.
+        List<ResourceScopePreconditions.SubscriptionPeriod> periods =
+                ownerBranch || (systemBranch && PERSONAL_KIND.equals(contextKind))
+                        ? preconditions.subscriptionPeriods(workspaceId)
+                        : List.of();
+        if (ownerBranch) {
             if (PERSONAL_KIND.equals(contextKind)) {
-                personalOwnerSources(descriptors, workspaceId, targetKey);
+                personalOwnerSources(descriptors, workspaceId, targetKey, periods);
             } else if (CENTER_KIND.equals(contextKind)) {
-                centerAuthorSources(descriptors, workspaceId, createdByUserId, targetKey);
+                centerAuthorSources(descriptors, workspaceId, createdByUserId, targetKey, periods);
             }
         }
         assignmentSources(descriptors, workspaceId, contextKind, resourceId, subjectId, targetKey);
         activitySources(descriptors, workspaceId, contextKind, resourceId, versionId, targetKey);
         licenseSources(descriptors, workspaceId, contextKind, resourceId, versionId, targetKey);
-        if ("SYSTEM".equals(ownerKind) && "LOCKED".equals(reviewState)) {
-            systemSources(descriptors, workspaceId, contextKind, resourceId, versionId, targetKey);
+        if (systemBranch) {
+            systemSources(
+                    descriptors,
+                    workspaceId,
+                    contextKind,
+                    resourceId,
+                    versionId,
+                    targetKey,
+                    periods);
         }
         return descriptors.stream().sorted().distinct().toList();
     }
@@ -530,7 +545,10 @@ public class ResourcePolicyProjector {
 
     /** Nhánh chủ sở hữu native ở personal: owner đọc không gate gói, mở rộng gate theo kỳ gói. */
     private void personalOwnerSources(
-            List<String> descriptors, UUID workspaceId, String targetKey) {
+            List<String> descriptors,
+            UUID workspaceId,
+            String targetKey,
+            List<ResourceScopePreconditions.SubscriptionPeriod> periods) {
         Optional<OwnerRow> owner = personalOwner(workspaceId);
         if (owner.isEmpty()) {
             return;
@@ -544,8 +562,7 @@ public class ResourcePolicyProjector {
                             targetKey,
                             scope));
         }
-        for (ResourceScopePreconditions.SubscriptionPeriod period :
-                preconditions.subscriptionPeriods(workspaceId)) {
+        for (ResourceScopePreconditions.SubscriptionPeriod period : periods) {
             for (String scope : OWNER_EXPANSION_SCOPES) {
                 descriptors.add(
                         actorPeriodDescriptor(
@@ -565,7 +582,11 @@ public class ResourcePolicyProjector {
      * theo kỳ gói của center, không liên quan gói cá nhân của tác giả.
      */
     private void centerAuthorSources(
-            List<String> descriptors, UUID workspaceId, UUID authorUserId, String targetKey) {
+            List<String> descriptors,
+            UUID workspaceId,
+            UUID authorUserId,
+            String targetKey,
+            List<ResourceScopePreconditions.SubscriptionPeriod> periods) {
         Optional<UserAccount> author = userAccounts.findById(authorUserId);
         if (author.isEmpty() || !preconditions.centerMembershipActive(workspaceId, authorUserId)) {
             return;
@@ -574,8 +595,7 @@ public class ResourcePolicyProjector {
         for (String scope : AUTHOR_READ_SCOPES) {
             descriptors.add(actorDescriptor(workspaceId, authorUserId, subject, targetKey, scope));
         }
-        for (ResourceScopePreconditions.SubscriptionPeriod period :
-                preconditions.subscriptionPeriods(workspaceId)) {
+        for (ResourceScopePreconditions.SubscriptionPeriod period : periods) {
             for (String scope : OWNER_EXPANSION_SCOPES) {
                 descriptors.add(
                         actorPeriodDescriptor(
@@ -609,9 +629,14 @@ public class ResourcePolicyProjector {
                                         .toList())
                         .stream()
                         .collect(Collectors.toMap(UserAccount::getId, UserAccount::getKeycloakSub));
+        Set<UUID> activeMembers =
+                CENTER_KIND.equals(contextKind)
+                        ? preconditions.centerMembershipActiveUserIds(
+                                workspaceId, subjects.keySet())
+                        : Set.of();
         for (ResourceAssignment assignment : matching) {
             if (CENTER_KIND.equals(contextKind)
-                    && !preconditions.centerMembershipActive(workspaceId, assignment.getUserId())) {
+                    && !activeMembers.contains(assignment.getUserId())) {
                 continue;
             }
             String subject = subjects.get(assignment.getUserId());
@@ -682,16 +707,22 @@ public class ResourcePolicyProjector {
             UUID versionId,
             String targetKey) {
         String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
-        for (ShareGrant grant :
+        List<ShareGrant> applicable =
                 grants
                         .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
-                                workspaceId, resourceId, versionId, ShareGrant.State.ACCEPTED)) {
-            if (!allowedHere(grant, workspaceId)) {
-                continue;
-            }
+                                workspaceId, resourceId, versionId, ShareGrant.State.ACCEPTED)
+                        .stream()
+                        .filter(grant -> allowedHere(grant, workspaceId))
+                        .toList();
+        Set<UUID> copiedGrantIds =
+                copies.grantsWithCopyAt(
+                        resourceId,
+                        versionId,
+                        applicable.stream().map(ShareGrant::getId).toList(),
+                        workspaceId);
+        for (ShareGrant grant : applicable) {
             List<String> scopes = mapActions(grant.getActions());
-            boolean copied =
-                    copies.findCopy(resourceId, versionId, grant.getId(), workspaceId).isPresent();
+            boolean copied = copiedGrantIds.contains(grant.getId());
             if (copied) {
                 if (scopes.contains(saveScope)) {
                     descriptors.add(
@@ -722,15 +753,15 @@ public class ResourcePolicyProjector {
             String contextKind,
             UUID resourceId,
             UUID versionId,
-            String targetKey) {
+            String targetKey,
+            List<ResourceScopePreconditions.SubscriptionPeriod> periods) {
         String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
         if (PERSONAL_KIND.equals(contextKind)) {
             Optional<OwnerRow> owner = personalOwner(workspaceId);
             if (owner.isEmpty()) {
                 return;
             }
-            for (ResourceScopePreconditions.SubscriptionPeriod period :
-                    preconditions.subscriptionPeriods(workspaceId)) {
+            for (ResourceScopePreconditions.SubscriptionPeriod period : periods) {
                 descriptors.add(
                         actorPeriodDescriptor(
                                 workspaceId,
@@ -771,8 +802,7 @@ public class ResourcePolicyProjector {
                             owner.get().subject(),
                             targetKey,
                             readScope));
-            for (ResourceScopePreconditions.SubscriptionPeriod period :
-                    preconditions.subscriptionPeriods(workspaceId)) {
+            for (ResourceScopePreconditions.SubscriptionPeriod period : periods) {
                 descriptors.add(
                         actorPeriodDescriptor(
                                 workspaceId,

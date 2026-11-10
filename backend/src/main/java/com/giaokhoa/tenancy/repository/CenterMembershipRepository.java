@@ -19,6 +19,9 @@ public interface CenterMembershipRepository extends JpaRepository<CenterMembersh
     Optional<CenterMembership> findByWorkspaceIdAndUserIdAndState(
             UUID workspaceId, UUID userId, CenterMembership.State state);
 
+    List<CenterMembership> findByWorkspaceIdAndUserIdInAndState(
+            UUID workspaceId, Collection<UUID> userIds, CenterMembership.State state);
+
     Optional<CenterMembership> findByWorkspaceIdAndUserIdAndStateIn(
             UUID workspaceId, UUID userId, Collection<CenterMembership.State> states);
 
