@@ -1,4 +1,3 @@
-import { SessionProvider } from "../../../../features/identity/session-provider";
 import { CenterClassesContent } from "../../../../features/teaching/class-management";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +10,11 @@ export default async function CenterClassesPage({
 }) {
   const { workspaceId } = await params;
   return (
-    <SessionProvider>
-      {/*
-        key theo workspace: đổi trung tâm thì component là instance mới nên toàn
-        bộ state riêng (panel thao tác, draft, lựa chọn) reset, không bao giờ
-        hiện dữ kiện của trung tâm trước.
-      */}
-      <CenterClassesContent key={workspaceId} workspaceId={workspaceId} />
-    </SessionProvider>
+    /*
+      key theo workspace: đổi trung tâm thì component là instance mới nên toàn
+      bộ state riêng (panel thao tác, draft, lựa chọn) reset, không bao giờ
+      hiện dữ kiện của trung tâm trước.
+    */
+    <CenterClassesContent key={workspaceId} workspaceId={workspaceId} />
   );
 }

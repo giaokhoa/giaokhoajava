@@ -12,7 +12,6 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -21,31 +20,17 @@ import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
-// Schema riêng cho lớp test vì code của branch chưa biết migration V006 đang nằm ở schema mặc
-// định của DB TEST dùng chung; không được chạm dữ liệu migration của schema mặc định.
 // Slice JPA của Boot 4 trên PostgreSQL thật của stack TEST: replace = NONE giữ nguyên
 // datasource đã khai (không thay bằng embedded); Flyway không thuộc slice nên phải import
 // tường minh để migration chạy trước khi Hibernate validate schema. Slice không nạp
-// worker/scheduler nên không còn actor nào khóa chéo với DROP SCHEMA ở @AfterAll.
+// worker/scheduler và chạy trên schema dùng chung: các slice cùng cấu hình dùng chung một
+// context đã cache của Spring, mỗi test chạy trong giao dịch riêng và rollback khi kết thúc
+// nên dữ kiện không lẫn sang class khác.
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
 class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "resource_primitives_" + UUID.randomUUID().toString().replace("-", "");
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-    }
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;

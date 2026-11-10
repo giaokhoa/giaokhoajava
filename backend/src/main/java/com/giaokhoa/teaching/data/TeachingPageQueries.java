@@ -7,6 +7,7 @@ import static com.giaokhoa.teaching.data.TeachingRepository.mapRoster;
 import static com.giaokhoa.teaching.data.TeachingRepository.mapTeachingAssignment;
 import static com.giaokhoa.teaching.data.TeachingRepository.rosterSelect;
 
+import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository.ClassRow;
 import com.giaokhoa.teaching.data.TeachingRepository.CourseRow;
 import com.giaokhoa.teaching.data.TeachingRepository.EnrollmentListRow;
@@ -21,11 +22,22 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 /** Truy vấn phân trang chỉ đọc, tách khỏi các thao tác ghi dữ kiện giảng dạy. */
 final class TeachingPageQueries {
+    /** Cursor không thuộc đúng danh sách đang đọc thì 400 như các đường đọc phân trang khác. */
+    private static HttpProblemException invalidCursor() {
+        return invalidCursor(null);
+    }
+
+    private static HttpProblemException invalidCursor(@Nullable Throwable cause) {
+        return new HttpProblemException(
+                HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.", cause);
+    }
+
     private final JdbcTemplate jdbc;
 
     TeachingPageQueries(JdbcTemplate jdbc) {
@@ -55,10 +67,10 @@ final class TeachingPageQueries {
             try {
                 cursorId = UUID.fromString(cursor);
                 if (!cursorId.toString().equals(cursor)) {
-                    return new Page<>(List.of(), null);
+                    throw invalidCursor();
                 }
             } catch (IllegalArgumentException ex) {
-                return new Page<>(List.of(), null);
+                throw invalidCursor(ex);
             }
             // Cursor thuộc lớp/môn–khóa khác không được làm dịch trang của danh sách hiện tại.
             String anchorSql =
@@ -79,7 +91,7 @@ final class TeachingPageQueries {
                                     cursorId,
                                     anchorParentId);
             if (anchors.isEmpty()) {
-                return new Page<>(List.of(), null);
+                throw invalidCursor();
             }
             createdAt = anchors.getFirst();
         }

@@ -1,4 +1,3 @@
-import { SessionProvider } from "../../../../features/identity/session-provider";
 import { CenterMembersContent } from "../../../../features/tenancy/center-administration";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +10,11 @@ export default async function CenterMembersPage({
 }) {
   const { workspaceId } = await params;
   return (
-    <SessionProvider>
-      {/*
-        key theo workspace: đổi trung tâm thì component là instance mới nên toàn
-        bộ state riêng (panel thao tác, mật khẩu tạm, draft, lựa chọn) reset,
-        không bao giờ hiện dữ kiện của trung tâm trước.
-      */}
-      <CenterMembersContent key={workspaceId} workspaceId={workspaceId} />
-    </SessionProvider>
+    /*
+      key theo workspace: đổi trung tâm thì component là instance mới nên toàn
+      bộ state riêng (panel thao tác, mật khẩu tạm, draft, lựa chọn) reset,
+      không bao giờ hiện dữ kiện của trung tâm trước.
+    */
+    <CenterMembersContent key={workspaceId} workspaceId={workspaceId} />
   );
 }

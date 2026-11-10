@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, requestAllPages, requestWhenReady } from "../../../lib/api-client";
+import { ApiError, requestAllPages, requestWorkspaces } from "../../../lib/api-client";
+import { SessionGate } from "../../../features/identity/session-gate";
 import { useSession } from "../../../features/identity/session-provider";
+import { submitMutation } from "../../../features/operations/operation-attempts";
+import { OperationPanel, useOperationCheck } from "../../../features/operations/operation-panel";
 import {
+  operationStatus,
   parseTrackedOperation,
   type TrackedOperation,
-} from "../../../features/identity/recovery-request-form";
-import { operationStatus } from "../../../features/operations/operation-status";
+} from "../../../features/operations/operation-status";
 import {
   canManagePersonalClasses,
   parsePersonalWorkspace,
@@ -20,7 +23,6 @@ import {
   parseRoster,
   parseSubjects,
   stateLabel,
-  submitTeachingMutation,
   teachingErrorMessage,
   type RosterEntry,
   type Subject,
@@ -31,6 +33,7 @@ import { CourseSubjectEditor } from "../../../features/teaching/course-subject-e
 
 export function PersonalClassesContent() {
   const { session, refreshSession } = useSession();
+  const checkOperationStatus = useOperationCheck();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
@@ -95,7 +98,7 @@ export function PersonalClassesContent() {
   useEffect(() => {
     if (!userId) return;
     let ignore = false;
-    requestWhenReady<unknown>("/api/me/workspaces")
+    requestWorkspaces(userId)
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setWorkspace(parsePersonalWorkspace(result.data));
@@ -168,9 +171,7 @@ export function PersonalClassesContent() {
     setPendingAction("operation");
     setActionError(null);
     try {
-      const result = await requestWhenReady<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
+      const nextOperation = await checkOperationStatus(operation.id, { whenReady: true });
       setOperation(nextOperation);
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") refresh();
     } catch (error) {
@@ -188,7 +189,7 @@ export function PersonalClassesContent() {
     try {
       const controller = new AbortController();
       pendingMutation.current = controller;
-      const data = await submitTeachingMutation(path, init, key, controller.signal);
+      const data = await submitMutation(path, init, key, controller.signal);
       const nextOperation = parseTrackedOperation(data);
       if (nextOperation) {
         // Receipt bền kết thúc attempt; lần thao tác mới phải có key mới.
@@ -268,32 +269,12 @@ export function PersonalClassesContent() {
         <p className="eyebrow">Giáo Khoa</p>
         <h1 id="personal-classes-title">Lớp cá nhân</h1>
 
-        {session.status === "loading" ? (
-          <p role="status">Đang tải trạng thái tài khoản…</p>
-        ) : null}
-
-        {session.status === "error" ? (
-          <>
-            <p role="alert">{session.message}</p>
-            <button className="action-button" type="button" onClick={() => void refreshSession()}>
-              Thử lại
-            </button>
-          </>
-        ) : null}
-
-        {session.status === "anonymous" ? (
-          <>
-            <p className="introduction">
-              Đăng nhập để xem lớp cá nhân của bạn.
-            </p>
-            <a className="login-link" href="/oauth2/authorization/keycloak">
-              Đăng nhập
-            </a>
-          </>
-        ) : null}
-
-        {session.status === "authenticated" ? (
-          <>
+        <SessionGate
+          status={session.status}
+          message={session.status === "error" ? session.message : undefined}
+          onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để xem lớp cá nhân của bạn."
+        >
             <p className="introduction">
               Lớp, khóa và ghi danh trong không gian cá nhân của chính bạn, mở theo gói
               cá nhân. Không có vai trò trung tâm nào được copy sang đây.
@@ -322,22 +303,12 @@ export function PersonalClassesContent() {
             ) : null}
             {actionError ? <p role="alert">{actionError}</p> : null}
             {operation ? (
-              <section className="section" aria-labelledby="personal-operation-title">
-                <h2 id="personal-operation-title">Trạng thái thao tác</h2>
-                <p>{operationStatus(operation).message}</p>
-                <p>
-                  Mã thao tác: <code>{operation.id}</code>
-                </p>
-                {operation.errorCode ? <p>Mã lỗi: {operation.errorCode}</p> : null}
-                <button
-                  className="secondary-button"
-                  type="button"
-                  disabled={pendingAction === "operation"}
-                  onClick={() => void checkOperation()}
-                >
-                  Kiểm tra trạng thái
-                </button>
-              </section>
+              <OperationPanel
+                operation={operation}
+                checking={pendingAction === "operation"}
+                onCheck={() => void checkOperation()}
+                titleId="personal-operation-title"
+              />
             ) : null}
 
             <section aria-labelledby="personal-class-list-title">
@@ -486,8 +457,7 @@ export function PersonalClassesContent() {
                 />
               </section>
             ) : null}
-          </>
-        ) : null}
+        </SessionGate>
       </section>
     </main>
   );

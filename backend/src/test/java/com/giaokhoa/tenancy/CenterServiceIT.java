@@ -139,6 +139,17 @@ class CenterServiceIT extends IntegrationEnvironment {
                             "create-" + UUID.randomUUID(),
                             hash("{\"name\":\"Trung tâm kiểm chứng\"}"));
             awaitOperationSucceeded(operation.getId());
+            assertEquals(
+                    1,
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT count(*) FROM audit_event"
+                                            + " WHERE action = 'PRIVILEGE_CHANGE'"
+                                            + " AND target_type = 'MEMBERSHIP'"
+                                            + " AND operation_id = ?",
+                                    Integer.class,
+                                    operation.getId())),
+                    "Tạo center ghi một dòng audit cho membership OWNER vừa tạo");
 
             List<Map<String, Object>> centerRows =
                     jdbc.queryForList(
@@ -409,6 +420,17 @@ class CenterServiceIT extends IntegrationEnvironment {
                             "revoke-" + UUID.randomUUID(),
                             hash("{}"));
             awaitOperationSucceeded(operation.getId());
+            assertEquals(
+                    1,
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT count(*) FROM audit_event"
+                                            + " WHERE action = 'PRIVILEGE_CHANGE'"
+                                            + " AND target_id = ? AND operation_id = ?",
+                                    Integer.class,
+                                    membershipId,
+                                    operation.getId())),
+                    "Thu hồi membership ghi một dòng audit gắn operation của nó");
 
             Map<String, Object> row =
                     jdbc.queryForMap(

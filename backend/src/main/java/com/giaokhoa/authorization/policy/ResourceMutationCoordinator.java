@@ -1,9 +1,6 @@
 package com.giaokhoa.authorization.policy;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import com.giaokhoa.shared.AdvisoryLocks;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.jdbc.core.JdbcOperations;
@@ -52,21 +49,6 @@ public class ResourceMutationCoordinator {
     }
 
     private void lockResource(String targetKey) {
-        jdbc.query("SELECT pg_advisory_xact_lock(?)", _ -> {}, lockId(targetKey));
-    }
-
-    private static long lockId(String targetKey) {
-        try {
-            // Ổn định giữa các JVM, và có namespace để tránh đụng các advisory lock không liên
-            // quan.
-            byte[] digest =
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(
-                                    ("giaokhoa:policy-resource:" + targetKey)
-                                            .getBytes(StandardCharsets.UTF_8));
-            return ByteBuffer.wrap(digest).getLong();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        AdvisoryLocks.lock(jdbc, "giaokhoa:policy-resource:", targetKey);
     }
 }

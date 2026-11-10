@@ -50,6 +50,7 @@ public class SampleActionController {
     private static final Duration PROJECTION_WAIT = Duration.ofSeconds(60);
     private static final String OPERATION_SUCCEEDED = "SUCCEEDED";
     private static final String OPERATION_FAILED = "FAILED";
+    private static final int SINGLE_ROW = 1;
 
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
@@ -322,13 +323,35 @@ public class SampleActionController {
             UUID workspaceId, UUID actorUserId, SampleActionRequest request, UUID activityId) {
         List<Map<String, Object>> subjects =
                 jdbc.queryForList(
-                        "SELECT subject_id FROM course_subject WHERE workspace_id = ? AND id = ?",
+                        "SELECT cs.subject_id, cs.state AS subject_state, c.state AS class_state,"
+                                + " co.state AS course_state FROM course_subject cs"
+                                + " JOIN school_class c ON c.workspace_id = cs.workspace_id"
+                                + " AND c.id = cs.class_id"
+                                + " JOIN course co ON co.workspace_id = cs.workspace_id"
+                                + " AND co.id = cs.course_id"
+                                + " WHERE cs.workspace_id = ? AND cs.id = ?",
                         workspaceId,
                         request.courseSubjectId());
         if (subjects.isEmpty()) {
             throw notFound();
         }
-        UUID subjectId = (UUID) subjects.getFirst().get("subject_id");
+        Map<String, Object> subject = subjects.getFirst();
+        // Cùng mẫu AssignmentService: chỉ giao bài khi môn–khóa và lớp/khóa chứa nó còn hiệu lực.
+        String subjectState = (String) subject.get("subject_state");
+        if (!"PENDING".equals(subjectState) && !"ACTIVE".equals(subjectState)) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT,
+                    "COURSE_SUBJECT_NOT_ACTIVE",
+                    "Môn–khóa đã bị gỡ khỏi khóa, không giao bài được nữa.");
+        }
+        if ("REVOKED".equals(subject.get("class_state"))
+                || "REVOKED".equals(subject.get("course_state"))) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT,
+                    "TEACHING_CONTEXT_NOT_ACTIVE",
+                    "Lớp hoặc khóa của môn–khóa đã bị thu hồi, không giao bài được nữa.");
+        }
+        UUID subjectId = (UUID) subject.get("subject_id");
         // Invariant của hợp đồng giao bài: version thuộc đúng resource, resource thuộc đúng
         // workspace và cùng môn với môn–khóa, và version đã ở trạng thái duyệt.
         Integer usable =
@@ -455,6 +478,26 @@ public class SampleActionController {
         if (!"ASSIGNED".equals(activity.get("state"))) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "ACTIVITY_NOT_OPEN", "Hoạt động không còn nhận bài nộp.");
+        }
+        // Tiền kiểm tra đúng điều kiện của trigger validate_sample_submission: actor phải còn
+        // ghi danh hiện hành vào môn–khóa của hoạt động, nếu không lỗi là 403 thay vì 409 của DB.
+        Integer enrolled =
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM enrollment e"
+                                + " JOIN class_student cs ON cs.id = e.class_student_id"
+                                + " WHERE e.workspace_id = ? AND e.course_subject_id = ?"
+                                + " AND e.state IN ('PENDING', 'ACTIVE')"
+                                + " AND cs.workspace_id = ? AND cs.student_user_id = ?",
+                        Integer.class,
+                        workspaceId,
+                        activity.get("course_subject_id"),
+                        workspaceId,
+                        actorUserId);
+        if (enrolled == null || enrolled == 0) {
+            throw new HttpProblemException(
+                    HttpStatus.FORBIDDEN,
+                    "PERMISSION_DENIED",
+                    "Không có quyền thực hiện thao tác.");
         }
         int attemptLimit =
                 Objects.requireNonNull((Number) activity.get("attempt_limit"), "attemptLimit")
@@ -586,14 +629,20 @@ public class SampleActionController {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
         }
-        jdbc.update(
-                "UPDATE sample_result SET score_stub = ?, comment_stub = ?, graded_by = ?,"
-                        + " updated_at = now() WHERE workspace_id = ? AND id = ?",
-                request.scoreStub(),
-                request.commentStub(),
-                actorUserId,
-                workspaceId,
-                request.resultId());
+        int graded =
+                jdbc.update(
+                        "UPDATE sample_result SET score_stub = ?, comment_stub = ?, graded_by = ?,"
+                                + " version = version + 1, updated_at = now()"
+                                + " WHERE workspace_id = ? AND id = ? AND state = 'DRAFT'",
+                        request.scoreStub(),
+                        request.commentStub(),
+                        actorUserId,
+                        workspaceId,
+                        request.resultId());
+        if (graded != SINGLE_ROW) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
+        }
         return new SampleActionResult(
                 request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId());
     }
@@ -604,11 +653,17 @@ public class SampleActionController {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
         }
-        jdbc.update(
-                "UPDATE sample_result SET state = 'PUBLISHED', published_at = now(),"
-                        + " updated_at = now() WHERE workspace_id = ? AND id = ?",
-                workspaceId,
-                request.resultId());
+        int published =
+                jdbc.update(
+                        "UPDATE sample_result SET state = 'PUBLISHED', published_at = now(),"
+                                + " version = version + 1, updated_at = now()"
+                                + " WHERE workspace_id = ? AND id = ? AND state = 'DRAFT'",
+                        workspaceId,
+                        request.resultId());
+        if (published != SINGLE_ROW) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
+        }
         return new SampleActionResult(
                 request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId());
     }

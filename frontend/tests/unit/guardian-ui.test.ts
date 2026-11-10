@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  attemptKey,
-  closeAttempt,
   guardianDecisionBody,
   guardianPermissions,
   guardianRequestBody,
   parseGuardianLinks,
   type GuardianLink,
 } from "../../src/features/guardians/guardian-link-review";
-import type { TrackedOperation } from "../../src/features/identity/recovery-request-form";
+import {
+  attemptKey,
+  closeAttempt,
+} from "../../src/features/operations/operation-attempts";
+import type { TrackedOperation } from "../../src/features/operations/operation-status";
 import { parsePublishedResults } from "../../src/features/guardians/published-results";
 import type { Membership } from "../../src/features/tenancy/center-administration";
 

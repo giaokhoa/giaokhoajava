@@ -1,55 +1,21 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import { SessionGate } from "../../features/identity/session-gate";
 import { WorkspaceSwitcher } from "../../features/identity/workspace-switcher";
 import { useSession } from "../../features/identity/session-provider";
+import { OperationPanel, useOperationCheck } from "../../features/operations/operation-panel";
 import {
-  operationStatus,
-  type OperationState,
-  type OperationView,
+  parseTrackedOperation,
+  type TrackedOperation,
 } from "../../features/operations/operation-status";
 import { apiRequest, submitLogout } from "../../lib/api-client";
 
-type TrackedOperation = Pick<OperationView, "id" | "state" | "completed" | "errorCode">;
-
 type PendingAction = "verification" | "recovery" | "operation" | "logout" | null;
-
-const operationStates: OperationState[] = [
-  "PENDING",
-  "APPLYING",
-  "SUCCEEDED",
-  "RETRYABLE_FAILURE",
-  "FAILED",
-];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseTrackedOperation(data: unknown): TrackedOperation | null {
-  if (!isRecord(data)) return null;
-  const source = isRecord(data.operation) ? data.operation : data;
-  const id = typeof source.id === "string" && source.id
-    ? source.id
-    : typeof data.operationId === "string" && data.operationId
-      ? data.operationId
-      : null;
-  if (!id
-      || typeof source.state !== "string"
-      || !operationStates.includes(source.state as OperationState)
-      || typeof source.completed !== "boolean") {
-    return null;
-  }
-  return {
-    id,
-    state: source.state as OperationState,
-    completed: source.completed,
-    errorCode: typeof source.errorCode === "string" && source.errorCode ? source.errorCode : undefined,
-  };
-}
 
 export function OnboardingContent() {
   const { session, refreshSession } = useSession();
+  const checkOperationStatus = useOperationCheck();
   const [operation, setOperation] = useState<TrackedOperation | null>(null);
   const recoveryAttempt = useRef<{ payload: string; key: string } | null>(null);
   const [reason, setReason] = useState("");
@@ -105,12 +71,7 @@ export function OnboardingContent() {
     setPendingAction("operation");
     setActionError(null);
     try {
-      const result = await apiRequest<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) {
-        throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
-      }
-      setOperation(nextOperation);
+      setOperation(await checkOperationStatus(operation.id));
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Không kiểm tra được trạng thái thao tác.");
     } finally {
@@ -149,31 +110,13 @@ export function OnboardingContent() {
         <p className="eyebrow">Giáo Khoa</p>
         <h1 id="onboarding-title">Hoàn tất tài khoản</h1>
 
-        {session.status === "loading" ? (
-          <p role="status">Đang tải trạng thái tài khoản…</p>
-        ) : null}
-
-        {session.status === "error" ? (
-          <>
-            <p role="alert">{session.message}</p>
-            <button className="action-button" type="button" onClick={() => void refreshSession()}>
-              Thử lại
-            </button>
-          </>
-        ) : null}
-
-        {session.status === "anonymous" ? (
-          <>
-            <p className="introduction">
-              Đăng nhập để xem trạng thái xác minh và tiếp tục sử dụng tài khoản của bạn.
-            </p>
-            <a className="login-link" href="/oauth2/authorization/keycloak">
-              Đăng nhập
-            </a>
-          </>
-        ) : null}
-
-        {session.status === "authenticated" ? (
+        <SessionGate
+          status={session.status}
+          message={session.status === "error" ? session.message : undefined}
+          onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để xem trạng thái xác minh và tiếp tục sử dụng tài khoản của bạn."
+        >
+          {session.status === "authenticated" ? (
           <>
             <p className="introduction">
               Xem trạng thái danh tính, gửi yêu cầu xác minh hoặc khôi phục, và chọn không gian
@@ -247,22 +190,11 @@ export function OnboardingContent() {
             </section>
 
             {operation ? (
-              <section className="section" aria-labelledby="operation-title">
-                <h2 id="operation-title">Trạng thái thao tác</h2>
-                <p>{operationStatus(operation).message}</p>
-                <p>
-                  Mã thao tác: <code>{operation.id}</code>
-                </p>
-                {operation.errorCode ? <p>Mã lỗi: {operation.errorCode}</p> : null}
-                <button
-                  className="secondary-button"
-                  type="button"
-                  disabled={pendingAction !== null}
-                  onClick={() => void checkOperation()}
-                >
-                  Kiểm tra trạng thái
-                </button>
-              </section>
+              <OperationPanel
+                operation={operation}
+                checking={pendingAction !== null}
+                onCheck={() => void checkOperation()}
+              />
             ) : null}
 
             {actionError ? <p role="alert">{actionError}</p> : null}
@@ -282,7 +214,8 @@ export function OnboardingContent() {
               </button>
             </div>
           </>
-        ) : null}
+          ) : null}
+        </SessionGate>
       </section>
     </main>
   );

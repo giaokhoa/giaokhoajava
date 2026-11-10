@@ -4,10 +4,9 @@ import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.sql.Array;
 import java.sql.SQLException;
-import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -69,7 +68,7 @@ public class DependencyManifestResolver {
             throw new IllegalArgumentException("At least one target key is required");
         }
         Set<UUID> partitions = new TreeSet<>(Comparator.comparing(id -> id.toString()));
-        Deque<UUID> frontier = new ArrayDeque<>();
+        List<UUID> frontier = new ArrayList<>();
         include(
                 partitions,
                 frontier,
@@ -95,14 +94,23 @@ public class DependencyManifestResolver {
                 include(partitions, frontier, dependency);
             }
         }
+        // Mở rộng closure theo từng tầng, một query cho cả tầng theo mẫu
+        // AuthorizationOperationService.dependentClosure: mỗi partition chỉ mở rộng một
+        // lần, nên một lần resolve tốn số query theo số tầng thay vì theo số partition.
         Set<UUID> expanded = new HashSet<>();
         while (!frontier.isEmpty()) {
-            UUID owner = frontier.removeFirst();
-            if (!expanded.add(owner)) {
-                continue;
+            List<UUID> level = new ArrayList<>();
+            for (UUID owner : frontier) {
+                if (expanded.add(owner)) {
+                    level.add(owner);
+                }
             }
-            for (ProjectionRow owned : projectionsOwnedBy(owner)) {
-                for (UUID dependency : owned.dependencyPartitionIds()) {
+            frontier.clear();
+            if (level.isEmpty()) {
+                break;
+            }
+            for (List<UUID> dependencies : dependencyIdsOf(level)) {
+                for (UUID dependency : dependencies) {
                     include(partitions, frontier, dependency);
                 }
             }
@@ -115,7 +123,7 @@ public class DependencyManifestResolver {
                 List.copyOf(partitions));
     }
 
-    private static void include(Set<UUID> partitions, Deque<UUID> frontier, UUID partitionId) {
+    private static void include(Set<UUID> partitions, List<UUID> frontier, UUID partitionId) {
         if (partitions.add(partitionId)) {
             frontier.add(partitionId);
         }
@@ -144,15 +152,17 @@ public class DependencyManifestResolver {
         return rows.isEmpty() ? null : toRow(rows.getFirst());
     }
 
-    private List<ProjectionRow> projectionsOwnedBy(UUID partitionId) {
-        return jdbc
-                .queryForList(
-                        "SELECT partition_id, keycloak_resource_id, dependency_partition_ids"
-                                + " FROM authz_projection WHERE partition_id = ?",
-                        partitionId)
-                .stream()
-                .map(DependencyManifestResolver::toRow)
-                .toList();
+    /** Chỉ cột dependency của mọi projection thuộc cả một tầng partition, trong một query. */
+    private List<List<UUID>> dependencyIdsOf(List<UUID> partitionIds) {
+        return jdbc.query(
+                "SELECT dependency_partition_ids FROM authz_projection"
+                        + " WHERE partition_id = ANY(?)",
+                ps ->
+                        ps.setArray(
+                                1,
+                                ps.getConnection()
+                                        .createArrayOf("uuid", partitionIds.toArray(new UUID[0]))),
+                (rs, _) -> uuids(rs.getArray("dependency_partition_ids")));
     }
 
     private static ProjectionRow toRow(Map<String, Object> row) {

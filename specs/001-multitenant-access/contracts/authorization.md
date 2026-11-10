@@ -339,3 +339,52 @@ PDP từng hàng qua projection mà `ResultPolicyProjector` đã ghi.
 - Chỉ các route liệt kê ở trên; mọi route khác vẫn tuân đầy đủ mục 5–7.
 - Bên đánh giá rà lại quyết định này cùng mục 10 trước khi đóng parent issue; khi nào các route
   này chuyển sang PDP thì gỡ mục này và ghi rõ commit gỡ.
+
+## 13. Mở rộng ngoại lệ mục 10: route gửi yêu cầu khôi phục quyết quyền bằng SQL
+
+Quyết định riêng theo đúng điều kiện của mục 10 ("Không mở rộng ngoại lệ sang route mới mà không
+ghi thêm quyết định riêng tại đây"), chốt khi rà soát tính nhất quán hợp đồng của luồng khôi phục.
+
+### Phạm vi
+
+Chỉ route `POST /api/me/recovery-requests` (`RecoveryController.submit`): lời gọi không qua
+pipeline quyết quyền dùng chung mà quyết thẳng bằng quy tắc SQL trong `RecoveryService` — chỉ tự
+gửi cho chính mình, hoặc kèm một workspace CENTER đang ACTIVE mà tài khoản đích là thành viên
+hiện hành và người gửi là chính tài khoản đích hoặc OWNER/MANAGER ACTIVE của center đó; mọi
+trường hợp ngoài phạm vi (đích không tồn tại, workspace không phải center đang hoạt động, người
+gửi không có quyền) đều trả cùng một 404 để không lộ sự tồn tại của tài khoản, đúng hợp đồng HTTP
+của route này. Hai route còn lại của cùng controller không thuộc ngoại lệ: `GET
+/api/platform/recovery-requests` và `POST /api/platform/recovery-requests/{requestId}/resolve`
+vẫn qua pipeline với target platform và scope `account.recover`.
+
+### Lý do
+
+Catalog và template đã sẵn cho đường PDP: scope `recovery.request` có trong `PermissionCatalog`
+cho target profile, và `NativePolicyTemplates.requiresEligibility` đã miễn eligibility gate cho
+đúng cặp profile/`recovery.request` này. Tầng projection thì chưa có nguồn nào cho cặp đó:
+desired projection của profile target chỉ do `IdentityEligibilitySynchronizer` ghi với scope
+danh nghĩa `workspace.list`, `projectedScopes` chỉ gộp `workspace.list` + `history.read`, và
+nguồn dựng lại cho profile target chỉ tồn tại khi account đã eligible (record do backend cấp
+hoặc email đã xác minh). Đối tượng chính của khôi phục lại là đúng nhóm chưa eligible — tài
+khoản tự đăng ký chưa xác minh email vẫn phải gửi được yêu cầu theo mục 2 — nên không tồn tại
+root permission native cho (profile, `recovery.request`) và PDP sẽ deny tuyệt đối: đưa route qua
+`executeForActor` hôm nay sẽ đổi hành vi đã khóa của hợp đồng HTTP (mọi lời gọi hợp lệ thành
+403). Muốn đi đường PDP phải đổi thiết kế checkpoint eligibility để ghi thêm desired state cho
+`recovery.request` trên ACCOUNT partition của mọi account — thay đổi ở tầng projection, ngoài
+phạm vi một đợt sửa nhất quán hợp đồng, và chạm checkpoint đang khóa hành vi của `workspace.list`
+và `history.read`.
+
+### Điểm lệch đã biết so với hợp đồng PDP
+
+Route submit không đồng bộ eligibility hiện hành qua ACCOUNT fence và không hỏi PDP trước khi
+ghi, trong khi các route khác của cùng controller có. Rủi ro được chặn ở tầng service: quy tắc
+SQL chỉ cho phép tự gửi hoặc quản trị hiện hành của đúng center chứa tài khoản đích, và quyết
+định xử lý (resolve) vẫn là của platform operator qua PDP.
+
+### Giới hạn
+
+- Chỉ route submit liệt kê ở trên; không mở rộng sang route khôi phục mới mà không ghi thêm
+  quyết định riêng tại đây.
+- Bên đánh giá rà lại quyết định này cùng mục 10–12 trước khi đóng parent issue; khi nào tầng
+  projection có nguồn cho `recovery.request` trên profile target và route này chuyển sang PDP
+  thì gỡ mục này và ghi rõ commit gỡ.

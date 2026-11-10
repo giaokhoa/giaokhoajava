@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { requestAllPages } from "../../lib/api-client";
+import { isRecord, requestAllPages } from "../../lib/api-client";
 import {
   operationSucceeded,
   parsePage,
@@ -20,10 +20,6 @@ export type Enrollment = {
   state: string;
   version: number;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isVersion(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -108,6 +104,7 @@ export function EnrollmentEditor({
     (item) => item.courseSubjectId === focusCourseSubjectId && item.state === "ACTIVE",
   );
   const enrolledStudentIds = new Set(currentEnrollments.map((item) => item.classStudentId));
+  const availableRoster = activeRoster.filter((entry) => !enrolledStudentIds.has(entry.id));
   const subjectName = courseSubjects.find((item) => item.id === focusCourseSubjectId)?.name ?? "";
 
   async function loadEnrollments() {
@@ -209,11 +206,10 @@ export function EnrollmentEditor({
         <form onSubmit={enroll}>
           <fieldset>
             <legend>Học sinh trong lớp chưa ghi danh môn này</legend>
-            {activeRoster.filter((entry) => !enrolledStudentIds.has(entry.id)).length === 0 ? (
+            {availableRoster.length === 0 ? (
               <p>Mọi học sinh hiện hành của lớp đã ghi danh môn này hoặc lớp chưa có học sinh.</p>
             ) : null}
-            {activeRoster
-              .filter((entry) => !enrolledStudentIds.has(entry.id))
+            {availableRoster
               .map((entry) => (
                 <div key={entry.id}>
                   <label>

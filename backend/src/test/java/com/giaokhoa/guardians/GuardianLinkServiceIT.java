@@ -13,6 +13,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianLinkService.GuardianLinkView;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
@@ -501,7 +502,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 runtimeWorkspaceTx,
                                 runtimeIdempotency,
                                 runtimeProjector,
-                                new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager));
+                                new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager),
+                                new AuditRecorder(runtimeJdbc));
                 TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
 
                 assertEquals(

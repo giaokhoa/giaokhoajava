@@ -78,9 +78,7 @@ public class ProblemDetailsAdvice extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> unexpected(Exception ex, WebRequest request) {
-        if (logger.isErrorEnabled()) {
-            logger.error("Unexpected request failure (" + ex.getClass().getSimpleName() + ")");
-        }
+        logger.error("Unexpected request failure", ex);
         return respond(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",

@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -12,12 +11,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.shared.http.HttpProblemException;
+import java.sql.ResultSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementSetter;
+import org.springframework.jdbc.core.RowMapper;
 
 class DependencyManifestResolverTest {
     private static final UUID ACTOR = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -49,8 +52,7 @@ class DependencyManifestResolverTest {
                                         "platform-resource",
                                         "dependency_partition_ids",
                                         new UUID[] {SOURCE})));
-        when(jdbc.queryForList(contains("WHERE partition_id"), any(UUID.class)))
-                .thenReturn(List.of());
+        stubExpansion(jdbc, List.of());
         var manifest =
                 new DependencyManifestResolver(jdbc).resolve(ACTOR, null, List.of("platform"));
         assertEquals(sorted(List.of(ACCOUNT, GRANT, SOURCE)), manifest.partitionIds());
@@ -61,8 +63,7 @@ class DependencyManifestResolverTest {
     void manifestAlwaysContainsActorAccountAndTargetWorkspace() {
         JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
         when(jdbc.queryForList(contains("WHERE target_key"), anyString())).thenReturn(List.of());
-        when(jdbc.queryForList(contains("WHERE partition_id"), any(UUID.class)))
-                .thenReturn(List.of());
+        stubExpansion(jdbc, List.of());
 
         var manifest =
                 new DependencyManifestResolver(jdbc)
@@ -86,8 +87,7 @@ class DependencyManifestResolverTest {
                         new UUID[] {});
         when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
                 .thenReturn(List.of(resultProjection));
-        when(jdbc.queryForList(contains("WHERE partition_id"), any(UUID.class)))
-                .thenReturn(List.of());
+        stubExpansion(jdbc, List.of());
 
         var manifest =
                 new DependencyManifestResolver(jdbc).resolve(ACTOR, WORKSPACE, List.of(resultKey));
@@ -107,24 +107,12 @@ class DependencyManifestResolverTest {
                         "native-resource",
                         "dependency_partition_ids",
                         new UUID[] {WORKSPACE_PARTITION});
-        Map<String, Object> workspaceProjection =
-                Map.of(
-                        "partition_id",
-                        WORKSPACE_PARTITION,
-                        "keycloak_resource_id",
-                        "workspace-resource",
-                        "dependency_partition_ids",
-                        new UUID[] {SOURCE});
         when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
                 .thenReturn(List.of(grantProjection));
-        when(jdbc.queryForList(contains("WHERE partition_id"), any(UUID.class)))
-                .thenAnswer(invocation -> {
-                    UUID owner = invocation.getArgument(1, UUID.class);
-                    if (WORKSPACE_PARTITION.equals(owner)) {
-                        return List.of(workspaceProjection);
-                    }
-                    return List.of();
-                });
+        // Tầng mở rộng chứa cả partition của workspace: dependency của projection nó sở
+        // hữu (SOURCE) phải vào closure, còn partition độc lập cùng phụ thuộc workspace
+        // thì không.
+        stubExpansion(jdbc, List.of(List.of(SOURCE)));
 
         var manifest =
                 new DependencyManifestResolver(jdbc)
@@ -162,8 +150,16 @@ class DependencyManifestResolverTest {
     void anOwnedProjectionWithoutDependencyArrayFailsClosedWith503() {
         JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
         when(jdbc.queryForList(contains("WHERE target_key"), anyString())).thenReturn(List.of());
-        when(jdbc.queryForList(contains("WHERE partition_id"), any(UUID.class)))
-                .thenReturn(List.of(Map.of("partition_id", ACCOUNT)));
+        when(jdbc.query(
+                        contains("partition_id = ANY"),
+                        ArgumentMatchers.<PreparedStatementSetter>any(),
+                        ArgumentMatchers.<RowMapper<List<UUID>>>any()))
+                .thenAnswer(invocation -> {
+                    RowMapper<List<UUID>> mapper = invocation.getArgument(2);
+                    ResultSet rs = mock(ResultSet.class);
+                    when(rs.getArray("dependency_partition_ids")).thenReturn(null);
+                    return List.of(mapper.mapRow(rs, 0));
+                });
 
         HttpProblemException problem =
                 assertThrows(
@@ -192,6 +188,15 @@ class DependencyManifestResolverTest {
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, problem.getStatus());
         assertEquals("AUTHORIZATION_NOT_READY", problem.getCode());
+    }
+
+    /** Stub query mở rộng closure theo tầng: trả cùng một tầng dependency cho mọi lần gọi. */
+    private static void stubExpansion(JdbcTemplate jdbc, List<List<UUID>> dependencies) {
+        when(jdbc.query(
+                        contains("partition_id = ANY"),
+                        ArgumentMatchers.<PreparedStatementSetter>any(),
+                        ArgumentMatchers.<RowMapper<List<UUID>>>any()))
+                .thenReturn(dependencies);
     }
 
     private static JdbcTemplate stubPartitions(JdbcTemplate jdbc) {

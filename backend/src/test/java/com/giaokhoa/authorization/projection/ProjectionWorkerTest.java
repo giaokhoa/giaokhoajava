@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.model.AuthorizationProjection;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.time.Duration;
@@ -62,7 +63,7 @@ class ProjectionWorkerTest {
         // Một instance khác thắng claim: update có điều kiện không khớp dòng nào.
         when(jdbc.update(contains("SET state = 'APPLYING'"), any(UUID.class))).thenReturn(0);
 
-        new ProjectionWorker(jdbc, reconciler, stubTransactions()).poll();
+        new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc)).poll();
 
         verify(reconciler, never()).partition(any());
     }
@@ -81,7 +82,7 @@ class ProjectionWorkerTest {
         when(jdbc.queryForList(contains("desired_revision"), eq(Long.class), any(UUID.class)))
                 .thenReturn(List.of(2L));
 
-        new ProjectionWorker(jdbc, reconciler, stubTransactions()).poll();
+        new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc)).poll();
 
         List<Invocation> updates =
                 mockingDetails(jdbc).getInvocations().stream()
@@ -130,7 +131,8 @@ class ProjectionWorkerTest {
                 .thenReturn(List.of(PARTITION));
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of(PARTITION));
         when(reconciler.tryReconcilePartition(PARTITION)).thenReturn(false);
-        ProjectionWorker worker = new ProjectionWorker(jdbc, reconciler, stubTransactions());
+        ProjectionWorker worker =
+                new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
 
         worker.reconcileOrphanedPartitions();
         worker.reconcileOrphanedPartitions();
@@ -154,7 +156,8 @@ class ProjectionWorkerTest {
                             new ProjectionReconciler.PartitionRow(
                                     id, 1, 0, AuthorizationPartition.State.PENDING));
         }
-        var worker = new ProjectionWorker(jdbc, reconciler, stubTransactions());
+        var worker =
+                new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
         worker.reconcileAffected(List.of(a, c, b), List.of(1L, 1L, 1L));
         var order = inOrder(reconciler);
         order.verify(reconciler).reconcilePartition(a, 1);
@@ -169,7 +172,12 @@ class ProjectionWorkerTest {
         UUID b = uuid(2);
         when(reconciler.projectionsOf(a)).thenReturn(List.of(projection(a, b)));
         when(reconciler.projectionsOf(b)).thenReturn(List.of(projection(b, a)));
-        var worker = new ProjectionWorker(mock(JdbcTemplate.class), reconciler, stubTransactions());
+        var worker =
+                new ProjectionWorker(
+                        mock(JdbcTemplate.class),
+                        reconciler,
+                        stubTransactions(),
+                        new AuditRecorder(mock(JdbcTemplate.class)));
         var failure =
                 assertThrows(
                         ProjectionReconciler.ReconciliationException.class,
@@ -186,7 +194,8 @@ class ProjectionWorkerTest {
         List<UUID> ids = List.of(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6));
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(ids);
         when(reconciler.tryReconcilePartition(uuid(6))).thenReturn(true);
-        var worker = new ProjectionWorker(jdbc, reconciler, stubTransactions());
+        var worker =
+                new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
         worker.reconcileOrphanedPartitions();
         worker.reconcileOrphanedPartitions();
         verify(reconciler).tryReconcilePartition(uuid(6));
@@ -219,7 +228,7 @@ class ProjectionWorkerTest {
                         new ProjectionReconciler.ReconciliationException(
                                 "KEYCLOAK_FAILURE", "Lỗi sau khi worker khác đã reclaim"));
         // Update ghi failure trả 0: attempt_count đã đổi trong DB, worker này hết quyền sở hữu.
-        new ProjectionWorker(jdbc, reconciler, stubTransactions()).poll();
+        new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc)).poll();
         verify(jdbc, never())
                 .update(contains("authz_partition SET state = 'FAILED'"), any(UUID.class));
         verify(jdbc, never())

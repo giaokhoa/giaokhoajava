@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm } from "./support/test-environment";
+import {
+  TestEnvironment, loginViaKeycloakForm,
+  luuPhienHienTai, khoiPhucPhienDaLuu, layPhienDaLuu,
+} from "./support/test-environment";
 import { seedGuardianResult } from "./support/guardian-results-fixture";
 
 // E2E phụ huynh và kết quả ở biên trình duyệt: parent gửi request liên kết, manager
@@ -112,6 +115,7 @@ async function dangNhapQuaUngDung(
 ): Promise<void> {
   await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
+  await luuPhienHienTai(page, user.username);
 }
 
 async function laySessionView(page: Page, origin: string): Promise<SessionView> {
@@ -153,11 +157,21 @@ async function dongBoEligibility(page: Page, origin: string): Promise<void> {
 
 // Đăng nhập lại bằng tài khoản khác trên cùng trang: đổi phiên rồi lấy CSRF mới.
 // GET /api/session đồng thời bootstrap tài khoản/personal workspace của actor.
+// Nếu actor đã có phiên lưu từ lần đăng nhập form thật trong cùng lượt chạy thì
+// khôi phục storageState thay vì qua form Keycloak lần nữa; phiên lưu không còn
+// hiệu lực thì rơi xuống đăng nhập form thật.
 async function dangNhapLayId(
   page: Page,
   origin: string,
   user: { username: string; password: string },
 ): Promise<{ csrf: Csrf; userId: string }> {
+  if (await khoiPhucPhienDaLuu(page, user.username)) {
+    const session = await laySessionView(page, origin);
+    if (session.authenticated && session.csrf?.token && session.user?.id) {
+      await dongBoEligibility(page, origin);
+      return { csrf: session.csrf, userId: session.user.id };
+    }
+  }
   await page.context().clearCookies();
   await dangNhapQuaUngDung(page, origin, user);
   const session = await laySessionView(page, origin);
@@ -625,12 +639,26 @@ async function phanCongChuNhiem(
 
 // Mở context trình duyệt mới và đăng nhập bằng tài khoản cho trước; dùng khi một
 // phiên phải sống độc lập với trang chính (vd: giữ nguyên phiên parent trong lúc
-// manager thao tác ở trang chính).
+// manager thao tác ở trang chính). Ưu tiên nạp storageState đã lưu của user —
+// context mới mang đúng phiên ứng dụng đã lập từ trước (đúng ngữ nghĩa "phiên
+// cũ" mà các test thu hồi quan sát); chưa có phiên lưu hoặc phiên đã chết thì
+// đăng nhập form thật trong context mới.
 async function moBoiCanhDangNhap(
   browser: Browser,
   origin: string,
   user: { username: string; password: string },
 ): Promise<{ page: Page; csrf: Csrf }> {
+  const trangThaiDaLuu = layPhienDaLuu(user.username);
+  if (trangThaiDaLuu) {
+    const contextDaLuu = await browser.newContext({ storageState: trangThaiDaLuu });
+    const pageDaLuu = await contextDaLuu.newPage();
+    const sessionDaLuu = await laySessionView(pageDaLuu, origin);
+    if (sessionDaLuu.authenticated && sessionDaLuu.csrf?.token) {
+      await dongBoEligibility(pageDaLuu, origin);
+      return { page: pageDaLuu, csrf: sessionDaLuu.csrf };
+    }
+    await contextDaLuu.close();
+  }
   const context = await browser.newContext();
   const page = await context.newPage();
   await dangNhapQuaUngDung(page, origin, user);
@@ -912,10 +940,16 @@ test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã c
     const setup = await dungSanSangPhuHuynh(page, origin, env, daTao);
 
     // Vai trò PARENT trong membership chưa tự cho xem con: parent gửi request cho
-    // chính mình và liên kết ở trạng thái REQUESTED.
-    const csrfParent = await dangNhapLai(page, origin, setup.phuHuynh);
-    await guiRequestLienKet(
-      page, origin, csrfParent, setup.workspaceId, setup.hocSinhX.userId);
+    // chính mình và liên kết ở trạng thái REQUESTED. Thao tác được kiểm thử ở test
+    // này (gửi request, duyệt liên kết) đi qua giao diện như người dùng thật; các
+    // khẳng định trạng thái/đọc kết quả ở dưới là khẳng định phụ về dữ liệu qua
+    // API. Hợp đồng API của hai endpoint gửi/duyệt do GuardianAccessIT khóa ở
+    // tầng backend.
+    await dangNhapLai(page, origin, setup.phuHuynh);
+    await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/guardian-links`);
+    await page.locator("#guardian-student-id").fill(setup.hocSinhX.userId);
+    await page.getByRole("button", { name: "Gửi yêu cầu liên kết" }).click();
+    await expect(page.getByText("Thao tác đã hoàn tất.")).toBeVisible({ timeout: 60_000 });
     const lienKetCuaParent = timLienKet(
       await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
     expect(lienKetCuaParent.state).toBe("REQUESTED");
@@ -926,12 +960,15 @@ test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã c
       page, origin, setup.workspaceId, setup.hocSinhX.userId);
     expect(chuaDuyet.status()).toBe(403);
 
-    // Manager thấy đúng request đang chờ và duyệt bằng expectedVersion hiện tại.
-    const csrfManager = await dangNhapLai(page, origin, setup.manager);
+    // Manager thấy đúng request đang chờ trên giao diện và bấm duyệt liên kết.
+    await dangNhapLai(page, origin, setup.manager);
     const lienKetChoDuyet = timLienKet(
       await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
     expect(lienKetChoDuyet.state).toBe("REQUESTED");
-    await duyetLienKet(page, origin, csrfManager, setup.workspaceId, lienKetChoDuyet);
+    await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/guardian-links`);
+    const hangLienKet = page.locator("li", { hasText: setup.hocSinhX.userId });
+    await hangLienKet.getByRole("button", { name: "Duyệt liên kết" }).click();
+    await expect(page.getByText("Thao tác đã hoàn tất.")).toBeVisible({ timeout: 60_000 });
     const lienKetSauDuyet = timLienKet(
       await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
     expect(lienKetSauDuyet.state).toBe("APPROVED");

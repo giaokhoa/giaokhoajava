@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiRequest } from "../../lib/api-client";
+import { isRecord, requestWorkspaces } from "../../lib/api-client";
 import { useSession } from "./session-provider";
 
 export type WorkspaceKind = "PERSONAL" | "CENTER" | "SYSTEM";
@@ -32,10 +32,6 @@ const kindLabels: Record<WorkspaceKind, string> = {
   CENTER: "Trung tâm",
   SYSTEM: "Hệ thống",
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isWorkspaceKind(value: unknown): value is WorkspaceKind {
   return value === "PERSONAL" || value === "CENTER" || value === "SYSTEM";
@@ -87,7 +83,7 @@ export function WorkspaceSwitcher() {
     if (!userId) return;
 
     let ignore = false;
-    apiRequest<unknown>("/api/me/workspaces")
+    requestWorkspaces(userId)
       .then((response) => {
         if (ignore) return;
         if (response.kind !== "data") {

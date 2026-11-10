@@ -12,15 +12,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -38,20 +34,7 @@ import tools.jackson.databind.JsonNode;
  */
 @SpringBootTest
 class PersonalClassAuthorizationIT extends TeachingFixture {
-    private static final String SCHEMA =
-            "personal_class_" + UUID.randomUUID().toString().replace("-", "");
-
     @Autowired private SubscriptionService subscriptions;
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void cleanup(@Autowired ApplicationContext context) {
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     @Test
     void ownerWithPlanOrganizesPersonalClassCourseRosterAndEnrollment() throws Exception {

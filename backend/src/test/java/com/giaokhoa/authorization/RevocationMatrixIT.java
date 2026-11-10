@@ -4,35 +4,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.setup.MockMvcBuilders.webAppContextSetup;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.support.OidcFormLogin;
+import com.giaokhoa.support.KeycloakSessionFixture;
 import com.giaokhoa.verification.ResultPolicyProjector;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -43,34 +29,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.core.context.SecurityContextImpl;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
-import org.springframework.security.oauth2.core.OAuth2RefreshToken;
-import org.springframework.security.oauth2.core.oidc.OidcIdToken;
-import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.session.SessionRepository;
-import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Ma trận thu hồi US5: sáu scenario khóa hành vi thu hồi ở tầng HTTP với phiên thật và worker thật,
@@ -99,29 +63,13 @@ import tools.jackson.databind.json.JsonMapper;
  * công khai — xem Sổ B62); action chấm/công bố mẫu là US7 (xem Sổ B63); case share hoãn sang gate
  * US7 (xem Sổ B64).
  *
- * <p>Lớp này extends trực tiếp {@code IntegrationEnvironment} và mang plumbing HTTP/fixture tối
- * thiểu của riêng nó, theo mẫu của các IT khác trong cùng package: {@code TeachingFixture} và
- * {@code GuardianFixture} đều là package-private ở package khác nên không kế thừa được từ đây.
+ * <p>Plumbing Keycloak/phiên dùng chung ở {@code KeycloakSessionFixture} (package support), cùng
+ * mẫu với fixture của các nhóm test khác.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class RevocationMatrixIT extends IntegrationEnvironment {
-    private static final JsonMapper JSON = new JsonMapper();
-    private static final ParameterizedTypeReference<Map<String, Object>> MAP =
-            new ParameterizedTypeReference<>() {};
-    private static final RestClient HTTP = RestClient.create();
-    private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
-    private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
-    private static final String REDIRECT_URI = "http://127.0.0.1:18888/callback";
-
-    @Autowired private JdbcTemplate jdbc;
-    @Autowired private PlatformTransactionManager transactionManager;
-    @Autowired private WebApplicationContext webContext;
-    @Autowired private SessionRepositoryFilter<?> sessionFilter;
-    @Autowired private OAuth2AuthorizedClientRepository authorizedClients;
-    @Autowired private ClientRegistrationRepository clientRegistrations;
-    @Autowired private SessionRepository<?> sessions;
+class RevocationMatrixIT extends KeycloakSessionFixture {
     @Autowired private ResultPolicyProjector resultProjector;
     @Autowired private IdempotencyService idempotency;
 
@@ -144,8 +92,6 @@ class RevocationMatrixIT extends IntegrationEnvironment {
             UUID studentXId,
             KeycloakLogin studentY,
             UUID studentYId) {}
-
-    private record KeycloakLogin(String username, String password, String subject, String email) {}
 
     private record CenterSetup(UUID workspaceId, @Nullable UUID teacherAMembership) {}
 
@@ -743,14 +689,6 @@ class RevocationMatrixIT extends IntegrationEnvironment {
 
     // ---------- Dữ kiện thư mục ----------
 
-    private KeycloakLogin createVerifiedUser(String prefix) {
-        String username = prefix + "-" + UUID.randomUUID();
-        String password = "revocation-password-" + UUID.randomUUID();
-        String email = username + "@example.test";
-        String subject = createUser(keycloakUser(username, email, true, password));
-        return new KeycloakLogin(username, password, subject, email);
-    }
-
     private UUID seedAccount(KeycloakLogin login) {
         UUID actor = UUID.randomUUID();
         UUID workspace = UUID.randomUUID();
@@ -1041,237 +979,5 @@ class RevocationMatrixIT extends IntegrationEnvironment {
         MockHttpServletResponse response = getRaw(session, uri);
         assertEquals(expectedStatus, response.getStatus(), "GET " + uri);
         return JSON.readTree(response.getContentAsString());
-    }
-
-    private MockMvc mockMvc() {
-        return webAppContextSetup(webContext)
-                .addFilters(sessionFilter)
-                .apply(springSecurity())
-                .build();
-    }
-
-    private <T> T tx(java.util.function.Supplier<T> action) {
-        return new TransactionTemplate(transactionManager).execute(_ -> action.get());
-    }
-
-    private RealSession openSession(KeycloakLogin login) throws Exception {
-        RealSession session =
-                RealSession.open(
-                        login.username(),
-                        login.password(),
-                        login.subject(),
-                        sessionFilter,
-                        authorizedClients,
-                        clientRegistrations,
-                        sessions);
-        // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
-        // của actor, điều kiện để PDP cho qua các scope nghiệp vụ.
-        getWorkspacesWhenReady(session);
-        return session;
-    }
-
-    /**
-     * Đọc danh sách workspace của actor seed trực tiếp bằng JDBC: account chưa từng bootstrap nên
-     * các lời gọi đầu có thể nhận 503 AUTHORIZATION_NOT_READY trong lúc eligibility và projection
-     * của tài khoản đang đồng bộ — hành vi fail-closed đúng của sản phẩm. Client thật thử lại có
-     * giới hạn với đúng mã lỗi đó rồi mới khẳng định; ngữ nghĩa khẳng định của test không đổi.
-     */
-    private MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
-        while (true) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            boolean syncing =
-                    response.getStatus() == 503
-                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
-            if (!syncing || Instant.now().isAfter(deadline)) {
-                return response;
-            }
-            sleep();
-        }
-    }
-
-    private static void sleep() {
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Interrupted while waiting for the operation");
-        }
-    }
-
-    // ---------- Keycloak TEST realm qua Admin API ----------
-
-    private Map<String, Object> keycloakUser(
-            String username, @Nullable String email, boolean emailVerified, String password) {
-        var body = new HashMap<String, Object>();
-        body.put("username", username);
-        body.put("enabled", true);
-        body.put("firstName", "Synthetic");
-        body.put("lastName", "User");
-        body.put("emailVerified", emailVerified);
-        body.put("requiredActions", List.of());
-        if (email != null) {
-            body.put("email", email);
-        }
-        body.put(
-                "credentials",
-                List.of(Map.of("type", "password", "value", password, "temporary", false)));
-        return body;
-    }
-
-    private String createUser(Map<String, Object> body) {
-        var response =
-                HTTP.post()
-                        .uri(admin("/users"))
-                        .headers(headers -> headers.setBearerAuth(masterToken()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(body)
-                        .retrieve()
-                        .toEntity(String.class);
-        URI location = response.getHeaders().getLocation();
-        if (location == null) {
-            throw new IllegalStateException("Keycloak did not return the created user location");
-        }
-        String path = location.getPath();
-        return path.substring(path.lastIndexOf('/') + 1);
-    }
-
-    private void deleteUser(String userId) {
-        deleteWithConflictRetry(() ->
-                HTTP.delete()
-                        .uri(admin("/users/" + userId))
-                        .headers(headers -> headers.setBearerAuth(masterToken()))
-                        .retrieve()
-                        .toBodilessEntity());
-    }
-
-    private String masterToken() {
-        var form = new LinkedMultiValueMap<String, String>();
-        form.add("grant_type", "password");
-        form.add("client_id", "admin-cli");
-        form.add("username", fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
-        form.add("password", fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
-        Map<String, Object> response =
-                HTTP.post()
-                        .uri(BASE + "/realms/master/protocol/openid-connect/token")
-                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                        .body(form)
-                        .retrieve()
-                        .body(MAP);
-        if (response == null) {
-            throw new IllegalStateException("Master token not readable");
-        }
-        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
-    }
-
-    private String admin(String path) {
-        return BASE + "/admin/realms/" + REALM + path;
-    }
-
-    static String fixture(String key) {
-        String value = System.getenv(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Missing TEST fixture variable " + key);
-        }
-        return value;
-    }
-
-    /**
-     * Phiên Spring thật chứa token Code+PKCE thật của một user TEST. Đăng nhập đi qua form login
-     * của Keycloak TEST bằng client BFF của ứng dụng; không dùng Direct Access Grants cho phiên
-     * web. Login dùng helper dùng chung {@code OidcFormLogin} (đã biết hai bước identity-first),
-     * phần còn lại dựng phiên Spring từ token như bản gốc trong test hợp đồng US2.
-     */
-    static final class RealSession implements AutoCloseable {
-        private final SessionRepository<?> sessions;
-        private final Cookie sessionCookie;
-
-        private RealSession(SessionRepository<?> sessions, Cookie sessionCookie) {
-            this.sessions = sessions;
-            this.sessionCookie = sessionCookie;
-        }
-
-        Cookie cookie() {
-            return sessionCookie;
-        }
-
-        @Override
-        public void close() {
-            sessions.deleteById(sessionCookie.getValue());
-        }
-
-        static RealSession open(
-                String username,
-                String password,
-                String expectedSubject,
-                SessionRepositoryFilter<?> filter,
-                OAuth2AuthorizedClientRepository clients,
-                ClientRegistrationRepository registrations,
-                SessionRepository<?> sessions)
-                throws Exception {
-            var registration =
-                    Objects.requireNonNull(registrations.findByRegistrationId("keycloak"));
-            OidcFormLogin.WebTokens tokens =
-                    OidcFormLogin.webTokensViaCodePkce(
-                            HTTP, BASE, REALM, REDIRECT_URI, username, password);
-            String claims =
-                    new String(
-                            Base64.getUrlDecoder().decode(tokens.idToken().split("[.]")[1]),
-                            StandardCharsets.UTF_8);
-            assertEquals(expectedSubject, JSON.readTree(claims).get("sub").stringValue());
-            Instant issued = Instant.now();
-            var idToken =
-                    new OidcIdToken(
-                            tokens.idToken(),
-                            issued,
-                            issued.plusSeconds(300),
-                            Map.of(
-                                    "iss",
-                                    BASE + "/realms/" + REALM,
-                                    "sub",
-                                    expectedSubject,
-                                    "aud",
-                                    List.of(registration.getClientId())));
-            var authentication =
-                    new OAuth2AuthenticationToken(
-                            new DefaultOidcUser(List.of(), idToken, "sub"), List.of(), "keycloak");
-            var authorized =
-                    new OAuth2AuthorizedClient(
-                            registration,
-                            authentication.getName(),
-                            new OAuth2AccessToken(
-                                    OAuth2AccessToken.TokenType.BEARER,
-                                    tokens.accessToken(),
-                                    issued,
-                                    issued.plusSeconds(300)),
-                            new OAuth2RefreshToken(tokens.refreshToken(), issued));
-            var request = new MockHttpServletRequest("GET", "/");
-            var response = new MockHttpServletResponse();
-            filter.doFilter(
-                    request,
-                    response,
-                    (wrapped, reply) -> {
-                        var servletRequest = (HttpServletRequest) wrapped;
-                        servletRequest
-                                .getSession(true)
-                                .setAttribute(
-                                        HttpSessionSecurityContextRepository
-                                                .SPRING_SECURITY_CONTEXT_KEY,
-                                        new SecurityContextImpl(authentication));
-                        clients.saveAuthorizedClient(
-                                authorized,
-                                authentication,
-                                servletRequest,
-                                (HttpServletResponse) reply);
-                    });
-            Cookie sessionCookie = Objects.requireNonNull(response.getCookie("SESSION"));
-            assertNotNull(
-                    sessions.findById(sessionCookie.getValue()), "Session must persist in JDBC");
-            return new RealSession(sessions, sessionCookie);
-        }
     }
 }

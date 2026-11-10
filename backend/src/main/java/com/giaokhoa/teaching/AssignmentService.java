@@ -112,7 +112,7 @@ public class AssignmentService {
         requireCenter(workspaceId);
         CourseSubjectScopeRow subject = requireCurrentCourseSubject(workspaceId, courseSubjectId);
         requireClassAndCourseActive(workspaceId, subject);
-        requireSubscriptionCurrent(workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
         for (UUID teacherUserId : teachers) {
             requireCenterTeacher(workspaceId, teacherUserId);
         }
@@ -206,7 +206,7 @@ public class AssignmentService {
                     "CLASS_NOT_ACTIVE",
                     "Lớp đã bị thu hồi, không phân công chủ nhiệm được nữa.");
         }
-        requireSubscriptionCurrent(workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
         requireCenterTeacher(workspaceId, teacherUserId);
         if (repository
                 .findCurrentHomeroomAssignment(workspaceId, classId, teacherUserId)
@@ -408,15 +408,6 @@ public class AssignmentService {
             throw workspaceNotFound();
         }
         return workspace;
-    }
-
-    private void requireSubscriptionCurrent(UUID workspaceId) {
-        if (!repository.subscriptionCurrent(workspaceId)) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
-                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
-        }
     }
 
     private static HttpProblemException classNotFound() {

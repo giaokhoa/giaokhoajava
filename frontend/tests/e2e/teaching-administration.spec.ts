@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
-import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./support/test-environment";
+import {
+  TestEnvironment, loginViaKeycloakForm, appRequestWhenReady,
+  luuPhienHienTai, khoiPhucPhienDaLuu,
+} from "./support/test-environment";
 
 // E2E quản trị giảng dạy ở biên trình duyệt: tạo lớp/khóa nhiều môn, chọn môn ghi danh,
 // nhiều giáo viên cùng môn, chủ nhiệm, và actor chuyển lớp/môn không lộ dữ liệu.
@@ -84,6 +87,7 @@ async function dangNhapQuaUngDung(
 ): Promise<void> {
   await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
+  await luuPhienHienTai(page, user.username);
 }
 
 async function laySessionView(page: Page, origin: string): Promise<SessionView> {
@@ -109,11 +113,21 @@ async function dongBoEligibility(page: Page, origin: string): Promise<void> {
 
 // Đăng nhập lại bằng tài khoản khác trên cùng trang: đổi phiên rồi lấy CSRF mới.
 // GET /api/session đồng thời bootstrap tài khoản/personal workspace của actor.
+// Nếu actor đã có phiên lưu từ lần đăng nhập form thật trong cùng lượt chạy thì
+// khôi phục storageState thay vì qua form Keycloak lần nữa; phiên lưu không còn
+// hiệu lực thì rơi xuống đăng nhập form thật.
 async function dangNhapLayId(
   page: Page,
   origin: string,
   user: { username: string; password: string },
 ): Promise<{ csrf: Csrf; userId: string }> {
+  if (await khoiPhucPhienDaLuu(page, user.username)) {
+    const session = await laySessionView(page, origin);
+    if (session.authenticated && session.csrf?.token && session.user?.id) {
+      await dongBoEligibility(page, origin);
+      return { csrf: session.csrf, userId: session.user.id };
+    }
+  }
   await page.context().clearCookies();
   await dangNhapQuaUngDung(page, origin, user);
   const session = await laySessionView(page, origin);
@@ -625,7 +639,7 @@ async function dungCenterLopKhoa(
   return { ...setup, lopId, tenLop, khoaId, tenKhoa, monKhoa };
 }
 
-test("owner tạo lớp L1 và khóa K ba môn: mutation 202 rồi poll tới SUCCEEDED, danh sách hiện đủ", async ({
+test("owner tạo lớp L1 và khóa K ba môn qua giao diện lớp học: thao tác hoàn tất trên UI, danh sách hiện đủ", async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -633,21 +647,46 @@ test("owner tạo lớp L1 và khóa K ba môn: mutation 202 rồi poll tới SU
   const env = new TestEnvironment();
   const daTao: NguoiDungTest[] = [];
   try {
-    const setup = await dungCenterLopKhoa(page, origin, env, daTao, 3);
-    expect(setup.monKhoa).toHaveLength(3);
-    expect(new Set(setup.monKhoa.map((mon) => mon.subjectId)).size).toBe(3);
+    const setup = await dungCenterVoiManager(page, origin, env, daTao);
+    const monHoc = (await layDanhSachMon(page, origin)).slice(0, 3);
+    expect(monHoc).toHaveLength(3);
 
+    // Thao tác được kiểm thử đi qua UI như owner thật: tạo lớp bằng form "Tạo lớp
+    // mới", mở lớp vừa tạo rồi tạo khóa bằng form "Tạo khóa mới" với ba môn được
+    // chọn; thao tác chỉ tính là xong khi UI báo hoàn tất và khóa hiện trên trang.
+    // Hợp đồng 202/poll của các endpoint lớp/khóa do TeachingStructureIT khóa ở
+    // tầng backend.
+    await dangNhapLai(page, origin, setup.owner);
+    const tenLop = `lop-e2e-${randomUUID().slice(0, 8)}`;
+    const tenKhoa = `khoa-e2e-${randomUUID().slice(0, 8)}`;
+    await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/classes`);
+    await page.locator("#class-name").fill(tenLop);
+    await page.getByRole("button", { name: "Tạo lớp" }).click();
+    await expect(page.getByText("Thao tác đã hoàn tất.")).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: tenLop, exact: true }).click();
+    await page.locator("#course-name").fill(tenKhoa);
+    for (const mon of monHoc) {
+      expect(mon.name).toBeTruthy();
+      expect(mon.code).toBeTruthy();
+      await page.getByLabel(`${mon.name} (${mon.code})`).check();
+    }
+    await page.getByRole("button", { name: "Tạo khóa" }).click();
+    await expect(page.getByRole("heading", { name: `Khóa: ${tenKhoa}`, exact: true }))
+      .toBeVisible({ timeout: 60_000 });
+
+    // Khẳng định phụ về dữ liệu qua API: danh sách lớp hiện L1; khóa thuộc đúng
+    // lớp đó và mang đúng ba môn đã chọn trên UI.
     const danhSachLop = await guiGet(page, origin, `/api/workspaces/${setup.workspaceId}/classes`);
     expect(danhSachLop.status()).toBe(200);
     const lop = ((await danhSachLop.json()) as TrangDanhSach<ClassView>).items
-      .find((item) => item.id === setup.lopId);
-    expect(lop?.name).toBe(setup.tenLop);
+      .find((item) => item.name === tenLop);
+    expect(lop).toBeTruthy();
 
-    const khoa = await layKhoaTheoLop(
-      page, origin, setup.workspaceId, setup.lopId, setup.tenKhoa);
-    expect(khoa.id).toBe(setup.khoaId);
-    expect(khoa.classId).toBe(setup.lopId);
+    const khoa = await layKhoaTheoLop(page, origin, setup.workspaceId, lop!.id, tenKhoa);
+    expect(khoa.classId).toBe(lop!.id);
     expect(khoa.subjects).toHaveLength(3);
+    expect(new Set(khoa.subjects.map((mon) => mon.subjectId)))
+      .toEqual(new Set(monHoc.map((mon) => mon.id)));
   } finally {
     await xoaNguoiDung(env, daTao);
   }

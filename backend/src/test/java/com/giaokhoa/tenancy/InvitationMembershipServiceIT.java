@@ -326,6 +326,17 @@ class InvitationMembershipServiceIT extends IntegrationEnvironment {
                     first.operation().getId(),
                     replay.operation().getId(),
                     "Phát lại cùng khoá phải trả đúng operation đã ghi");
+            assertEquals(
+                    1,
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT count(*) FROM audit_event"
+                                            + " WHERE action = 'PRIVILEGE_CHANGE'"
+                                            + " AND operation_id = ?",
+                                    Integer.class,
+                                    first.operation().getId())),
+                    "Cấp học sinh ghi một dòng audit; phát lại dùng chung operation nên không"
+                            + " ghi dòng thứ hai");
             assertNull(replay.handoff(), "Phát lại không được tái lộ handoff hay credential");
             assertEquals(
                     1,

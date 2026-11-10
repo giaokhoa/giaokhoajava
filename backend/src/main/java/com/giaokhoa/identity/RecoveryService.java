@@ -2,6 +2,8 @@ package com.giaokhoa.identity;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.identity.model.RecoveryRequest;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -47,9 +49,12 @@ public class RecoveryService {
 
     private final IdempotencyService idempotency;
 
-    public RecoveryService(JdbcTemplate jdbc, IdempotencyService idempotency) {
+    private final AuditRecorder audit;
+
+    public RecoveryService(JdbcTemplate jdbc, IdempotencyService idempotency, AuditRecorder audit) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
+        this.audit = audit;
     }
 
     /** Quyết định của operator khi resolve, khớp hợp đồng resolve của platform recovery. */
@@ -261,28 +266,44 @@ public class RecoveryService {
                 || current == RecoveryRequest.State.REJECTED) {
             throw invalidState(requestId);
         }
+        RequestView result;
         if (decision == Decision.APPROVE) {
-            return verify(operatorUserId, requestId, note);
+            result = verify(operatorUserId, requestId, note);
+        } else {
+            if (decision == Decision.COMPLETE && current != RecoveryRequest.State.VERIFIED) {
+                throw invalidState(requestId);
+            }
+            if (current == RecoveryRequest.State.REQUESTED) {
+                verify(operatorUserId, requestId, note);
+            }
+            String state = decision == Decision.COMPLETE ? "RESOLVED" : "REJECTED";
+            int updated =
+                    jdbc.update(
+                            "UPDATE recovery_request SET state = ?, resolved_at = now(),"
+                                    + " verification_note = COALESCE(?, verification_note), version = version + 1"
+                                    + " WHERE id = ? AND state = 'VERIFIED'",
+                            state,
+                            note,
+                            requestId);
+            if (updated == 0) {
+                throw stateConflict(requestId);
+            }
+            result = loadView(requestId);
         }
-        if (decision == Decision.COMPLETE && current != RecoveryRequest.State.VERIFIED) {
-            throw invalidState(requestId);
-        }
-        if (current == RecoveryRequest.State.REQUESTED) {
-            verify(operatorUserId, requestId, note);
-        }
-        String state = decision == Decision.COMPLETE ? "RESOLVED" : "REJECTED";
-        int updated =
-                jdbc.update(
-                        "UPDATE recovery_request SET state = ?, resolved_at = now(),"
-                                + " verification_note = COALESCE(?, verification_note), version = version + 1"
-                                + " WHERE id = ? AND state = 'VERIFIED'",
-                        state,
-                        note,
-                        requestId);
-        if (updated == 0) {
-            throw stateConflict(requestId);
-        }
-        return loadView(requestId);
+        // Một dòng audit cho mỗi quyết định resolve thật: APPROVE mới tới VERIFIED nên outcome
+        // còn PENDING; COMPLETE/REJECT đã kết thúc vòng đời yêu cầu nên SUCCEEDED. Replay qua
+        // resolveOnce trả sớm trước khi vào đây nên không ghi trùng.
+        audit.record(
+                operatorUserId,
+                result.workspaceId(),
+                AuditEvent.Action.RECOVERY,
+                AuditEvent.TargetType.ACCOUNT,
+                result.targetUserId(),
+                null,
+                decision == Decision.APPROVE
+                        ? AuditEvent.Outcome.PENDING
+                        : AuditEvent.Outcome.SUCCEEDED);
+        return result;
     }
 
     private Optional<UUID> replay(

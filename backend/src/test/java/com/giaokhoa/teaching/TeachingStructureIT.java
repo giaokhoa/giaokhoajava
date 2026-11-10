@@ -273,6 +273,14 @@ class TeachingStructureIT extends TeachingFixture {
                     enrollmentCount(session, fixture.workspaceId(), added),
                     "Môn thêm sau không tự ghi danh học sinh đã ghi danh trước đó");
             assertEquals(
+                    0,
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM teaching_assignment"
+                                    + " WHERE course_subject_id = ?",
+                            Integer.class,
+                            added),
+                    "Môn thêm sau không tự phân công giáo viên cho môn–khóa mới");
+            assertEquals(
                     1,
                     enrollmentCount(session, fixture.workspaceId(), current.get(0)),
                     "Ghi danh môn hiện có không đổi khi thêm môn mới");

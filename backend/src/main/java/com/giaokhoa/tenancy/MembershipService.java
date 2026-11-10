@@ -4,6 +4,8 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.tenancy.model.MembershipRole;
@@ -41,10 +43,13 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Service kiểm tra trước cùng các tiền điều kiện dữ kiện mà registrar sẽ ép khi ghi (workspace
  * là CENTER đang ACTIVE; người cấp là OWNER/MANAGER ACTIVE) để lời gọi chắc chắn bị từ chối không
  * tạo rồi xoá một user Keycloak vô ích; registrar vẫn là chốt chặn cuối khi ghi directory. Quyết
- * định cho phép ở endpoint vẫn do Keycloak PDP xét qua scope student.issue — gói hết hạn làm PDP từ
- * chối qua time policy của bundle, service không tự tính lại hiệu lực gói. Operation ghi cuối luồng
- * qua {@link MembershipPolicyProjector} mới là mốc hoàn tất bất đồng bộ: membership chỉ được coi là
- * đã đồng bộ khi operation SUCCEEDED.
+ * định cho phép ở các route thành viên không qua PDP: theo ngoại lệ mục 10 của
+ * contracts/authorization.md, controller quyết bằng dữ kiện SQL — {@link #requireAdmin} ép
+ * OWNER/MANAGER ACTIVE và {@link #requireSubscriptionCurrent} ép gói còn hiệu lực bằng chính sách
+ * gói trên dữ kiện kỳ gói — còn pipeline profile của executor chỉ đồng bộ eligibility hiện hành và
+ * giữ ACCOUNT fence trước khi route chạy. Operation ghi cuối luồng qua {@link
+ * MembershipPolicyProjector} mới là mốc hoàn tất bất đồng bộ: membership chỉ được coi là đã đồng bộ
+ * khi operation SUCCEEDED.
  */
 @Service
 public class MembershipService {
@@ -53,18 +58,21 @@ public class MembershipService {
     private final InitialCredentialHandoff handoff;
     private final MembershipPolicyProjector projector;
     private final ResourceMutationCoordinator coordinator;
+    private final AuditRecorder audit;
 
     public MembershipService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             InitialCredentialHandoff handoff,
             MembershipPolicyProjector projector,
-            ResourceMutationCoordinator coordinator) {
+            ResourceMutationCoordinator coordinator,
+            AuditRecorder audit) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.handoff = handoff;
         this.projector = projector;
         this.coordinator = coordinator;
+        this.audit = audit;
     }
 
     /**
@@ -118,6 +126,14 @@ public class MembershipService {
         AuthorizationOperation operation =
                 projector.recordMembershipChange(
                         initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        audit.record(
+                initiatorUserId,
+                workspaceId,
+                AuditEvent.Action.PRIVILEGE_CHANGE,
+                AuditEvent.TargetType.MEMBERSHIP,
+                issued.issued().membershipId(),
+                operation.getId(),
+                AuditEvent.Outcome.PENDING);
         return new StudentIssueResult(operation, issued);
     }
 
