@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -74,7 +75,7 @@ class ResourceShareClosureTest {
             UUID derivedVersionId,
             UUID sourceResourceId,
             UUID sourceVersionId,
-            UUID grantId) {
+            @Nullable UUID grantId) {
         return new ResourceDependency(
                 UUID.randomUUID(),
                 derivedResourceId,

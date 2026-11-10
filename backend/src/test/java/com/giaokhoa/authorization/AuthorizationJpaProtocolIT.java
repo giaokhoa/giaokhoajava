@@ -299,19 +299,17 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first =
                     executor.submit(() ->
-                            tx.execute(_ -> {
+                            tx.executeWithoutResult(_ -> {
                                 boolean claimed = claim(operationId);
                                 firstClaimed.set(claimed);
                                 firstLocked.countDown();
                                 await(releaseFirst);
-                                return null;
                             }));
             assertTrue(firstLocked.await(15, TimeUnit.SECONDS));
             var second =
                     executor.submit(() ->
-                            tx.execute(_ -> {
+                            tx.executeWithoutResult(_ -> {
                                 secondClaimed.set(claim(operationId));
-                                return null;
                             }));
             // Instance thứ hai claim trong lúc instance đầu còn giữ khóa ghi: SKIP LOCKED
             // làm operation biến mất khỏi tập claimable của nó thay vì chờ hay claim trùng.

@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -452,7 +453,7 @@ class ResourcesJpaRepositoryIT extends IntegrationEnvironment {
             UUID derivedVersionId,
             UUID sourceResourceId,
             UUID sourceVersionId,
-            UUID grantId) {
+            @Nullable UUID grantId) {
         jdbc.update(
                 "INSERT INTO resource_dependency"
                         + " (id, derived_resource_id, derived_version_id, source_resource_id,"
