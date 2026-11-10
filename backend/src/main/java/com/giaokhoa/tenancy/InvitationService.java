@@ -3,11 +3,12 @@ package com.giaokhoa.tenancy;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.AdvisoryLocks;
+import com.giaokhoa.shared.Sha256;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.MembershipRole;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -64,6 +65,7 @@ public class InvitationService {
     private final JdbcTemplate jdbc;
     private final IdempotencyService idempotency;
     private final MembershipPolicyProjector projector;
+    private final AuditRecorder audit;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -71,11 +73,13 @@ public class InvitationService {
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             MembershipPolicyProjector projector,
-            ResourceMutationCoordinator coordinator) {
+            ResourceMutationCoordinator coordinator,
+            AuditRecorder audit) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.projector = projector;
         this.coordinator = coordinator;
+        this.audit = audit;
     }
 
     /**
@@ -261,8 +265,20 @@ public class InvitationService {
                     "INVITATION_NOT_PENDING",
                     "Lời mời không còn chờ chấp nhận.");
         }
-        return projector.recordMembershipChange(
-                acceptorUserId, invitation.workspaceId(), idempotencyKey, payloadHash);
+        AuthorizationOperation operation =
+                projector.recordMembershipChange(
+                        acceptorUserId, invitation.workspaceId(), idempotencyKey, payloadHash);
+        // Chỉ chấp nhận mới đổi đặc quyền (tạo membership hoặc cộng role); tạo lời mời chưa
+        // tạo membership nào nên không ghi audit ở đường invite.
+        audit.record(
+                acceptorUserId,
+                invitation.workspaceId(),
+                AuditEvent.Action.PRIVILEGE_CHANGE,
+                AuditEvent.TargetType.MEMBERSHIP,
+                membershipId,
+                operation.getId(),
+                AuditEvent.Outcome.PENDING);
+        return operation;
     }
 
     /** Một dòng lời mời như accept cần dùng, mọi cột đã đọc theo kiểu đích. */
@@ -418,14 +434,7 @@ public class InvitationService {
 
     /** Hash tra cứu của token: SHA-256 hex, đúng định dạng cột token_hash của V012. */
     private static String tokenHash(String rawToken) {
-        try {
-            return java.util.HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(rawToken.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        return Sha256.hex(rawToken);
     }
 
     private static List<String> stringArray(@Nullable Object value) {
@@ -458,19 +467,6 @@ public class InvitationService {
      * và hai instance của ứng dụng vẫn tôn trọng nhau.
      */
     private void lockOn(String key) {
-        jdbc.query("SELECT pg_advisory_xact_lock(?)", _ -> {}, lockId(key));
-    }
-
-    private static long lockId(String key) {
-        try {
-            byte[] digest =
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(
-                                    ("giaokhoa:invitation-service:" + key)
-                                            .getBytes(StandardCharsets.UTF_8));
-            return java.nio.ByteBuffer.wrap(digest).getLong();
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
+        AdvisoryLocks.lock(jdbc, "giaokhoa:invitation-service:", key);
     }
 }

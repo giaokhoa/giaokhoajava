@@ -16,14 +16,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -32,9 +28,6 @@ import tools.jackson.databind.JsonNode;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ResultSourceMutationIT extends GuardianFixture {
-    private static final String SCHEMA =
-            "result_source_mutation_" + UUID.randomUUID().toString().replace("-", "");
-
     private enum SourceMutation {
         PARENT_ROLE,
         STUDENT_MEMBERSHIP,
@@ -51,16 +44,6 @@ class ResultSourceMutationIT extends GuardianFixture {
     @Autowired private AssignmentService assignments;
     @Autowired private ResultPolicyProjector resultProjector;
     @Autowired private IdempotencyService idempotency;
-
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @AfterAll
-    static void removeSchema(@Autowired ApplicationContext context) {
-        stopSchedulerAndDropSchema(context, SCHEMA);
-    }
 
     @ParameterizedTest
     @EnumSource(SourceMutation.class)

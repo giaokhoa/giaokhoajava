@@ -1,4 +1,3 @@
-import { SessionProvider } from "../../../../../../features/identity/session-provider";
 import { ChildResultsContent } from "../../../../../../features/guardians/published-results";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +9,5 @@ export default async function CenterChildResultsPage({
   params: Promise<{ workspaceId: string; studentId: string }>;
 }) {
   const { workspaceId, studentId } = await params;
-  return (
-    <SessionProvider>
-      <ChildResultsContent workspaceId={workspaceId} studentId={studentId} />
-    </SessionProvider>
-  );
+  return <ChildResultsContent workspaceId={workspaceId} studentId={studentId} />;
 }

@@ -5,7 +5,9 @@ import {
   TestEnvironment,
   appRequestWhenReady,
   loginViaKeycloakForm,
-  moBoiCanhDangNhap,
+  luuPhienHienTai,
+  khoiPhucPhienDaLuu,
+  moBoiCanhTuPhienDaLuu,
 } from "./support/test-environment";
 
 // E2E ma trận capability personal/center của US6 ở biên trình duyệt (FR-025–FR-028,
@@ -93,6 +95,7 @@ async function dangNhapQuaUngDung(
 ): Promise<void> {
   await loginViaKeycloakForm(page, `${origin}/oauth2/authorization/keycloak`, user);
   await page.waitForURL((url) => url.origin === new URL(origin).origin && url.pathname === "/");
+  await luuPhienHienTai(page, user.username);
 }
 
 async function laySessionView(page: Page, origin: string): Promise<SessionView> {
@@ -103,11 +106,18 @@ async function laySessionView(page: Page, origin: string): Promise<SessionView> 
 
 // Đăng nhập lại bằng tài khoản khác trên cùng trang: đổi phiên rồi lấy CSRF mới.
 // GET /api/session đồng thời bootstrap tài khoản/personal workspace của actor.
+// Nếu actor đã có phiên lưu từ lần đăng nhập form thật trong cùng lượt chạy thì
+// khôi phục storageState thay vì qua form Keycloak lần nữa; phiên lưu không còn
+// hiệu lực thì rơi xuống đăng nhập form thật.
 async function dangNhapLai(
   page: Page,
   origin: string,
   user: { username: string; password: string },
 ): Promise<Csrf> {
+  if (await khoiPhucPhienDaLuu(page, user.username)) {
+    const session = await laySessionView(page, origin);
+    if (session.authenticated && session.csrf?.token) return session.csrf;
+  }
   await page.context().clearCookies();
   await dangNhapQuaUngDung(page, origin, user);
   const session = await laySessionView(page, origin);
@@ -883,7 +893,7 @@ test("US6.5 rời center: quyền center chấm dứt, gói và lớp cá nhân 
 
     // Phiên độc lập của người dùng: đang là thành viên center và có gói cá nhân.
     const { page: trangNguoiDung, csrf: csrfNguoiDung } =
-      await moBoiCanhDangNhap(browser, origin, nguoiDung);
+      await moBoiCanhTuPhienDaLuu(browser, origin, nguoiDung);
     expect((await guiGet(trangNguoiDung, origin,
       `/api/workspaces/${setup.workspaceId}/classes`)).status()).toBe(200);
 

@@ -3,6 +3,8 @@ package com.giaokhoa.guardians;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
@@ -46,18 +48,21 @@ public class GuardianLinkService {
     private final IdempotencyService idempotency;
     private final GuardianPolicyProjector projector;
     private final ResourceMutationCoordinator coordinator;
+    private final AuditRecorder audit;
 
     public GuardianLinkService(
             JdbcTemplate jdbc,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,
             GuardianPolicyProjector projector,
-            ResourceMutationCoordinator coordinator) {
+            ResourceMutationCoordinator coordinator,
+            AuditRecorder audit) {
         this.jdbc = jdbc;
         this.workspaceTransaction = workspaceTransaction;
         this.idempotency = idempotency;
         this.projector = projector;
         this.coordinator = coordinator;
+        this.audit = audit;
     }
 
     /** Một liên kết phụ huynh: hai phía, trạng thái vòng đời và row version cho decision. */
@@ -403,17 +408,14 @@ public class GuardianLinkService {
 
     private void recordAudit(
             UUID actorUserId, UUID workspaceId, UUID linkId, AuthorizationOperation operation) {
-        jdbc.update(
-                "INSERT INTO audit_event"
-                        + " (id, actor_user_id, workspace_id, action, target_type, target_id,"
-                        + " operation_id, outcome)"
-                        + " VALUES (?, ?, ?, 'RELATIONSHIP_CHANGE', 'RELATIONSHIP', ?, ?,"
-                        + " 'PENDING')",
-                UUID.randomUUID(),
+        audit.record(
                 actorUserId,
                 workspaceId,
+                AuditEvent.Action.RELATIONSHIP_CHANGE,
+                AuditEvent.TargetType.RELATIONSHIP,
                 linkId,
-                operation.getId());
+                operation.getId(),
+                AuditEvent.Outcome.PENDING);
     }
 
     private static HttpProblemException linkTargetNotFound() {

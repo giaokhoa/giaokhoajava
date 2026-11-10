@@ -2,12 +2,10 @@ package com.giaokhoa.tenancy.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -15,14 +13,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -35,18 +30,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 @SpringBootTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WorkspaceTransactionIT extends IntegrationEnvironment {
-    private static final String SCHEMA =
-            "workspace_tx_" + UUID.randomUUID().toString().replace("-", "");
     private static final String RUNTIME_ROLE =
             "workspace_context_" + UUID.randomUUID().toString().replace("-", "");
     private static final String PROBE_TABLE = "workspace_context_probe";
 
-    @DynamicPropertySource
-    static void isolatedSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
-    }
-
-    @Autowired ApplicationContext context;
     @Autowired JdbcTemplate jdbc;
     @Autowired WorkspaceTransaction workspaceTransaction;
 
@@ -111,7 +98,6 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
                         + "\" FROM "
                         + RUNTIME_ROLE);
         jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-        stopSchedulerAndDropSchema(context, SCHEMA);
     }
 
     @Test
@@ -162,7 +148,12 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
         // Cùng một connection vật lý (SingleConnectionDataSource): context theo transaction
         // phải biến mất khi transaction kết thúc, không rò sang lần dùng connection sau.
         assertEquals(0, countVisible(runtimeJdbc, workspace));
-        assertEquals(Optional.empty(), runtimeTransaction.currentWorkspace());
+        assertEquals(
+                "",
+                runtimeJdbc.queryForObject(
+                        "SELECT current_setting(?, true)",
+                        String.class,
+                        WorkspaceTransaction.WORKSPACE_SETTING));
     }
 
     @Test
@@ -228,12 +219,24 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
     }
 
     @Test
-    void springBeanReportsTheContextOnlyInsideItsTransaction() {
+    void springBeanSetsTheContextOnlyInsideItsTransaction() {
         UUID workspace = UUID.randomUUID();
-        Optional<UUID> inside =
-                workspaceTransaction.inWorkspace(workspace, workspaceTransaction::currentWorkspace);
-        assertEquals(Optional.of(workspace), inside);
-        assertTrue(workspaceTransaction.currentWorkspace().isEmpty());
+        String inside =
+                Objects.requireNonNull(
+                        workspaceTransaction.inWorkspace(
+                                workspace,
+                                () ->
+                                        jdbc.queryForObject(
+                                                "SELECT current_setting(?, true)",
+                                                String.class,
+                                                WorkspaceTransaction.WORKSPACE_SETTING)));
+        assertEquals(workspace.toString(), inside);
+        assertEquals(
+                "",
+                jdbc.queryForObject(
+                        "SELECT current_setting(?, true)",
+                        String.class,
+                        WorkspaceTransaction.WORKSPACE_SETTING));
     }
 
     private UUID seedWorkspace() {

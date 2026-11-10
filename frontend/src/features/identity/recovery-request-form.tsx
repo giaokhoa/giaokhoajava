@@ -1,50 +1,14 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import { OperationPanel, useOperationCheck } from "../operations/operation-panel";
 import {
-  operationStatus,
-  type OperationState,
-  type OperationView,
+  parseTrackedOperation,
+  type TrackedOperation,
 } from "../operations/operation-status";
 import { apiRequest } from "../../lib/api-client";
 
-export type TrackedOperation = Pick<OperationView, "id" | "state" | "completed" | "errorCode">;
-
 type PendingAction = "recovery" | "operation" | null;
-
-const operationStates: OperationState[] = [
-  "PENDING",
-  "APPLYING",
-  "SUCCEEDED",
-  "RETRYABLE_FAILURE",
-  "FAILED",
-];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function parseTrackedOperation(data: unknown): TrackedOperation | null {
-  if (!isRecord(data)) return null;
-  const source = isRecord(data.operation) ? data.operation : data;
-  const id = typeof source.id === "string" && source.id
-    ? source.id
-    : typeof data.operationId === "string" && data.operationId
-      ? data.operationId
-      : null;
-  if (!id
-      || typeof source.state !== "string"
-      || !operationStates.includes(source.state as OperationState)
-      || typeof source.completed !== "boolean") {
-    return null;
-  }
-  return {
-    id,
-    state: source.state as OperationState,
-    completed: source.completed,
-    errorCode: typeof source.errorCode === "string" && source.errorCode ? source.errorCode : undefined,
-  };
-}
 
 // Form chỉ gửi target của chính actor; lý do trống hoặc thiếu userId thì không gửi.
 export function recoveryRequestBody(
@@ -57,6 +21,7 @@ export function recoveryRequestBody(
 }
 
 export function RecoveryRequestForm({ userId }: { userId: string }) {
+  const checkOperationStatus = useOperationCheck();
   const [operation, setOperation] = useState<TrackedOperation | null>(null);
   const recoveryAttempt = useRef<{ payload: string; key: string } | null>(null);
   const [reason, setReason] = useState("");
@@ -68,12 +33,7 @@ export function RecoveryRequestForm({ userId }: { userId: string }) {
     setPendingAction("operation");
     setError(null);
     try {
-      const result = await apiRequest<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) {
-        throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
-      }
-      setOperation(nextOperation);
+      setOperation(await checkOperationStatus(operation.id));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Không kiểm tra được trạng thái thao tác.");
     } finally {
@@ -146,22 +106,11 @@ export function RecoveryRequestForm({ userId }: { userId: string }) {
       </form>
 
       {operation ? (
-        <div className="section">
-          <h3>Trạng thái thao tác</h3>
-          <p>{operationStatus(operation).message}</p>
-          <p>
-            Mã thao tác: <code>{operation.id}</code>
-          </p>
-          {operation.errorCode ? <p>Mã lỗi: {operation.errorCode}</p> : null}
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={pendingAction !== null}
-            onClick={() => void checkOperation()}
-          >
-            Kiểm tra trạng thái
-          </button>
-        </div>
+        <OperationPanel
+          operation={operation}
+          checking={pendingAction !== null}
+          onCheck={() => void checkOperation()}
+        />
       ) : null}
 
       {error ? <p role="alert">{error}</p> : null}

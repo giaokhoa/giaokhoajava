@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { apiRequest, requestAllPages, requestWhenReady } from "../../lib/api-client";
-import { operationStatus, pollOperationUntilSettled } from "../operations/operation-status";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  parseTrackedOperation,
-  type TrackedOperation,
-} from "../identity/recovery-request-form";
+  isRecord,
+  listItems,
+  requestAllPages,
+  requestWorkspaces,
+} from "../../lib/api-client";
+import { SessionGate } from "../identity/session-gate";
 import { useSession } from "../identity/session-provider";
+import { attemptKey, submitMutation } from "../operations/operation-attempts";
+import { OperationPanel, useOperationCheck } from "../operations/operation-panel";
+import {
+  operationStatus,
+  parseTrackedOperation,
+  pollOperationUntilSettled,
+  type TrackedOperation,
+} from "../operations/operation-status";
 import { parseWorkspaces, type WorkspaceView } from "../identity/workspace-switcher";
 
 // Danh mục vai trò cố định của center; không có đường tạo vai trò tùy chỉnh.
@@ -43,18 +53,8 @@ export type StudentHandoff = {
   temporaryPassword: string;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isCenterRole(value: unknown): value is CenterRole {
   return typeof value === "string" && (CENTER_ROLES as readonly string[]).includes(value);
-}
-
-// Chấp nhận cả danh sách trần và dạng {items} theo quy tắc query danh sách của hợp đồng.
-function listItems(data: unknown): unknown[] {
-  if (Array.isArray(data)) return data;
-  return isRecord(data) && Array.isArray(data.items) ? data.items : [];
 }
 
 export function parseCenters(data: unknown): CenterSummary[] {
@@ -206,95 +206,6 @@ export function memberPermissions(
   };
 }
 
-async function submitMutation(
-  path: string,
-  init: { method: string; body?: string; headers?: Record<string, string> },
-  idempotencyKey: string,
-): Promise<unknown> {
-  const result = await requestWhenReady(path, {
-    ...init,
-    headers: { ...init.headers, "Idempotency-Key": idempotencyKey },
-  });
-  return result.data;
-}
-
-// Cùng một payload (kèm version đích) luôn dùng lại một key giữa các lần gửi lại sau lỗi,
-// đúng mẫu biên nhận idempotency của form khôi phục.
-function attemptKey(store: Map<string, string>, signature: string): string {
-  let key = store.get(signature);
-  if (!key) {
-    key = crypto.randomUUID();
-    store.set(signature, key);
-  }
-  return key;
-}
-
-function OperationPanel({
-  operation,
-  checking,
-  onCheck,
-}: {
-  operation: TrackedOperation;
-  checking: boolean;
-  onCheck: () => void;
-}) {
-  return (
-    <section className="section" aria-labelledby="operation-title">
-      <h2 id="operation-title">Trạng thái thao tác</h2>
-      <p>{operationStatus(operation).message}</p>
-      <p>
-        Mã thao tác: <code>{operation.id}</code>
-      </p>
-      {operation.errorCode ? <p>Mã lỗi: {operation.errorCode}</p> : null}
-      <button
-        className="secondary-button"
-        type="button"
-        disabled={checking}
-        onClick={onCheck}
-      >
-        Kiểm tra trạng thái
-      </button>
-    </section>
-  );
-}
-
-function SessionGate({
-  status,
-  message,
-  onRetry,
-  children,
-}: {
-  status: string;
-  message?: string;
-  onRetry: () => void;
-  children: React.ReactNode;
-}) {
-  if (status === "loading") return <p role="status">Đang tải trạng thái tài khoản…</p>;
-  if (status === "error") {
-    return (
-      <>
-        <p role="alert">{message}</p>
-        <button className="action-button" type="button" onClick={onRetry}>
-          Thử lại
-        </button>
-      </>
-    );
-  }
-  if (status === "anonymous") {
-    return (
-      <>
-        <p className="introduction">
-          Đăng nhập để dùng chức năng quản trị thuộc phạm vi của bạn.
-        </p>
-        <a className="login-link" href="/oauth2/authorization/keycloak">
-          Đăng nhập
-        </a>
-      </>
-    );
-  }
-  return <>{children}</>;
-}
-
 export function PlatformCentersContent() {
   const { session } = useSession();
   const userId = session.status === "authenticated" ? session.user.id : null;
@@ -303,6 +214,7 @@ export function PlatformCentersContent() {
 
 function PlatformCentersInner() {
   const { session, refreshSession } = useSession();
+  const checkOperationStatus = useOperationCheck();
   const [centers, setCenters] = useState<CenterSummary[] | null>(null);
   const [ownWorkspaces, setOwnWorkspaces] = useState<WorkspaceView[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -318,19 +230,21 @@ function PlatformCentersInner() {
   const attempts = useRef(new Map<string, string>());
   const userId = session.status === "authenticated" ? session.user.id : null;
 
-  async function loadCenters() {
+  const loadCenters = useCallback(async (signal?: AbortSignal) => {
+    if (!userId) return;
     setListError(null);
     const [centerResult, workspaceResult] = await Promise.allSettled([
-      requestAllPages("/api/platform/centers"),
-      requestWhenReady("/api/me/workspaces"),
+      requestAllPages("/api/platform/centers", { signal }),
+      requestWorkspaces(userId, signal),
     ]);
+    if (signal?.aborted) return;
     setCenters(centerResult.status === "fulfilled" ? parseCenters(centerResult.value) : []);
     setOwnWorkspaces(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
       ? parseWorkspaces(workspaceResult.value.data) : null);
     if (centerResult.status === "rejected" || workspaceResult.status === "rejected") {
       setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
     }
-  }
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -347,7 +261,7 @@ function PlatformCentersInner() {
         setCenters([]);
         setListError(error instanceof Error ? error.message : "Không tải được danh sách trung tâm.");
       });
-    requestWhenReady("/api/me/workspaces", { signal: controller.signal })
+    requestWorkspaces(userId, controller.signal)
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         setOwnWorkspaces(parseWorkspaces(result.data));
@@ -368,17 +282,8 @@ function PlatformCentersInner() {
       .then(async (next) => {
         if (controller.signal.aborted) return;
         if (next.completed && next.state === "SUCCEEDED") {
-          const [centerResult, workspaceResult] = await Promise.allSettled([
-            requestAllPages("/api/platform/centers", { signal: controller.signal }),
-            requestWhenReady("/api/me/workspaces", { signal: controller.signal }),
-          ]);
+          await loadCenters(controller.signal);
           if (controller.signal.aborted) return;
-          setCenters(centerResult.status === "fulfilled" ? parseCenters(centerResult.value) : []);
-          setOwnWorkspaces(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
-            ? parseWorkspaces(workspaceResult.value.data) : null);
-          if (centerResult.status === "rejected" || workspaceResult.status === "rejected") {
-            setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
-          }
         }
         setOperation(next);
       })
@@ -388,18 +293,14 @@ function PlatformCentersInner() {
         }
       });
     return () => controller.abort();
-  }, [operation, userId]);
+  }, [operation, userId, loadCenters]);
 
   async function checkOperation() {
     if (!operation) return;
     setPendingAction("operation");
     setActionError(null);
     try {
-      const result = await apiRequest<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) {
-        throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
-      }
+      const nextOperation = await checkOperationStatus(operation.id);
       setOperation(nextOperation);
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
         await loadCenters();
@@ -487,6 +388,7 @@ function PlatformCentersInner() {
           status={session.status}
           message={session.status === "error" ? session.message : undefined}
           onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để dùng chức năng quản trị thuộc phạm vi của bạn."
         >
           <p className="introduction">
             Chỉ quản trị viên Giáo Khoa tạo trung tâm và chỉ định chủ sở hữu; gói được xác
@@ -494,7 +396,7 @@ function PlatformCentersInner() {
             bao gồm nội dung học tập của trung tâm.
           </p>
           <p>
-            <a href="/platform/recovery-requests">Yêu cầu khôi phục tài khoản</a>
+            <Link href="/platform/recovery-requests">Yêu cầu khôi phục tài khoản</Link>
           </p>
 
           <section aria-labelledby="center-list-title">
@@ -519,9 +421,9 @@ function PlatformCentersInner() {
                       </div>
                     </dl>
                     <p>
-                      <a href={`/centers/${encodeURIComponent(center.id)}/members`}>
+                      <Link href={`/centers/${encodeURIComponent(center.id)}/members`}>
                         Quản lý thành viên
-                      </a>
+                      </Link>
                     </p>
                   </li>
                 ))}
@@ -549,9 +451,9 @@ function PlatformCentersInner() {
                     {item.kind === "CENTER" ? (
                       <>
                         {" — "}
-                        <a href={`/centers/${encodeURIComponent(item.id)}/members`}>
+                        <Link href={`/centers/${encodeURIComponent(item.id)}/members`}>
                           Quản lý thành viên
-                        </a>
+                        </Link>
                       </>
                     ) : null}
                   </li>
@@ -674,6 +576,7 @@ export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
 
 function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
   const { session, refreshSession } = useSession();
+  const checkOperationStatus = useOperationCheck();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -695,12 +598,14 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
   const { canManage, canAssignManager } = memberPermissions(memberships ?? [], userId);
   const subscriptionExpired = workspace?.kind === "CENTER" && !workspace.subscription.effective;
 
-  async function loadMemberships() {
+  const loadMemberships = useCallback(async (signal?: AbortSignal) => {
+    if (!userId) return;
     setListError(null);
     const [memberResult, workspaceResult] = await Promise.allSettled([
-      requestAllPages(membersPath),
-      requestWhenReady("/api/me/workspaces"),
+      requestAllPages(membersPath, { signal }),
+      requestWorkspaces(userId, signal),
     ]);
+    if (signal?.aborted) return;
     setMemberships(memberResult.status === "fulfilled" ? parseMemberships(memberResult.value) : []);
     setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
       ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
@@ -708,7 +613,7 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
     if (memberResult.status === "rejected" || workspaceResult.status === "rejected") {
       setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
     }
-  }
+  }, [userId, membersPath, workspaceId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -725,7 +630,7 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
         setMemberships([]);
         setListError(error instanceof Error ? error.message : "Không tải được danh sách thành viên.");
       });
-    requestWhenReady("/api/me/workspaces", { signal: controller.signal })
+    requestWorkspaces(userId, controller.signal)
       .then((result) => {
         if (ignore || result.kind !== "data") return;
         const found = parseWorkspaces(result.data).find((item) => item.id === workspaceId);
@@ -747,18 +652,8 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
       .then(async (next) => {
         if (controller.signal.aborted) return;
         if (next.completed && next.state === "SUCCEEDED") {
-          const [memberResult, workspaceResult] = await Promise.allSettled([
-            requestAllPages(membersPath, { signal: controller.signal }),
-            requestWhenReady("/api/me/workspaces", { signal: controller.signal }),
-          ]);
+          await loadMemberships(controller.signal);
           if (controller.signal.aborted) return;
-          setMemberships(memberResult.status === "fulfilled" ? parseMemberships(memberResult.value) : []);
-          setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
-            ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
-            : null);
-          if (memberResult.status === "rejected" || workspaceResult.status === "rejected") {
-            setListError("Không làm mới được toàn bộ quyền và dữ liệu; hãy tải lại.");
-          }
         }
         setOperation(next);
       })
@@ -768,18 +663,14 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
         }
       });
     return () => controller.abort();
-  }, [operation, userId, workspaceId, membersPath]);
+  }, [operation, userId, workspaceId, membersPath, loadMemberships]);
 
   async function checkOperation() {
     if (!operation) return;
     setPendingAction("operation");
     setActionError(null);
     try {
-      const result = await apiRequest<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) {
-        throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
-      }
+      const nextOperation = await checkOperationStatus(operation.id);
       setOperation(nextOperation);
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
         await loadMemberships();
@@ -911,6 +802,7 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
           status={session.status}
           message={session.status === "error" ? session.message : undefined}
           onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để dùng chức năng quản trị thuộc phạm vi của bạn."
         >
           <p className="introduction">
             Trung tâm: {workspace ? <strong>{workspace.name}</strong> : <code>{workspaceId}</code>}

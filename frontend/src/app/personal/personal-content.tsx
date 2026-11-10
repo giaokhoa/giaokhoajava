@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiRequest } from "../../lib/api-client";
+import { apiRequest, isRecord, listItems } from "../../lib/api-client";
+import { SessionGate } from "../../features/identity/session-gate";
 import { RecoveryRequestForm } from "../../features/identity/recovery-request-form";
 import { useSession } from "../../features/identity/session-provider";
 import { WorkspaceSwitcher } from "../../features/identity/workspace-switcher";
@@ -14,10 +15,6 @@ export type PracticeAttempt = {
   versionId: string;
   outcome?: string;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parseAttempt(item: unknown): PracticeAttempt | null {
   if (!isRecord(item)
@@ -38,9 +35,8 @@ function parseAttempt(item: unknown): PracticeAttempt | null {
   };
 }
 
-// Chấp nhận cả danh sách trần và dạng {items} theo quy tắc query danh sách của hợp đồng.
 export function parsePracticeHistory(data: unknown): PracticeAttempt[] {
-  const items = Array.isArray(data) ? data : isRecord(data) && Array.isArray(data.items) ? data.items : [];
+  const items = listItems(data);
   const attempts: PracticeAttempt[] = [];
   for (const item of items) {
     const attempt = parseAttempt(item);
@@ -81,31 +77,13 @@ export function PersonalContent() {
         <p className="eyebrow">Giáo Khoa</p>
         <h1 id="personal-title">Không gian cá nhân</h1>
 
-        {session.status === "loading" ? (
-          <p role="status">Đang tải trạng thái tài khoản…</p>
-        ) : null}
-
-        {session.status === "error" ? (
-          <>
-            <p role="alert">{session.message}</p>
-            <button className="action-button" type="button" onClick={() => void refreshSession()}>
-              Thử lại
-            </button>
-          </>
-        ) : null}
-
-        {session.status === "anonymous" ? (
-          <>
-            <p className="introduction">
-              Đăng nhập để xem không gian cá nhân và lịch sử luyện tập mẫu của bạn.
-            </p>
-            <a className="login-link" href="/oauth2/authorization/keycloak">
-              Đăng nhập
-            </a>
-          </>
-        ) : null}
-
-        {session.status === "authenticated" ? (
+        <SessionGate
+          status={session.status}
+          message={session.status === "error" ? session.message : undefined}
+          onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để xem không gian cá nhân và lịch sử luyện tập mẫu của bạn."
+        >
+          {session.status === "authenticated" ? (
           <>
             <p className="introduction">
               Đây là không gian cá nhân trung lập của bạn: chỉ dữ liệu mẫu của chính bạn,
@@ -176,7 +154,8 @@ export function PersonalContent() {
               <RecoveryRequestForm userId={session.user.id} />
             </div>
           </>
-        ) : null}
+          ) : null}
+        </SessionGate>
       </section>
     </main>
   );

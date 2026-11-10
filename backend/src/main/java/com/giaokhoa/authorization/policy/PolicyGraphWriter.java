@@ -1,6 +1,7 @@
 package com.giaokhoa.authorization.policy;
 
 import com.giaokhoa.authorization.keycloak.KeycloakProvisionerFactory;
+import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -65,7 +66,7 @@ public class PolicyGraphWriter {
             @Value("${giaokhoa.keycloak.authorization-audience}") String audienceClientId,
             ResourceMutationCoordinator mutationCoordinator) {
         this(
-                RestClient.builder(),
+                RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
                 baseUrl,
                 KeycloakProvisionerFactory.realmOf(issuerUri),
                 KeycloakProvisionerFactory.clientManager(

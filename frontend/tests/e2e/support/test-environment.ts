@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { expect, type Browser, type Page, type APIResponse } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Page, type APIResponse } from "@playwright/test";
 
 type TestUser = { id: string; username: string; email: string; password: string };
 type Mail = { ID: string; Subject: string; Created: string; To: { Address: string }[] };
@@ -393,6 +393,44 @@ export async function dongBoEligibility(page: Page, origin: string): Promise<voi
   }
 }
 
+// Tái dùng phiên theo actor bằng storageState (docs Playwright "Authentication",
+// mục Multiple signed in roles / Testing multiple roles together: trạng thái đăng
+// nhập được lưu một lần rồi nạp lại cho các context sau thay vì đăng nhập qua UI
+// lặp lại; docs "Best Practices": tái dùng trạng thái đã đăng nhập bằng setup
+// project để chỉ đăng nhập một lần). Khác biệt theo điều kiện của repo: user test
+// được tạo ngẫu nhiên trong từng test (chưa tồn tại trước khi test chạy) nên không
+// có tài khoản ổn định để setup project đăng nhập trước; trạng thái được chụp tại
+// lần đăng nhập form THẬT đầu tiên của chính user đó trong lượt chạy và chỉ dùng
+// lại cho đúng user đó. Đăng nhập đầu tiên của mọi user vẫn qua form Keycloak;
+// các spec kiểm thử chính hành vi đăng nhập/phiên/thu hồi (identity,
+// session-security, revocation) không dùng cơ chế này. Trạng thái chỉ sống trong
+// bộ nhớ của tiến trình worker (không ghi đĩa, không rời máy TEST).
+export type TrangThaiPhien = Awaited<ReturnType<BrowserContext["storageState"]>>;
+
+const phienDaLuuTheoUser = new Map<string, TrangThaiPhien>();
+
+/** Chụp storageState của phiên vừa đăng nhập thành công, gắn với đúng username đó. */
+export async function luuPhienHienTai(page: Page, username: string): Promise<void> {
+  phienDaLuuTheoUser.set(username, await page.context().storageState());
+}
+
+/** Trạng thái phiên đã lưu của user, nếu user này đã đăng nhập form thật trong lượt chạy. */
+export function layPhienDaLuu(username: string): TrangThaiPhien | undefined {
+  return phienDaLuuTheoUser.get(username);
+}
+
+// Nạp lại cookie của phiên đã lưu vào context hiện tại của page (sau khi xoá cookie
+// hiện hành, đúng thao tác đổi actor của dangNhapLai). Trả false khi user chưa có
+// phiên lưu — caller rơi xuống đăng nhập form thật. Caller PHẢI tự kiểm chứng phiên
+// khôi phục còn hiệu lực qua /api/session trước khi dùng; phiên chết thì đăng nhập lại.
+export async function khoiPhucPhienDaLuu(page: Page, username: string): Promise<boolean> {
+  const trangThai = phienDaLuuTheoUser.get(username);
+  if (!trangThai) return false;
+  await page.context().clearCookies();
+  await page.context().addCookies(trangThai.cookies);
+  return true;
+}
+
 // Mở context trình duyệt mới và đăng nhập bằng tài khoản cho trước; phiên mới cô lập
 // hoàn toàn với trang chính (cookie/cache riêng) — dùng khi một phiên phải sống độc
 // lập trong lúc manager khác thao tác ở trang chính (vd: giữ nguyên phiên actor trong
@@ -411,4 +449,27 @@ export async function moBoiCanhDangNhap(
   expect(session.csrf?.token).toBeTruthy();
   await dongBoEligibility(page, origin);
   return { page, csrf: session.csrf! };
+}
+
+// Như moBoiCanhDangNhap nhưng ưu tiên mở context từ storageState đã lưu của user
+// (cùng một phiên ứng dụng, context trình duyệt riêng) khi phiên đó còn hiệu lực;
+// chưa có phiên lưu hoặc phiên đã chết thì rơi xuống đăng nhập form thật qua
+// moBoiCanhDangNhap. Chỉ dùng cho actor không phải đối tượng kiểm thử đăng nhập/phiên.
+export async function moBoiCanhTuPhienDaLuu(
+  browser: Browser,
+  origin: string,
+  user: { username: string; password: string },
+): Promise<{ page: Page; csrf: { headerName: string; token: string } }> {
+  const trangThai = layPhienDaLuu(user.username);
+  if (trangThai) {
+    const context = await browser.newContext({ storageState: trangThai });
+    const page = await context.newPage();
+    const session = await layPhienHienTai(page, origin);
+    if (session.authenticated && session.csrf?.token) {
+      await dongBoEligibility(page, origin);
+      return { page, csrf: session.csrf };
+    }
+    await context.close();
+  }
+  return moBoiCanhDangNhap(browser, origin, user);
 }

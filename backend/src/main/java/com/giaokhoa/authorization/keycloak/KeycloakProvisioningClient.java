@@ -1,5 +1,7 @@
 package com.giaokhoa.authorization.keycloak;
 
+import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -7,7 +9,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,22 +28,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Component
 public class KeycloakProvisioningClient {
     private static final int GROUP_PAGE_SIZE = 100;
-    private static final String UUID_PATTERN =
-            "[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}";
-    private static final Pattern GROUP_SOURCE =
-            Pattern.compile(
-                    "/gk/(?:identity/eligible|platform/operators|workspaces/"
-                            + UUID_PATTERN
-                            + "/(?:members|owners|managers|roles/(?:teachers|students|parents)"
-                            + "|classes/"
-                            + UUID_PATTERN
-                            + "/homeroom"
-                            + "|course-subjects/"
-                            + UUID_PATTERN
-                            + "/(?:teachers|students)"
-                            + "|students/"
-                            + UUID_PATTERN
-                            + "/guardians))");
 
     private final RestClient http;
     private final String baseUrl;
@@ -57,7 +42,7 @@ public class KeycloakProvisioningClient {
             @Value("${giaokhoa.keycloak.provisioner.client-id}") String clientId,
             @Value("${giaokhoa.keycloak.provisioner.client-secret}") String clientSecret) {
         this(
-                RestClient.builder(),
+                RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
                 baseUrl,
                 KeycloakProvisionerFactory.realmOf(issuerUri),
                 KeycloakProvisionerFactory.clientManager(
@@ -139,7 +124,7 @@ public class KeycloakProvisioningClient {
 
     /** Template được phép do hợp đồng authorization cố định, không phải do center chọn. */
     public String ensureRealmGroup(String path) {
-        if (path == null || !GROUP_SOURCE.matcher(path).matches()) {
+        if (!NativePolicyTemplates.isGroupSource(path)) {
             throw new IllegalArgumentException("Unrecognized authorization group source");
         }
         String parentId = null;
@@ -172,7 +157,7 @@ public class KeycloakProvisioningClient {
 
     /** Đọc các realm group mà user là thành viên trực tiếp và đối chiếu path cố định. */
     public boolean isRealmGroupMember(String keycloakUserId, String groupPath) {
-        if (groupPath == null || !GROUP_SOURCE.matcher(groupPath).matches()) {
+        if (!NativePolicyTemplates.isGroupSource(groupPath)) {
             throw new IllegalArgumentException("Unrecognized authorization group source");
         }
         return realmGroupPaths(keycloakUserId).contains(groupPath);
@@ -225,7 +210,7 @@ public class KeycloakProvisioningClient {
     }
 
     private @Nullable String findExistingSourceGroup(String path) {
-        if (path == null || !GROUP_SOURCE.matcher(path).matches()) {
+        if (!NativePolicyTemplates.isGroupSource(path)) {
             throw new IllegalArgumentException("Unrecognized authorization group source");
         }
         Group group = findGroup(path);

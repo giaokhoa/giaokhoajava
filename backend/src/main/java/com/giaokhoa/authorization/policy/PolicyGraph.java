@@ -1,11 +1,8 @@
 package com.giaokhoa.authorization.policy;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import com.giaokhoa.shared.Sha256;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -90,7 +87,7 @@ public record PolicyGraph(
 
     /** SHA-256 của canonical descriptor, như được ghi trên authorization projection. */
     public String desiredHash() {
-        return sha256(descriptor());
+        return Sha256.hex(descriptor());
     }
 
     /**
@@ -261,7 +258,7 @@ public record PolicyGraph(
 
         /** Định danh ngắn ổn định của đúng tập gate này, dùng trong native policy name. */
         public String descriptorHash() {
-            return sha256(descriptor()).substring(0, 32);
+            return Sha256.hex(descriptor()).substring(0, 32);
         }
     }
 
@@ -284,16 +281,5 @@ public record PolicyGraph(
             out.append(gate.descriptor());
         }
         return out.toString();
-    }
-
-    private static String sha256(String value) {
-        try {
-            return HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
     }
 }

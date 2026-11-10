@@ -1,6 +1,5 @@
 package com.giaokhoa.tenancy.data;
 
-import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
@@ -47,15 +46,5 @@ public class WorkspaceTransaction {
                 String.class,
                 WORKSPACE_SETTING,
                 workspaceId.toString());
-    }
-
-    public Optional<UUID> currentWorkspace() {
-        String value =
-                jdbc.queryForObject(
-                        "SELECT current_setting(?, true)", String.class, WORKSPACE_SETTING);
-        if (value == null || value.isBlank()) {
-            return Optional.empty();
-        }
-        return Optional.of(UUID.fromString(value));
     }
 }

@@ -71,8 +71,8 @@ public class ClassService {
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
         String trimmed = normalizeName(name);
-        requireTeachingWorkspace(workspaceId);
-        requireSubscriptionCurrent(workspaceId);
+        TeachingRouteSupport.requireTeachingWorkspace(repository, workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
         UUID classId = UUID.randomUUID();
         repository.insertClass(classId, workspaceId, trimmed);
         return new ClassView(classId, workspaceId, trimmed, "ACTIVE", 0);
@@ -129,7 +129,7 @@ public class ClassService {
                     HttpStatus.CONFLICT, "CLASS_ALREADY_REVOKED", "Lớp đã bị thu hồi trước đó.");
         }
         IdempotencyService.requireIfMatch(ifMatch, row.version());
-        requireSubscriptionCurrent(workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
         repository.renameClass(classId, trimmed);
         return new ClassView(row.id(), row.workspaceId(), trimmed, row.state(), row.version() + 1);
     }
@@ -187,8 +187,9 @@ public class ClassService {
                     "CLASS_NOT_ACTIVE",
                     "Lớp đã bị thu hồi, không thêm học sinh được nữa.");
         }
-        requireSubscriptionCurrent(workspaceId);
-        WorkspaceInfo workspace = requireTeachingWorkspace(workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
+        WorkspaceInfo workspace =
+                TeachingRouteSupport.requireTeachingWorkspace(repository, workspaceId);
         for (UUID studentUserId : students) {
             requireStudentEligible(workspace, studentUserId);
         }
@@ -268,7 +269,8 @@ public class ClassService {
     private void requireStudentEligible(WorkspaceInfo workspace, UUID studentUserId) {
         boolean center = "CENTER".equals(workspace.kind());
         if (center) {
-            if (!repository.hasActiveCenterMembership(workspace.id(), studentUserId)) {
+            if (!repository.hasActiveCenterMembershipWithRole(
+                    workspace.id(), studentUserId, "STUDENT")) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
                         "STUDENT_NOT_CENTER_MEMBER",
@@ -285,25 +287,6 @@ public class ClassService {
         }
     }
 
-    private WorkspaceInfo requireTeachingWorkspace(UUID workspaceId) {
-        WorkspaceInfo workspace =
-                repository.findWorkspace(workspaceId).orElseThrow(() -> workspaceNotFound());
-        if (!"ACTIVE".equals(workspace.state())
-                || (!"CENTER".equals(workspace.kind()) && !"PERSONAL".equals(workspace.kind()))) {
-            throw workspaceNotFound();
-        }
-        return workspace;
-    }
-
-    private void requireSubscriptionCurrent(UUID workspaceId) {
-        if (!repository.subscriptionCurrent(workspaceId)) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
-                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
-        }
-    }
-
     private static String normalizeName(String name) {
         if (name == null || name.isBlank() || name.trim().length() > 255) {
             throw new HttpProblemException(
@@ -317,13 +300,6 @@ public class ClassService {
     private static HttpProblemException classNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", "Không tìm thấy lớp trong workspace này.");
-    }
-
-    private static HttpProblemException workspaceNotFound() {
-        return new HttpProblemException(
-                HttpStatus.NOT_FOUND,
-                "WORKSPACE_NOT_FOUND",
-                "Không tìm thấy workspace giảng dạy hợp lệ.");
     }
 
     private static ClassView toView(ClassRow row) {

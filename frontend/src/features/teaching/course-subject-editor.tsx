@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { requestAllPages, requestWhenReady } from "../../lib/api-client";
+import { isRecord, requestAllPages, requestWhenReady } from "../../lib/api-client";
 import type { Membership } from "../tenancy/center-administration";
 import {
   ifMatchValue,
@@ -29,10 +29,6 @@ export type Course = {
   subjects: CourseSubjectEntry[];
   version: number;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isVersion(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;

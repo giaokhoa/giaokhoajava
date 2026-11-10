@@ -87,6 +87,31 @@ class TeachingAuthorizationIT extends TeachingFixture {
     }
 
     @Test
+    void twoTeachersOfSameCourseSubjectBothReadRoster() throws Exception {
+        Fixture fixture = sharedCenter;
+        try (var owner = openSession(fixture.owner());
+                var teacherA = openSession(fixture.teacherA());
+                var teacherB = openSession(fixture.teacherB())) {
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
+            UUID subject = setup.courseSubject(0);
+            assignTeachers(
+                    owner,
+                    fixture.workspaceId(),
+                    subject,
+                    List.of(fixture.teacherAId(), fixture.teacherBId()));
+            enroll(owner, fixture.workspaceId(), setup.classStudents(), List.of(subject));
+            assertEquals(
+                    3,
+                    enrollmentCount(teacherA, fixture.workspaceId(), subject),
+                    "Giáo viên thứ nhất cùng môn–khóa đọc được roster của môn");
+            assertEquals(
+                    3,
+                    enrollmentCount(teacherB, fixture.workspaceId(), subject),
+                    "Giáo viên thứ hai cùng môn–khóa cũng đọc được roster của môn");
+        }
+    }
+
+    @Test
     void teacherOfOneSubjectCannotAssignTeacherOfAnother() throws Exception {
         Fixture fixture = sharedCenter;
         try (var owner = openSession(fixture.owner());
@@ -288,6 +313,30 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             .andReturn()
                             .getResponse();
             assertEquals(403, response.getStatus(), "Chủ nhiệm không được tạo khóa");
+        }
+    }
+
+    @Test
+    void homeroomCannotCreateClasses() throws Exception {
+        Fixture fixture = sharedCenter;
+        try (var owner = openSession(fixture.owner());
+                var homeroom = openSession(fixture.teacherA())) {
+            TeachingSetup setup = prepareCourse(owner, fixture, 1);
+            assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
+            MockHttpServletResponse response =
+                    mockMvc()
+                            .perform(
+                                    post("/api/workspaces/" + fixture.workspaceId() + "/classes")
+                                            .cookie(homeroom.cookie())
+                                            .with(csrf())
+                                            .header(
+                                                    "Idempotency-Key",
+                                                    "teaching-hr-class-" + UUID.randomUUID())
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .content("{\"name\":\"Lớp chủ nhiệm tạo\"}"))
+                            .andReturn()
+                            .getResponse();
+            assertEquals(403, response.getStatus(), "Chủ nhiệm không được tạo lớp");
         }
     }
 

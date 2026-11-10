@@ -1,4 +1,3 @@
-import { SessionProvider } from "../../../../features/identity/session-provider";
 import { GuardianLinksContent } from "../../../../features/guardians/guardian-link-review";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +9,5 @@ export default async function CenterGuardianLinksPage({
   params: Promise<{ workspaceId: string }>;
 }) {
   const { workspaceId } = await params;
-  return (
-    <SessionProvider>
-      <GuardianLinksContent key={workspaceId} workspaceId={workspaceId} />
-    </SessionProvider>
-  );
+  return <GuardianLinksContent key={workspaceId} workspaceId={workspaceId} />;
 }

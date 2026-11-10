@@ -1,13 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { apiRequest, requestAllPages, requestWhenReady } from "../../lib/api-client";
-import { operationStatus, pollOperationUntilSettled } from "../operations/operation-status";
-import {
-  parseTrackedOperation,
-  type TrackedOperation,
-} from "../identity/recovery-request-form";
+import { isRecord, listItems, requestAllPages, requestWhenReady } from "../../lib/api-client";
+import { SessionGate } from "../identity/session-gate";
 import { useSession } from "../identity/session-provider";
+import {
+  attemptKey,
+  closeAttempt,
+  submitMutation,
+} from "../operations/operation-attempts";
+import { OperationPanel, useOperationCheck } from "../operations/operation-panel";
+import {
+  operationStatus,
+  parseTrackedOperation,
+  pollOperationUntilSettled,
+  type TrackedOperation,
+} from "../operations/operation-status";
 import {
   parseMemberships,
   type Membership,
@@ -36,19 +45,9 @@ export type GuardianLink = {
 
 export type GuardianDecision = "APPROVE" | "REJECT";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isGuardianLinkState(value: unknown): value is GuardianLinkState {
   return typeof value === "string"
     && (GUARDIAN_LINK_STATES as readonly string[]).includes(value);
-}
-
-// Chấp nhận cả danh sách trần và dạng {items} theo quy tắc query danh sách của hợp đồng.
-function listItems(data: unknown): unknown[] {
-  if (Array.isArray(data)) return data;
-  return isRecord(data) && Array.isArray(data.items) ? data.items : [];
 }
 
 // Chỉ giữ liên kết đúng GuardianLinkView của hợp đồng. Trạng thái ngoài vòng đời cố
@@ -109,108 +108,6 @@ export function guardianPermissions(
   };
 }
 
-async function submitMutation(
-  path: string,
-  init: { method: string; body?: string; headers?: Record<string, string> },
-  idempotencyKey: string,
-): Promise<unknown> {
-  const result = await requestWhenReady(path, {
-    ...init,
-    headers: { ...init.headers, "Idempotency-Key": idempotencyKey },
-  });
-  return result.data;
-}
-
-// Cùng một payload (kèm version đích) dùng lại một key giữa các lần gửi lại khi
-// operation chưa hoàn tất, đúng mẫu biên nhận idempotency của các form quản trị khác.
-export function attemptKey(store: Map<string, string>, signature: string): string {
-  let key = store.get(signature);
-  if (!key) {
-    key = crypto.randomUUID();
-    store.set(signature, key);
-  }
-  return key;
-}
-
-// Operation đã hoàn tất thì backend chỉ replay đúng operation đó theo key cũ, nên
-// giữ key sẽ chặn thao tác mới cùng payload (ví dụ gửi lại yêu cầu sau khi liên kết
-// cũ bị từ chối hoặc bị gỡ). Bỏ key khi hoàn tất; chưa hoàn tất thì giữ cho lần gửi lại.
-export function closeAttempt(
-  store: Map<string, string>,
-  signature: string,
-  operation: Pick<TrackedOperation, "completed">,
-): void {
-  if (operation.completed) {
-    store.delete(signature);
-  }
-}
-
-function OperationPanel({
-  operation,
-  checking,
-  onCheck,
-}: {
-  operation: TrackedOperation;
-  checking: boolean;
-  onCheck: () => void;
-}) {
-  return (
-    <section className="section" aria-labelledby="operation-title">
-      <h2 id="operation-title">Trạng thái thao tác</h2>
-      <p>{operationStatus(operation).message}</p>
-      <p>
-        Mã thao tác: <code>{operation.id}</code>
-      </p>
-      {operation.errorCode ? <p>Mã lỗi: {operation.errorCode}</p> : null}
-      <button
-        className="secondary-button"
-        type="button"
-        disabled={checking}
-        onClick={onCheck}
-      >
-        Kiểm tra trạng thái
-      </button>
-    </section>
-  );
-}
-
-function SessionGate({
-  status,
-  message,
-  onRetry,
-  children,
-}: {
-  status: string;
-  message?: string;
-  onRetry: () => void;
-  children: React.ReactNode;
-}) {
-  if (status === "loading") return <p role="status">Đang tải trạng thái tài khoản…</p>;
-  if (status === "error") {
-    return (
-      <>
-        <p role="alert">{message}</p>
-        <button className="action-button" type="button" onClick={onRetry}>
-          Thử lại
-        </button>
-      </>
-    );
-  }
-  if (status === "anonymous") {
-    return (
-      <>
-        <p className="introduction">
-          Đăng nhập để gửi yêu cầu liên kết hoặc duyệt yêu cầu của phụ huynh.
-        </p>
-        <a className="login-link" href="/oauth2/authorization/keycloak">
-          Đăng nhập
-        </a>
-      </>
-    );
-  }
-  return <>{children}</>;
-}
-
 export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
   const { session } = useSession();
   const userId = session.status === "authenticated" ? session.user.id : null;
@@ -219,6 +116,7 @@ export function GuardianLinksContent({ workspaceId }: { workspaceId: string }) {
 
 function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
   const { session, refreshSession } = useSession();
+  const checkOperationStatus = useOperationCheck();
   const userId = session.status === "authenticated" ? session.user.id : null;
   // Mọi dữ liệu đã tải đều gắn khóa ngữ cảnh (actor + workspace): đổi trung tâm thì
   // dữ liệu của trung tâm trước không còn khớp khóa và không được hiển thị nữa, kể cả
@@ -336,11 +234,7 @@ function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
     setPendingAction("operation");
     setActionError(null);
     try {
-      const result = await apiRequest<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) {
-        throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
-      }
+      const nextOperation = await checkOperationStatus(operation.id);
       setTracked({ key: contextKey, operation: nextOperation, signature: operationSignature ?? "" });
       if (operationSignature) {
         closeAttempt(attempts.current, operationSignature, nextOperation);
@@ -435,6 +329,7 @@ function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
           status={session.status}
           message={session.status === "error" ? session.message : undefined}
           onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để gửi yêu cầu liên kết hoặc duyệt yêu cầu của phụ huynh."
         >
           <p className="introduction">
             Phụ huynh gửi yêu cầu liên kết tới con; chủ sở hữu hoặc quản lý của trung tâm
@@ -500,11 +395,11 @@ function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
                     </dl>
                     {link.state === "APPROVED" ? (
                       <p>
-                        <a
+                        <Link
                           href={`/centers/${encodeURIComponent(workspaceId)}/children/${encodeURIComponent(link.studentUserId)}/results`}
                         >
                           Xem kết quả của con
-                        </a>
+                        </Link>
                       </p>
                     ) : null}
                     {canManage && link.state === "REQUESTED" ? (

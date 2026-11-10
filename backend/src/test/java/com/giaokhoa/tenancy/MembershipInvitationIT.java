@@ -8,12 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.tenancy.CenterAdministrationIT.RealSession;
+import com.giaokhoa.support.KeycloakSessionFixture;
 import java.net.URI;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -32,50 +30,25 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
-import org.springframework.session.SessionRepository;
-import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Contract US2 ở tầng lời mời và cấp học sinh: mời account đã có không đổi origin, token chấp nhận
  * một lần và phải đúng người, cấp học sinh mới là create mới (username trùng không chiếm user đã
  * có), handoff không email chỉ xuất hiện trong response CREATE đầu tiên.
  *
- * <p>Test mời account đã có ở đây bao phủ đúng hợp đồng của test invitations đang tạm tắt trong
- * IdentityFlowIT, nên không bật lại test đó để tránh trùng lặp.
+ * <p>Test mời account đã có ở đây là nơi bao phủ hợp đồng invitations đó; bản trùng ở
+ * IdentityFlowIT đã gỡ để tránh trùng lặp.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class MembershipInvitationIT extends IntegrationEnvironment {
-    private static final JsonMapper JSON = new JsonMapper();
-    private static final ParameterizedTypeReference<Map<String, Object>> MAP =
-            new ParameterizedTypeReference<>() {};
-    private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST =
-            new ParameterizedTypeReference<>() {};
-
-    private static final RestClient HTTP = RestClient.create();
-    private static final String BASE =
-            CenterAdministrationIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
-    private static final String REALM = CenterAdministrationIT.fixture("TEST_KEYCLOAK_REALM");
+class MembershipInvitationIT extends KeycloakSessionFixture {
     private static final String DEFAULT_PERMISSION = "Default Permission";
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
@@ -84,14 +57,6 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     static void seedApiClient() {
         ensureApiClient();
     }
-
-    @Autowired JdbcTemplate jdbc;
-    @Autowired PlatformTransactionManager transactionManager;
-    @Autowired WebApplicationContext webContext;
-    @Autowired SessionRepositoryFilter<?> sessionFilter;
-    @Autowired OAuth2AuthorizedClientRepository authorizedClients;
-    @Autowired ClientRegistrationRepository clientRegistrations;
-    @Autowired SessionRepository<?> sessions;
 
     @Test
     void issuedIdentityWithoutCurrentEmailCanStillReadItsMemberships() throws Exception {
@@ -788,6 +753,105 @@ class MembershipInvitationIT extends IntegrationEnvironment {
     }
 
     @Test
+    void studentIssueReplayWithSameKeyDoesNotExposeHandoffAgain() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("issue-owner-replay");
+        KeycloakLogin managerLogin = createVerifiedUser("issue-manager-replay");
+        try {
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID manager =
+                    seedAccount(
+                            managerLogin.subject(), "SELF_REGISTERED", managerLogin.email(), true);
+            UUID center = seedCenter(owner);
+            addMembership(center, manager, "MANAGER");
+            String username = "student-replay-" + UUID.randomUUID();
+            String key = "issue-replay-" + UUID.randomUUID();
+            String requestBody =
+                    "{\"username\":\""
+                            + username
+                            + "\",\"displayName\":\"Học sinh phát lại\"}";
+
+            String temporaryPassword;
+            UUID operationId;
+            try (var session = openSession(managerLogin)) {
+                assertEquals(
+                        200,
+                        requestWhenReady(
+                                        mockMvc(),
+                                        get("/api/me/workspaces").cookie(session.cookie()))
+                                .getStatus());
+                MockHttpServletResponse first =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/students")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header("Idempotency-Key", key)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(requestBody))
+                                .andReturn()
+                                .getResponse();
+
+                assertEquals(202, first.getStatus());
+                JsonNode firstBody = JSON.readTree(first.getContentAsString());
+                JsonNode handoff = firstBody.get("handoff");
+                assertNotNull(handoff, "Lần cấp đầu tiên phải mang handoff");
+                temporaryPassword = handoff.get("temporaryPassword").stringValue();
+                assertFalse(temporaryPassword.isBlank(), "Handoff phải có mật khẩu tạm");
+                operationId =
+                        UUID.fromString(firstBody.get("operation").get("id").stringValue());
+                awaitOperationSucceeded(session, operationId);
+
+                // Phát lại đúng key và payload: trả lại operation đã ghi, tuyệt đối
+                // không lộ handoff/credential lần hai ở tầng HTTP.
+                MockHttpServletResponse replay =
+                        mockMvc()
+                                .perform(
+                                        post("/api/workspaces/" + center + "/students")
+                                                .cookie(session.cookie())
+                                                .with(csrf())
+                                                .header("Idempotency-Key", key)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .content(requestBody))
+                                .andReturn()
+                                .getResponse();
+
+                assertTrue(
+                        replay.getStatus() == 200 || replay.getStatus() == 202,
+                        "Phát lại cùng key phải trả lại kết quả đã ghi"
+                                + " (200 khi xong, 202 khi chưa xong)");
+                String replayContent = replay.getContentAsString();
+                assertFalse(
+                        replayContent.contains("temporaryPassword"),
+                        "Phát lại cùng key không được chứa lại trường mật khẩu tạm");
+                assertFalse(
+                        replayContent.contains(temporaryPassword),
+                        "Phát lại cùng key không được lộ lại giá trị mật khẩu tạm");
+                JsonNode replayBody = JSON.readTree(replayContent);
+                JsonNode replayHandoff = replayBody.get("handoff");
+                assertTrue(
+                        replayHandoff == null || replayHandoff.isNull(),
+                        "Phát lại cùng key không mang handoff");
+                assertEquals(
+                        operationId.toString(),
+                        replayBody.get("operation").get("id").stringValue(),
+                        "Phát lại cùng key trả đúng operation đã ghi, không tạo operation mới");
+            }
+
+            assertEquals(
+                    1,
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM user_account WHERE username = ?",
+                            Integer.class,
+                            username),
+                    "Phát lại cùng key không tạo thêm danh tính");
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(managerLogin.subject());
+        }
+    }
+
+    @Test
     void duplicateUsernameDoesNotTakeOverExistingUser() throws Exception {
         KeycloakLogin ownerLogin = createVerifiedUser("issue-owner-two");
         KeycloakLogin managerLogin = createVerifiedUser("issue-manager-two");
@@ -1025,16 +1089,6 @@ class MembershipInvitationIT extends IntegrationEnvironment {
 
     // ---------- Dữ kiện thư mục ----------
 
-    private record KeycloakLogin(String username, String password, String subject, String email) {}
-
-    private KeycloakLogin createVerifiedUser(String prefix) {
-        String username = prefix + "-" + UUID.randomUUID();
-        String password = "invite-password-" + UUID.randomUUID();
-        String email = username + "@example.test";
-        String subject = createUser(keycloakUser(username, email, true, password));
-        return new KeycloakLogin(username, password, subject, email);
-    }
-
     private UUID seedAccount(
             String keycloakSub, String origin, @Nullable String email, boolean emailVerified) {
         UUID actor = UUID.randomUUID();
@@ -1183,64 +1237,14 @@ class MembershipInvitationIT extends IntegrationEnvironment {
                 "Operation hoàn tất nhưng không thành công");
     }
 
-    private <T> T tx(java.util.function.Supplier<T> action) {
-        return new TransactionTemplate(transactionManager).execute(_ -> action.get());
-    }
-
-    private MockMvc mockMvc() {
-        return MockMvcBuilders.webAppContextSetup(webContext)
-                .addFilters(sessionFilter)
-                .apply(springSecurity())
-                .build();
-    }
-
-    private RealSession openSession(KeycloakLogin login) throws Exception {
-        return RealSession.open(
-                login.username(),
-                login.password(),
-                login.subject(),
-                sessionFilter,
-                authorizedClients,
-                clientRegistrations,
-                sessions);
+    @Override
+    protected RealSession openSession(KeycloakLogin login) throws Exception {
+        // Không nạp workspace trước như mẫu chung: các ca ở đây tự poll qua fence bằng
+        // requestWhenReady tại đúng điểm cần khóa, như hành vi trước khi dùng fixture chung.
+        return openSession(login.username(), login.password(), login.subject());
     }
 
     // ---------- Keycloak TEST realm qua Admin API ----------
-
-    private Map<String, Object> keycloakUser(
-            String username, @Nullable String email, boolean emailVerified, String password) {
-        var body = new HashMap<String, Object>();
-        body.put("username", username);
-        body.put("enabled", true);
-        body.put("firstName", "Synthetic");
-        body.put("lastName", "User");
-        body.put("emailVerified", emailVerified);
-        body.put("requiredActions", List.of());
-        if (email != null) {
-            body.put("email", email);
-        }
-        body.put(
-                "credentials",
-                List.of(Map.of("type", "password", "value", password, "temporary", false)));
-        return body;
-    }
-
-    private String createUser(Map<String, Object> body) {
-        var response =
-                HTTP.post()
-                        .uri(admin("/users"))
-                        .headers(headers -> headers.setBearerAuth(masterToken()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(body)
-                        .retrieve()
-                        .toEntity(String.class);
-        URI location = response.getHeaders().getLocation();
-        if (location == null) {
-            throw new IllegalStateException("Keycloak did not return the created user location");
-        }
-        String path = location.getPath();
-        return path.substring(path.lastIndexOf('/') + 1);
-    }
 
     private Map<String, Object> getUser(String userId) {
         Map<String, Object> user =
@@ -1266,61 +1270,6 @@ class MembershipInvitationIT extends IntegrationEnvironment {
             return Optional.empty();
         }
         return Optional.of(users.getFirst());
-    }
-
-    private void deleteUser(String userId) {
-        deleteWithConflictRetry(() ->
-                HTTP.delete()
-                        .uri(admin("/users/" + userId))
-                        .headers(headers -> headers.setBearerAuth(masterToken()))
-                        .retrieve()
-                        .toBodilessEntity());
-    }
-
-    private String admin(String path) {
-        return BASE + "/admin/realms/" + REALM + path;
-    }
-
-    private String masterToken() {
-        var form = new LinkedMultiValueMap<String, String>();
-        form.add("grant_type", "password");
-        form.add("client_id", "admin-cli");
-        form.add("username", CenterAdministrationIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
-        form.add("password", CenterAdministrationIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
-        Map<String, Object> response =
-                HTTP.post()
-                        .uri(BASE + "/realms/master/protocol/openid-connect/token")
-                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                        .body(form)
-                        .retrieve()
-                        .body(MAP);
-        if (response == null) {
-            throw new IllegalStateException("Master token not readable");
-        }
-        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
-    }
-
-    private static String adminStatic(String path) {
-        return BASE + "/admin/realms/" + REALM + path;
-    }
-
-    private static String masterTokenStatic() {
-        var form = new LinkedMultiValueMap<String, String>();
-        form.add("grant_type", "password");
-        form.add("client_id", "admin-cli");
-        form.add("username", CenterAdministrationIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
-        form.add("password", CenterAdministrationIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
-        Map<String, Object> response =
-                HTTP.post()
-                        .uri(BASE + "/realms/master/protocol/openid-connect/token")
-                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                        .body(form)
-                        .retrieve()
-                        .body(MAP);
-        if (response == null) {
-            throw new IllegalStateException("Master token not readable");
-        }
-        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
     }
 
     private static String createResource(String uri, Map<String, ?> body) {
@@ -1368,10 +1317,10 @@ class MembershipInvitationIT extends IntegrationEnvironment {
      * cả khi chính class này tạo ra.
      */
     private static void ensureApiClient() {
-        String audience = CenterAdministrationIT.fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
+        String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
         List<Map<String, Object>> matches =
                 HTTP.get()
-                        .uri(adminStatic("/clients?clientId=" + audience))
+                        .uri(admin("/clients?clientId=" + audience))
                         .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
                         .retrieve()
                         .body(LIST);
@@ -1380,7 +1329,7 @@ class MembershipInvitationIT extends IntegrationEnvironment {
         }
         String clientId =
                 createResource(
-                        adminStatic("/clients"),
+                        admin("/clients"),
                         Map.of(
                                 "clientId",
                                 audience,
@@ -1413,19 +1362,19 @@ class MembershipInvitationIT extends IntegrationEnvironment {
 
     private static void removeClientDefaults(String clientId) {
         String root = "/clients/" + clientId + "/authz/resource-server";
-        for (Map<String, Object> permission : getList(adminStatic(root + "/permission/resource"))) {
+        for (Map<String, Object> permission : getList(admin(root + "/permission/resource"))) {
             if (DEFAULT_PERMISSION.equals(permission.get("name"))) {
-                deleteResource(adminStatic(root + "/permission/resource/" + permission.get("id")));
+                deleteResource(admin(root + "/permission/resource/" + permission.get("id")));
             }
         }
-        for (Map<String, Object> resource : getList(adminStatic(root + "/resource"))) {
+        for (Map<String, Object> resource : getList(admin(root + "/resource"))) {
             if (DEFAULT_RESOURCE.equals(resource.get("name"))) {
-                deleteResource(adminStatic(root + "/resource/" + resource.get("_id")));
+                deleteResource(admin(root + "/resource/" + resource.get("_id")));
             }
         }
-        for (Map<String, Object> policy : getList(adminStatic(root + "/policy"))) {
+        for (Map<String, Object> policy : getList(admin(root + "/policy"))) {
             if (DEFAULT_POLICY.equals(policy.get("name"))) {
-                deleteResource(adminStatic(root + "/policy/" + policy.get("id")));
+                deleteResource(admin(root + "/policy/" + policy.get("id")));
             }
         }
     }

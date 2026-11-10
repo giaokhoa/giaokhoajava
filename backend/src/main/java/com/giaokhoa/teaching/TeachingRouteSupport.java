@@ -10,6 +10,7 @@ import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
+import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -226,6 +227,37 @@ public class TeachingRouteSupport {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .body(body);
+    }
+
+    /** Cổng gói dùng chung của các service giảng dạy: kỳ gói phải còn hiệu lực hiện hành. */
+    public static void requireSubscriptionCurrent(TeachingRepository repository, UUID workspaceId) {
+        if (!repository.subscriptionCurrent(workspaceId)) {
+            throw new HttpProblemException(
+                    HttpStatus.FORBIDDEN,
+                    "SUBSCRIPTION_INACTIVE",
+                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
+        }
+    }
+
+    /** Workspace giảng dạy hợp lệ: đang ACTIVE và là center hoặc personal. */
+    public static WorkspaceInfo requireTeachingWorkspace(
+            TeachingRepository repository, UUID workspaceId) {
+        WorkspaceInfo workspace =
+                repository
+                        .findWorkspace(workspaceId)
+                        .orElseThrow(() -> teachingWorkspaceNotFound());
+        if (!"ACTIVE".equals(workspace.state())
+                || (!"CENTER".equals(workspace.kind()) && !"PERSONAL".equals(workspace.kind()))) {
+            throw teachingWorkspaceNotFound();
+        }
+        return workspace;
+    }
+
+    private static HttpProblemException teachingWorkspaceNotFound() {
+        return new HttpProblemException(
+                HttpStatus.NOT_FOUND,
+                "WORKSPACE_NOT_FOUND",
+                "Không tìm thấy workspace giảng dạy hợp lệ.");
     }
 
     public static HttpProblemException denied() {

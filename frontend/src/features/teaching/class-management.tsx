@@ -1,13 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, requestAllPages, requestWhenReady } from "../../lib/api-client";
-import { operationStatus, pollOperationUntilSettled } from "../operations/operation-status";
 import {
-  parseTrackedOperation,
-  type TrackedOperation,
-} from "../identity/recovery-request-form";
+  ApiError,
+  isRecord,
+  requestAllPages,
+  requestWhenReady,
+  requestWorkspaces,
+} from "../../lib/api-client";
+import { SessionGate } from "../identity/session-gate";
 import { useSession } from "../identity/session-provider";
+import { attemptKey, submitMutation } from "../operations/operation-attempts";
+import { OperationPanel, useOperationCheck } from "../operations/operation-panel";
+import {
+  operationStatus,
+  parseTrackedOperation,
+  pollOperationUntilSettled,
+  type TrackedOperation,
+} from "../operations/operation-status";
 import { parseWorkspaces, type WorkspaceView } from "../identity/workspace-switcher";
 import {
   memberPermissions,
@@ -44,10 +54,6 @@ export type TeachingMutate = (
   path: string,
   init: { method: string; body?: string; headers?: Record<string, string> },
 ) => Promise<unknown>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isVersion(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -209,99 +215,10 @@ export function teachingErrorMessage(error: unknown, fallback = "Thao tác khôn
   return error instanceof Error ? error.message : fallback;
 }
 
-// Retry của cùng request giữ key; chỉ giữ key giữa các lần gửi khi chưa nhận được biên nhận.
-export async function submitTeachingMutation(
-  path: string,
-  init: { method: string; body?: string; headers?: Record<string, string> },
-  idempotencyKey: string,
-  signal?: AbortSignal,
-): Promise<unknown> {
-  const result = await requestWhenReady<unknown>(path, {
-    ...init, signal, headers: { ...init.headers, "Idempotency-Key": idempotencyKey },
-  });
-  return result.data;
-}
-
-// Cùng payload giữ key khi chưa nhận được biên nhận, để retry sau lỗi mạng không ghi trùng.
-function attemptKey(store: Map<string, string>, signature: string): string {
-  let key = store.get(signature);
-  if (!key) {
-    key = crypto.randomUUID();
-    store.set(signature, key);
-  }
-  return key;
-}
-
 export function stateLabel(state: string): string {
   if (state === "ACTIVE") return "Đang hoạt động";
   if (state === "REVOKED") return "Đã thu hồi";
   return state;
-}
-
-function OperationPanel({
-  operation,
-  checking,
-  onCheck,
-}: {
-  operation: TrackedOperation;
-  checking: boolean;
-  onCheck: () => void;
-}) {
-  return (
-    <section className="section" aria-labelledby="teaching-operation-title">
-      <h2 id="teaching-operation-title">Trạng thái thao tác</h2>
-      <p>{operationStatus(operation).message}</p>
-      <p>
-        Mã thao tác: <code>{operation.id}</code>
-      </p>
-      {operation.errorCode ? <p>Mã lỗi: {operation.errorCode}</p> : null}
-      <button
-        className="secondary-button"
-        type="button"
-        disabled={checking}
-        onClick={onCheck}
-      >
-        Kiểm tra trạng thái
-      </button>
-    </section>
-  );
-}
-
-function SessionGate({
-  status,
-  message,
-  onRetry,
-  children,
-}: {
-  status: string;
-  message?: string;
-  onRetry: () => void;
-  children: React.ReactNode;
-}) {
-  if (status === "loading") return <p role="status">Đang tải trạng thái tài khoản…</p>;
-  if (status === "error") {
-    return (
-      <>
-        <p role="alert">{message}</p>
-        <button className="action-button" type="button" onClick={onRetry}>
-          Thử lại
-        </button>
-      </>
-    );
-  }
-  if (status === "anonymous") {
-    return (
-      <>
-        <p className="introduction">
-          Đăng nhập để quản lý lớp, khóa và phân công thuộc phạm vi của bạn.
-        </p>
-        <a className="login-link" href="/oauth2/authorization/keycloak">
-          Đăng nhập
-        </a>
-      </>
-    );
-  }
-  return <>{children}</>;
 }
 
 function HomeroomAssignmentList({
@@ -419,6 +336,7 @@ export function CenterClassesContent({ workspaceId }: { workspaceId: string }) {
 
 function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
   const { session, refreshSession } = useSession();
+  const checkOperationStatus = useOperationCheck();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -464,75 +382,88 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
   );
   const addableStudents = activeStudents.filter((member) => !rosterStudentIds.has(member.user.id));
 
-  async function loadClasses() {
-    setListError(null);
-    try {
-      const result = await requestWhenReady<unknown>(classesPath);
-      if (result.kind !== "data") throw new Error("Phản hồi danh sách lớp không hợp lệ.");
-      setClasses(parseClasses(result.data));
-      setNextCursor(parsePage(result.data).nextCursor);
-    } catch (error) {
-      setClasses([]);
-      setListError(teachingErrorMessage(error, "Không tải được danh sách lớp."));
-    }
-  }
+  // Một phép tải duy nhất cho các tài nguyên của trang; từng nơi gọi (tải đầu,
+  // làm mới, poll sau operation) giữ nguyên cách áp kết quả và thông điệp lỗi riêng.
+  const loadCore = useCallback(async (signal?: AbortSignal) => {
+    const [classesResult, membershipResult, workspaceResult] = await Promise.allSettled([
+      requestWhenReady<unknown>(classesPath, { signal }),
+      requestAllPages(`/api/workspaces/${wid}/memberships`, { signal }),
+      requestWorkspaces(userId ?? "", signal),
+    ]);
+    return { classesResult, membershipResult, workspaceResult };
+  }, [classesPath, userId, wid]);
 
-  async function loadRoster(classId: string) {
-    setRosterError(null);
-    try {
-      const items = await requestAllPages(`${classesPath}/${encodeURIComponent(classId)}/students`);
-      setRoster(parseRoster(items));
-    } catch (error) {
-      setRoster([]);
-      setRosterError(teachingErrorMessage(error, "Không tải được danh sách học sinh của lớp."));
-    }
-  }
+  const loadAll = useCallback(async (signal?: AbortSignal) => {
+    const rosterPromise = selectedClassId
+      ? requestAllPages(
+          `${classesPath}/${encodeURIComponent(selectedClassId)}/students`,
+          { signal },
+        ).then(
+          (value): PromiseSettledResult<unknown[]> => ({ status: "fulfilled", value }),
+          (reason): PromiseSettledResult<unknown[]> => ({ status: "rejected", reason }),
+        )
+      : Promise.resolve<PromiseSettledResult<null>>({ status: "fulfilled", value: null });
+    const [core, rosterResult] = await Promise.all([loadCore(signal), rosterPromise]);
+    return { ...core, rosterResult };
+  }, [classesPath, loadCore, selectedClassId]);
 
   function refresh() {
     setRefreshTick((tick) => tick + 1);
-    void loadClasses();
-    if (selectedClassId) void loadRoster(selectedClassId);
-    void requestAllPages(`/api/workspaces/${wid}/memberships`)
-      .then((items) => setMemberships(parseMemberships(items)))
-      .catch(() => setMemberships([]));
-    void requestWhenReady<unknown>("/api/me/workspaces")
-      .then((result) => setWorkspace(result.kind === "data"
-        ? parseWorkspaces(result.data).find((item) => item.id === workspaceId) ?? null : null))
-      .catch(() => setWorkspace(null));
+    setListError(null);
+    if (selectedClassId) setRosterError(null);
+    void loadAll().then(({ classesResult, membershipResult, workspaceResult, rosterResult }) => {
+      if (classesResult.status === "fulfilled" && classesResult.value.kind === "data") {
+        setClasses(parseClasses(classesResult.value.data));
+        setNextCursor(parsePage(classesResult.value.data).nextCursor);
+      } else {
+        setClasses([]);
+        setListError(teachingErrorMessage(
+          classesResult.status === "rejected"
+            ? classesResult.reason
+            : new Error("Phản hồi danh sách lớp không hợp lệ."),
+          "Không tải được danh sách lớp.",
+        ));
+      }
+      if (rosterResult.status === "fulfilled") {
+        if (rosterResult.value !== null) setRoster(parseRoster(rosterResult.value));
+      } else {
+        setRoster([]);
+        setRosterError(teachingErrorMessage(
+          rosterResult.reason,
+          "Không tải được danh sách học sinh của lớp.",
+        ));
+      }
+      setMemberships(membershipResult.status === "fulfilled"
+        ? parseMemberships(membershipResult.value) : []);
+      setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
+        ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
+        : null);
+    });
   }
 
   useEffect(() => {
     if (!userId) return;
     let ignore = false;
-    requestWhenReady<unknown>(classesPath)
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        setClasses(parseClasses(result.data));
-        setNextCursor(parsePage(result.data).nextCursor);
+    void loadCore().then(({ classesResult, membershipResult, workspaceResult }) => {
+      if (ignore) return;
+      if (classesResult.status === "fulfilled" && classesResult.value.kind === "data") {
+        setClasses(parseClasses(classesResult.value.data));
+        setNextCursor(parsePage(classesResult.value.data).nextCursor);
         setListError(null);
-      })
-      .catch((error: unknown) => {
-        if (ignore) return;
+      } else if (classesResult.status === "rejected") {
         setClasses([]);
-        setListError(teachingErrorMessage(error, "Không tải được danh sách lớp."));
-      });
-    requestAllPages(`/api/workspaces/${wid}/memberships`)
-      .then((items) => {
-        if (ignore) return;
-        setMemberships(parseMemberships(items));
-      })
-      .catch(() => {
-        if (!ignore) setMemberships([]);
-      });
-    requestWhenReady<unknown>("/api/me/workspaces")
-      .then((result) => {
-        if (ignore || result.kind !== "data") return;
-        const found = parseWorkspaces(result.data).find((item) => item.id === workspaceId);
+        setListError(teachingErrorMessage(classesResult.reason, "Không tải được danh sách lớp."));
+      }
+      setMemberships(membershipResult.status === "fulfilled"
+        ? parseMemberships(membershipResult.value) : []);
+      if (workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data") {
+        const found = parseWorkspaces(workspaceResult.value.data)
+          .find((item) => item.id === workspaceId);
         setWorkspace(found ?? null);
-      })
-      .catch(() => {
-        if (!ignore) setWorkspace(null);
-      });
+      } else if (workspaceResult.status === "rejected") {
+        setWorkspace(null);
+      }
+    });
     requestAllPages("/api/subjects")
       .then((items) => {
         if (ignore) return;
@@ -545,7 +476,7 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
       ignore = true;
       pendingMutation.current?.abort();
     };
-  }, [userId, workspaceId, classesPath, wid]);
+  }, [userId, workspaceId, classesPath, wid, loadCore]);
 
   useEffect(() => {
     if (!selectedClassId) return;
@@ -573,15 +504,8 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
       .then(async (next) => {
         if (controller.signal.aborted) return;
         if (next.completed && next.state === "SUCCEEDED") {
-          const [classesResult, rosterResult, membershipResult, workspaceResult] = await Promise.allSettled([
-            requestWhenReady<unknown>(classesPath, { signal: controller.signal }),
-            selectedClassId
-              ? requestAllPages(`${classesPath}/${encodeURIComponent(selectedClassId)}/students`,
-                  { signal: controller.signal })
-              : Promise.resolve(null),
-            requestAllPages(`/api/workspaces/${wid}/memberships`, { signal: controller.signal }),
-            requestWhenReady<unknown>("/api/me/workspaces", { signal: controller.signal }),
-          ]);
+          const { classesResult, membershipResult, workspaceResult, rosterResult } =
+            await loadAll(controller.signal);
           if (controller.signal.aborted) return;
           if (classesResult.status === "fulfilled" && classesResult.value.kind === "data") {
             setClasses(parseClasses(classesResult.value.data));
@@ -606,18 +530,14 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
         }
       });
     return () => controller.abort();
-  }, [operation, userId, workspaceId, classesPath, selectedClassId, wid]);
+  }, [operation, userId, workspaceId, classesPath, selectedClassId, wid, loadAll]);
 
   async function checkOperation() {
     if (!operation) return;
     setPendingAction("operation");
     setActionError(null);
     try {
-      const result = await requestWhenReady<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) {
-        throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
-      }
+      const nextOperation = await checkOperationStatus(operation.id, { whenReady: true });
       setOperationResult({ userId, workspaceId, value: nextOperation });
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
         refresh();
@@ -636,7 +556,7 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
     try {
       const controller = new AbortController();
       pendingMutation.current = controller;
-      const data = await submitTeachingMutation(path, init, key, controller.signal);
+      const data = await submitMutation(path, init, key, controller.signal);
       const nextOperation = parseTrackedOperation(data);
       if (nextOperation) {
         // Receipt bền kết thúc attempt; lần thao tác mới phải có key mới.
@@ -761,6 +681,7 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
           status={session.status}
           message={session.status === "error" ? session.message : undefined}
           onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để quản lý lớp, khóa và phân công thuộc phạm vi của bạn."
         >
           <p className="introduction">
             Trung tâm: {workspace ? <strong>{workspace.name}</strong> : <code>{workspaceId}</code>}
@@ -782,6 +703,7 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
               operation={operation}
               checking={pendingAction === "operation"}
               onCheck={() => void checkOperation()}
+              titleId="teaching-operation-title"
             />
           ) : null}
 

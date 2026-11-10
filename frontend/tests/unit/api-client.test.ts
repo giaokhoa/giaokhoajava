@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiRequest, requestAllPages, submitLogout } from "../../src/lib/api-client";
+import {
+  apiRequest,
+  requestAllPages,
+  requestWorkspaces,
+  submitLogout,
+} from "../../src/lib/api-client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -174,6 +179,26 @@ describe("browser API client", () => {
   });
 });
 
+
+describe("danh sách workspace dùng chung", () => {
+  it("gộp các lời gọi đang bay của cùng người dùng, tải lại sau khi đã xong", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(Response.json([{ id: "w-1" }])));
+    vi.stubGlobal("fetch", fetchMock);
+    const [first, second] = await Promise.all([
+      requestWorkspaces("user-1"),
+      requestWorkspaces("user-1"),
+    ]);
+    expect(first).toEqual(second);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/me/workspaces");
+    // Đã kết thúc thì không giữ cache: lần gọi sau phải đọc trạng thái mới nhất.
+    await requestWorkspaces("user-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await requestWorkspaces("user-2");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe("đọc đủ trang danh sách bảo vệ", () => {
   it("giữ bộ lọc và theo cursor để không làm mất người ở trang sau", async () => {

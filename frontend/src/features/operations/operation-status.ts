@@ -1,4 +1,4 @@
-import { requestWhenReady, waitForRetry } from "../../lib/api-client";
+import { isRecord, requestWhenReady, waitForRetry } from "../../lib/api-client";
 
 export type OperationState =
   | "PENDING"
@@ -20,6 +20,40 @@ export type OperationStatus = {
   kind: "pending" | "succeeded" | "failed";
   message: string;
 };
+
+export type TrackedOperation = Pick<OperationView, "id" | "state" | "completed" | "errorCode">;
+
+const operationStates: OperationState[] = [
+  "PENDING",
+  "APPLYING",
+  "SUCCEEDED",
+  "RETRYABLE_FAILURE",
+  "FAILED",
+];
+
+// Chấp nhận cả operation phẳng (operationId) và operation lồng trong view trả về;
+// thiếu id/state/completed đúng hợp đồng thì coi như phản hồi không hợp lệ.
+export function parseTrackedOperation(data: unknown): TrackedOperation | null {
+  if (!isRecord(data)) return null;
+  const source = isRecord(data.operation) ? data.operation : data;
+  const id = typeof source.id === "string" && source.id
+    ? source.id
+    : typeof data.operationId === "string" && data.operationId
+      ? data.operationId
+      : null;
+  if (!id
+      || typeof source.state !== "string"
+      || !operationStates.includes(source.state as OperationState)
+      || typeof source.completed !== "boolean") {
+    return null;
+  }
+  return {
+    id,
+    state: source.state as OperationState,
+    completed: source.completed,
+    errorCode: typeof source.errorCode === "string" && source.errorCode ? source.errorCode : undefined,
+  };
+}
 
 export function operationStatus(
   operation: Pick<OperationView, "state" | "completed">,

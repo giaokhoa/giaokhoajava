@@ -10,19 +10,16 @@ import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter.AppliedGraph;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
+import com.giaokhoa.shared.Sha256;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -495,7 +492,7 @@ public class ProjectionReconciler {
                 | IllegalStateException
                 | OAuth2AuthorizationException ex) {
             if (LOG.isWarnEnabled()) {
-                LOG.warn("Partition {} did not reconcile: {}", partitionId, ex.toString());
+                LOG.warn("Partition {} did not reconcile", partitionId, ex);
             }
             return false;
         }
@@ -920,9 +917,9 @@ public class ProjectionReconciler {
             String targetKey, String scope, List<String> sourceDescriptors) {
         List<String> sorted = sourceDescriptors.stream().sorted().distinct().toList();
         if (sorted.isEmpty()) {
-            return sha256(retractDescriptor(targetKey, scope));
+            return Sha256.hex(retractDescriptor(targetKey, scope));
         }
-        return sha256(String.join("\n", sorted));
+        return Sha256.hex(String.join("\n", sorted));
     }
 
     public static PolicyGraph graphFor(
@@ -982,17 +979,6 @@ public class ProjectionReconciler {
             }
         }
         throw new IllegalArgumentException("Source descriptor has no subject: " + descriptor);
-    }
-
-    private static String sha256(String value) {
-        try {
-            return HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 is required", ex);
-        }
     }
 
     private static List<String> stringList(ResultSet rs, String column) throws SQLException {

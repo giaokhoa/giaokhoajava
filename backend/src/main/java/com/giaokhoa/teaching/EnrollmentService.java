@@ -113,7 +113,8 @@ public class EnrollmentService {
                     "ENROLLMENT_BATCH_REQUIRED",
                     "Lô ghi danh cần ít nhất một học sinh và một môn–khóa.");
         }
-        WorkspaceInfo workspace = requireTeachingWorkspace(workspaceId);
+        WorkspaceInfo workspace =
+                TeachingRouteSupport.requireTeachingWorkspace(repository, workspaceId);
         List<RosterRow> roster = new ArrayList<>();
         for (UUID rosterId : rosterIds) {
             RosterRow entry =
@@ -174,7 +175,7 @@ public class EnrollmentService {
                     "ENROLLMENT_CLASS_MISMATCH",
                     "Mọi học sinh và môn–khóa trong một lô ghi danh phải cùng một lớp.");
         }
-        requireSubscriptionCurrent(workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
         for (RosterRow entry : roster) {
             for (CourseSubjectScopeRow subject : subjects) {
                 if (repository
@@ -286,25 +287,6 @@ public class EnrollmentService {
         return "PENDING".equals(state) || "ACTIVE".equals(state);
     }
 
-    private WorkspaceInfo requireTeachingWorkspace(UUID workspaceId) {
-        WorkspaceInfo workspace =
-                repository.findWorkspace(workspaceId).orElseThrow(() -> workspaceNotFound());
-        if (!"ACTIVE".equals(workspace.state())
-                || (!"CENTER".equals(workspace.kind()) && !"PERSONAL".equals(workspace.kind()))) {
-            throw workspaceNotFound();
-        }
-        return workspace;
-    }
-
-    private void requireSubscriptionCurrent(UUID workspaceId) {
-        if (!repository.subscriptionCurrent(workspaceId)) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
-                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
-        }
-    }
-
     private static HttpProblemException enrollmentTargetNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
@@ -317,13 +299,6 @@ public class EnrollmentService {
                 HttpStatus.NOT_FOUND,
                 "ENROLLMENT_NOT_FOUND",
                 "Không tìm thấy ghi danh trong workspace này.");
-    }
-
-    private static HttpProblemException workspaceNotFound() {
-        return new HttpProblemException(
-                HttpStatus.NOT_FOUND,
-                "WORKSPACE_NOT_FOUND",
-                "Không tìm thấy workspace giảng dạy hợp lệ.");
     }
 
     /**
