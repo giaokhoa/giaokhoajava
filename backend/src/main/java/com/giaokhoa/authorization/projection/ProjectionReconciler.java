@@ -10,6 +10,7 @@ import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter.AppliedGraph;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
+import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.shared.Sha256;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
@@ -87,6 +88,7 @@ public class ProjectionReconciler {
     private final TeachingPolicyProjector teachingProjector;
     private final GuardianPolicyProjector guardianProjector;
     private final ResultPolicyProjector resultProjector;
+    private final ResourcePolicyProjector resourceProjector;
     private final PersonalEntitlementProjector personalEntitlementProjector;
     private final PersonalTeachingPolicyProjector personalTeachingProjector;
     private final TransactionTemplate transactions;
@@ -100,6 +102,7 @@ public class ProjectionReconciler {
             TeachingPolicyProjector teachingProjector,
             GuardianPolicyProjector guardianProjector,
             ResultPolicyProjector resultProjector,
+            ResourcePolicyProjector resourceProjector,
             PersonalEntitlementProjector personalEntitlementProjector,
             PersonalTeachingPolicyProjector personalTeachingProjector,
             PlatformTransactionManager transactionManager,
@@ -111,6 +114,7 @@ public class ProjectionReconciler {
         this.teachingProjector = teachingProjector;
         this.guardianProjector = guardianProjector;
         this.resultProjector = resultProjector;
+        this.resourceProjector = resourceProjector;
         this.personalEntitlementProjector = personalEntitlementProjector;
         this.personalTeachingProjector = personalTeachingProjector;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -616,6 +620,9 @@ public class ProjectionReconciler {
         if (type == NativePolicyTemplates.TargetType.RESULT) {
             return resolveResultBundle(projection);
         }
+        if (type == NativePolicyTemplates.TargetType.RESOURCE_VERSION) {
+            return resolveResourceBundle(projection);
+        }
         for (String scope : type.scopes()) {
             if (desiredHash(projection.targetKey(), scope, List.of())
                     .equals(projection.desiredHash())) {
@@ -857,6 +864,35 @@ public class ProjectionReconciler {
         return new Resolved.ApplyBundle(graphs, managedScopes);
     }
 
+    /**
+     * Bundle của một target resource version thuộc workspace ngữ cảnh: cùng hình dạng với bundle
+     * kết quả — desired hash đã ghi phải khớp đúng tập descriptor mà {@link ResourcePolicyProjector}
+     * dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa CONTENT_READ của projector.
+     */
+    private Resolved resolveResourceBundle(ProjectionRow projection) {
+        List<String> bundle = resourceProjector.bundleDescriptors(projection.targetKey());
+        List<String> managedScopes = ResourcePolicyProjector.managedScopes();
+        if (bundle.isEmpty()) {
+            return new Resolved.RetractBundle(managedScopes);
+        }
+        String bundleScope = ResourcePolicyProjector.bundleScope();
+        if (!desiredHash(projection.targetKey(), bundleScope, bundle)
+                .equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the resource sources rebuilt from durable rows: "
+                            + projection.targetKey());
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : managedScopes) {
+            List<String> sources = resourceProjector.sourcesFor(projection.targetKey(), scope);
+            if (!sources.isEmpty()) {
+                graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
+            }
+        }
+        return new Resolved.ApplyBundle(graphs, managedScopes);
+    }
+
     private List<String> reconstructSources(
             String targetKey, NativePolicyTemplates.TargetType type, String scope) {
         if (type == NativePolicyTemplates.TargetType.PROFILE) {
@@ -986,6 +1022,9 @@ public class ProjectionReconciler {
         }
         if (descriptor.startsWith("RESULT_")) {
             return new PolicyGraph.Source(ResultPolicyProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("RESOURCE_")) {
+            return new PolicyGraph.Source(ResourcePolicyProjector.gatesFor(descriptor));
         }
         if (descriptor.startsWith("GUARDIAN_GROUP")) {
             return new PolicyGraph.Source(GuardianPolicyProjector.gatesFor(descriptor));

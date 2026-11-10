@@ -7,6 +7,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.resources.ResourceLibraryService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,8 +41,11 @@ import tools.jackson.databind.json.JsonMapper;
  * ghi thật vào các bảng mẫu với target và scope đúng hợp đồng HTTP; dữ kiện nguồn của một target có
  * thể chưa từng được chiếu khi chuỗi được seed thẳng, nên trước khi hỏi PDP mỗi action ghi lại
  * bundle hiện hành của target qua cơ chế operation dùng chung và chờ chiếu xong — chờ không xong
- * thì fail-closed 503 như mọi protected request khác. Action lạ bị từ chối, không bao giờ được lặng
- * lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính mình trong cùng transaction với
+ * thì fail-closed 503 như mọi protected request khác. Các action thư viện SAVE_VERSION,
+ * FORK_VERSION, RECEIVE_UPDATE và hai route đọc thân bài/đáp án của resource version uỷ cho
+ * {@link ResourceLibraryService}, nơi giữ pipeline và giao thức biên nhận của chúng. Action lạ bị
+ * từ chối, không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính
+ * mình trong cùng transaction với
  * mutation (bảng sample_action_mutation, theo tiền lệ recovery_mutation): retry cùng key và cùng
  * payload trả lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload trả 409 như quy tắc
  * mutation chung của hợp đồng HTTP.
@@ -57,6 +63,7 @@ public class SampleActionController {
     private final JdbcTemplate jdbc;
     private final SourceRevocationCoordinator coordinator;
     private final ResultPolicyProjector resultProjector;
+    private final ResourceLibraryService library;
     private final WorkspaceTransaction workspaces;
     private final TransactionTemplate transactions;
 
@@ -66,6 +73,7 @@ public class SampleActionController {
             JdbcTemplate jdbc,
             SourceRevocationCoordinator coordinator,
             ResultPolicyProjector resultProjector,
+            ResourceLibraryService library,
             WorkspaceTransaction workspaces,
             PlatformTransactionManager transactionManager) {
         this.executor = executor;
@@ -73,6 +81,7 @@ public class SampleActionController {
         this.jdbc = jdbc;
         this.coordinator = coordinator;
         this.resultProjector = resultProjector;
+        this.library = library;
         this.workspaces = workspaces;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -91,10 +100,18 @@ public class SampleActionController {
             String contentStub,
             UUID resultId,
             String scoreStub,
-            String commentStub) {}
+            String commentStub,
+            UUID libraryItemId,
+            UUID replacementVersionId) {}
 
     public record SampleActionResult(
             UUID id, String state, boolean completed, String targetType, UUID targetId) {}
+
+    /** Thân bài của một resource version: đáp án không bao giờ nằm trong đáp án của route này. */
+    public record ResourceBodyView(UUID resourceId, UUID versionId, String body) {}
+
+    /** Đáp án của một resource version qua route riêng với scope riêng. */
+    public record ResourceAnswerView(UUID resourceId, UUID versionId, @Nullable String answer) {}
 
     @PostMapping("/api/workspaces/{workspaceId}/samples/actions")
     public ResponseEntity<SampleActionResult> act(
@@ -144,6 +161,30 @@ public class SampleActionController {
                                     httpRequest);
                     case "PUBLISH_RESULT" ->
                             publishResult(
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    request,
+                                    authentication,
+                                    httpRequest);
+                    case "SAVE_VERSION" ->
+                            saveVersion(
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    request,
+                                    authentication,
+                                    httpRequest);
+                    case "FORK_VERSION" ->
+                            forkVersion(
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    request,
+                                    authentication,
+                                    httpRequest);
+                    case "RECEIVE_UPDATE" ->
+                            receiveUpdate(
                                     workspaceId,
                                     idempotencyKey,
                                     payloadHash,
@@ -678,6 +719,109 @@ public class SampleActionController {
             throw notFound();
         }
         return rows.getFirst();
+    }
+
+    // ---------- Thư viện resource: lưu, fork, nhận cập nhật và đọc contextual ----------
+
+    private SampleActionResult saveVersion(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.resourceId() == null || request.versionId() == null) {
+            throw invalid();
+        }
+        UUID itemId =
+                library.saveVersion(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.resourceId(),
+                        request.versionId(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId);
+    }
+
+    private SampleActionResult forkVersion(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.resourceId() == null
+                || request.versionId() == null
+                || request.label() == null
+                || request.label().isBlank()) {
+            throw invalid();
+        }
+        UUID forkResourceId =
+                library.forkVersion(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.resourceId(),
+                        request.versionId(),
+                        request.label(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(
+                forkResourceId, OPERATION_SUCCEEDED, true, "RESOURCE", forkResourceId);
+    }
+
+    private SampleActionResult receiveUpdate(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.libraryItemId() == null || request.replacementVersionId() == null) {
+            throw invalid();
+        }
+        UUID itemId =
+                library.receiveUpdate(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.libraryItemId(),
+                        request.replacementVersionId(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId);
+    }
+
+    @GetMapping(
+            "/api/workspaces/{workspaceId}/samples/resources/{resourceId}/versions/{versionId}")
+    public ResponseEntity<ResourceBodyView> readResourceBody(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID resourceId,
+            @PathVariable UUID versionId,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        String body = library.readBody(authentication, httpRequest, workspaceId, resourceId, versionId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .body(new ResourceBodyView(resourceId, versionId, body));
+    }
+
+    @GetMapping(
+            "/api/workspaces/{workspaceId}/samples/resources/{resourceId}"
+                    + "/versions/{versionId}/answer")
+    public ResponseEntity<ResourceAnswerView> readResourceAnswer(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID resourceId,
+            @PathVariable UUID versionId,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        String answer =
+                library.readAnswer(authentication, httpRequest, workspaceId, resourceId, versionId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .body(new ResourceAnswerView(resourceId, versionId, answer));
     }
 
     // ---------- Biên nhận idempotency của chính action ----------

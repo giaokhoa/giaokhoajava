@@ -488,6 +488,8 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             runtimeProjector,
                             new PersonalTeachingPolicyProjector(runtimeJdbc, runtimeTxManager),
                             new ResultPolicyProjector(
+                                    runtimeJdbc, runtimeOperations, runtimeTxManager),
+                            new com.giaokhoa.resources.ResourcePolicyProjector(
                                     runtimeJdbc, runtimeOperations, runtimeTxManager));
             ResourceMutationCoordinator runtimeCoordinator =
                     new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);

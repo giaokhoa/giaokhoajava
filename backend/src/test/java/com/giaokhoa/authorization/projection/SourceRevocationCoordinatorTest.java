@@ -104,7 +104,8 @@ class SourceRevocationCoordinatorTest {
                         mock(CenterPolicyProjector.class),
                         mock(TeachingPolicyProjector.class),
                         mock(com.giaokhoa.teaching.PersonalTeachingPolicyProjector.class),
-                        mock(ResultPolicyProjector.class));
+                        mock(ResultPolicyProjector.class),
+                        mock(com.giaokhoa.resources.ResourcePolicyProjector.class));
 
         assertThrows(
                 IllegalStateException.class,
@@ -132,7 +133,8 @@ class SourceRevocationCoordinatorTest {
                         center,
                         teaching,
                         mock(com.giaokhoa.teaching.PersonalTeachingPolicyProjector.class),
-                        results);
+                        results,
+                        mock(com.giaokhoa.resources.ResourcePolicyProjector.class));
 
         Fixture() {
             when(jdbc.queryForList(contains("authz_partition"), eq(UUID.class), anyString()))
