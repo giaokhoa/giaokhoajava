@@ -6,7 +6,6 @@ import java.net.URI;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -24,7 +23,6 @@ public class CurrentIdentityClient {
     private final RestClient http;
     private final String baseUrl;
     private final String realm;
-    private final OAuth2AuthorizedClientManager manager;
 
     @Autowired
     public CurrentIdentityClient(
@@ -49,10 +47,12 @@ public class CurrentIdentityClient {
             String baseUrl,
             String realm,
             OAuth2AuthorizedClientManager manager) {
-        this.http = builder.build();
+        this.http =
+                builder.requestInterceptor(
+                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                        .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;
-        this.manager = manager;
     }
 
     /** Profile Keycloak hiện hành của một user; Keycloak ID giữ nguyên dạng opaque. */
@@ -74,27 +74,10 @@ public class CurrentIdentityClient {
                         .build()
                         .encode()
                         .toUri();
-        CurrentIdentity identity =
-                http.get()
-                        .uri(uri)
-                        .headers(headers -> headers.setBearerAuth(accessToken()))
-                        .retrieve()
-                        .body(CurrentIdentity.class);
+        CurrentIdentity identity = http.get().uri(uri).retrieve().body(CurrentIdentity.class);
         if (identity == null) {
             throw new IllegalStateException("Empty Keycloak identity response");
         }
         return identity;
-    }
-
-    private String accessToken() {
-        var client =
-                manager.authorize(
-                        OAuth2AuthorizeRequest.withClientRegistrationId("giaokhoa-provisioner")
-                                .principal("giaokhoa-provisioner")
-                                .build());
-        if (client == null || client.getAccessToken() == null) {
-            throw new IllegalStateException("Keycloak provisioner cannot obtain an access token");
-        }
-        return client.getAccessToken().getTokenValue();
     }
 }

@@ -14,7 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -32,7 +31,6 @@ public class KeycloakProvisioningClient {
     private final RestClient http;
     private final String baseUrl;
     private final String realm;
-    private final OAuth2AuthorizedClientManager manager;
 
     @Autowired
     public KeycloakProvisioningClient(
@@ -81,10 +79,12 @@ public class KeycloakProvisioningClient {
             String baseUrl,
             String realm,
             OAuth2AuthorizedClientManager manager) {
-        this.http = builder.build();
+        this.http =
+                builder.requestInterceptor(
+                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                        .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;
-        this.manager = manager;
     }
 
     /** Mỗi center một Organization; tên ổn định ngăn tạo trùng organization khi retry. */
@@ -272,25 +272,8 @@ public class KeycloakProvisioningClient {
         return uri.build().encode().toUri();
     }
 
-    private String accessToken() {
-        var client =
-                manager.authorize(
-                        OAuth2AuthorizeRequest.withClientRegistrationId("giaokhoa-provisioner")
-                                .principal("giaokhoa-provisioner")
-                                .build());
-        if (client == null || client.getAccessToken() == null) {
-            throw new IllegalStateException("Keycloak provisioner cannot obtain an access token");
-        }
-        return client.getAccessToken().getTokenValue();
-    }
-
     private <T> T get(URI uri, Class<T> type) {
-        T body =
-                http.get()
-                        .uri(uri)
-                        .headers(headers -> headers.setBearerAuth(accessToken()))
-                        .retrieve()
-                        .body(type);
+        T body = http.get().uri(uri).retrieve().body(type);
         if (body == null) {
             throw new IllegalStateException("Empty Keycloak directory response");
         }
@@ -300,7 +283,6 @@ public class KeycloakProvisioningClient {
     private void post(URI uri, Object payload) {
         http.post()
                 .uri(uri)
-                .headers(headers -> headers.setBearerAuth(accessToken()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
@@ -308,19 +290,11 @@ public class KeycloakProvisioningClient {
     }
 
     private void put(URI uri) {
-        http.put()
-                .uri(uri)
-                .headers(headers -> headers.setBearerAuth(accessToken()))
-                .retrieve()
-                .toBodilessEntity();
+        http.put().uri(uri).retrieve().toBodilessEntity();
     }
 
     private void delete(URI uri) {
-        http.delete()
-                .uri(uri)
-                .headers(headers -> headers.setBearerAuth(accessToken()))
-                .retrieve()
-                .toBodilessEntity();
+        http.delete().uri(uri).retrieve().toBodilessEntity();
     }
 
     private record Group(String id, String name, String path) {}

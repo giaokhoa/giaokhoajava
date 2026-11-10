@@ -1,12 +1,14 @@
 package com.giaokhoa.authorization.keycloak;
 
 import org.jspecify.annotations.Nullable;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.client.OAuth2ClientHttpRequestInterceptor;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 
@@ -30,6 +32,20 @@ public final class KeycloakProvisionerFactory {
             throw new IllegalStateException("Keycloak issuer URI has no realm: " + issuerUri);
         }
         return realm;
+    }
+
+    /**
+     * Interceptor gắn Bearer token provisioner vào mọi request Admin API qua manager của framework,
+     * thay cho việc mỗi điểm gọi tự gắn header tay. Registration và principal đều cố định là
+     * provisioner (không có user trong ngữ cảnh gọi này) nên không đọc SecurityContext; manager tự
+     * xin mới token khi hết hạn.
+     */
+    public static ClientHttpRequestInterceptor provisionerInterceptor(
+            OAuth2AuthorizedClientManager manager) {
+        var interceptor = new OAuth2ClientHttpRequestInterceptor(manager);
+        interceptor.setClientRegistrationIdResolver(request -> "giaokhoa-provisioner");
+        interceptor.setPrincipalResolver(request -> () -> "giaokhoa-provisioner");
+        return interceptor;
     }
 
     public static OAuth2AuthorizedClientManager clientManager(

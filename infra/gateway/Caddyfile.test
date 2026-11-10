@@ -11,6 +11,14 @@ http://127.0.0.1:8080 {
 		}
 	}
 	handle {
+		# Header bảo mật cho tài liệu HTML do Next phục vụ; `>` (defer) để đặt
+		# sau khi proxy đã ghi header của nó. script-src cần 'unsafe-inline'
+		# vì Next chèn inline script chứa RSC payload — không có nonce thì
+		# 'self' trần chặn hydration (nâng cấp: cấp nonce theo request).
+		header {
+			>Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"
+			>X-Content-Type-Options "nosniff"
+		}
 		reverse_proxy 127.0.0.1:3001
 	}
 }

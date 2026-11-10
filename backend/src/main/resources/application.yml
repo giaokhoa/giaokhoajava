@@ -16,6 +16,8 @@ spring:
       ddl-auto: validate
     open-in-view: false
   session:
+    # Chốt tường minh bằng đúng mặc định của Spring Session (30 phút).
+    timeout: 30m
     jdbc:
       initialize-schema: never
   security:

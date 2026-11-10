@@ -19,7 +19,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -52,7 +51,6 @@ public class PolicyGraphWriter {
     private final RestClient http;
     private final String baseUrl;
     private final String realm;
-    private final OAuth2AuthorizedClientManager manager;
     private final String audienceClientId;
     private final @Nullable ResourceMutationCoordinator mutationCoordinator;
 
@@ -103,10 +101,12 @@ public class PolicyGraphWriter {
             OAuth2AuthorizedClientManager manager,
             String audienceClientId,
             @Nullable ResourceMutationCoordinator mutationCoordinator) {
-        this.http = builder.build();
+        this.http =
+                builder.requestInterceptor(
+                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                        .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;
-        this.manager = manager;
         this.audienceClientId = audienceClientId;
         this.mutationCoordinator = mutationCoordinator;
     }
@@ -805,18 +805,6 @@ public class PolicyGraphWriter {
                 + "/authz/resource-server";
     }
 
-    private String accessToken() {
-        var client =
-                manager.authorize(
-                        OAuth2AuthorizeRequest.withClientRegistrationId("giaokhoa-provisioner")
-                                .principal("giaokhoa-provisioner")
-                                .build());
-        if (client == null || client.getAccessToken() == null) {
-            throw new IllegalStateException("Keycloak provisioner cannot obtain an access token");
-        }
-        return client.getAccessToken().getTokenValue();
-    }
-
     /**
      * Mọi trang đều được lấy: một tên vắng mặt trong kết quả thực sự không tồn tại trong Keycloak.
      */
@@ -839,12 +827,7 @@ public class PolicyGraphWriter {
     }
 
     private <T> T get(URI uri, ParameterizedTypeReference<T> type) {
-        T body =
-                http.get()
-                        .uri(uri)
-                        .headers(headers -> headers.setBearerAuth(accessToken()))
-                        .retrieve()
-                        .body(type);
+        T body = http.get().uri(uri).retrieve().body(type);
         if (body == null) {
             throw new IllegalStateException("Empty Keycloak authorization response");
         }
@@ -864,7 +847,6 @@ public class PolicyGraphWriter {
         var response =
                 http.post()
                         .uri(uri(path))
-                        .headers(headers -> headers.setBearerAuth(accessToken()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(payload)
                         .retrieve()
@@ -889,7 +871,6 @@ public class PolicyGraphWriter {
     private void put(String path, Map<String, Object> payload) {
         http.put()
                 .uri(uri(path))
-                .headers(headers -> headers.setBearerAuth(accessToken()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
@@ -897,11 +878,7 @@ public class PolicyGraphWriter {
     }
 
     private void delete(String path) {
-        http.delete()
-                .uri(uri(path))
-                .headers(headers -> headers.setBearerAuth(accessToken()))
-                .retrieve()
-                .toBodilessEntity();
+        http.delete().uri(uri(path)).retrieve().toBodilessEntity();
     }
 
     private static List<String> ids(@Nullable Object field) {

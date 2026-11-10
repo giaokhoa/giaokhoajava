@@ -45,6 +45,10 @@ public class SecurityConfiguration {
                                 .anyRequest()
                                 .authenticated())
                 .csrf(csrf -> csrf.ignoringRequestMatchers(inboundBackChannel))
+                // Chốt tường minh chống fixation ở đúng mặc định của Spring Security
+                // (đổi session id khi đăng nhập) để nâng cấp framework không âm thầm đổi.
+                .sessionManagement(
+                        session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
                 .oauth2Login(oauth2 ->
                         oauth2.authorizationEndpoint(endpoint ->
                                 endpoint.authorizationRequestResolver(authorizationRequests)))
