@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.hibernate.Session;
@@ -295,7 +296,9 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                     workspaceA,
                     () -> {
                         EntityManager em =
-                                EntityManagerFactoryUtils.getTransactionalEntityManager(emf);
+                                Objects.requireNonNull(
+                                        EntityManagerFactoryUtils.getTransactionalEntityManager(
+                                                emf));
                         em.persist(new ProbeSubscriptionPeriod(probeId, workspaceA, a.userId()));
                         em.flush();
                         assertEquals(
