@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 public final class TenantContext {
     public static final String SYSTEM_SCHEMA = "public";
 
-    private static final ThreadLocal<Context> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Context> HOLDER = new ThreadLocal<>();
 
     /** Cặp workspace + schema đã phân giải; schema không bao giờ null trong context. */
     public record Context(UUID workspaceId, String schemaName) {}
@@ -26,28 +26,28 @@ public final class TenantContext {
     }
 
     public static void set(UUID workspaceId, @Nullable String schemaName) {
-        CURRENT.set(new Context(workspaceId, schemaName != null ? schemaName : SYSTEM_SCHEMA));
+        HOLDER.set(new Context(workspaceId, schemaName != null ? schemaName : SYSTEM_SCHEMA));
     }
 
     public static @Nullable Context current() {
-        return CURRENT.get();
+        return HOLDER.get();
     }
 
     /** Schema mà tầng truy cập dữ liệu phải dùng ở luồng hiện tại; mặc định là schema hệ thống. */
     public static String currentSchema() {
-        Context context = CURRENT.get();
+        Context context = HOLDER.get();
         return context != null ? context.schemaName() : SYSTEM_SCHEMA;
     }
 
     public static void restore(@Nullable Context previous) {
         if (previous == null) {
-            CURRENT.remove();
+            HOLDER.remove();
         } else {
-            CURRENT.set(previous);
+            HOLDER.set(previous);
         }
     }
 
     public static void clear() {
-        CURRENT.remove();
+        HOLDER.remove();
     }
 }

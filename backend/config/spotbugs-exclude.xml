@@ -105,6 +105,24 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- Dependency singleton do Spring quản lý (DataSource của pool dùng chung); không sao chép khi inject vào connection provider của Hibernate. -->
+    <Match>
+        <Class name="com.giaokhoa.infrastructure.tenancy.TenantConnectionProvider"/>
+        <Field name="dataSource"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (DataSource + JdbcTemplate của mặt phẳng migration); không sao chép khi inject vào provisioner cấp schema tenant. -->
+    <Match>
+        <Class name="com.giaokhoa.infrastructure.tenancy.TenantSchemaProvisioner"/>
+        <Field name="~(migrationDataSource|migrationJdbc)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, TenantSchemaProvisioner); không sao chép khi inject vào runner fan-out migration tenant. -->
+    <Match>
+        <Class name="com.giaokhoa.infrastructure.tenancy.TenantMigrationRunner"/>
+        <Field name="~(jdbc|provisioner)"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate); không sao chép khi inject vào thư mục workspace. -->
     <Match>
         <Class name="com.giaokhoa.tenancy.WorkspaceDirectory"/>

@@ -2,7 +2,9 @@ package com.giaokhoa.infrastructure.tenancy;
 
 import java.util.List;
 import java.util.UUID;
+import org.flywaydb.core.api.FlywayException;
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -37,7 +39,9 @@ public class TenantMigrationRunner {
                     try {
                         provisioner.provisionSchema(workspaceId);
                         return new Result(workspaceId, schema, true, null);
-                    } catch (RuntimeException e) {
+                    } catch (FlywayException | DataAccessException | IllegalStateException e) {
+                        // Cách ly đúng các lỗi vận hành đã biết của đường cấp schema; lỗi lập
+                        // trình khác vẫn nổi lên thay vì bị ghi thành kết quả từng workspace.
                         return new Result(workspaceId, schema, false, e.getMessage());
                     }
                 })

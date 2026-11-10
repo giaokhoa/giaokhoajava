@@ -3,10 +3,12 @@ package com.giaokhoa.infrastructure.tenancy;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.FlywayException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Component;
@@ -41,7 +43,7 @@ public class TenantSchemaProvisioner {
     @Autowired
     public TenantSchemaProvisioner(Environment environment) {
         this(
-                migrationDataSource(environment),
+                buildMigrationDataSource(environment),
                 environment.getProperty(
                         "giaokhoa.tenancy.provisioning-enabled", Boolean.class, true));
     }
@@ -59,7 +61,7 @@ public class TenantSchemaProvisioner {
         this.provisioningEnabled = provisioningEnabled;
     }
 
-    private static DataSource migrationDataSource(Environment environment) {
+    private static DataSource buildMigrationDataSource(Environment environment) {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
         dataSource.setUrl(environment.getRequiredProperty("spring.datasource.url"));
         dataSource.setUsername(environment.getProperty("spring.flyway.user"));
@@ -116,7 +118,9 @@ public class TenantSchemaProvisioner {
     private void provisionQuietly(UUID workspaceId) {
         try {
             provisionSchema(workspaceId);
-        } catch (RuntimeException e) {
+        } catch (FlywayException | DataAccessException | IllegalStateException e) {
+            // Chỉ nuốt các lỗi vận hành đã biết của đường cấp schema (migration, truy cập dữ
+            // liệu, workspace không tồn tại); lỗi lập trình khác vẫn nổi lên để lộ ngay.
             LOG.error("Không cấp được schema tenant cho workspace {}", workspaceId, e);
         }
     }

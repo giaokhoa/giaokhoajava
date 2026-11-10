@@ -209,17 +209,19 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
         HikariConfig config = poolConfig(1);
         try (HikariDataSource pool = new HikariDataSource(config)) {
             TenantConnectionProvider provider = new TenantConnectionProvider(pool);
-            Connection tenantConnection = provider.getConnection(schema);
-            assertTrue(searchPath(tenantConnection).contains(schema));
-            assertTrue(queryLong(tenantConnection, "SELECT count(*) FROM workspace") >= 1L);
-            provider.releaseConnection(schema, tenantConnection);
+            try (Connection tenantConnection = provider.getConnection(schema)) {
+                assertTrue(searchPath(tenantConnection).contains(schema));
+                assertTrue(queryLong(tenantConnection, "SELECT count(*) FROM workspace") >= 1L);
+                provider.releaseConnection(schema, tenantConnection);
+            }
 
             try (Connection pooled = pool.getConnection()) {
                 assertFalse(searchPath(pooled).contains(schema));
             }
-            Connection any = provider.getAnyConnection();
-            assertFalse(searchPath(any).contains(schema));
-            provider.releaseAnyConnection(any);
+            try (Connection any = provider.getAnyConnection()) {
+                assertFalse(searchPath(any).contains(schema));
+                provider.releaseAnyConnection(any);
+            }
         }
     }
 
@@ -233,22 +235,23 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
         String schemaA = provisioner.provisionSchema(workspaceA);
         String schemaB = provisioner.provisionSchema(workspaceB);
         HikariConfig config = poolConfig(2);
-        try (HikariDataSource pool = new HikariDataSource(config)) {
-            TenantConnectionProvider provider = new TenantConnectionProvider(pool);
-            var registry =
-                    new StandardServiceRegistryBuilder()
-                            .applySetting(
-                                    AvailableSettings.MULTI_TENANT_CONNECTION_PROVIDER, provider)
-                            .applySetting(
-                                    AvailableSettings.MULTI_TENANT_IDENTIFIER_RESOLVER,
-                                    new WorkspaceTenantResolver())
-                            .applySetting("hibernate.hbm2ddl.auto", "none")
-                            .build();
-            SessionFactory sessionFactory =
-                    new MetadataSources(registry)
-                            .addAnnotatedClass(ProbeSubscriptionPeriod.class)
-                            .buildMetadata()
-                            .buildSessionFactory();
+        try (HikariDataSource pool = new HikariDataSource(config);
+                SessionFactory sessionFactory =
+                        new MetadataSources(
+                                        new StandardServiceRegistryBuilder()
+                                                .applySetting(
+                                                        AvailableSettings
+                                                                .MULTI_TENANT_CONNECTION_PROVIDER,
+                                                        new TenantConnectionProvider(pool))
+                                                .applySetting(
+                                                        AvailableSettings
+                                                                .MULTI_TENANT_IDENTIFIER_RESOLVER,
+                                                        new WorkspaceTenantResolver())
+                                                .applySetting("hibernate.hbm2ddl.auto", "none")
+                                                .build())
+                                .addAnnotatedClass(ProbeSubscriptionPeriod.class)
+                                .buildMetadata()
+                                .buildSessionFactory()) {
             UUID probeId = UUID.randomUUID();
             TenantContext.set(workspaceA, schemaA);
             try (Session session = sessionFactory.openSession()) {
@@ -272,7 +275,6 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                 assertTrue(workspaces >= 2L);
             }
             TenantContext.clear();
-            sessionFactory.close();
         }
     }
 
@@ -291,14 +293,13 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                 new AnnotationConfigApplicationContext(BridgeConfiguration.class)) {
             WorkspaceTransaction workspaceTransaction = context.getBean(WorkspaceTransaction.class);
             JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
-            EntityManagerFactory emf = context.getBean(EntityManagerFactory.class);
             workspaceTransaction.inWorkspace(
                     workspaceA,
                     () -> {
                         EntityManager em =
                                 Objects.requireNonNull(
                                         EntityManagerFactoryUtils.getTransactionalEntityManager(
-                                                emf));
+                                                context.getBean(EntityManagerFactory.class)));
                         em.persist(new ProbeSubscriptionPeriod(probeId, workspaceA, a.userId()));
                         em.flush();
                         assertEquals(
@@ -401,17 +402,17 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
 
     private static String searchPath(Connection connection) throws Exception {
         try (PreparedStatement statement =
-                connection.prepareStatement("SELECT current_setting('search_path')")) {
-            ResultSet result = statement.executeQuery();
-            result.next();
+                        connection.prepareStatement("SELECT current_setting('search_path')");
+                ResultSet result = statement.executeQuery()) {
+            assertTrue(result.next());
             return result.getString(1);
         }
     }
 
     private static long queryLong(Connection connection, String sql) throws Exception {
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            ResultSet result = statement.executeQuery();
-            result.next();
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+                ResultSet result = statement.executeQuery()) {
+            assertTrue(result.next());
             return result.getLong(1);
         }
     }
