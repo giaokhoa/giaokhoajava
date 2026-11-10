@@ -128,6 +128,56 @@ async function getCsrf(signal?: AbortSignal): Promise<[string, string]> {
   return [csrf.headerName, csrf.token];
 }
 
+// Token CSRF được giữ trong bộ nhớ, gắn với danh tính phiên mà SessionProvider
+// báo qua setSessionIdentity: phiên đổi (đăng nhập, đăng xuất, làm mới sang
+// người dùng khác) thì token của phiên trước bị bỏ ngay, nên token dùng cho
+// mutation luôn theo đúng phiên hiện hành như khi lấy mới cho từng mutation.
+let csrfIdentity: string | null = null;
+let csrfCached: [string, string] | null = null;
+let csrfPending: Promise<[string, string]> | null = null;
+
+export function setSessionIdentity(identity: string | null): void {
+  if (identity === csrfIdentity) return;
+  csrfIdentity = identity;
+  csrfCached = null;
+  csrfPending = null;
+}
+
+function forgetCsrf(): void {
+  csrfCached = null;
+  csrfPending = null;
+}
+
+// Lời gọi có AbortSignal tự quản vòng đời nên không chia sẻ lời gọi đang bay,
+// khớp cách requestWorkspaces xử lý bên dưới.
+async function sessionCsrf(
+  signal?: AbortSignal,
+): Promise<{ pair: [string, string]; fromCache: boolean }> {
+  if (csrfCached) return { pair: csrfCached, fromCache: true };
+  if (signal) {
+    const identity = csrfIdentity;
+    const pair = await getCsrf(signal);
+    if (identity === csrfIdentity) csrfCached = pair;
+    return { pair, fromCache: false };
+  }
+  if (!csrfPending) {
+    const pending = getCsrf();
+    csrfPending = pending;
+    pending.then(
+      (pair) => {
+        if (csrfPending === pending) {
+          csrfCached = pair;
+          csrfPending = null;
+        }
+      },
+      () => {
+        if (csrfPending === pending) csrfPending = null;
+      },
+    );
+  }
+  return { pair: await csrfPending, fromCache: false };
+}
+
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
   const url = apiPath(path);
   if (url === "/api/logout" || url.startsWith("/api/logout?")) {
@@ -143,13 +193,16 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   }
 
   const method = (init.method ?? "GET").toUpperCase();
-  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    const [name, token] = await getCsrf(init.signal ?? undefined);
-    headers.set(name, token);
+  const mutating = !["GET", "HEAD", "OPTIONS"].includes(method);
+  let csrfFromCache = false;
+  if (mutating) {
+    const csrf = await sessionCsrf(init.signal ?? undefined);
+    headers.set(csrf.pair[0], csrf.pair[1]);
+    csrfFromCache = csrf.fromCache;
     if (!headers.has("Idempotency-Key")) headers.set("Idempotency-Key", crypto.randomUUID());
   }
 
-  const response = await fetch(url, {
+  const send = () => fetch(url, {
     ...init,
     method,
     headers,
@@ -157,10 +210,25 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     cache: "no-store",
     redirect: "manual",
   });
+  let response = await send();
+  if (mutating && response.status === 403) {
+    // Token vừa dùng có thể đã lệch phiên hiện hành: bỏ khỏi bộ nhớ đệm. Token
+    // lấy từ đệm thì lấy mới và thử lại đúng một lần bằng cùng Idempotency-Key;
+    // token vừa lấy mới mà vẫn 403 là phán quyết thật của backend, trả nguyên.
+    forgetCsrf();
+    if (csrfFromCache) {
+      const csrf = await sessionCsrf(init.signal ?? undefined);
+      headers.set(csrf.pair[0], csrf.pair[1]);
+      response = await send();
+      if (response.status === 403) forgetCsrf();
+    }
+  }
   return readApiResponse<T>(response, method === "HEAD");
 }
 
-// Chỉ tự thử lại fence chưa sẵn sàng; giữ nguyên request/key và không thử lại 403 hay lỗi dịch vụ khác.
+// Chỉ tự thử lại fence chưa sẵn sàng; giữ nguyên request/key và không tự thử
+// lại lỗi khác (riêng 403 do token CSRF trong bộ nhớ đệm đã lệch phiên được
+// apiRequest tự xử lý bên trong bằng một lần thử lại với token mới).
 const FENCE_RETRY_LIMIT_MS = 60_000;
 const FENCE_RETRY_INTERVAL_MS = 1_000;
 

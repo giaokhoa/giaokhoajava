@@ -7,7 +7,7 @@ export {
   parseMemberships,
   type CenterRole,
   type Membership,
-} from "../../lib/memberships";
+} from "@/lib/memberships";
 export {
   centerCreateBody,
   parseCenters,

@@ -1,6 +1,7 @@
+import type { Metadata } from "next";
 import { PlatformRecoveryContent } from "./platform-recovery-content";
 
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Yêu cầu khôi phục" };
 
 export default function PlatformRecoveryPage() {
   return <PlatformRecoveryContent />;

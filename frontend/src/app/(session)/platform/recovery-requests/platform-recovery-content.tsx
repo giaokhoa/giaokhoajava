@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiRequest, isRecord, listItems, requestWhenReady } from "../../../lib/api-client";
-import { SessionGate } from "../../../features/identity/session-gate";
-import { OperationPanel } from "../../../features/operations/operation-panel";
-import { useOperationCheck } from "../../../lib/use-operation-check";
+import { apiRequest, isRecord, listItems, requestWhenReady } from "@/lib/api-client";
+import { SessionGate } from "@/features/identity/session-gate";
+import { OperationPanel } from "@/features/operations/operation-panel";
+import { useOperationCheck } from "@/lib/use-operation-check";
 import {
   parseTrackedOperation,
   type TrackedOperation,
-} from "../../../lib/operation-status";
-import { useSession } from "../../../features/identity/session-provider";
+} from "@/lib/operation-status";
+import { useSession } from "@/features/identity/session-provider";
 
 export type RecoveryRequestState = "REQUESTED" | "VERIFIED" | "RESOLVED" | "REJECTED";
 

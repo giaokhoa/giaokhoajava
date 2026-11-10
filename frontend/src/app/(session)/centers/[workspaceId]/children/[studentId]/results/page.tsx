@@ -1,6 +1,7 @@
-import { ChildResultsContent } from "../../../../../../features/guardians/published-results";
+import type { Metadata } from "next";
+import { ChildResultsContent } from "@/features/guardians/published-results";
 
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Kết quả đã công bố" };
 
 // Next 16: params của dynamic route là Promise, trang server phải await trước khi dùng.
 export default async function CenterChildResultsPage({

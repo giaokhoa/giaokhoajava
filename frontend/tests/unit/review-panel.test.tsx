@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import {
   CorrectionNoticeView,
   parseCorrectionNotice,
-} from "../../src/features/resources/correction-notice";
+} from "@/features/resources/correction-notice";
 import {
   buildSampleActionPayload,
   parseSampleActionResult,
   sampleActionAttemptSignature,
   SAMPLE_ACTION_SPECS,
-} from "../../src/features/resources/sample-actions-panel";
+} from "@/features/resources/sample-actions-panel";
 
 describe("danh mục sample action của panel review", () => {
   it("đủ 16 discriminator cố định của hợp đồng", () => {

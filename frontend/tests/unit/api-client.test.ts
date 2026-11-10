@@ -1,18 +1,24 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   apiRequest,
   requestAllPages,
   requestWorkspaces,
+  setSessionIdentity,
   submitLogout,
-} from "../../src/lib/api-client";
+} from "@/lib/api-client";
 
 afterEach(() => vi.unstubAllGlobals());
+
+let identitySequence = 0;
 
 const session = (token: string) =>
   Response.json({ authenticated: true, csrf: { headerName: "X-CSRF-TOKEN", token } });
 
 describe("browser API client", () => {
+  // Mỗi test một danh tính phiên riêng để bộ nhớ đệm CSRF không rò qua test.
+  beforeEach(() => setSessionIdentity(`test-user-${++identitySequence}`));
+
   it("chỉ fetch same-origin, không cache và không tự gửi token", async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ items: [] }));
     vi.stubGlobal("fetch", fetchMock);
@@ -49,11 +55,9 @@ describe("browser API client", () => {
   });
 
   it("gửi JSON đúng Content-Type và không ghi đè FormData hay form encode", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(session("csrf-json"))
+    const fetchMock = vi.fn().mockResolvedValueOnce(session("csrf-shared"))
       .mockResolvedValueOnce(Response.json({ ok: true }))
-      .mockResolvedValueOnce(session("csrf-form"))
       .mockResolvedValueOnce(Response.json({ ok: true }))
-      .mockResolvedValueOnce(session("csrf-url"))
       .mockResolvedValueOnce(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     await apiRequest("/api/classes", { method: "POST", body: JSON.stringify({ name: "Lớp" }) });
@@ -63,12 +67,14 @@ describe("browser API client", () => {
     const formData = new FormData();
     formData.set("name", "Lớp");
     await apiRequest("/api/classes", { method: "POST", body: formData });
-    const formRequest = new Request("https://same-origin.test/api/classes", fetchMock.mock.calls[3][1]);
+    const formRequest = new Request("https://same-origin.test/api/classes", fetchMock.mock.calls[2][1]);
     expect(formRequest.headers.get("Content-Type")).toMatch(/^multipart\/form-data; boundary=/);
 
     await apiRequest("/api/classes", { method: "POST", body: new URLSearchParams({ name: "Lớp" }) });
-    const encoded = new Request("https://same-origin.test/api/classes", fetchMock.mock.calls[5][1]);
+    const encoded = new Request("https://same-origin.test/api/classes", fetchMock.mock.calls[3][1]);
     expect(encoded.headers.get("Content-Type")).toContain("application/x-www-form-urlencoded");
+    // Ba mutation cùng phiên dùng chung một lần lấy CSRF.
+    expect(fetchMock.mock.calls.filter(([path]) => path === "/api/session")).toHaveLength(1);
   });
 
   it("giữ trạng thái 202 khi response chứa operation lồng trong StudentIssueView", async () => {
@@ -82,17 +88,62 @@ describe("browser API client", () => {
     });
   });
 
-  it("đọc CSRF mới ở từng mutation, không giữ cache phiên", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(session("old"))
+  it("giữ CSRF trong bộ nhớ theo danh tính phiên, chỉ lấy lại khi danh tính đổi", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(session("user-one"))
       .mockResolvedValueOnce(Response.json({ ok: true }))
-      .mockResolvedValueOnce(session("new"))
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+      .mockResolvedValueOnce(session("user-two"))
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+      .mockResolvedValueOnce(session("anonymous"))
+      .mockResolvedValueOnce(Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    setSessionIdentity("user-1");
+    await apiRequest("/api/classes", { method: "POST" });
+    await apiRequest("/api/classes", { method: "POST" });
+    // Cùng danh tính: mutation thứ hai dùng lại token, không gọi /api/session nữa.
+    expect(fetchMock.mock.calls.filter(([path]) => path === "/api/session")).toHaveLength(1);
+    expect(new Headers(fetchMock.mock.calls[2][1].headers).get("X-CSRF-TOKEN")).toBe("user-one");
+    // Đổi người dùng: token của phiên trước bị bỏ, phải lấy token của phiên mới.
+    setSessionIdentity("user-2");
+    await apiRequest("/api/classes", { method: "POST" });
+    expect(new Headers(fetchMock.mock.calls[4][1].headers).get("X-CSRF-TOKEN")).toBe("user-two");
+    // Mất phiên (đăng xuất/ẩn danh) cũng là một lần đổi danh tính.
+    setSessionIdentity(null);
+    await apiRequest("/api/classes", { method: "POST" });
+    expect(new Headers(fetchMock.mock.calls[6][1].headers).get("X-CSRF-TOKEN")).toBe("anonymous");
+    expect(fetchMock.mock.calls.filter(([path]) => path === "/api/session")).toHaveLength(3);
+  });
+
+  it("403 với token lấy từ bộ nhớ: bỏ token, lấy mới và thử lại đúng một lần", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(session("stale"))
+      .mockResolvedValueOnce(Response.json({ ok: true }))
+      .mockResolvedValueOnce(Response.json({ code: "CSRF" }, { status: 403 }))
+      .mockResolvedValueOnce(session("fresh"))
       .mockResolvedValueOnce(Response.json({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);
     await apiRequest("/api/classes", { method: "POST" });
+    const result = await apiRequest<{ ok: boolean }>("/api/classes", { method: "POST" });
+    expect(result).toMatchObject({ kind: "data", data: { ok: true } });
+    // Lần thử lại dùng token mới nhưng giữ nguyên Idempotency-Key của lần đầu.
+    const firstKey = new Headers(fetchMock.mock.calls[2][1].headers).get("Idempotency-Key");
+    const retryHeaders = new Headers(fetchMock.mock.calls[4][1].headers);
+    expect(retryHeaders.get("X-CSRF-TOKEN")).toBe("fresh");
+    expect(retryHeaders.get("Idempotency-Key")).toBe(firstKey);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it("403 với token vừa lấy mới: không thử lại và không giữ token đó cho lần sau", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(session("fresh"))
+      .mockResolvedValueOnce(Response.json({ code: "PERMISSION" }, { status: 403 }))
+      .mockResolvedValueOnce(session("next"))
+      .mockResolvedValueOnce(Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(apiRequest("/api/classes", { method: "POST" })).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Token vừa bị 403 đã bị bỏ: mutation sau phải lấy lại từ /api/session.
     await apiRequest("/api/classes", { method: "POST" });
-    expect(new Headers(fetchMock.mock.calls[1][1].headers).get("X-CSRF-TOKEN")).toBe("old");
-    expect(new Headers(fetchMock.mock.calls[3][1].headers).get("X-CSRF-TOKEN")).toBe("new");
-    expect(fetchMock.mock.calls.filter(([path]) => path === "/api/session")).toHaveLength(2);
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/session");
+    expect(new Headers(fetchMock.mock.calls[3][1].headers).get("X-CSRF-TOKEN")).toBe("next");
   });
 
   it("logout dùng POST form điều hướng và không bị JSON fetch giữ lại redirect", async () => {

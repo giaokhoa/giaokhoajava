@@ -1,26 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { isRecord, requestAllPages, requestWorkspaces } from "../../lib/api-client";
+import { isRecord, requestWhenReady, requestWorkspaces } from "@/lib/api-client";
 import {
   CENTER_ROLES,
   memberPermissions,
   parseMemberships,
   type CenterRole,
   type Membership,
-} from "../../lib/memberships";
-import { SessionGate } from "../identity/session-gate";
-import { useSession } from "../identity/session-provider";
-import { attemptKey, submitMutation } from "../operations/operation-attempts";
-import { OperationPanel } from "../operations/operation-panel";
-import { useOperationCheck } from "../../lib/use-operation-check";
+} from "@/lib/memberships";
+import { SessionGate } from "@/features/identity/session-gate";
+import { useSession } from "@/features/identity/session-provider";
+import { attemptKey, submitMutation } from "@/features/operations/operation-attempts";
+import { OperationPanel } from "@/features/operations/operation-panel";
+import { useOperationCheck } from "@/lib/use-operation-check";
 import {
   operationStatus,
   parseTrackedOperation,
   pollOperationUntilSettled,
   type TrackedOperation,
-} from "../../lib/operation-status";
-import { parseWorkspaces, type WorkspaceView } from "../identity/workspace-switcher";
+} from "@/lib/operation-status";
+import { parseWorkspaces, type WorkspaceView } from "@/features/identity/workspace-switcher";
 
 // OWNER không nằm trong danh mục mời: chủ sở hữu chỉ được chỉ định khi operator tạo center.
 export const INVITABLE_ROLES = ["MANAGER", "TEACHER", "STUDENT", "PARENT"] as const;
@@ -101,6 +101,13 @@ function toggleRole(current: readonly CenterRole[], role: CenterRole, checked: b
   return checked ? [...current, role] : current.filter((item) => item !== role);
 }
 
+// Trang con trỏ {items, nextCursor?}: chỉ cần con trỏ trang kế để tải tăng dần;
+// trích hình dạng giống parsePage của teaching, bản ghi lệch hình dạng là hết trang.
+function pageNextCursor(data: unknown): string | null {
+  if (!isRecord(data)) return null;
+  return typeof data.nextCursor === "string" && data.nextCursor ? data.nextCursor : null;
+}
+
 export function CenterMembersContent({ workspaceId }: { workspaceId: string }) {
   const { session } = useSession();
   const userId = session.status === "authenticated" ? session.user.id : null;
@@ -112,6 +119,7 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
   const checkOperationStatus = useOperationCheck();
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
+  const [membersNextCursor, setMembersNextCursor] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteUserId, setInviteUserId] = useState("");
@@ -135,11 +143,18 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
     if (!userId) return;
     setListError(null);
     const [memberResult, workspaceResult] = await Promise.allSettled([
-      requestAllPages(membersPath, { signal }),
+      requestWhenReady(membersPath, { signal }),
       requestWorkspaces(userId, signal),
     ]);
     if (signal?.aborted) return;
-    setMemberships(memberResult.status === "fulfilled" ? parseMemberships(memberResult.value) : []);
+    // Làm mới luôn quay về trang đầu; các trang sau nạp lại bằng nút tải thêm.
+    if (memberResult.status === "fulfilled" && memberResult.value.kind === "data") {
+      setMemberships(parseMemberships(memberResult.value.data));
+      setMembersNextCursor(pageNextCursor(memberResult.value.data));
+    } else {
+      setMemberships([]);
+      setMembersNextCursor(null);
+    }
     setWorkspace(workspaceResult.status === "fulfilled" && workspaceResult.value.kind === "data"
       ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
       : null);
@@ -148,14 +163,29 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
     }
   }, [userId, membersPath, workspaceId]);
 
+  async function loadMoreMembers() {
+    if (!membersNextCursor) return;
+    try {
+      const result = await requestWhenReady(
+        `${membersPath}?cursor=${encodeURIComponent(membersNextCursor)}`,
+      );
+      if (result.kind !== "data") return;
+      setMemberships((current) => [...(current ?? []), ...parseMemberships(result.data)]);
+      setMembersNextCursor(pageNextCursor(result.data));
+    } catch {
+      setListError("Không tải thêm được thành viên; hãy thử lại.");
+    }
+  }
+
   useEffect(() => {
     if (!userId) return;
     let ignore = false;
     const controller = new AbortController();
-    requestAllPages(membersPath, { signal: controller.signal })
-      .then((items) => {
+    requestWhenReady(membersPath, { signal: controller.signal })
+      .then((result) => {
         if (ignore) return;
-        setMemberships(parseMemberships(items));
+        setMemberships(result.kind === "data" ? parseMemberships(result.data) : []);
+        setMembersNextCursor(result.kind === "data" ? pageNextCursor(result.data) : null);
         setListError(null);
       })
       .catch((error: unknown) => {
@@ -438,6 +468,13 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
                   );
                 })}
               </ul>
+            ) : null}
+            {membersNextCursor ? (
+              <div className="section">
+                <button className="secondary-button" type="button" onClick={() => void loadMoreMembers()}>
+                  Tải thêm thành viên
+                </button>
+              </div>
             ) : null}
             <div className="section">
               <button

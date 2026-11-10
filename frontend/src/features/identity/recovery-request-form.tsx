@@ -1,13 +1,13 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { OperationPanel } from "../operations/operation-panel";
-import { useOperationCheck } from "../../lib/use-operation-check";
+import { OperationPanel } from "@/features/operations/operation-panel";
+import { useOperationCheck } from "@/lib/use-operation-check";
 import {
   parseTrackedOperation,
   type TrackedOperation,
-} from "../../lib/operation-status";
-import { apiRequest } from "../../lib/api-client";
+} from "@/lib/operation-status";
+import { apiRequest } from "@/lib/api-client";
 
 type PendingAction = "recovery" | "operation" | null;
 

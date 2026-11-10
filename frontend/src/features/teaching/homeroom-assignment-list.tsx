@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { requestAllPages } from "../../lib/api-client";
-import type { Membership } from "../../lib/memberships";
+import { requestAllPages } from "@/lib/api-client";
+import type { Membership } from "@/lib/memberships";
 import {
   operationSucceeded,
   parseHomeroomAssignments,

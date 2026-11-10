@@ -1,4 +1,4 @@
-import { requestWhenReady } from "../../src/lib/api-client";
+import { requestWhenReady } from "@/lib/api-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   centerCreateBody,
@@ -8,11 +8,11 @@ import {
   parseStudentIssue,
   studentIssueBody,
   subscriptionConfirmBody,
-} from "../../src/features/tenancy/center-administration";
+} from "@/features/tenancy/center-administration";
 import {
   memberPermissions,
   parseMemberships,
-} from "../../src/lib/memberships";
+} from "@/lib/memberships";
 
 describe("danh sách trung tâm và thành viên theo hợp đồng", () => {
   it("chấp nhận dạng {items} và danh sách trần, bỏ bản ghi thiếu trường", () => {
