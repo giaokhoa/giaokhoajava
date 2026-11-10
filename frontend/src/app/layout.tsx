@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Giáo Khoa",
+  title: { default: "Giáo Khoa", template: "%s · Giáo Khoa" },
   description: "Không gian học tập dành cho cá nhân và trung tâm.",
 };
 

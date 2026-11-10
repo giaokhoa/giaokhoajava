@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { CenterMembersContent } from "@/features/tenancy/center-administration";
+
+export const metadata: Metadata = { title: "Thành viên trung tâm" };
 
 // Next 16: params của dynamic route là Promise, trang server phải await trước khi dùng.
 export default async function CenterMembersPage({
