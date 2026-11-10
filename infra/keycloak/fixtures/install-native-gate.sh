@@ -37,7 +37,8 @@ gate_group() {
 }
 
 export NATIVE_GATE_KEYCLOAK_BASE_URL="$BASE"
-export NATIVE_GATE_NATIVE_PASSWORD="$(openssl rand -hex 18)"
+# Hậu tố Aa1 bảo đảm đủ lớp ký tự theo passwordPolicy của realm baseline (hoa, thường, số).
+export NATIVE_GATE_NATIVE_PASSWORD="$(openssl rand -hex 9)Aa1"
 NATIVE_GATE_ASSIGNED_USER="$(gate_value .user)"
 NATIVE_GATE_CLAIM_USER="$(gate_value .claimOnlyUser)"
 NATIVE_GATE_TEACHER_GROUP="$(gate_value .teacherGroup)"
