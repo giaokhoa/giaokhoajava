@@ -4,19 +4,22 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
-import jakarta.persistence.EntityManager;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 class IdempotencyServiceTest {
     private final IdempotencyService service =
-            new IdempotencyService(mock(JdbcTemplate.class), mock(EntityManager.class));
+            new IdempotencyService(
+                    mock(AuthorizationOperationRepository.class),
+                    mock(AuthzPartitionRepository.class));
     private final JsonMapper json = new JsonMapper();
 
     @DisplayName(
@@ -102,8 +105,8 @@ class IdempotencyServiceTest {
                         null,
                         "key",
                         "f".repeat(64),
-                        new UUID[] {partition},
-                        new Long[] {0L},
+                        List.of(partition),
+                        List.of(0L),
                         0L);
 
         var result = service.responseFor(operation);

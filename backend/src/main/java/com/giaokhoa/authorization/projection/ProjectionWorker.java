@@ -1,10 +1,14 @@
 package com.giaokhoa.authorization.projection;
 
+import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationOperation.State;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
-import java.sql.Array;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,7 +26,7 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.stereotype.Component;
@@ -34,14 +38,14 @@ import org.springframework.web.client.RestClientException;
  * Projection worker bền vững: nó claim các authorization operation tới hạn theo thứ tự tạo (một
  * operation không bao giờ vượt operation cũ hơn chạm cùng partition), reconcile mọi partition bị
  * ảnh hưởng tại đúng revision của operation qua {@link ProjectionReconciler}, và chỉ đánh dấu
- * operation SUCCEEDED sau khi cơ sở dữ liệu xác nhận mọi partition READY tại revision đó. Claim là
- * nguyên tử (các dòng khóa {@code FOR UPDATE SKIP LOCKED} cộng một update có điều kiện), nên hai
- * instance của ứng dụng không bao giờ xử lý cùng một operation. Thất bại retry với cùng idempotency
- * payload và backoff có giới hạn; cạn ngân sách lần thử sẽ fail operation và các partition của nó
- * mà không mở fence. Các partition bị fence mà không có operation đang sống (dependency fence, sửa
- * drift ngoài hệ thống) được reconcile trên cùng vòng lặp dưới cùng backoff có giới hạn, và các
- * partition READY được kiểm tra định kỳ tìm drift từ console qua một lượt quét xoay vòng chạm tới
- * mọi partition.
+ * operation SUCCEEDED sau khi cơ sở dữ liệu xác nhận mọi partition READY tại revision đó. Claim
+ * khóa các dòng bằng khóa ghi bỏ qua dòng đang bị giữ (SKIP LOCKED) và kiểm lại điều kiện claim
+ * ngay trong bước khóa, nên hai instance của ứng dụng không bao giờ xử lý cùng một operation. Thất
+ * bại retry với cùng idempotency payload và backoff có giới hạn; cạn ngân sách lần thử sẽ fail
+ * operation và các partition của nó mà không mở fence. Các partition bị fence mà không có operation
+ * đang sống (dependency fence, sửa drift ngoài hệ thống) được reconcile trên cùng vòng lặp dưới
+ * cùng backoff có giới hạn, và các partition READY được kiểm tra định kỳ tìm drift từ console qua
+ * một lượt quét xoay vòng chạm tới mọi partition.
  */
 @Component
 public class ProjectionWorker {
@@ -54,16 +58,10 @@ public class ProjectionWorker {
     private static final int MAX_OPERATIONS_PER_CYCLE = 10;
     private static final int MAX_PARTITIONS_PER_CYCLE = 5;
 
-    private static final String LIVE_OPERATION_STATES =
-            "('PENDING', 'APPLYING', 'RETRYABLE_FAILURE')";
-
-    // Điều kiện claim dùng chung cho lượt quét, tập claimable và update chốt sở hữu: tới
-    // hạn theo lịch retry, hoặc đang APPLYING nhưng đã stale.
-    private static final String CLAIMABLE_CONDITION =
-            "((state IN ('PENDING', 'RETRYABLE_FAILURE')"
-                    + " AND (next_attempt_at IS NULL OR next_attempt_at <= now()))"
-                    + " OR (state = 'APPLYING'"
-                    + " AND updated_at <= now() - INTERVAL '5 minutes'))";
+    private static final List<State> LIVE_OPERATION_STATES =
+            List.of(State.PENDING, State.APPLYING, State.RETRYABLE_FAILURE);
+    private static final List<State> DUE_STATES = List.of(State.PENDING, State.RETRYABLE_FAILURE);
+    private static final Duration STALE_APPLYING_AFTER = Duration.ofMinutes(5);
 
     // Cửa sổ quét claim theo recorded_seq: lớn hơn nhiều số operation xử lý tối đa một chu
     // kỳ (10), nên operation ngoài cửa sổ hoặc bị một operation cũ hơn cùng partition chặn
@@ -71,7 +69,9 @@ public class ProjectionWorker {
     private static final int CLAIM_SCAN_LIMIT = 100;
     private static final Duration DRIFT_SCAN_INTERVAL = Duration.ofMinutes(1);
 
-    private final JdbcTemplate jdbc;
+    private final AuthorizationOperationRepository operations;
+    private final AuthzPartitionRepository partitions;
+    private final AuthzProjectionRepository projections;
     private final ProjectionReconciler reconciler;
     private final AuditRecorder audit;
     private final TransactionTemplate transactions;
@@ -85,11 +85,15 @@ public class ProjectionWorker {
     private record OrphanRetry(int failures, Instant nextAttemptAt) {}
 
     public ProjectionWorker(
-            JdbcTemplate jdbc,
+            AuthorizationOperationRepository operations,
+            AuthzPartitionRepository partitions,
+            AuthzProjectionRepository projections,
             ProjectionReconciler reconciler,
             PlatformTransactionManager transactionManager,
             AuditRecorder audit) {
-        this.jdbc = jdbc;
+        this.operations = operations;
+        this.partitions = partitions;
+        this.projections = projections;
         this.reconciler = reconciler;
         this.audit = audit;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -132,67 +136,60 @@ public class ProjectionWorker {
 
     private Optional<ClaimedOperation> claimNext() {
         return transactions.execute(_ -> {
+            Instant now = Instant.now();
+            Instant staleBefore = now.minus(STALE_APPLYING_AFTER);
             List<QueueRow> queue =
-                    jdbc.query(
-                            "SELECT id, affected_partitions, affected_revisions,"
-                                    + " attempt_count, state,"
-                                    + " (next_attempt_at IS NULL"
-                                    + " OR next_attempt_at <= now()) AS due,"
-                                    + " (updated_at <= now() - INTERVAL '5 minutes')"
-                                    + " AS stale"
-                                    + " FROM authorization_operation"
-                                    + " WHERE state IN "
-                                    + LIVE_OPERATION_STATES
-                                    + " ORDER BY recorded_seq LIMIT "
-                                    + CLAIM_SCAN_LIMIT,
-                            (rs, _) -> {
-                                boolean due =
-                                        "APPLYING".equals(rs.getString("state"))
-                                                ? rs.getBoolean("stale")
-                                                : rs.getBoolean("due");
-                                return new QueueRow(
-                                        rs.getObject("id", UUID.class),
-                                        uuidList(rs, "affected_partitions"),
-                                        longList(rs, "affected_revisions"),
-                                        rs.getInt("attempt_count"),
-                                        due);
-                            });
+                    operations
+                            .findLiveOrderByRecordedSeq(
+                                    LIVE_OPERATION_STATES, PageRequest.of(0, CLAIM_SCAN_LIMIT))
+                            .stream()
+                            .map(operation ->
+                                    new QueueRow(
+                                            operation.getId(),
+                                            operation.getAffectedPartitions(),
+                                            operation.getAffectedRevisions(),
+                                            operation.getAttemptCount(),
+                                            operation.getState() == State.APPLYING
+                                                    ? !operation.getUpdatedAt().isAfter(staleBefore)
+                                                    : operation.getNextAttemptAt() == null
+                                                            || !operation
+                                                                    .getNextAttemptAt()
+                                                                    .isAfter(now)))
+                            .toList();
             // Mẫu hàng đợi PostgreSQL: các dòng tới hạn được khóa FOR UPDATE SKIP LOCKED, nên
-            // một dòng instance khác đang claim không bao giờ xuất hiện ở đây; update có điều
-            // kiện bên dưới, với số dòng bị ảnh hưởng là bằng chứng sở hữu duy nhất, là chốt chặn
-            // cuối.
-            Set<UUID> claimable =
-                    new HashSet<>(
-                            jdbc.queryForList(
-                                    "SELECT id FROM authorization_operation"
-                                            + " WHERE "
-                                            + CLAIMABLE_CONDITION
-                                            + " ORDER BY recorded_seq LIMIT "
-                                            + CLAIM_SCAN_LIMIT
-                                            + " FOR UPDATE SKIP LOCKED",
-                                    UUID.class));
+            // một dòng instance khác đang claim không bao giờ xuất hiện ở đây; điều kiện claim
+            // được kiểm lại ngay trong câu khóa, và việc giữ khóa ghi tới hết transaction claim
+            // là bằng chứng sở hữu.
+            Map<UUID, AuthorizationOperation> claimable = new LinkedHashMap<>();
+            if (!queue.isEmpty()) {
+                for (AuthorizationOperation operation :
+                        operations.lockClaimableByIds(
+                                queue.stream().map(QueueRow::id).toList(),
+                                DUE_STATES,
+                                State.APPLYING,
+                                now,
+                                staleBefore)) {
+                    claimable.put(operation.getId(), operation);
+                }
+            }
             Set<UUID> blocked = new HashSet<>();
             ClaimedOperation claimed = null;
             for (QueueRow row : queue) {
                 boolean overlaps = row.partitions().stream().anyMatch(blocked::contains);
                 blocked.addAll(row.partitions());
-                if (claimed == null && row.due() && !overlaps && claimable.contains(row.id())) {
-                    int updated =
-                            jdbc.update(
-                                    "UPDATE authorization_operation SET state = 'APPLYING',"
-                                            + " attempt_count = attempt_count + 1,"
-                                            + " next_attempt_at = NULL, last_error_code = NULL,"
-                                            + " updated_at = now() WHERE id = ? AND "
-                                            + CLAIMABLE_CONDITION,
-                                    row.id());
-                    boolean claimedByThisInstance = updated == 1;
-                    if (claimedByThisInstance) {
+                if (claimed == null && row.due() && !overlaps) {
+                    AuthorizationOperation operation = claimable.get(row.id());
+                    if (operation != null) {
+                        operation.setState(State.APPLYING);
+                        operation.setAttemptCount(operation.getAttemptCount() + 1);
+                        operation.setNextAttemptAt(null);
+                        operation.setLastErrorCode(null);
                         claimed =
                                 new ClaimedOperation(
-                                        row.id(),
-                                        row.partitions(),
-                                        row.revisions(),
-                                        row.attemptCount() + 1);
+                                        operation.getId(),
+                                        operation.getAffectedPartitions(),
+                                        operation.getAffectedRevisions(),
+                                        operation.getAttemptCount());
                     }
                 }
             }
@@ -212,24 +209,16 @@ public class ProjectionWorker {
                 // operation này bị superseded (thay thế), không phải lỗi reconcile, và các
                 // partition nó đã fence nay thuộc về operation mới hơn.
                 for (int i = 0; i < operation.partitions().size(); i++) {
-                    List<Long> current =
-                            jdbc.queryForList(
-                                    "SELECT desired_revision FROM authz_partition WHERE id = ?",
-                                    Long.class,
-                                    operation.partitions().get(i));
+                    Optional<Long> current =
+                            partitions.findDesiredRevisionById(operation.partitions().get(i));
                     if (current.isEmpty()
-                            || current.getFirst().longValue()
+                            || current.get().longValue()
                                     != operation.revisions().get(i).longValue()) {
                         throw new SupersededException();
                     }
                 }
-                jdbc.update(
-                        "UPDATE authorization_operation SET state = 'SUCCEEDED',"
-                                + " next_attempt_at = NULL, last_error_code = NULL,"
-                                + " updated_at = now()"
-                                + " WHERE id = ? AND state = 'APPLYING' AND attempt_count = ?",
-                        operation.id(),
-                        operation.attemptCount());
+                operations.markSucceeded(
+                        operation.id(), State.SUCCEEDED, State.APPLYING, operation.attemptCount());
             });
         } catch (SupersededException ex) {
             recordFailure(operation, ERROR_SUPERSEDED, true, false);
@@ -317,29 +306,25 @@ public class ProjectionWorker {
             // Được bảo vệ bởi trạng thái đã claim: một instance thua operation vào tay claim
             // khác sẽ không ghi gì, nên không bao giờ fail được một operation đã thành công.
             int updated =
-                    jdbc.update(
-                            "UPDATE authorization_operation SET state = ?, next_attempt_at = ?,"
-                                    + " last_error_code = ?, updated_at = now()"
-                                    + " WHERE id = ? AND state = 'APPLYING' AND attempt_count = ?",
-                            terminal ? "FAILED" : "RETRYABLE_FAILURE",
+                    operations.markFailed(
+                            operation.id(),
+                            terminal ? State.FAILED : State.RETRYABLE_FAILURE,
                             terminal
                                     ? null
-                                    : Timestamp.from(
-                                            Instant.now()
-                                                    .plus(backoffFor(operation.attemptCount()))),
+                                    : Instant.now().plus(backoffFor(operation.attemptCount())),
                             errorCode,
-                            operation.id(),
+                            State.APPLYING,
                             operation.attemptCount());
             if (updated == 1 && fencePartitions && terminal) {
                 for (UUID partitionId : operation.partitions()) {
-                    jdbc.update(
-                            "UPDATE authz_partition SET state = 'FAILED'"
-                                    + " WHERE id = ? AND state = 'PENDING'",
-                            partitionId);
-                    jdbc.update(
-                            "UPDATE authz_projection SET state = 'FAILED'"
-                                    + " WHERE partition_id = ? AND state = 'PENDING'",
-                            partitionId);
+                    partitions.markFailedIfPending(
+                            partitionId,
+                            AuthorizationPartition.State.FAILED,
+                            AuthorizationPartition.State.PENDING);
+                    projections.markFailedIfPendingByPartitionId(
+                            partitionId,
+                            AuthorizationProjection.State.FAILED,
+                            AuthorizationProjection.State.PENDING);
                 }
             }
             // Lỗi đồng bộ chỉ thành sự kiện audit khi operation thật sự kết thúc ở FAILED:
@@ -365,14 +350,15 @@ public class ProjectionWorker {
      * một giây.
      */
     void reconcileOrphanedPartitions() {
+        Set<UUID> referenced = new HashSet<>();
+        for (List<UUID> affected :
+                operations.findAffectedPartitionsByStateIn(LIVE_OPERATION_STATES)) {
+            referenced.addAll(affected);
+        }
         List<UUID> orphaned =
-                jdbc.queryForList(
-                        "SELECT p.id FROM authz_partition p WHERE p.state = 'PENDING'"
-                                + " AND NOT EXISTS (SELECT 1 FROM authorization_operation o"
-                                + " WHERE o.state IN ('PENDING', 'APPLYING', 'RETRYABLE_FAILURE')"
-                                + " AND p.id = ANY(o.affected_partitions))"
-                                + " ORDER BY p.id",
-                        UUID.class);
+                partitions.findIdsByStateOrderByIdAsc(AuthorizationPartition.State.PENDING).stream()
+                        .filter(partitionId -> !referenced.contains(partitionId))
+                        .toList();
         orphanRetries.keySet().retainAll(new HashSet<>(orphaned));
         List<UUID> batch = scanWindow(orphaned, orphanScanCursor, MAX_PARTITIONS_PER_CYCLE);
         if (!batch.isEmpty()) {
@@ -410,9 +396,7 @@ public class ProjectionWorker {
         lastDriftScan = now;
         List<UUID> ready =
                 new ArrayList<>(
-                        jdbc.queryForList(
-                                "SELECT id FROM authz_partition WHERE state = 'READY'",
-                                UUID.class));
+                        partitions.findIdsByStateOrderByIdAsc(AuthorizationPartition.State.READY));
         ready.sort(Comparator.comparing(id -> id.toString()));
         List<UUID> batch = scanWindow(ready, driftScanCursor, MAX_PARTITIONS_PER_CYCLE);
         if (!batch.isEmpty()) {
@@ -457,36 +441,5 @@ public class ProjectionWorker {
             }
         }
         return window;
-    }
-
-    private static List<UUID> uuidList(java.sql.ResultSet rs, String column)
-            throws java.sql.SQLException {
-        Array array = rs.getArray(column);
-        if (array == null) {
-            return List.of();
-        }
-        Object[] raw = (Object[]) array.getArray();
-        List<UUID> out = new ArrayList<>(raw.length);
-        for (Object item : raw) {
-            out.add(item instanceof UUID uuid ? uuid : UUID.fromString(String.valueOf(item)));
-        }
-        return List.copyOf(out);
-    }
-
-    private static List<Long> longList(java.sql.ResultSet rs, String column)
-            throws java.sql.SQLException {
-        Array array = rs.getArray(column);
-        if (array == null) {
-            return List.of();
-        }
-        Object[] raw = (Object[]) array.getArray();
-        List<Long> out = new ArrayList<>(raw.length);
-        for (Object item : raw) {
-            out.add(
-                    item instanceof Number number
-                            ? number.longValue()
-                            : Long.parseLong(String.valueOf(item)));
-        }
-        return List.copyOf(out);
     }
 }

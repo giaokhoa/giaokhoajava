@@ -94,12 +94,24 @@ public class AuthorizationPartition {
         return desiredRevision;
     }
 
+    public void setDesiredRevision(long desiredRevision) {
+        this.desiredRevision = desiredRevision;
+    }
+
     public long getAppliedRevision() {
         return appliedRevision;
     }
 
+    public void setAppliedRevision(long appliedRevision) {
+        this.appliedRevision = appliedRevision;
+    }
+
     public State getState() {
         return state;
+    }
+
+    public void setState(State state) {
+        this.state = state;
     }
 
     public Instant getCreatedAt() {

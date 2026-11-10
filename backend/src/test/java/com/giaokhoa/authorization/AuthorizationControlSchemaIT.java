@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.persistence.EntityManager;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -146,8 +147,8 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
         AuthorizationProjection projected = entities.find(AuthorizationProjection.class, id);
         assertEquals(AuthorizationPartition.State.READY, loaded.getState());
         assertEquals(AuthorizationProjection.State.READY, projected.getState());
-        assertArrayEquals(new String[] {"scope.permission"}, projected.getPolicyNames());
-        assertArrayEquals(new UUID[0], projected.getDependencyPartitionIds());
+        assertEquals(List.of("scope.permission"), projected.getPolicyNames());
+        assertEquals(List.of(), projected.getDependencyPartitionIds());
     }
 
     @DisplayName("Thay đổi nguồn (source) bắt buộc fence các projection phụ thuộc")
@@ -234,7 +235,7 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                 id);
         AuthorizationOperation entity = entities.find(AuthorizationOperation.class, id);
         assertEquals(AuthorizationOperation.State.RETRYABLE_FAILURE, entity.getState());
-        assertArrayEquals(new UUID[] {partition}, entity.getAffectedPartitions());
+        assertEquals(List.of(partition), entity.getAffectedPartitions());
         assertEquals(1, entity.getAttemptCount());
     }
 
@@ -415,8 +416,8 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                         "SELECT state FROM authorization_operation WHERE id = ?",
                         String.class,
                         operation));
-        assertArrayEquals(
-                new Long[] {1L, 2L},
+        assertEquals(
+                List.of(1L, 2L),
                 entities.find(AuthorizationOperation.class, operation).getAffectedRevisions());
     }
 

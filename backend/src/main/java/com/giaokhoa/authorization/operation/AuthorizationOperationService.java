@@ -1,8 +1,13 @@
 package com.giaokhoa.authorization.operation;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepositoryCustom.DependentProjection;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -15,7 +20,6 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,11 +33,16 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AuthorizationOperationService {
-    private final JdbcTemplate jdbc;
+    private final AuthzPartitionRepository partitions;
+    private final AuthzProjectionRepository projections;
     private final IdempotencyService idempotency;
 
-    public AuthorizationOperationService(JdbcTemplate jdbc, IdempotencyService idempotency) {
-        this.jdbc = jdbc;
+    public AuthorizationOperationService(
+            AuthzPartitionRepository partitions,
+            AuthzProjectionRepository projections,
+            IdempotencyService idempotency) {
+        this.partitions = partitions;
+        this.projections = projections;
         this.idempotency = idempotency;
     }
 
@@ -88,9 +97,12 @@ public class AuthorizationOperationService {
         Set<UUID> lockOrder = new TreeSet<>(Comparator.comparing(id -> id.toString()));
         lockOrder.addAll(primaries);
         lockOrder.addAll(closure.partitionIds());
+        Map<UUID, AuthorizationPartition> lockedPartitions = new HashMap<>();
         Map<UUID, Long> currentRevisions = new HashMap<>();
         for (UUID partitionId : lockOrder) {
-            currentRevisions.put(partitionId, lockCurrentRevision(partitionId));
+            AuthorizationPartition partition = lockPartition(partitionId);
+            lockedPartitions.put(partitionId, partition);
+            currentRevisions.put(partitionId, partition.getDesiredRevision());
         }
         Map<UUID, Long> newRevisions = new LinkedHashMap<>();
         for (UUID partitionId : primaries) {
@@ -120,37 +132,50 @@ public class AuthorizationOperationService {
                         workspaceId,
                         idempotencyKey,
                         payloadHash,
-                        affected.toArray(new UUID[0]),
-                        revisions.toArray(new Long[0]),
+                        List.copyOf(affected),
+                        List.copyOf(revisions),
                         revisions.getFirst());
         return idempotency.executeOnce(
-                operation, () -> applyFencesAndDesiredState(changes, newRevisions, closure));
+                operation,
+                () -> applyFencesAndDesiredState(changes, newRevisions, closure, lockedPartitions));
     }
 
     private void applyFencesAndDesiredState(
-            List<PartitionChange> changes, Map<UUID, Long> newRevisions, Closure closure) {
+            List<PartitionChange> changes,
+            Map<UUID, Long> newRevisions,
+            Closure closure,
+            Map<UUID, AuthorizationPartition> lockedPartitions) {
         Set<UUID> fenced = new HashSet<>();
         for (PartitionChange change : changes) {
             fenced.add(change.partitionId());
         }
         fenced.addAll(closure.partitionIds());
         // Fence mọi partition liên quan trước khi bất kỳ trường desired nào thay đổi: cơ sở dữ
-        // liệu chỉ chấp nhận sửa desired dưới một fence.
+        // liệu chỉ chấp nhận sửa desired dưới một fence. Flush tường minh để fence xuống cơ sở
+        // dữ liệu trước mọi thay đổi desired phía dưới, vì trigger desired kiểm tra trạng thái
+        // partition ngay tại từng câu lệnh.
         for (UUID partitionId : fenced) {
-            jdbc.update("UPDATE authz_partition SET state = 'PENDING' WHERE id = ?", partitionId);
+            // Mọi partition bị fence đều đã khóa ở applyDesiredState (lockOrder là hợp của
+            // primaries và closure) nên entity quản lý luôn có mặt.
+            AuthorizationPartition partition =
+                    Objects.requireNonNull(lockedPartitions.get(partitionId), "locked partition");
+            partition.setState(AuthorizationPartition.State.PENDING);
         }
+        partitions.flush();
         for (PartitionChange change : changes) {
-            jdbc.update(
-                    "UPDATE authz_projection SET state = 'PENDING'"
-                            + " WHERE partition_id = ? AND state = 'READY'",
-                    change.partitionId());
-            jdbc.update(
-                    "UPDATE authz_partition SET desired_revision = ? WHERE id = ?",
-                    newRevisions.get(change.partitionId()),
-                    change.partitionId());
+            projections.fenceReadyByPartitionId(
+                    change.partitionId(),
+                    AuthorizationProjection.State.PENDING,
+                    AuthorizationProjection.State.READY);
+            AuthorizationPartition partition =
+                    Objects.requireNonNull(
+                            lockedPartitions.get(change.partitionId()), "locked partition");
+            partition.setDesiredRevision(
+                    Objects.requireNonNull(newRevisions.get(change.partitionId()), "new revision"));
         }
-        for (UUID projectionId : closure.projectionIds()) {
-            jdbc.update("UPDATE authz_projection SET state = 'PENDING' WHERE id = ?", projectionId);
+        for (AuthorizationProjection projection :
+                projections.findAllById(closure.projectionIds())) {
+            projection.setState(AuthorizationProjection.State.PENDING);
         }
         for (PartitionChange change : changes) {
             for (DesiredProjection desired : change.projections()) {
@@ -163,52 +188,32 @@ public class AuthorizationOperationService {
         String desiredHash =
                 ProjectionReconciler.desiredHash(
                         desired.targetKey(), desired.scope(), desired.sourceDescriptors());
-        List<Map<String, Object>> existing =
-                jdbc.queryForList(
-                        "SELECT id, partition_id FROM authz_projection WHERE target_key = ?",
-                        desired.targetKey());
-        if (!existing.isEmpty()) {
-            if (!partitionId.equals(existing.getFirst().get("partition_id"))) {
+        var existing = projections.findByTargetKey(desired.targetKey());
+        if (existing.isPresent()) {
+            AuthorizationProjection projection = existing.get();
+            if (!partitionId.equals(projection.getPartitionId())) {
                 throw new IllegalStateException(
                         "Projection target belongs to another partition: " + desired.targetKey());
             }
-            jdbc.update(
-                    "UPDATE authz_projection SET desired_hash = ?, dependency_partition_ids = ?,"
-                            + " state = 'PENDING' WHERE id = ?",
-                    ps -> {
-                        ps.setString(1, desiredHash);
-                        ps.setArray(
-                                2,
-                                ps.getConnection()
-                                        .createArrayOf(
-                                                "uuid",
-                                                desired.dependencyPartitionIds()
-                                                        .toArray(new UUID[0])));
-                        ps.setObject(3, existing.getFirst().get("id"));
-                    });
+            projection.setDesiredHash(desiredHash);
+            projection.setDependencyPartitionIds(desired.dependencyPartitionIds());
+            projection.setState(AuthorizationProjection.State.PENDING);
             return;
         }
-        jdbc.update(
-                "INSERT INTO authz_projection"
-                        + " (id, partition_id, target_key, dependency_partition_ids, desired_hash,"
-                        + " state) VALUES (?, ?, ?, ?, ?, 'PENDING')",
-                ps -> {
-                    ps.setObject(1, UUID.randomUUID());
-                    ps.setObject(2, partitionId);
-                    ps.setString(3, desired.targetKey());
-                    ps.setArray(
-                            4,
-                            ps.getConnection()
-                                    .createArrayOf(
-                                            "uuid",
-                                            desired.dependencyPartitionIds().toArray(new UUID[0])));
-                    ps.setString(5, desiredHash);
-                });
+        projections.save(
+                new AuthorizationProjection(
+                        UUID.randomUUID(),
+                        partitionId,
+                        desired.targetKey(),
+                        null,
+                        List.of(),
+                        desired.dependencyPartitionIds(),
+                        desiredHash,
+                        null,
+                        AuthorizationProjection.State.PENDING));
     }
 
     private record Closure(Set<UUID> partitionIds, List<UUID> projectionIds) {}
-
-    private record DependentRow(UUID projectionId, UUID partitionId) {}
 
     /**
      * Các READY projection phụ thuộc vào các partition đã thay đổi, và đệ quy lên owner của chúng.
@@ -220,22 +225,9 @@ public class AuthorizationOperationService {
         List<UUID> frontier = primaries;
         while (!frontier.isEmpty()) {
             List<UUID> level = frontier;
-            List<DependentRow> dependents =
-                    jdbc.query(
-                            "SELECT id, partition_id FROM authz_projection"
-                                    + " WHERE state = 'READY' AND dependency_partition_ids && ?",
-                            ps ->
-                                    ps.setArray(
-                                            1,
-                                            ps.getConnection()
-                                                    .createArrayOf(
-                                                            "uuid", level.toArray(new UUID[0]))),
-                            (rs, _) ->
-                                    new DependentRow(
-                                            rs.getObject("id", UUID.class),
-                                            rs.getObject("partition_id", UUID.class)));
+            List<DependentProjection> dependents = projections.findReadyDependentsOfAny(level);
             List<UUID> next = new ArrayList<>();
-            for (DependentRow dependent : dependents) {
+            for (DependentProjection dependent : dependents) {
                 if (seenProjections.add(dependent.projectionId())) {
                     projectionIds.add(dependent.projectionId());
                 }
@@ -249,16 +241,12 @@ public class AuthorizationOperationService {
         return new Closure(owners, projectionIds);
     }
 
-    private long lockCurrentRevision(UUID partitionId) {
-        List<Long> current =
-                jdbc.queryForList(
-                        "SELECT desired_revision FROM authz_partition WHERE id = ? FOR UPDATE",
-                        Long.class,
-                        partitionId);
-        if (current.isEmpty()) {
-            throw new IllegalArgumentException("Unknown authorization partition: " + partitionId);
-        }
-        return current.getFirst();
+    private AuthorizationPartition lockPartition(UUID partitionId) {
+        return partitions
+                .lockById(partitionId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Unknown authorization partition: " + partitionId));
     }
 
     private void validate(List<PartitionChange> changes) {

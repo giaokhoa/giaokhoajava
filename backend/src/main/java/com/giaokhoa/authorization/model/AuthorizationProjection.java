@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
@@ -38,13 +39,15 @@ public class AuthorizationProjection {
     @Column(name = "keycloak_resource_id", length = 512)
     private @Nullable String keycloakResourceId;
 
+    // Cột mảng PostgreSQL ánh xạ basic collection theo Hibernate User Guide §3.2.43:
+    // giữ nguyên DDL text[]/uuid[], không đổi sang bảng phần tử.
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "policy_names", nullable = false, columnDefinition = "text[]")
-    private String[] policyNames;
+    private List<String> policyNames;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "dependency_partition_ids", nullable = false, columnDefinition = "uuid[]")
-    private UUID[] dependencyPartitionIds;
+    private List<UUID> dependencyPartitionIds;
 
     @Column(name = "desired_hash", nullable = false, length = 64)
     private String desiredHash;
@@ -75,8 +78,8 @@ public class AuthorizationProjection {
             UUID partitionId,
             String targetKey,
             @Nullable String keycloakResourceId,
-            String[] policyNames,
-            UUID[] dependencyPartitionIds,
+            List<String> policyNames,
+            List<UUID> dependencyPartitionIds,
             String desiredHash,
             @Nullable String appliedHash,
             State state) {
@@ -84,9 +87,10 @@ public class AuthorizationProjection {
         this.partitionId = partitionId;
         this.targetKey = targetKey;
         this.keycloakResourceId = keycloakResourceId;
-        this.policyNames = Objects.requireNonNull(policyNames, "policyNames").clone();
+        this.policyNames = List.copyOf(Objects.requireNonNull(policyNames, "policyNames"));
         this.dependencyPartitionIds =
-                Objects.requireNonNull(dependencyPartitionIds, "dependencyPartitionIds").clone();
+                List.copyOf(
+                        Objects.requireNonNull(dependencyPartitionIds, "dependencyPartitionIds"));
         this.desiredHash = desiredHash;
         this.appliedHash = appliedHash;
         this.state = state;
@@ -108,24 +112,50 @@ public class AuthorizationProjection {
         return keycloakResourceId;
     }
 
-    public String[] getPolicyNames() {
-        return policyNames.clone();
+    public void setKeycloakResourceId(@Nullable String keycloakResourceId) {
+        this.keycloakResourceId = keycloakResourceId;
     }
 
-    public UUID[] getDependencyPartitionIds() {
-        return dependencyPartitionIds.clone();
+    public List<String> getPolicyNames() {
+        return List.copyOf(policyNames);
+    }
+
+    public void setPolicyNames(List<String> policyNames) {
+        this.policyNames = List.copyOf(Objects.requireNonNull(policyNames, "policyNames"));
+    }
+
+    public List<UUID> getDependencyPartitionIds() {
+        return List.copyOf(dependencyPartitionIds);
+    }
+
+    public void setDependencyPartitionIds(List<UUID> dependencyPartitionIds) {
+        this.dependencyPartitionIds =
+                List.copyOf(
+                        Objects.requireNonNull(dependencyPartitionIds, "dependencyPartitionIds"));
     }
 
     public String getDesiredHash() {
         return desiredHash;
     }
 
+    public void setDesiredHash(String desiredHash) {
+        this.desiredHash = desiredHash;
+    }
+
     public @Nullable String getAppliedHash() {
         return appliedHash;
     }
 
+    public void setAppliedHash(@Nullable String appliedHash) {
+        this.appliedHash = appliedHash;
+    }
+
     public State getState() {
         return state;
+    }
+
+    public void setState(State state) {
+        this.state = state;
     }
 
     public Instant getCreatedAt() {

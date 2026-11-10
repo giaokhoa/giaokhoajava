@@ -1,8 +1,10 @@
 package com.giaokhoa.authorization.model;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.NullMarked;
 import org.junit.jupiter.api.DisplayName;
@@ -11,12 +13,14 @@ import org.junit.jupiter.api.Test;
 // Entity JPA dùng @NullUnmarked; vẫn kiểm tra hợp đồng null của test bằng @NullMarked.
 @NullMarked
 class AuthorizationModelTest {
-    @DisplayName("Các mảng của operation không thể bị thay đổi qua tham số constructor hay getter")
+    @DisplayName(
+            "Các danh sách cột mảng của operation không thể bị thay đổi qua tham số constructor"
+                    + " hay getter")
     @Test
-    void operationArraysAreDefensiveCopies() {
+    void operationListsAreDefensiveCopies() {
         UUID partition = UUID.randomUUID();
-        UUID[] partitions = {partition};
-        Long[] revisions = {1L};
+        List<UUID> partitions = new ArrayList<>(List.of(partition));
+        List<Long> revisions = new ArrayList<>(List.of(1L));
         var operation =
                 new AuthorizationOperation(
                         UUID.randomUUID(),
@@ -27,22 +31,28 @@ class AuthorizationModelTest {
                         partitions,
                         revisions,
                         1L);
-        partitions[0] = UUID.randomUUID();
-        revisions[0] = 2L;
-        assertArrayEquals(new UUID[] {partition}, operation.getAffectedPartitions());
-        assertArrayEquals(new Long[] {1L}, operation.getAffectedRevisions());
-        operation.getAffectedPartitions()[0] = UUID.randomUUID();
-        operation.getAffectedRevisions()[0] = 3L;
-        assertArrayEquals(new UUID[] {partition}, operation.getAffectedPartitions());
-        assertArrayEquals(new Long[] {1L}, operation.getAffectedRevisions());
+        partitions.set(0, UUID.randomUUID());
+        revisions.set(0, 2L);
+        assertEquals(List.of(partition), operation.getAffectedPartitions());
+        assertEquals(List.of(1L), operation.getAffectedRevisions());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> operation.getAffectedPartitions().set(0, UUID.randomUUID()));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> operation.getAffectedRevisions().set(0, 3L));
+        assertEquals(List.of(partition), operation.getAffectedPartitions());
+        assertEquals(List.of(1L), operation.getAffectedRevisions());
     }
 
-    @DisplayName("Các mảng của projection không thể bị thay đổi qua tham số constructor hay getter")
+    @DisplayName(
+            "Các danh sách cột mảng của projection không thể bị thay đổi qua tham số constructor"
+                    + " hay getter")
     @Test
-    void projectionArraysAreDefensiveCopies() {
+    void projectionListsAreDefensiveCopies() {
         UUID dependency = UUID.randomUUID();
-        String[] policies = {"scope.permission"};
-        UUID[] dependencies = {dependency};
+        List<String> policies = new ArrayList<>(List.of("scope.permission"));
+        List<UUID> dependencies = new ArrayList<>(List.of(dependency));
         var projection =
                 new AuthorizationProjection(
                         UUID.randomUUID(),
@@ -54,29 +64,34 @@ class AuthorizationModelTest {
                         "hash",
                         null,
                         AuthorizationProjection.State.PENDING);
-        policies[0] = "changed";
-        dependencies[0] = UUID.randomUUID();
-        assertArrayEquals(new String[] {"scope.permission"}, projection.getPolicyNames());
-        assertArrayEquals(new UUID[] {dependency}, projection.getDependencyPartitionIds());
-        projection.getPolicyNames()[0] = "changed-again";
-        projection.getDependencyPartitionIds()[0] = UUID.randomUUID();
-        assertArrayEquals(new String[] {"scope.permission"}, projection.getPolicyNames());
-        assertArrayEquals(new UUID[] {dependency}, projection.getDependencyPartitionIds());
+        policies.set(0, "changed");
+        dependencies.set(0, UUID.randomUUID());
+        assertEquals(List.of("scope.permission"), projection.getPolicyNames());
+        assertEquals(List.of(dependency), projection.getDependencyPartitionIds());
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> projection.getPolicyNames().set(0, "changed-again"));
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> projection.getDependencyPartitionIds().set(0, UUID.randomUUID()));
+        assertEquals(List.of("scope.permission"), projection.getPolicyNames());
+        assertEquals(List.of(dependency), projection.getDependencyPartitionIds());
     }
 
+    @DisplayName("Danh sách cột mảng bắt buộc null bị từ chối trước khi persist")
     @Test
-    void requiredArraysRejectNullBeforePersisting() {
+    void requiredListsRejectNullBeforePersisting() {
         UUID id = UUID.randomUUID();
         assertThrows(
                 NullPointerException.class,
                 () ->
                         new AuthorizationOperation(
-                                id, id, null, "request", "hash", null, new Long[0], 0L));
+                                id, id, null, "request", "hash", null, List.of(), 0L));
         assertThrows(
                 NullPointerException.class,
                 () ->
                         new AuthorizationOperation(
-                                id, id, null, "request", "hash", new UUID[0], null, 0L));
+                                id, id, null, "request", "hash", List.of(), null, 0L));
         assertThrows(
                 NullPointerException.class,
                 () ->
@@ -86,7 +101,7 @@ class AuthorizationModelTest {
                                 "target",
                                 null,
                                 null,
-                                new UUID[0],
+                                List.of(),
                                 "hash",
                                 null,
                                 AuthorizationProjection.State.PENDING));
@@ -98,15 +113,16 @@ class AuthorizationModelTest {
                                 id,
                                 "target",
                                 null,
-                                new String[0],
+                                List.of(),
                                 null,
                                 "hash",
                                 null,
                                 AuthorizationProjection.State.PENDING));
     }
 
+    @DisplayName("Sao chép giữ nguyên danh sách rỗng phân biệt với null")
     @Test
-    void copyingPreservesEmptyArrays() {
+    void copyingPreservesEmptyLists() {
         var operation =
                 new AuthorizationOperation(
                         UUID.randomUUID(),
@@ -114,8 +130,8 @@ class AuthorizationModelTest {
                         null,
                         "request",
                         "hash",
-                        new UUID[0],
-                        new Long[0],
+                        List.of(),
+                        List.of(),
                         0L);
         var projection =
                 new AuthorizationProjection(
@@ -123,14 +139,14 @@ class AuthorizationModelTest {
                         UUID.randomUUID(),
                         "target",
                         null,
-                        new String[0],
-                        new UUID[0],
+                        List.of(),
+                        List.of(),
                         "hash",
                         null,
                         AuthorizationProjection.State.PENDING);
-        assertArrayEquals(new UUID[0], operation.getAffectedPartitions());
-        assertArrayEquals(new Long[0], operation.getAffectedRevisions());
-        assertArrayEquals(new String[0], projection.getPolicyNames());
-        assertArrayEquals(new UUID[0], projection.getDependencyPartitionIds());
+        assertEquals(List.of(), operation.getAffectedPartitions());
+        assertEquals(List.of(), operation.getAffectedRevisions());
+        assertEquals(List.of(), projection.getPolicyNames());
+        assertEquals(List.of(), projection.getDependencyPartitionIds());
     }
 }

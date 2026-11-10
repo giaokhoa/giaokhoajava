@@ -7,6 +7,7 @@ import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.persistence.EntityManager;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -148,9 +149,9 @@ class IdempotencyServiceIT extends IntegrationEnvironment {
                                             "concurrent-key",
                                             "a".repeat(64),
                                             reversed
-                                                    ? new UUID[] {accountPartition, partition}
-                                                    : new UUID[] {partition, accountPartition},
-                                            reversed ? new Long[] {0L, 1L} : new Long[] {1L, 0L},
+                                                    ? List.of(accountPartition, partition)
+                                                    : List.of(partition, accountPartition),
+                                            reversed ? List.of(0L, 1L) : List.of(1L, 0L),
                                             reversed ? 0L : 1L);
                             return idempotency
                                     .executeOnce(
@@ -204,8 +205,8 @@ class IdempotencyServiceIT extends IntegrationEnvironment {
                         workspace,
                         "callback-failure",
                         "a".repeat(64),
-                        new UUID[] {partition},
-                        new Long[] {1L},
+                        List.of(partition),
+                        List.of(1L),
                         1L);
 
         assertThrows(
@@ -254,8 +255,8 @@ class IdempotencyServiceIT extends IntegrationEnvironment {
                         "SELECT id FROM workspace WHERE owner_user_id=?", UUID.class, actor),
                 key,
                 hash,
-                new UUID[] {partition},
-                new Long[] {0L},
+                List.of(partition),
+                List.of(0L),
                 0L);
     }
 

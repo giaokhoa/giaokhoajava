@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
@@ -19,6 +18,7 @@ import com.giaokhoa.authorization.fence.AuthorizationFence;
 import com.giaokhoa.authorization.fence.DependencyManifestResolver;
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
@@ -38,7 +38,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.invocation.InvocationOnMock;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
@@ -418,7 +417,7 @@ class ProtectedActionExecutorTest {
         final AuthorizationFence fence = mock(AuthorizationFence.class);
         final KeycloakDecisionClient decisions = mock(KeycloakDecisionClient.class);
         final PolicyGraphWriter writer = mock(PolicyGraphWriter.class);
-        final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        final AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
         final IdentityEligibilitySynchronizer eligibility =
                 mock(IdentityEligibilitySynchronizer.class);
         final Authentication authentication = mock(Authentication.class);
@@ -444,13 +443,12 @@ class ProtectedActionExecutorTest {
                             snapshotActive.set(false);
                         }
                     });
-            when(jdbc.queryForList(
-                            contains("FROM user_account"), eq(UUID.class), any(String.class)))
-                    .thenReturn(List.of(ACTOR));
+            when(partitions.findUserIdByKeycloakSub(any(String.class)))
+                    .thenReturn(Optional.of(ACTOR));
             when(authentication.getName()).thenReturn("keycloak-subject");
             executor =
                     new ProtectedActionExecutor(
-                            resolver, fence, decisions, writer, jdbc, eligibility);
+                            resolver, fence, decisions, writer, partitions, eligibility);
         }
     }
 }

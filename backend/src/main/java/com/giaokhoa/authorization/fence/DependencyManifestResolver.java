@@ -1,9 +1,10 @@
 package com.giaokhoa.authorization.fence;
 
 import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
-import java.sql.Array;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -18,7 +19,6 @@ import java.util.TreeSet;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,10 +35,13 @@ public class DependencyManifestResolver {
     static final String NOT_READY_CODE = "AUTHORIZATION_NOT_READY";
     static final String NOT_READY_DETAIL = "Quyền đang được đồng bộ, thử lại sau.";
 
-    private final JdbcTemplate jdbc;
+    private final AuthzPartitionRepository partitions;
+    private final AuthzProjectionRepository projections;
 
-    public DependencyManifestResolver(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public DependencyManifestResolver(
+            AuthzPartitionRepository partitions, AuthzProjectionRepository projections) {
+        this.partitions = partitions;
+        this.projections = projections;
     }
 
     /** Một manifest đã resolve; ID các partition theo thứ tự khóa ổn định mà fence sử dụng. */
@@ -130,71 +133,29 @@ public class DependencyManifestResolver {
     }
 
     private UUID partitionId(AuthorizationPartition.Kind kind, String ownerKey) {
-        List<UUID> found =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = ? AND owner_key = ?",
-                        UUID.class,
-                        kind.name(),
-                        ownerKey);
-        if (found.isEmpty()) {
-            throw new HttpProblemException(
-                    HttpStatus.SERVICE_UNAVAILABLE, NOT_READY_CODE, NOT_READY_DETAIL);
-        }
-        return found.getFirst();
+        return partitions
+                .findByKindAndOwnerKey(kind, ownerKey)
+                .map(AuthorizationPartition::getId)
+                .orElseThrow(() ->
+                        new HttpProblemException(
+                                HttpStatus.SERVICE_UNAVAILABLE, NOT_READY_CODE, NOT_READY_DETAIL));
     }
 
     private @Nullable ProjectionRow projectionByTarget(String targetKey) {
-        List<Map<String, Object>> rows =
-                jdbc.queryForList(
-                        "SELECT partition_id, keycloak_resource_id, dependency_partition_ids"
-                                + " FROM authz_projection WHERE target_key = ?",
-                        targetKey);
-        return rows.isEmpty() ? null : toRow(rows.getFirst());
+        return projections
+                .findByTargetKey(targetKey)
+                .map(projection ->
+                        new ProjectionRow(
+                                projection.getPartitionId(),
+                                projection.getKeycloakResourceId(),
+                                projection.getDependencyPartitionIds()))
+                .orElse(null);
     }
 
     /** Chỉ cột dependency của mọi projection thuộc cả một tầng partition, trong một query. */
     private List<List<UUID>> dependencyIdsOf(List<UUID> partitionIds) {
-        return jdbc.query(
-                "SELECT dependency_partition_ids FROM authz_projection"
-                        + " WHERE partition_id = ANY(?)",
-                ps ->
-                        ps.setArray(
-                                1,
-                                ps.getConnection()
-                                        .createArrayOf("uuid", partitionIds.toArray(new UUID[0]))),
-                (rs, _) -> uuids(rs.getArray("dependency_partition_ids")));
-    }
-
-    private static ProjectionRow toRow(Map<String, Object> row) {
-        return new ProjectionRow(
-                (UUID) Objects.requireNonNull(row.get("partition_id"), "partition_id"),
-                (String) row.get("keycloak_resource_id"),
-                uuids(row.get("dependency_partition_ids")));
-    }
-
-    private static List<UUID> uuids(@Nullable Object value) {
-        // Schema yêu cầu dependency_partition_ids NOT NULL; dữ liệu thiếu không được
-        // biến thành closure rỗng vì sẽ bỏ sót nguồn cần fence.
-        if (value == null) {
-            throw new HttpProblemException(
-                    HttpStatus.SERVICE_UNAVAILABLE, NOT_READY_CODE, NOT_READY_DETAIL);
-        }
-        Object[] raw;
-        if (value instanceof Array array) {
-            try {
-                raw = (Object[]) array.getArray();
-            } catch (SQLException ex) {
-                throw new IllegalStateException("Cannot read partition references", ex);
-            }
-        } else if (value instanceof Object[] objects) {
-            raw = objects;
-        } else {
-            throw new IllegalStateException(
-                    "Unexpected partition reference value: " + value.getClass());
-        }
-        return java.util.Arrays.stream(raw)
-                .map(item ->
-                        item instanceof UUID uuid ? uuid : UUID.fromString(String.valueOf(item)))
+        return projections.findByPartitionIdIn(partitionIds).stream()
+                .map(AuthorizationProjection::getDependencyPartitionIds)
                 .toList();
     }
 }

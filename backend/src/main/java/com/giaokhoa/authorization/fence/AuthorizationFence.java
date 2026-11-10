@@ -1,6 +1,8 @@
 package com.giaokhoa.authorization.fence;
 
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -11,8 +13,6 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.ColumnMapRowMapper;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -31,15 +31,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class AuthorizationFence {
     static final int MAX_RESOLUTION_ATTEMPTS = 3;
 
-    private final JdbcTemplate jdbc;
+    private final AuthzPartitionRepository partitions;
     private final DependencyManifestResolver resolver;
     private final TransactionTemplate transactions;
 
     public AuthorizationFence(
-            JdbcTemplate jdbc,
+            AuthzPartitionRepository partitions,
             DependencyManifestResolver resolver,
             PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+        this.partitions = partitions;
         this.resolver = resolver;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -88,42 +88,24 @@ public class AuthorizationFence {
     }
 
     private Snapshot lockAndVerify(Manifest manifest, @Nullable Map<UUID, Long> expected) {
-        // Một query khóa mọi partition của manifest: ORDER BY id giữ thứ tự khóa ổn định
-        // (thứ tự byte của UUID trùng thứ tự chuỗi mà manifest đã sắp xếp), rồi state và
-        // revision được đối chiếu trong bộ nhớ theo đúng thứ tự manifest.
-        Map<UUID, Map<String, Object>> locked = new HashMap<>();
+        // Một query khóa chia sẻ mọi partition của manifest theo thứ tự id ổn định, rồi state
+        // và revision được đối chiếu trong bộ nhớ theo đúng thứ tự manifest.
+        Map<UUID, AuthorizationPartition> locked = new HashMap<>();
         List<UUID> partitionIds = manifest.partitionIds();
         if (!partitionIds.isEmpty()) {
-            List<Map<String, Object>> rows =
-                    jdbc.query(
-                            "SELECT id, state, desired_revision, applied_revision"
-                                    + " FROM authz_partition WHERE id = ANY(?)"
-                                    + " ORDER BY id FOR SHARE",
-                            ps ->
-                                    ps.setArray(
-                                            1,
-                                            ps.getConnection()
-                                                    .createArrayOf(
-                                                            "uuid",
-                                                            partitionIds.toArray(new UUID[0]))),
-                            new ColumnMapRowMapper());
-            for (Map<String, Object> row : rows) {
-                locked.put((UUID) row.get("id"), row);
+            for (AuthorizationPartition partition : partitions.lockAllShared(partitionIds)) {
+                locked.put(partition.getId(), partition);
             }
         }
         Map<UUID, Long> revisions = new LinkedHashMap<>();
         for (UUID partitionId : partitionIds) {
-            Map<String, Object> row = locked.get(partitionId);
-            if (row == null) {
+            AuthorizationPartition partition = locked.get(partitionId);
+            if (partition == null) {
                 throw notReady();
             }
-            if (!(row.get("desired_revision") instanceof Number desiredRevision)
-                    || !(row.get("applied_revision") instanceof Number appliedRevision)) {
-                throw notReady();
-            }
-            long desired = desiredRevision.longValue();
-            long applied = appliedRevision.longValue();
-            if (!"READY".equals(row.get("state")) || desired != applied) {
+            long desired = partition.getDesiredRevision();
+            long applied = partition.getAppliedRevision();
+            if (partition.getState() != AuthorizationPartition.State.READY || desired != applied) {
                 throw notReady();
             }
             if (expected != null && !Objects.equals(expected.get(partitionId), desired)) {

@@ -4,24 +4,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
-import java.sql.ResultSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.PreparedStatementSetter;
-import org.springframework.jdbc.core.RowMapper;
 
 class DependencyManifestResolverTest {
     private static final UUID ACTOR = RandomIds.randomId();
@@ -41,32 +41,27 @@ class DependencyManifestResolverTest {
 
     @Test
     void actorOnlyActionIncludesAccountAndTargetClosureWithoutAnUnrelatedWorkspace() {
-        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
-        when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
-                .thenReturn(
-                        List.of(
-                                Map.of(
-                                        "partition_id",
-                                        GRANT,
-                                        "keycloak_resource_id",
-                                        "platform-resource",
-                                        "dependency_partition_ids",
-                                        new UUID[] {SOURCE})));
-        stubExpansion(jdbc, List.of());
+        var partitions = stubPartitions(mock(AuthzPartitionRepository.class));
+        var projections = mock(AuthzProjectionRepository.class);
+        when(projections.findByTargetKey(anyString()))
+                .thenReturn(Optional.of(projection(GRANT, "platform-resource", List.of(SOURCE))));
+        stubExpansion(projections, List.of());
         var manifest =
-                new DependencyManifestResolver(jdbc).resolve(ACTOR, null, List.of("platform"));
+                new DependencyManifestResolver(partitions, projections)
+                        .resolve(ACTOR, null, List.of("platform"));
         assertEquals(sorted(List.of(ACCOUNT, GRANT, SOURCE)), manifest.partitionIds());
         assertEquals("platform-resource", manifest.recordedResourceIds().get("platform"));
     }
 
     @Test
     void manifestAlwaysContainsActorAccountAndTargetWorkspace() {
-        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
-        when(jdbc.queryForList(contains("WHERE target_key"), anyString())).thenReturn(List.of());
-        stubExpansion(jdbc, List.of());
+        var partitions = stubPartitions(mock(AuthzPartitionRepository.class));
+        var projections = mock(AuthzProjectionRepository.class);
+        when(projections.findByTargetKey(anyString())).thenReturn(Optional.empty());
+        stubExpansion(projections, List.of());
 
         var manifest =
-                new DependencyManifestResolver(jdbc)
+                new DependencyManifestResolver(partitions, projections)
                         .resolve(ACTOR, WORKSPACE, List.of("workspace:" + WORKSPACE));
 
         assertEquals(sorted(List.of(ACCOUNT, WORKSPACE_PARTITION)), manifest.partitionIds());
@@ -75,22 +70,17 @@ class DependencyManifestResolverTest {
 
     @Test
     void resultTargetManifestIsFencedByOwningWorkspacePartitionWithNoUpstreamDependencies() {
-        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
+        var partitions = stubPartitions(mock(AuthzPartitionRepository.class));
+        var projections = mock(AuthzProjectionRepository.class);
         String resultKey = "workspace:" + WORKSPACE + ":result:" + UUID.randomUUID();
-        Map<String, Object> resultProjection =
-                Map.of(
-                        "partition_id",
-                        WORKSPACE_PARTITION,
-                        "keycloak_resource_id",
-                        "result-resource",
-                        "dependency_partition_ids",
-                        new UUID[] {});
-        when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
-                .thenReturn(List.of(resultProjection));
-        stubExpansion(jdbc, List.of());
+        when(projections.findByTargetKey(anyString()))
+                .thenReturn(
+                        Optional.of(projection(WORKSPACE_PARTITION, "result-resource", List.of())));
+        stubExpansion(projections, List.of());
 
         var manifest =
-                new DependencyManifestResolver(jdbc).resolve(ACTOR, WORKSPACE, List.of(resultKey));
+                new DependencyManifestResolver(partitions, projections)
+                        .resolve(ACTOR, WORKSPACE, List.of(resultKey));
 
         assertEquals(sorted(List.of(ACCOUNT, WORKSPACE_PARTITION)), manifest.partitionIds());
         assertEquals("result-resource", manifest.recordedResourceIds().get(resultKey));
@@ -98,24 +88,20 @@ class DependencyManifestResolverTest {
 
     @Test
     void manifestClosesUpstreamThroughOwnersButNeverSidewaysToIndependentDependents() {
-        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
-        Map<String, Object> grantProjection =
-                Map.of(
-                        "partition_id",
-                        GRANT,
-                        "keycloak_resource_id",
-                        "native-resource",
-                        "dependency_partition_ids",
-                        new UUID[] {WORKSPACE_PARTITION});
-        when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
-                .thenReturn(List.of(grantProjection));
+        var partitions = stubPartitions(mock(AuthzPartitionRepository.class));
+        var projections = mock(AuthzProjectionRepository.class);
+        when(projections.findByTargetKey(anyString()))
+                .thenReturn(
+                        Optional.of(
+                                projection(
+                                        GRANT, "native-resource", List.of(WORKSPACE_PARTITION))));
         // Tầng mở rộng chứa cả partition của workspace: dependency của projection nó sở
         // hữu (SOURCE) phải vào closure, còn partition độc lập cùng phụ thuộc workspace
         // thì không.
-        stubExpansion(jdbc, List.of(List.of(SOURCE)));
+        stubExpansion(projections, List.of(List.of(SOURCE)));
 
         var manifest =
-                new DependencyManifestResolver(jdbc)
+                new DependencyManifestResolver(partitions, projections)
                         .resolve(ACTOR, WORKSPACE, List.of(VERSION_KEY));
 
         assertEquals(
@@ -127,63 +113,18 @@ class DependencyManifestResolverTest {
         assertEquals("native-resource", manifest.recordedResourceIds().get(VERSION_KEY));
     }
 
-    @Test
-    void aTargetProjectionWithoutDependencyArrayFailsClosedWith503() {
-        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
-        Map<String, Object> projection =
-                Map.of("partition_id", GRANT, "keycloak_resource_id", "native-resource");
-        when(jdbc.queryForList(contains("WHERE target_key"), anyString()))
-                .thenReturn(List.of(projection));
-
-        HttpProblemException problem =
-                assertThrows(
-                        HttpProblemException.class,
-                        () ->
-                                new DependencyManifestResolver(jdbc)
-                                        .resolve(ACTOR, WORKSPACE, List.of(VERSION_KEY)));
-
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, problem.getStatus());
-        assertEquals("AUTHORIZATION_NOT_READY", problem.getCode());
-    }
-
-    @Test
-    void anOwnedProjectionWithoutDependencyArrayFailsClosedWith503() {
-        JdbcTemplate jdbc = stubPartitions(mock(JdbcTemplate.class));
-        when(jdbc.queryForList(contains("WHERE target_key"), anyString())).thenReturn(List.of());
-        when(jdbc.query(
-                        contains("partition_id = ANY"),
-                        ArgumentMatchers.<PreparedStatementSetter>any(),
-                        ArgumentMatchers.<RowMapper<List<UUID>>>any()))
-                .thenAnswer(invocation -> {
-                    RowMapper<List<UUID>> mapper = invocation.getArgument(2);
-                    ResultSet rs = mock(ResultSet.class);
-                    when(rs.getArray("dependency_partition_ids")).thenReturn(null);
-                    return List.of(mapper.mapRow(rs, 0));
-                });
-
-        HttpProblemException problem =
-                assertThrows(
-                        HttpProblemException.class,
-                        () ->
-                                new DependencyManifestResolver(jdbc)
-                                        .resolve(ACTOR, WORKSPACE, List.of("platform")));
-
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, problem.getStatus());
-        assertEquals("AUTHORIZATION_NOT_READY", problem.getCode());
-    }
-
+    @DisplayName("Thiếu partition của actor hoặc workspace thì resolve fail closed với 503")
     @Test
     void aMissingPartitionFailsClosedWith503() {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.queryForList(
-                        contains("authz_partition"), eq(UUID.class), anyString(), anyString()))
-                .thenReturn(List.of());
+        var partitions = mock(AuthzPartitionRepository.class);
+        var projections = mock(AuthzProjectionRepository.class);
+        when(partitions.findByKindAndOwnerKey(any(), anyString())).thenReturn(Optional.empty());
 
         HttpProblemException problem =
                 assertThrows(
                         HttpProblemException.class,
                         () ->
-                                new DependencyManifestResolver(jdbc)
+                                new DependencyManifestResolver(partitions, projections)
                                         .resolve(ACTOR, WORKSPACE, List.of("platform")));
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, problem.getStatus());
@@ -191,28 +132,52 @@ class DependencyManifestResolverTest {
     }
 
     /** Stub query mở rộng closure theo tầng: trả cùng một tầng dependency cho mọi lần gọi. */
-    private static void stubExpansion(JdbcTemplate jdbc, List<List<UUID>> dependencies) {
-        when(jdbc.query(
-                        contains("partition_id = ANY"),
-                        ArgumentMatchers.<PreparedStatementSetter>any(),
-                        ArgumentMatchers.<RowMapper<List<UUID>>>any()))
-                .thenReturn(dependencies);
+    private static void stubExpansion(
+            AuthzProjectionRepository projections, List<List<UUID>> dependencies) {
+        when(projections.findByPartitionIdIn(any()))
+                .thenReturn(
+                        dependencies.stream()
+                                .map(deps -> projection(UUID.randomUUID(), null, deps))
+                                .toList());
     }
 
-    private static JdbcTemplate stubPartitions(JdbcTemplate jdbc) {
-        when(jdbc.queryForList(
-                        contains("authz_partition"), eq(UUID.class), anyString(), anyString()))
+    private static AuthzPartitionRepository stubPartitions(AuthzPartitionRepository partitions) {
+        when(partitions.findByKindAndOwnerKey(any(), anyString()))
                 .thenAnswer(invocation -> {
-                    String ownerKey = invocation.getArgument(3, String.class);
+                    String ownerKey = invocation.getArgument(1, String.class);
                     if (ownerKey.equals("account:" + ACTOR)) {
-                        return List.of(ACCOUNT);
+                        return Optional.of(partition(ACCOUNT));
                     }
                     if (ownerKey.equals("workspace:" + WORKSPACE)) {
-                        return List.of(WORKSPACE_PARTITION);
+                        return Optional.of(partition(WORKSPACE_PARTITION));
                     }
-                    return List.of();
+                    return Optional.empty();
                 });
-        return jdbc;
+        return partitions;
+    }
+
+    private static AuthorizationPartition partition(UUID id) {
+        return new AuthorizationPartition(
+                id,
+                AuthorizationPartition.Kind.WORKSPACE,
+                "owner:" + id,
+                0,
+                0,
+                AuthorizationPartition.State.READY);
+    }
+
+    private static AuthorizationProjection projection(
+            UUID partitionId, @Nullable String keycloakResourceId, List<UUID> dependencies) {
+        return new AuthorizationProjection(
+                UUID.randomUUID(),
+                partitionId,
+                "target",
+                keycloakResourceId,
+                List.of(),
+                dependencies,
+                "hash",
+                null,
+                AuthorizationProjection.State.PENDING);
     }
 
     private static List<UUID> sorted(List<UUID> ids) {
