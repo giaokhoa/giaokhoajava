@@ -22,15 +22,15 @@ import com.giaokhoa.verification.model.SampleActionMutation;
 import com.giaokhoa.verification.model.SampleActivity;
 import com.giaokhoa.verification.model.SampleResult;
 import com.giaokhoa.verification.model.SampleSubmission;
-import com.giaokhoa.verification.repository.AuthorizationOperationRepository;
-import com.giaokhoa.verification.repository.CourseSubjectRepository;
-import com.giaokhoa.verification.repository.EnrollmentRepository;
-import com.giaokhoa.verification.repository.ResourceVersionRepository;
 import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import com.giaokhoa.verification.repository.SampleActivityRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.SampleSubmissionRepository;
-import com.giaokhoa.verification.repository.SubscriptionPeriodRepository;
+import com.giaokhoa.verification.repository.VerificationAuthorizationOperationRepository;
+import com.giaokhoa.verification.repository.VerificationCourseSubjectRepository;
+import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
+import com.giaokhoa.verification.repository.VerificationResourceVersionRepository;
+import com.giaokhoa.verification.repository.VerificationSubscriptionPeriodRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
@@ -84,15 +84,15 @@ public class SampleActionService {
     private final CorrectionService correctionService;
     private final WorkspaceTransaction workspaces;
     private final VerificationWorkspaceRepository workspaceDirectory;
-    private final SubscriptionPeriodRepository periods;
-    private final CourseSubjectRepository courseSubjects;
-    private final ResourceVersionRepository resourceVersions;
-    private final EnrollmentRepository enrollments;
+    private final VerificationSubscriptionPeriodRepository periods;
+    private final VerificationCourseSubjectRepository courseSubjects;
+    private final VerificationResourceVersionRepository resourceVersions;
+    private final VerificationEnrollmentRepository enrollments;
     private final SampleActivityRepository activities;
     private final SampleSubmissionRepository submissions;
     private final SampleResultRepository results;
     private final SampleActionMutationRepository mutations;
-    private final AuthorizationOperationRepository operations;
+    private final VerificationAuthorizationOperationRepository operations;
     private final TransactionTemplate transactions;
 
     public SampleActionService(
@@ -105,15 +105,15 @@ public class SampleActionService {
             CorrectionService correctionService,
             WorkspaceTransaction workspaces,
             VerificationWorkspaceRepository workspaceDirectory,
-            SubscriptionPeriodRepository periods,
-            CourseSubjectRepository courseSubjects,
-            ResourceVersionRepository resourceVersions,
-            EnrollmentRepository enrollments,
+            VerificationSubscriptionPeriodRepository periods,
+            VerificationCourseSubjectRepository courseSubjects,
+            VerificationResourceVersionRepository resourceVersions,
+            VerificationEnrollmentRepository enrollments,
             SampleActivityRepository activities,
             SampleSubmissionRepository submissions,
             SampleResultRepository results,
             SampleActionMutationRepository mutations,
-            AuthorizationOperationRepository operations,
+            VerificationAuthorizationOperationRepository operations,
             PlatformTransactionManager transactionManager) {
         this.executor = executor;
         this.idempotency = idempotency;

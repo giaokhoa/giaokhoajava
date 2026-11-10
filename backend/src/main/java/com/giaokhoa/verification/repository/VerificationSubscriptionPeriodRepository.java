@@ -8,7 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /** Điểm đọc kỳ gói trên entity của module subscriptions cho các luồng xác thực. */
-public interface SubscriptionPeriodRepository extends JpaRepository<SubscriptionPeriod, UUID> {
+public interface VerificationSubscriptionPeriodRepository
+        extends JpaRepository<SubscriptionPeriod, UUID> {
 
     /** Các kỳ đang hiệu lực tại thời điểm gọi, kỳ bắt đầu muộn nhất trước. */
     @Query(

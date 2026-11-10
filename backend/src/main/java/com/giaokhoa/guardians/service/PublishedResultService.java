@@ -14,12 +14,12 @@ import com.giaokhoa.teaching.model.CourseSubject;
 import com.giaokhoa.teaching.model.SchoolClass;
 import com.giaokhoa.teaching.model.Subject;
 import com.giaokhoa.verification.model.SampleResult;
-import com.giaokhoa.verification.repository.CourseRepository;
-import com.giaokhoa.verification.repository.CourseSubjectRepository;
 import com.giaokhoa.verification.repository.SampleResultCandidateView;
 import com.giaokhoa.verification.repository.SampleResultRepository;
-import com.giaokhoa.verification.repository.SchoolClassRepository;
-import com.giaokhoa.verification.repository.SubjectRepository;
+import com.giaokhoa.verification.repository.VerificationCourseRepository;
+import com.giaokhoa.verification.repository.VerificationCourseSubjectRepository;
+import com.giaokhoa.verification.repository.VerificationSchoolClassRepository;
+import com.giaokhoa.verification.repository.VerificationSubjectRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -69,10 +69,10 @@ public class PublishedResultService {
     private final ProtectedActionExecutor executor;
     private final WorkspaceTransaction workspaces;
     private final SampleResultRepository results;
-    private final CourseSubjectRepository courseSubjects;
-    private final CourseRepository courses;
-    private final SchoolClassRepository schoolClasses;
-    private final SubjectRepository subjects;
+    private final VerificationCourseSubjectRepository courseSubjects;
+    private final VerificationCourseRepository courses;
+    private final VerificationSchoolClassRepository schoolClasses;
+    private final VerificationSubjectRepository subjects;
     private final GuardianUserAccountRepository userAccounts;
     private static final SecureRandom CURSOR_RANDOM = new SecureRandom();
     private static final int SCAN_BATCH = 100;
@@ -92,10 +92,10 @@ public class PublishedResultService {
             ProtectedActionExecutor executor,
             WorkspaceTransaction workspaces,
             SampleResultRepository results,
-            CourseSubjectRepository courseSubjects,
-            CourseRepository courses,
-            SchoolClassRepository schoolClasses,
-            SubjectRepository subjects,
+            VerificationCourseSubjectRepository courseSubjects,
+            VerificationCourseRepository courses,
+            VerificationSchoolClassRepository schoolClasses,
+            VerificationSubjectRepository subjects,
             GuardianUserAccountRepository userAccounts) {
         this.executor = executor;
         this.workspaces = workspaces;

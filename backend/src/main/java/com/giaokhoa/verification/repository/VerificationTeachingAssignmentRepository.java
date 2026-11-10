@@ -6,7 +6,8 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /** Điểm đọc phân công giảng dạy trên entity của module teaching. */
-public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssignment, UUID> {
+public interface VerificationTeachingAssignmentRepository
+        extends JpaRepository<TeachingAssignment, UUID> {
 
     boolean existsByWorkspaceIdAndCourseSubjectIdAndStateIn(
             UUID workspaceId, UUID courseSubjectId, Collection<String> states);

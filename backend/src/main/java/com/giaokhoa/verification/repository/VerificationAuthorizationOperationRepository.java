@@ -10,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 /**
  * Điểm đọc operation qua entity của module authorization; repository đầy đủ thuộc authorization.
  */
-public interface AuthorizationOperationRepository
+public interface VerificationAuthorizationOperationRepository
         extends JpaRepository<AuthorizationOperation, UUID> {
 
     /** Trạng thái hiện hành của một operation, cho vòng chờ chiếu của sample action. */

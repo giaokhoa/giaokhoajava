@@ -7,7 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /** Điểm đọc version qua entity của module resources; repository đầy đủ thuộc resources. */
-public interface ResourceVersionRepository extends JpaRepository<ResourceVersion, UUID> {
+public interface VerificationResourceVersionRepository
+        extends JpaRepository<ResourceVersion, UUID> {
 
     /** Version dùng được cho giao bài: thuộc đúng resource, workspace, môn và đã được duyệt. */
     @Query(

@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /** Điểm đọc môn–khóa trên entity của module teaching cho các luồng xác thực. */
-public interface CourseSubjectRepository extends JpaRepository<CourseSubject, UUID> {
+public interface VerificationCourseSubjectRepository extends JpaRepository<CourseSubject, UUID> {
 
     /** Trạng thái của môn–khóa cùng lớp/khóa chứa nó, nối bằng giá trị id trong cùng mặt phẳng. */
     @Query(

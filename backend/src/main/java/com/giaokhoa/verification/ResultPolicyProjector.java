@@ -14,10 +14,10 @@ import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.model.SampleResult;
-import com.giaokhoa.verification.repository.EnrollmentRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
-import com.giaokhoa.verification.repository.TeachingAssignmentRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
+import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
+import com.giaokhoa.verification.repository.VerificationTeachingAssignmentRepository;
 import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import java.util.ArrayList;
@@ -68,8 +68,8 @@ public class ResultPolicyProjector {
 
     private final SampleResultRepository results;
     private final VerificationAuthorizationPartitionRepository partitions;
-    private final TeachingAssignmentRepository assignments;
-    private final EnrollmentRepository enrollments;
+    private final VerificationTeachingAssignmentRepository assignments;
+    private final VerificationEnrollmentRepository enrollments;
     private final VerificationWorkspaceRepository workspaces;
     private final VerificationUserAccountRepository userAccounts;
     private final GuardianLinkRepository guardianLinks;
@@ -81,8 +81,8 @@ public class ResultPolicyProjector {
     public ResultPolicyProjector(
             SampleResultRepository results,
             VerificationAuthorizationPartitionRepository partitions,
-            TeachingAssignmentRepository assignments,
-            EnrollmentRepository enrollments,
+            VerificationTeachingAssignmentRepository assignments,
+            VerificationEnrollmentRepository enrollments,
             VerificationWorkspaceRepository workspaces,
             VerificationUserAccountRepository userAccounts,
             GuardianLinkRepository guardianLinks,

@@ -33,9 +33,9 @@ import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import com.giaokhoa.verification.ResultPolicyProjector;
-import com.giaokhoa.verification.repository.EnrollmentRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
-import com.giaokhoa.verification.repository.TeachingAssignmentRepository;
+import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
+import com.giaokhoa.verification.repository.VerificationTeachingAssignmentRepository;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -49,9 +49,7 @@ import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.ConnectionCallback;
@@ -64,6 +62,7 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import testinfra.AuthorizationFragmentRepositories;
 
 /**
  * Kiểm chứng tầng service của guardian link bằng lời gọi thẳng service (route HTTP thuộc task route
@@ -86,11 +85,6 @@ class GuardianLinkServiceIT extends GuardianFixture {
     @Autowired EntityManagerFactory entityManagerFactory;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
-
-    /** Bật đăng ký repository của module authorization cho context tối thiểu của làn runtime. */
-    @Configuration(proxyBeanMethods = false)
-    @EnableJpaRepositories(basePackages = "com.giaokhoa.authorization.repository")
-    static class RuntimeFragmentRepositories {}
 
     @DisplayName(
             "Vòng đời liên kết đồng bộ tư cách thành viên guardian group thông qua các operation")
@@ -539,7 +533,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                     // Repository có fragment của module authorization chỉ đăng ký được qua tầng
                     // cấu hình EnableJpaRepositories nên làn runtime dựng một context tối thiểu
                     // dùng lại đúng EMF, JdbcTemplate và transaction manager của role runtime.
-                    fragmentContext.register(RuntimeFragmentRepositories.class);
+                    fragmentContext.register(AuthorizationFragmentRepositories.class);
                     fragmentContext
                             .getBeanFactory()
                             .registerSingleton("entityManagerFactory", runtimeEmf);
@@ -582,8 +576,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                                     .VerificationAuthorizationPartitionRepository
                                                     .class),
                                     runtimeRepositories.getRepository(
-                                            TeachingAssignmentRepository.class),
-                                    runtimeRepositories.getRepository(EnrollmentRepository.class),
+                                            VerificationTeachingAssignmentRepository.class),
+                                    runtimeRepositories.getRepository(
+                                            VerificationEnrollmentRepository.class),
                                     runtimeRepositories.getRepository(
                                             com.giaokhoa.verification.repository
                                                     .VerificationWorkspaceRepository.class),

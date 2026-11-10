@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /** Điểm đọc ghi danh trên entity của module teaching cho các luồng xác thực. */
-public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
+public interface VerificationEnrollmentRepository extends JpaRepository<Enrollment, UUID> {
 
     /** Số ghi danh hiện hành của actor vào môn–khóa, nối danh sách lớp bằng giá trị id. */
     @Query(

@@ -35,14 +35,13 @@ import jakarta.persistence.EntityManagerFactory;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
+import testinfra.AuthorizationFragmentRepositories;
 
 /**
  * Bộ repository JPA gắn với một DataSource riêng của test (thường là role runtime không BYPASSRLS
@@ -55,7 +54,9 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
  * <p>Repository thuần giao diện lấy thẳng từ {@link JpaRepositoryFactory}; riêng các repository có
  * fragment cài đặt riêng của module authorization phải đi qua một context tối thiểu có {@code
  * EnableJpaRepositories} vì fragment chỉ được đăng ký ở tầng cấu hình đó (factory trần không tự
- * phát hiện fragment, đã kiểm chứng bằng thực nghiệm khi nối các đợt JPA).
+ * phát hiện fragment, đã kiểm chứng bằng thực nghiệm khi nối các đợt JPA). Cấu hình đó là {@link
+ * AuthorizationFragmentRepositories}, đặt ngoài package {@code com.giaokhoa} để component scan của
+ * ứng dụng không nhặt nó vào context chính.
  */
 final class RuntimeJpaRepositories implements AutoCloseable {
     final EntityManagerFactory entityManagerFactory;
@@ -77,9 +78,10 @@ final class RuntimeJpaRepositories implements AutoCloseable {
     final AuthzPartitionRepository authzPartitions;
     final AuthzProjectionRepository authzProjections;
     final SampleResultRepository sampleResults;
-    final com.giaokhoa.verification.repository.TeachingAssignmentRepository
+    final com.giaokhoa.verification.repository.VerificationTeachingAssignmentRepository
             verificationTeachingAssignments;
-    final com.giaokhoa.verification.repository.EnrollmentRepository verificationEnrollments;
+    final com.giaokhoa.verification.repository.VerificationEnrollmentRepository
+            verificationEnrollments;
     final VerificationAuthorizationPartitionRepository verificationPartitions;
     final VerificationWorkspaceRepository verificationWorkspaces;
     final VerificationUserAccountRepository verificationAccounts;
@@ -95,11 +97,6 @@ final class RuntimeJpaRepositories implements AutoCloseable {
     final ResourcesSampleActivityRepository resourcesActivities;
     final ResourcesAuthorizationPartitionRepository resourcesPartitions;
     private final AnnotationConfigApplicationContext fragmentContext;
-
-    /** Bật đăng ký repository của module authorization trong context tối thiểu của bộ này. */
-    @Configuration(proxyBeanMethods = false)
-    @EnableJpaRepositories(basePackages = "com.giaokhoa.authorization.repository")
-    static class FragmentRepositories {}
 
     RuntimeJpaRepositories(DataSource dataSource) {
         var emfBean = new LocalContainerEntityManagerFactoryBean();
@@ -138,10 +135,12 @@ final class RuntimeJpaRepositories implements AutoCloseable {
         this.sampleResults = factory.getRepository(SampleResultRepository.class);
         this.verificationTeachingAssignments =
                 factory.getRepository(
-                        com.giaokhoa.verification.repository.TeachingAssignmentRepository.class);
+                        com.giaokhoa.verification.repository
+                                .VerificationTeachingAssignmentRepository.class);
         this.verificationEnrollments =
                 factory.getRepository(
-                        com.giaokhoa.verification.repository.EnrollmentRepository.class);
+                        com.giaokhoa.verification.repository.VerificationEnrollmentRepository
+                                .class);
         this.verificationPartitions =
                 factory.getRepository(VerificationAuthorizationPartitionRepository.class);
         this.verificationWorkspaces = factory.getRepository(VerificationWorkspaceRepository.class);
@@ -161,7 +160,7 @@ final class RuntimeJpaRepositories implements AutoCloseable {
         // Repository có fragment của module authorization: đăng ký qua context tối thiểu dùng
         // lại đúng EntityManagerFactory, JdbcTemplate và transaction manager của bộ này.
         this.fragmentContext = new AnnotationConfigApplicationContext();
-        fragmentContext.register(FragmentRepositories.class);
+        fragmentContext.register(AuthorizationFragmentRepositories.class);
         fragmentContext
                 .getBeanFactory()
                 .registerSingleton("entityManagerFactory", entityManagerFactory);

@@ -1,5 +1,7 @@
 package com.giaokhoa.verification.model;
 
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EmbeddedId;
@@ -23,7 +25,17 @@ public class SampleActionMutation {
     @Embeddable
     public record Id(UUID actorUserId, String idempotencyKey) implements Serializable {}
 
-    @EmbeddedId private Id id;
+    // Tên cột ghi tường minh: record Id không mang @Column trên từng thành phần như các key
+    // dạng class (RecoveryMutation.Key), và Hibernate resolve tên cột của @EmbeddedId dạng
+    // record theo đúng tên thành phần (actorUserId) thay vì dạng snake_case của V022.
+    @EmbeddedId
+    @AttributeOverrides({
+        @AttributeOverride(name = "actorUserId", column = @Column(name = "actor_user_id")),
+        @AttributeOverride(
+                name = "idempotencyKey",
+                column = @Column(name = "idempotency_key", length = 255))
+    })
+    private Id id;
 
     @Column(name = "payload_hash", nullable = false, length = 64)
     private String payloadHash;

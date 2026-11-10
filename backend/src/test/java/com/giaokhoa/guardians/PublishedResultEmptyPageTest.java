@@ -18,11 +18,11 @@ import com.giaokhoa.guardians.service.PublishedResultService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
-import com.giaokhoa.verification.repository.CourseRepository;
-import com.giaokhoa.verification.repository.CourseSubjectRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
-import com.giaokhoa.verification.repository.SchoolClassRepository;
-import com.giaokhoa.verification.repository.SubjectRepository;
+import com.giaokhoa.verification.repository.VerificationCourseRepository;
+import com.giaokhoa.verification.repository.VerificationCourseSubjectRepository;
+import com.giaokhoa.verification.repository.VerificationSchoolClassRepository;
+import com.giaokhoa.verification.repository.VerificationSubjectRepository;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
@@ -57,10 +57,10 @@ class PublishedResultEmptyPageTest {
                         executor,
                         workspaces,
                         mock(SampleResultRepository.class),
-                        mock(CourseSubjectRepository.class),
-                        mock(CourseRepository.class),
-                        mock(SchoolClassRepository.class),
-                        mock(SubjectRepository.class),
+                        mock(VerificationCourseSubjectRepository.class),
+                        mock(VerificationCourseRepository.class),
+                        mock(VerificationSchoolClassRepository.class),
+                        mock(VerificationSubjectRepository.class),
                         mock(GuardianUserAccountRepository.class)),
                 executor,
                 authentication);
