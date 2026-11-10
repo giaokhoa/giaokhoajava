@@ -96,6 +96,12 @@ public class IdentityService {
                 "identity-bootstrap:" + keycloakSub,
                 () -> {
                     BootstrapResult result = bootstrapCurrent(keycloakSub, current);
+                    // Eligibility đọc partition do trigger cơ sở dữ liệu tạo khi INSERT
+                    // account/workspace bằng JDBC thuần, nên hai thay đổi trên phải xuống cơ
+                    // sở dữ liệu trước lời gọi đó: entity vừa save đã nằm trong persistence
+                    // context nên findById ở eligibility không kích hoạt flush tự động.
+                    accounts.flush();
+                    workspaces.flush();
                     eligibility.synchronizeEligibility(result.userId());
                     return result;
                 });

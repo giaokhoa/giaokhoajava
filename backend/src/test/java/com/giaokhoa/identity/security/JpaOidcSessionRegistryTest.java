@@ -9,17 +9,16 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.client.oidc.session.OidcSessionInformation;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
-import org.springframework.session.Session;
-import org.springframework.session.SessionRepository;
 
 class JpaOidcSessionRegistryTest {
     @DisplayName("Thiếu issuer bị từ chối trước khi ghi correlation")
     @Test
     void missingIssuerRejectedEarly() {
-        var registry = new JpaOidcSessionRegistry(unwritableCorrelations(), sessions(), "client");
+        var registry = new JpaOidcSessionRegistry(unwritableCorrelations(), jdbc(), "client");
         var token =
                 new OidcIdToken(
                         "id-token",
@@ -36,7 +35,7 @@ class JpaOidcSessionRegistryTest {
     @DisplayName("Thiếu audience bị từ chối trước khi ghi correlation")
     @Test
     void missingAudienceRejectedEarly() {
-        var registry = new JpaOidcSessionRegistry(unwritableCorrelations(), sessions(), "client");
+        var registry = new JpaOidcSessionRegistry(unwritableCorrelations(), jdbc(), "client");
         var token =
                 new OidcIdToken(
                         "id-token",
@@ -58,8 +57,7 @@ class JpaOidcSessionRegistryTest {
                 });
     }
 
-    @SuppressWarnings("unchecked")
-    private static SessionRepository<? extends Session> sessions() {
-        return mock(SessionRepository.class);
+    private static JdbcTemplate jdbc() {
+        return mock(JdbcTemplate.class);
     }
 }

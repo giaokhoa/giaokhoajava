@@ -9,37 +9,36 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.oauth2.client.oidc.authentication.logout.OidcLogoutToken;
 import org.springframework.security.oauth2.client.oidc.session.OidcSessionInformation;
 import org.springframework.security.oauth2.client.oidc.session.OidcSessionRegistry;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
-import org.springframework.session.Session;
-import org.springframework.session.SessionRepository;
 import org.springframework.util.Assert;
 
 /**
  * Tương quan bền vững phục vụ OIDC back-channel logout native của Spring Security. Correlation là
- * dữ kiện của ứng dụng nên nằm ở entity/repository JPA; riêng việc phiên ứng dụng còn sống hay
- * không được hỏi qua {@link SessionRepository} của Spring Session chứ không đọc thẳng bảng phiên
- * của framework.
+ * dữ kiện của ứng dụng nên nằm ở entity/repository JPA. Việc phiên ứng dụng còn sống hay không phải
+ * đọc cột expiry_time đã lưu của Spring Session JDBC: findById của JdbcIndexedSessionRepository
+ * tính hết hạn theo lastAccessedTime + maxInactiveInterval trong bộ nhớ chứ không theo expiry_time,
+ * nên một phiên đã bị đánh dấu hết hạn trong cơ sở dữ liệu vẫn được trả về như còn sống (đã kiểm
+ * chứng trên mã nguồn spring-session-jdbc 4.1.1).
  */
 public final class JpaOidcSessionRegistry implements OidcSessionRegistry {
 
     private final OidcSessionCorrelationRepository correlations;
-    private final SessionRepository<? extends Session> sessions;
+    private final JdbcTemplate jdbc;
     private final String clientId;
 
     public JpaOidcSessionRegistry(
-            OidcSessionCorrelationRepository correlations,
-            SessionRepository<? extends Session> sessions,
-            String clientId) {
+            OidcSessionCorrelationRepository correlations, JdbcTemplate jdbc, String clientId) {
         Assert.notNull(correlations, "correlations is required");
-        Assert.notNull(sessions, "sessions is required");
+        Assert.notNull(jdbc, "jdbc is required");
         Assert.hasText(clientId, "clientId is required");
         this.correlations = correlations;
-        this.sessions = sessions;
+        this.jdbc = jdbc;
         this.clientId = clientId;
     }
 
@@ -133,11 +132,10 @@ public final class JpaOidcSessionRegistry implements OidcSessionRegistry {
                                                 issuer, clientId, subject)
                                         : List.of();
         // Spring Session đã flush xong vào lúc một provider logout một trình duyệt.
-        // Tương quan cũ không được chọn một session đã hết hạn/bị xóa sau khi khởi động lại:
-        // SessionRepository trả null cho session không còn hoặc đã hết hạn.
+        // Tương quan cũ không được chọn một session đã hết hạn/bị xóa sau khi khởi động lại.
         List<OidcSessionInformation> removed = new ArrayList<>();
         for (OidcSessionCorrelation correlation : candidates) {
-            if (sessions.findById(correlation.getSessionId()) == null) {
+            if (!sessionAlive(correlation.getSessionId())) {
                 continue;
             }
             correlations.delete(correlation);
@@ -152,10 +150,22 @@ public final class JpaOidcSessionRegistry implements OidcSessionRegistry {
     void cleanUpOrphanedCorrelations() {
         Instant cutoff = Instant.now().minus(Duration.ofHours(1));
         for (OidcSessionCorrelation correlation : correlations.findByRecordedAtBefore(cutoff)) {
-            if (sessions.findById(correlation.getSessionId()) == null) {
+            if (!sessionAlive(correlation.getSessionId())) {
                 correlations.delete(correlation);
             }
         }
+    }
+
+    /** Phiên còn sống khi dòng Spring Session tồn tại và expiry_time vẫn ở tương lai. */
+    private boolean sessionAlive(String sessionId) {
+        Integer alive =
+                jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM spring_session WHERE session_id = ?"
+                                + " AND expiry_time > (EXTRACT(EPOCH FROM clock_timestamp())"
+                                + " * 1000)::BIGINT",
+                        Integer.class,
+                        sessionId);
+        return alive != null && alive > 0;
     }
 
     private static OidcSessionInformation sessionInformation(OidcSessionCorrelation correlation) {

@@ -2,7 +2,7 @@
 <FindBugsFilter>
     <!-- JdbcTemplate là dependency dùng chung do Spring quản lý; không sao chép template/connection pool. -->
     <Match>
-        <Class name="com.giaokhoa.identity.security.JdbcOidcSessionRegistry"/>
+        <Class name="com.giaokhoa.identity.security.JpaOidcSessionRegistry"/>
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
