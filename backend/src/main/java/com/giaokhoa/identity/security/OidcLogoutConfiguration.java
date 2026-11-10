@@ -11,6 +11,8 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.config.annotation.web.configurers.oauth2.client.OidcBackChannelLogoutHandler;
 import org.springframework.security.oauth2.client.oidc.session.OidcSessionRegistry;
 import org.springframework.session.web.http.CookieSerializer;
@@ -25,12 +27,21 @@ public class OidcLogoutConfiguration {
     private static final JsonMapper LOGOUT_JSON = JsonMapper.builder().build();
 
     @Bean
-    CookieSerializer sessionCookieSerializer(GiaokhoaProperties properties) {
+    CookieSerializer sessionCookieSerializer(
+            GiaokhoaProperties properties, Environment environment) {
+        boolean secure = "https".equalsIgnoreCase(URI.create(properties.appOrigin()).getScheme());
+        // Repo chưa chốt một tên profile production duy nhất, nên nhận cả hai tên thông dụng:
+        // thiếu một tên là fail-fast này lặng lẽ không bao giờ kích hoạt.
+        if (!secure && environment.acceptsProfiles(Profiles.of("prod | production"))) {
+            throw new IllegalStateException(
+                    "giaokhoa.app-origin must use https when the prod/production profile is"
+                            + " active, but was: "
+                            + properties.appOrigin());
+        }
         var serializer = new DefaultCookieSerializer();
         serializer.setCookieName("SESSION");
         serializer.setUseHttpOnlyCookie(true);
-        serializer.setUseSecureCookie(
-                "https".equalsIgnoreCase(URI.create(properties.appOrigin()).getScheme()));
+        serializer.setUseSecureCookie(secure);
         serializer.setSameSite("Lax");
         // Back-channel handler của Spring gửi session ID thô trong cookie SESSION.
         serializer.setUseBase64Encoding(false);

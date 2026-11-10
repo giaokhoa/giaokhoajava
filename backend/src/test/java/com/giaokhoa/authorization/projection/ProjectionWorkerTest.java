@@ -24,12 +24,14 @@ import com.giaokhoa.support.RandomIds;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.invocation.Invocation;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -131,7 +133,11 @@ class ProjectionWorkerTest {
         when(jdbc.queryForList(anyString(), eq(UUID.class), anyInt()))
                 .thenReturn(List.of(PARTITION));
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of(PARTITION));
-        when(reconciler.tryReconcilePartition(PARTITION)).thenReturn(false);
+        when(reconciler.partition(PARTITION))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                PARTITION, 1L, 0L, AuthorizationPartition.State.PENDING));
+        when(reconciler.tryReconcilePartition(eq(PARTITION), anyInt())).thenReturn(false);
         ProjectionWorker worker =
                 new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
 
@@ -139,7 +145,58 @@ class ProjectionWorkerTest {
         worker.reconcileOrphanedPartitions();
 
         // Poll thứ hai nằm trong cửa sổ backoff có giới hạn: không có lần thử mạng mới.
-        verify(reconciler, times(1)).tryReconcilePartition(PARTITION);
+        verify(reconciler, times(1)).tryReconcilePartition(eq(PARTITION), anyInt());
+    }
+
+    @Test
+    void orphanScanOnlySelectsPartitionsWithRecordedStateIntent() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of());
+        ProjectionWorker worker =
+                new ProjectionWorker(
+                        jdbc,
+                        mock(ProjectionReconciler.class),
+                        stubTransactions(),
+                        new AuditRecorder(jdbc));
+
+        worker.reconcileOrphanedPartitions();
+
+        // Câu truy vấn phải tự nó loại partition chưa từng được chiếu ngay từ DB (PENDING,
+        // revision 0 hai phía, không dòng projection nào): các partition đó không còn vào
+        // được vòng thử. Hành vi trên DB thật do bộ IT projection trên CI khóa tiếp.
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).queryForList(sql.capture(), eq(UUID.class));
+        assertTrue(sql.getValue().contains("p.desired_revision > 0"));
+        assertTrue(sql.getValue().contains("p.applied_revision > 0"));
+        assertTrue(sql.getValue().contains("EXISTS (SELECT 1 FROM authz_projection"));
+    }
+
+    @Test
+    void anOrphanThatExhaustedItsBudgetIsSkippedUntilItsRevisionChanges() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        ProjectionReconciler reconciler = mock(ProjectionReconciler.class);
+        when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of(PARTITION));
+        when(reconciler.tryReconcilePartition(eq(PARTITION), anyInt())).thenReturn(false);
+        ProjectionWorker worker =
+                new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
+        worker.recordOrphanFailure(PARTITION, ProjectionWorker.MAX_ATTEMPTS, Instant.EPOCH, 1L);
+
+        // Ngân sách đã cạn và revision không đổi: không thử thêm lần nào nữa.
+        when(reconciler.partition(PARTITION))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                PARTITION, 1L, 0L, AuthorizationPartition.State.PENDING));
+        worker.reconcileOrphanedPartitions();
+        verify(reconciler, never()).tryReconcilePartition(any(), anyInt());
+
+        // Revision đổi nghĩa là partition đã nhận ý định trạng thái mới: ngân sách tính lại
+        // từ đầu và partition được thử ngay trong lượt quét này.
+        when(reconciler.partition(PARTITION))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                PARTITION, 2L, 0L, AuthorizationPartition.State.PENDING));
+        worker.reconcileOrphanedPartitions();
+        verify(reconciler, times(1)).tryReconcilePartition(PARTITION, 1);
     }
 
     @Test
@@ -194,14 +251,20 @@ class ProjectionWorkerTest {
         ProjectionReconciler reconciler = mock(ProjectionReconciler.class);
         List<UUID> ids = List.of(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6));
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(ids);
-        when(reconciler.tryReconcilePartition(uuid(6))).thenReturn(true);
+        for (UUID id : ids) {
+            when(reconciler.partition(id))
+                    .thenReturn(
+                            new ProjectionReconciler.PartitionRow(
+                                    id, 1L, 0L, AuthorizationPartition.State.PENDING));
+        }
+        when(reconciler.tryReconcilePartition(eq(uuid(6)), anyInt())).thenReturn(true);
         var worker =
                 new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
         worker.reconcileOrphanedPartitions();
         worker.reconcileOrphanedPartitions();
-        verify(reconciler).tryReconcilePartition(uuid(6));
+        verify(reconciler).tryReconcilePartition(eq(uuid(6)), anyInt());
         for (UUID id : ids.subList(0, 5)) {
-            verify(reconciler, times(1)).tryReconcilePartition(id);
+            verify(reconciler, times(1)).tryReconcilePartition(eq(id), anyInt());
         }
     }
 
@@ -265,6 +328,10 @@ class ProjectionWorkerTest {
         when(jdbc.queryForList(anyString(), eq(UUID.class), anyInt())).thenReturn(List.of());
         // Tập claimable khóa FOR UPDATE SKIP LOCKED chứa operation đang xếp hàng.
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of(OPERATION));
+        // Các test operation không dựng partition mồ côi nào: lượt quét orphan trả tập rỗng.
+        // Stub cụ thể này phải đứng sau stub tổng quát ở trên để thắng khi khớp cả hai.
+        when(jdbc.queryForList(contains("FROM authz_partition p"), eq(UUID.class)))
+                .thenReturn(List.of());
     }
 
     private static List<Object> flattened(Invocation invocation) {

@@ -530,11 +530,41 @@ public class ProjectionReconciler {
      * đóng cho chu kỳ sau.
      */
     public boolean tryReconcilePartition(UUID partitionId) {
+        return tryReconcilePartition(partitionId, 1);
+    }
+
+    /**
+     * Như {@link #tryReconcilePartition(UUID)} nhưng biết số lần thất bại liên tiếp của caller để
+     * chống lặp log: một lỗi đã phân loại chỉ được ghi ở lần thất bại đầu tiên và các mốc lũy thừa
+     * hai. Lỗi đã phân loại (mã lỗi bền vững, điều kiện được dự kiến trong thiết kế fail-closed)
+     * ghi kèm mã và thông điệp, không kèm stack trace — theo quy tắc SLF4J, stack trace chỉ in khi
+     * Throwable được truyền làm đối số cuối; riêng {@link #ERROR_NO_RECORDED_PROJECTION} ghi ở mức
+     * DEBUG. Lỗi hạ tầng chưa phân loại giữ WARN kèm stack trace như đường operation.
+     */
+    public boolean tryReconcilePartition(UUID partitionId, int consecutiveFailures) {
         try {
             reconcilePartition(partitionId);
             return true;
-        } catch (ReconciliationException
-                | RestClientException
+        } catch (ReconciliationException ex) {
+            if (isLogMilestone(consecutiveFailures)) {
+                if (ERROR_NO_RECORDED_PROJECTION.equals(ex.errorCode())) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug(
+                                "Partition {} did not reconcile with code {}: {}",
+                                partitionId,
+                                ex.errorCode(),
+                                ex.getMessage());
+                    }
+                } else if (LOG.isWarnEnabled()) {
+                    LOG.warn(
+                            "Partition {} did not reconcile with code {}: {}",
+                            partitionId,
+                            ex.errorCode(),
+                            ex.getMessage());
+                }
+            }
+            return false;
+        } catch (RestClientException
                 | DataAccessException
                 | IllegalStateException
                 | OAuth2AuthorizationException ex) {
@@ -543,6 +573,11 @@ public class ProjectionReconciler {
             }
             return false;
         }
+    }
+
+    /** Các mốc ghi log chống lặp cho cùng một partition và mã lỗi: 1, 2, 4, 8, ... */
+    private static boolean isLogMilestone(int consecutiveFailures) {
+        return consecutiveFailures > 0 && (consecutiveFailures & (consecutiveFailures - 1)) == 0;
     }
 
     private void publish(PartitionRow snapshot, List<Outcome> outcomes) {

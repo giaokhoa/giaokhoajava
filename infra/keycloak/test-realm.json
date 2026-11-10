@@ -7,6 +7,11 @@
   "verifyEmail": true,
   "registrationAllowed": false,
   "loginWithEmailAllowed": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
   "smtpServer": {
     "host": "test-mailpit",
     "port": "1025",

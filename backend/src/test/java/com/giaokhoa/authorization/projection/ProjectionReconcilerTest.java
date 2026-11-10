@@ -1,17 +1,46 @@
 package com.giaokhoa.authorization.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.authorization.policy.PolicyGraphWriter;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.guardians.GuardianPolicyProjector;
+import com.giaokhoa.resources.ResourcePolicyProjector;
+import com.giaokhoa.resources.SharePolicyProjector;
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.support.RandomIds;
+import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
+import com.giaokhoa.teaching.TeachingPolicyProjector;
+import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.verification.ResultPolicyProjector;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.transaction.PlatformTransactionManager;
 
 class ProjectionReconcilerTest {
     private static final UUID WORKSPACE = RandomIds.randomId();
@@ -138,6 +167,109 @@ class ProjectionReconcilerTest {
         PolicyGraph graph =
                 ProjectionReconciler.graphFor(target, "recovery.request", List.of(descriptor));
         assertEquals(List.of(), graph.commonGates());
+    }
+
+    @Test
+    void noRecordedProjectionLogsDebugWithoutStackTraceAndOnlyAtMilestones() {
+        UUID partitionId = RandomIds.randomId();
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(
+                        anyString(),
+                        ArgumentMatchers.<RowMapper<ProjectionReconciler.PartitionRow>>any(),
+                        any(UUID.class)))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                partitionId, 1L, 0L, AuthorizationPartition.State.PENDING));
+        when(jdbc.query(
+                        anyString(),
+                        ArgumentMatchers.<RowMapper<ProjectionReconciler.ProjectionRow>>any(),
+                        any(UUID.class)))
+                .thenReturn(List.of());
+        ProjectionReconciler reconciler = reconcilerWithInlineLock(jdbc);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ProjectionReconciler.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Level previousLevel = logger.getLevel();
+        logger.setLevel(Level.DEBUG);
+        logger.addAppender(appender);
+        try {
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 1));
+            // Lần thất bại thứ ba không phải mốc lũy thừa hai: không ghi thêm.
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 3));
+            assertEquals(1, appender.list.size());
+            // Mốc lũy thừa tiếp theo (4) ghi lại đúng một dòng.
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 4));
+            assertEquals(2, appender.list.size());
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previousLevel);
+        }
+        for (ILoggingEvent event : appender.list) {
+            assertEquals(Level.DEBUG, event.getLevel());
+            assertTrue(
+                    event.getFormattedMessage()
+                            .contains(ProjectionReconciler.ERROR_NO_RECORDED_PROJECTION));
+            // Lỗi đã phân loại không được kéo theo stack trace.
+            assertNull(event.getThrowableProxy());
+        }
+    }
+
+    @Test
+    void supersededRevisionLogsWarnWithCodeAndNoStackTrace() {
+        UUID partitionId = RandomIds.randomId();
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(
+                        anyString(),
+                        ArgumentMatchers.<RowMapper<ProjectionReconciler.PartitionRow>>any(),
+                        any(UUID.class)))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                partitionId, 1L, 0L, AuthorizationPartition.State.READY));
+        ProjectionReconciler reconciler = reconcilerWithInlineLock(jdbc);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ProjectionReconciler.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 1));
+        } finally {
+            logger.detachAppender(appender);
+        }
+        assertEquals(1, appender.list.size());
+        ILoggingEvent event = appender.list.getFirst();
+        assertEquals(Level.WARN, event.getLevel());
+        assertTrue(
+                event.getFormattedMessage()
+                        .contains(ProjectionReconciler.ERROR_REVISION_SUPERSEDED));
+        assertNull(event.getThrowableProxy());
+    }
+
+    /**
+     * Reconciler với coordinator chạy thẳng action trong luồng gọi, các cộng tác còn lại là mock.
+     */
+    private static ProjectionReconciler reconcilerWithInlineLock(JdbcTemplate jdbc) {
+        ResourceMutationCoordinator coordinator = mock(ResourceMutationCoordinator.class);
+        when(coordinator.withResourceLock(anyString(), any()))
+                .thenAnswer(invocation -> {
+                    Supplier<?> action = invocation.getArgument(1);
+                    return action.get();
+                });
+        return new ProjectionReconciler(
+                jdbc,
+                mock(PolicyGraphWriter.class),
+                mock(AuthorizationProvisioningClient.class),
+                mock(CenterPolicyProjector.class),
+                mock(TeachingPolicyProjector.class),
+                mock(GuardianPolicyProjector.class),
+                mock(ResultPolicyProjector.class),
+                mock(ResourcePolicyProjector.class),
+                mock(SharePolicyProjector.class),
+                mock(PersonalEntitlementProjector.class),
+                mock(PersonalTeachingPolicyProjector.class),
+                mock(PlatformTransactionManager.class),
+                coordinator);
     }
 
     private static String sha256(String value) throws Exception {
