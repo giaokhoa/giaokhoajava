@@ -1164,7 +1164,7 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
         return userIds;
     }
 
-    private static String nextCursorOf(JsonNode body) {
+    private static @Nullable String nextCursorOf(JsonNode body) {
         return body.hasNonNull("nextCursor") ? body.get("nextCursor").stringValue() : null;
     }
 
