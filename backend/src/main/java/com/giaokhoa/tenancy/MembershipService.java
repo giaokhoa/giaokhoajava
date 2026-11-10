@@ -3,7 +3,6 @@ package com.giaokhoa.tenancy;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.identity.InitialCredentialHandoff;
 import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.identity.repository.UserAccountRepository;

@@ -16,7 +16,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
-import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.ResourceCopies;
 import com.giaokhoa.resources.repository.ResourceScopePreconditions;
@@ -509,7 +509,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             runtime.workspaces,
                             new SubscriptionPolicy(runtime.periods),
                             runtimeIdempotency,
-                            mock(InitialCredentialHandoff.class),
+                            mock(InitialCredentialService.class),
                             mock(MembershipPolicyProjector.class),
                             runtimeCoordinator,
                             new AuditRecorder(runtimeJdbc));

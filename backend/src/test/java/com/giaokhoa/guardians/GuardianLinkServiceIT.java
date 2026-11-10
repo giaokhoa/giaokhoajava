@@ -21,7 +21,7 @@ import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.guardians.service.GuardianLinkService;
 import com.giaokhoa.guardians.service.GuardianLinkService.GuardianLinkView;
-import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
@@ -572,7 +572,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                         runtimeRepositories.getRepository(
                                                 SubscriptionPeriodRepository.class)),
                                 runtimeIdempotency,
-                                mock(InitialCredentialHandoff.class),
+                                mock(InitialCredentialService.class),
                                 mock(MembershipPolicyProjector.class),
                                 runtimeCoordinator,
                                 runtimeAudit);

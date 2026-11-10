@@ -94,10 +94,6 @@ public class ResourcePolicyProjector {
     /** Đoạn phân cách target trong canonical descriptor. */
     private static final String TARGET_MARKER = "|target=";
 
-    /** Tên cột subject Keycloak trong dòng account/assignment đọc từ cơ sở dữ liệu. */
-
-    /** Tên cột id người dùng trong dòng assignment đọc từ cơ sở dữ liệu. */
-
     /** Giá trị cột workspace.kind cho không gian cá nhân. */
     private static final String PERSONAL_KIND = "PERSONAL";
 
