@@ -8,19 +8,19 @@ import org.springframework.stereotype.Service;
 
 /**
  * Thông báo đính chính của US7 (FR-034): khi nguồn phát hành một {@code correction_notice}, mỗi
- * workspace từng nhận version bị lỗi nhận đúng một {@code notification_receipt} — receipt chỉ là
- * dữ kiện thông báo gồm định danh notice và nơi nhận, không mang nội dung, không tham chiếu nguồn
+ * workspace từng nhận version bị lỗi nhận đúng một {@code notification_receipt} — receipt chỉ là dữ
+ * kiện thông báo gồm định danh notice và nơi nhận, không mang nội dung, không tham chiếu nguồn
  * quyền nào và không tự cấp quyền xem version thay thế (data-model của correction). Tập nơi nhận
  * chốt tại thời điểm phát hành từ bốn bề mặt đã nhận version đó: mục thư viện đã lưu đúng version,
  * lượt cấp share của đúng version còn {@code OFFERED} hoặc đã {@code ACCEPTED}, phân công tài
  * nguyên {@code ACTIVE} khớp resource hoặc môn của resource, và hoạt động đã giao trên đúng
- * version; workspace sở hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính
- * tập nơi nhận đọc xuyên workspace theo đúng tiền lệ {@code
+ * version; workspace sở hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính tập
+ * nơi nhận đọc xuyên workspace theo đúng tiền lệ {@code
  * ResourceRevocationContributor.affectedWorkspaces}.
  *
  * <p>Xác nhận đã biết đính chính không có action riêng trong danh mục: mốc {@code acknowledged_at}
- * được ghi khi nơi nhận chủ động nhận version thay thế của notice qua {@code RECEIVE_UPDATE} —
- * đúng khoảnh khắc bên nhận hành động trên thông báo — và chỉ ghi một lần theo guard của V025.
+ * được ghi khi nơi nhận chủ động nhận version thay thế của notice qua {@code RECEIVE_UPDATE} — đúng
+ * khoảnh khắc bên nhận hành động trên thông báo — và chỉ ghi một lần theo guard của V025.
  */
 @Service
 public class CorrectionNotificationService {
@@ -51,8 +51,10 @@ public class CorrectionNotificationService {
                                 + " AND state IN ('OFFERED', 'ACCEPTED')"
                                 + " UNION SELECT workspace_id FROM resource_assignment"
                                 + " WHERE state = 'ACTIVE'"
-                                + " AND ((resource_id = ? AND (subject_id IS NULL"
-                                + " OR subject_id = ?))"
+                                // Nhánh trực tiếp khớp theo resource bất kể subject, nhánh theo môn
+                                // chỉ khi resource_id IS NULL — cùng quy tắc liệt kê target của
+                                // ResourcePolicyProjector.allBundleTargetKeys.
+                                + " AND (resource_id = ?"
                                 + " OR (resource_id IS NULL AND subject_id = ?))"
                                 + " UNION SELECT workspace_id FROM sample_activity"
                                 + " WHERE resource_id = ? AND version_id = ?)"
@@ -63,7 +65,6 @@ public class CorrectionNotificationService {
                         resourceId,
                         affectedVersionId,
                         resourceId,
-                        subjectId,
                         subjectId,
                         resourceId,
                         affectedVersionId,

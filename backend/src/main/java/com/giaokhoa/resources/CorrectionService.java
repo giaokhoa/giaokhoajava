@@ -39,13 +39,13 @@ import tools.jackson.databind.json.JsonMapper;
  * resource (workspace khác thì 403), và quyết định PDP {@code review} trên target của version bị
  * ảnh hưởng tại workspace đó phải cho phép — {@code review} là scope phát hành/duyệt version mà
  * nhánh chủ sở hữu và tác giả của {@link ResourcePolicyProjector} cấp tại workspace nguồn, còn
- * target {@code resource:{id}} với scope {@code version.create} của hợp đồng chưa có projector
- * (đã ghi ở Sổ B84(iii), thuộc luồng soạn thật). Trước khi hỏi PDP, service ghi lại bundle hiện
- * hành của target qua projector bằng operation dùng chung và chờ chiếu xong — chờ không xong thì
+ * target {@code resource:{id}} với scope {@code version.create} của hợp đồng chưa có projector (đã
+ * ghi ở Sổ B84(iii), thuộc luồng soạn thật). Trước khi hỏi PDP, service ghi lại bundle hiện hành
+ * của target qua projector bằng operation dùng chung và chờ chiếu xong — chờ không xong thì
  * fail-closed 503. Notice và toàn bộ receipt ghi trong cùng transaction với biên nhận idempotency
- * của action (bảng {@code sample_action_mutation}, đích {@code CORRECTION_NOTICE}): replay cùng
- * key và cùng payload trả lại đúng notice đầu tiên, khác payload trả 409. Đính chính không đổi dữ
- * kiện nguồn nào của graph nên không cần ghi lại bundle sau mutation.
+ * của action (bảng {@code sample_action_mutation}, đích {@code CORRECTION_NOTICE}): replay cùng key
+ * và cùng payload trả lại đúng notice đầu tiên, khác payload trả 409. Đính chính không đổi dữ kiện
+ * nguồn nào của graph nên không cần ghi lại bundle sau mutation.
  */
 @Service
 public class CorrectionService {
@@ -184,7 +184,9 @@ public class CorrectionService {
         return noticeView(noticeId);
     }
 
-    /** Đọc lại notice đã ghi để trả metadata đúng như đã lưu, dùng chung cho đường mới và replay. */
+    /**
+     * Đọc lại notice đã ghi để trả metadata đúng như đã lưu, dùng chung cho đường mới và replay.
+     */
     private CorrectionNoticeView noticeView(UUID noticeId) {
         Map<String, Object> row =
                 jdbc.queryForMap(
@@ -199,8 +201,7 @@ public class CorrectionService {
                 Objects.requireNonNull(
                         (UUID) row.get("replacement_version_id"), "replacement_version_id"),
                 Objects.requireNonNull((String) row.get("reason"), "reason"),
-                Objects.requireNonNull(
-                        (OffsetDateTime) row.get("created_at"), "created_at"));
+                Objects.requireNonNull((OffsetDateTime) row.get("created_at"), "created_at"));
     }
 
     // ---------- Biên nhận idempotency của chính action ----------
@@ -244,8 +245,7 @@ public class CorrectionService {
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
         return Optional.of(
-                noticeView(
-                        Objects.requireNonNull((UUID) previous.get("target_id"), "target_id")));
+                noticeView(Objects.requireNonNull((UUID) previous.get("target_id"), "target_id")));
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------

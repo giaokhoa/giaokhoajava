@@ -49,10 +49,10 @@ import tools.jackson.databind.json.JsonMapper;
  * SHARE_VERSION, ACCEPT_SHARE, REVOKE_SHARE uỷ cho {@link ResourceShareService} theo cùng mẫu;
  * action phát hành đính chính CORRECT_SOURCE uỷ cho {@link CorrectionService} và mang metadata của
  * notice trong kết quả để phía gọi hiển thị đúng thông báo vừa phát hành. Action lạ bị từ chối,
- * không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận
- * idempotency của chính mình trong cùng transaction với mutation (bảng sample_action_mutation, theo
- * tiền lệ recovery_mutation): retry cùng key và cùng payload trả lại kết quả đầu tiên thay vì ghi
- * thêm, cùng key khác payload trả 409 như quy tắc mutation chung của hợp đồng HTTP.
+ * không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính mình trong
+ * cùng transaction với mutation (bảng sample_action_mutation, theo tiền lệ recovery_mutation):
+ * retry cùng key và cùng payload trả lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload
+ * trả 409 như quy tắc mutation chung của hợp đồng HTTP.
  */
 @RestController
 public class SampleActionController {
@@ -751,8 +751,7 @@ public class SampleActionController {
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
         }
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId(),
-                null);
+                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId(), null);
     }
 
     private SampleActionResult applyPublish(UUID workspaceId, SampleActionRequest request) {
@@ -773,8 +772,7 @@ public class SampleActionController {
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
         }
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId(),
-                null);
+                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId(), null);
     }
 
     private Map<String, Object> resultRow(UUID workspaceId, UUID resultId) {
@@ -1061,8 +1059,7 @@ public class SampleActionController {
                 Objects.requireNonNull((String) previous.get("target_type"), "target_type");
         return Optional.of(
                 new SampleActionResult(
-                        previousId, OPERATION_SUCCEEDED, true, previousType, previousId,
-                        null));
+                        previousId, OPERATION_SUCCEEDED, true, previousType, previousId, null));
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------

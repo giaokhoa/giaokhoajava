@@ -447,19 +447,20 @@ public class ResourceLibraryService {
                                                                                                 workspaceId,
                                                                                                 item
                                                                                                         .resourceId(),
-                                                                                                        replacementVersionId)
-                                                                                        .orElseGet(() ->
-                                                                                                repository
-                                                                                                        .insertLibraryItem(
-                                                                                                                targetItemId,
-                                                                                                                workspaceId,
-                                                                                                                item
-                                                                                                                        .resourceId(),
+                                                                                                replacementVersionId)
+                                                                                        .orElseGet(
+                                                                                                () ->
+                                                                                                        repository
+                                                                                                                .insertLibraryItem(
+                                                                                                                        targetItemId,
+                                                                                                                        workspaceId,
+                                                                                                                        item
+                                                                                                                                .resourceId(),
                                                                                                                         replacementVersionId,
                                                                                                                         item
-                                                                                                                        .shareGrantId(),
+                                                                                                                                .shareGrantId(),
                                                                                                                         item
-                                                                                                                        .custody()));
+                                                                                                                                .custody()));
                                                                         reconcileReceiptTarget(
                                                                                 actorUserId,
                                                                                 idempotencyKey,
