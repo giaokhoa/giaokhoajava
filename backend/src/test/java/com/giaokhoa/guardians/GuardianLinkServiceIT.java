@@ -63,7 +63,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
 
-    @DisplayName("Vòng đời liên kết đồng bộ tư cách thành viên guardian group thông qua các operation")
+    @DisplayName(
+            "Vòng đời liên kết đồng bộ tư cách thành viên guardian group thông qua các operation")
     @Test
     void lifecycleSyncsGroupMembership() {
         GuardianCenter center = seedGuardianCenter();
@@ -384,7 +385,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 "Guardian group rời parent ngay khi operation gỡ role SUCCEEDED");
     }
 
-    @DisplayName("Revoke membership của học sinh đóng liên kết đã APPROVED trong cùng một operation")
+    @DisplayName(
+            "Revoke membership của học sinh đóng liên kết đã APPROVED trong cùng một operation")
     @Test
     void revokingMembershipClosesLink() {
         GuardianCenter center = seedGuardianCenter();

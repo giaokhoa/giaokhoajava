@@ -475,7 +475,8 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
 
     // ---------- US5.6: 202 và fail-closed trước khi hoàn tất ----------
 
-    @DisplayName("Revoke trả 202 và request tiếp theo không bao giờ thành công trước khi việc thu hồi hoàn tất")
+    @DisplayName(
+            "Revoke trả 202 và request tiếp theo không bao giờ thành công trước khi việc thu hồi hoàn tất")
     @Test
     void revokeReturns202UntilCompletion() throws Exception {
         CenterSetup center = seedCenter(true);

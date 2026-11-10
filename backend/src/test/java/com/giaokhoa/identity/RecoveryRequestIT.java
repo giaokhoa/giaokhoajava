@@ -191,7 +191,8 @@ class RecoveryRequestIT extends IntegrationEnvironment {
                                 null));
     }
 
-    @DisplayName("Lịch sử không thể bị xóa hay re-identify, nhưng các chuyển trạng thái vẫn hoạt động")
+    @DisplayName(
+            "Lịch sử không thể bị xóa hay re-identify, nhưng các chuyển trạng thái vẫn hoạt động")
     @Test
     void historyImmutableTransitionsWork() {
         UUID requester = seedAccount();

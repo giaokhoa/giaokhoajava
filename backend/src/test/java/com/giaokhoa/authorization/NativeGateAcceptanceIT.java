@@ -458,7 +458,8 @@ class NativeGateAcceptanceIT {
      * homeroom giao bài và track mọi môn của lớp, phụ huynh chỉ đọc bản published của đúng con
      * mình.
      */
-    @DisplayName("Ngữ nghĩa roster của lớp nhất quán giữa các môn học, giáo viên chủ nhiệm và phụ huynh")
+    @DisplayName(
+            "Ngữ nghĩa roster của lớp nhất quán giữa các môn học, giáo viên chủ nhiệm và phụ huynh")
     @Test
     void rosterSemanticsAcrossRoles() {
         UUID workspace = UUID.randomUUID();
@@ -666,7 +667,8 @@ class NativeGateAcceptanceIT {
      * Grant dài hạn còn sống sau khi grantor rời workspace; thu hồi grant có thể thu hồi thì chặn
      * cả bản nhận lẫn bản chỉnh sửa trên fork, trong khi nguồn độc lập dài hạn vẫn còn nguyên.
      */
-    @DisplayName("Grant LONG_TERM sống sót khi grantor rời khỏi, và việc revoke grant REVOCABLE chặn fork")
+    @DisplayName(
+            "Grant LONG_TERM sống sót khi grantor rời khỏi, và việc revoke grant REVOCABLE chặn fork")
     @Test
     void longTermGrantSurvivesGrantorExit() {
         UUID workspace = UUID.randomUUID();
@@ -745,7 +747,8 @@ class NativeGateAcceptanceIT {
     /**
      * Cùng access token: gỡ membership thì lần gọi ngay sau bị từ chối, actor còn lại không đổi.
      */
-    @DisplayName("Cùng một token bị từ chối sau khi membership bị gỡ, trong khi peer không bị ảnh hưởng")
+    @DisplayName(
+            "Cùng một token bị từ chối sau khi membership bị gỡ, trong khi peer không bị ảnh hưởng")
     @Test
     void tokenDeniedAfterMembershipRemoval() {
         UUID workspace = UUID.randomUUID();
@@ -776,7 +779,8 @@ class NativeGateAcceptanceIT {
      * được nhưng quyết định vẫn bị từ chối cho tới khi eligibility được chiếu; cùng token sau khi
      * chiếu thì được phép.
      */
-    @DisplayName("Người dùng chưa xác minh và không có eligibility thì không có quyền truy cập nghiệp vụ")
+    @DisplayName(
+            "Người dùng chưa xác minh và không có eligibility thì không có quyền truy cập nghiệp vụ")
     @Test
     void unverifiedUserHasNoBusinessAccess() {
         UUID workspace = UUID.randomUUID();

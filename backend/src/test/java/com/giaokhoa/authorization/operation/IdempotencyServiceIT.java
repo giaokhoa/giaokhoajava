@@ -42,7 +42,8 @@ class IdempotencyServiceIT extends IntegrationEnvironment {
     @Autowired EntityManager entities;
     @Autowired PlatformTransactionManager transactions;
 
-    @DisplayName("Cùng actor và cùng key tái sử dụng operation PENDING mà không nhân đôi mục trong hàng đợi")
+    @DisplayName(
+            "Cùng actor và cùng key tái sử dụng operation PENDING mà không nhân đôi mục trong hàng đợi")
     @Test
     void sameKeyReusesPendingOperation() {
         UUID actor = user();

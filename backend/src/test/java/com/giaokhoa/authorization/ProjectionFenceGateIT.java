@@ -47,7 +47,8 @@ class ProjectionFenceGateIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired IdempotencyService idempotency;
 
-    @DisplayName("Dependency còn PENDING chặn operation hoàn tất ngay cả khi các scope khác đã READY")
+    @DisplayName(
+            "Dependency còn PENDING chặn operation hoàn tất ngay cả khi các scope khác đã READY")
     @ParameterizedTest
     @EnumSource(Scope.class)
     void pendingDependencyBlocksCompletion(Scope pending) {
@@ -156,7 +157,8 @@ class ProjectionFenceGateIT extends IntegrationEnvironment {
                         a.account()));
     }
 
-    @DisplayName("Cùng một access token thấy hiệu lực native revoke mà không mất grant độc lập khác")
+    @DisplayName(
+            "Cùng một access token thấy hiệu lực native revoke mà không mất grant độc lập khác")
     @Test
     void tokenSeesRevokeKeepsOtherGrant() {
         try (var nativeGate = new NativeRevocationFixture()) {

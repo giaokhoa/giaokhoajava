@@ -18,7 +18,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 // Chỉ kiểm chứng migration Flyway bằng JDBC thuần trên schema riêng tự tạo/dọn trong thân test;
 // không dùng bean Spring nào nên không dựng ApplicationContext.
 class ProjectionReadyMigrationIT extends IntegrationEnvironment {
-    @DisplayName("Nâng cấp fence các hash NULL legacy cùng các dependent của chúng mà không mở các dòng chưa được xác minh")
+    @DisplayName(
+            "Nâng cấp fence các hash NULL legacy cùng các dependent của chúng mà không mở các dòng chưa được xác minh")
     @Test
     void upgradeFencesLegacyNullHashes() {
         String schema = "ready_hash_upgrade_" + UUID.randomUUID().toString().replace("-", "");

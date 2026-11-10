@@ -85,7 +85,8 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
     @Autowired PlatformProjectionSeeder platformSeeder;
     @Autowired ProjectionReconciler projectionReconciler;
 
-    @DisplayName("Credential của operator reset mật khẩu của user đã được cấp phát mà không đổi identity")
+    @DisplayName(
+            "Credential của operator reset mật khẩu của user đã được cấp phát mà không đổi identity")
     @Test
     void operatorResetKeepsIdentity() {
         String subject =

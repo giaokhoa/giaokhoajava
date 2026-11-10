@@ -127,7 +127,8 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
         }
     }
 
-    @DisplayName("Logout theo subject vô hiệu mọi session khớp của subject đó nhưng không đụng subject khác")
+    @DisplayName(
+            "Logout theo subject vô hiệu mọi session khớp của subject đó nhưng không đụng subject khác")
     @Test
     void subjectLogoutKillsOwnSessionsOnly() {
         var a = persistedSession(sessions);

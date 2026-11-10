@@ -475,7 +475,8 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
-    @DisplayName("Học sinh và giáo viên bộ môn đọc được, còn manager và giáo viên chủ nhiệm thì không")
+    @DisplayName(
+            "Học sinh và giáo viên bộ môn đọc được, còn manager và giáo viên chủ nhiệm thì không")
     @Test
     void onlyStudentAndSubjectTeacherRead() throws Exception {
         GuardianCenter center = seedGuardianCenter();
@@ -583,7 +584,8 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
-    @DisplayName("Khi chưa có gì được publish: phụ huynh và giáo viên đã duyệt nhận 403, học sinh nhận danh sách rỗng")
+    @DisplayName(
+            "Khi chưa có gì được publish: phụ huynh và giáo viên đã duyệt nhận 403, học sinh nhận danh sách rỗng")
     @Test
     void nothingPublishedGives403OrEmpty() throws Exception {
         GuardianCenter center = seedGuardianCenter();
@@ -800,7 +802,8 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
-    @DisplayName("Đọc kết quả của chính mình dù rỗng vẫn đòi hỏi partition account và workspace đã READY")
+    @DisplayName(
+            "Đọc kết quả của chính mình dù rỗng vẫn đòi hỏi partition account và workspace đã READY")
     @Test
     void emptySelfReadRequiresReadyPartitions() throws Exception {
         GuardianCenter center = seedGuardianCenter();

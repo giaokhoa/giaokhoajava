@@ -407,7 +407,8 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertTrue(accounts.isEmpty());
     }
 
-    @DisplayName("Cấp phát với username trong app DB đã bị chiếm thì bồi hoàn (compensate) user vừa tạo")
+    @DisplayName(
+            "Cấp phát với username trong app DB đã bị chiếm thì bồi hoàn (compensate) user vừa tạo")
     @Test
     void issueWithSquattedNameCompensates() {
         UUID owner = seedAccount("SELF_REGISTERED");

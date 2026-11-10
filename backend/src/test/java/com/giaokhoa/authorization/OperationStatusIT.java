@@ -98,8 +98,7 @@ class OperationStatusIT extends IntegrationEnvironment {
 
     @DisplayName("Operation SUCCEEDED báo COMPLETED, còn failure có thể retry chỉ lộ mã lỗi")
     @Test
-    void statusReportsCompletedAndErrorCode()
-            throws Exception {
+    void statusReportsCompletedAndErrorCode() throws Exception {
         try (var nativeGate = new NativeRevocationFixture();
                 var session = nativeSession(nativeGate)) {
             var gate = new NativeGateFixture(jdbc);

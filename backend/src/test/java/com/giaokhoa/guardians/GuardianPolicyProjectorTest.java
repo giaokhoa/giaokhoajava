@@ -33,7 +33,8 @@ class GuardianPolicyProjectorTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final KeycloakProvisioningClient directory = mock(KeycloakProvisioningClient.class);
 
-    @DisplayName("Liên kết lịch sử đọc một live snapshot cho mỗi phụ huynh thay vì cho từng cặp phụ huynh–học sinh")
+    @DisplayName(
+            "Liên kết lịch sử đọc một live snapshot cho mỗi phụ huynh thay vì cho từng cặp phụ huynh–học sinh")
     @Test
     void historyReadsOneSnapshotPerParent() {
         List<UUID> students = IntStream.range(0, 100).mapToObj(_ -> UUID.randomUUID()).toList();
@@ -62,7 +63,8 @@ class GuardianPolicyProjectorTest {
         verify(directory, never()).setRealmGroupMembership(anyString(), anyString(), anyBoolean());
     }
 
-    @DisplayName("Sync chỉ cập nhật các khác biệt theo workspace và đọc membership mới ở lần sync tiếp theo")
+    @DisplayName(
+            "Sync chỉ cập nhật các khác biệt theo workspace và đọc membership mới ở lần sync tiếp theo")
     @Test
     void syncUpdatesOnlyWorkspaceDiffs() {
         UUID parent = UUID.randomUUID();

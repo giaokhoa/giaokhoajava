@@ -30,7 +30,8 @@ class NativeTimePolicyIT {
     private final NativeGateClient gate = new NativeGateClient();
     private final RestClient http = RestClient.create();
 
-    @DisplayName("Native time policy bao gồm thời điểm bắt đầu (inclusive) và loại trừ đúng thời điểm kết thúc (exclusive)")
+    @DisplayName(
+            "Native time policy bao gồm thời điểm bắt đầu (inclusive) và loại trừ đúng thời điểm kết thúc (exclusive)")
     @Test
     void timePolicyStartInclusiveEndExclusive() {
         String actor = gate.token("native-gate-assigned");

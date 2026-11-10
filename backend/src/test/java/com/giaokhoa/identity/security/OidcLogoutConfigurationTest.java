@@ -20,7 +20,8 @@ import org.springframework.session.web.http.CookieSerializer;
 
 class OidcLogoutConfigurationTest {
 
-    @DisplayName("Session cookie cho HTTPS là host-only, HttpOnly, Secure, SameSite=Lax và dùng raw session id")
+    @DisplayName(
+            "Session cookie cho HTTPS là host-only, HttpOnly, Secure, SameSite=Lax và dùng raw session id")
     @Test
     void sessionCookieSecurityAttributes() {
         CookieSerializer serializer =

@@ -19,7 +19,8 @@ class IdempotencyServiceTest {
             new IdempotencyService(mock(JdbcTemplate.class), mock(EntityManager.class));
     private final JsonMapper json = new JsonMapper();
 
-    @DisplayName("Hash là canonical theo thứ tự field của object nhưng bị scope theo method và target")
+    @DisplayName(
+            "Hash là canonical theo thứ tự field của object nhưng bị scope theo method và target")
     @Test
     void hashIsCanonicalAndScoped() {
         var first = json.readTree("{\"roles\":[\"TEACHER\"],\"nested\":{\"b\":2,\"a\":1}}");

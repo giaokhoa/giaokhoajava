@@ -67,7 +67,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
     @Autowired ClientRegistrationRepository clientRegistrations;
     @Autowired SessionRepository<?> sessions;
 
-    @DisplayName("Ghi đang bay (in-flight) hoàn tất trước khi revocation chiếm được exclusive fence")
+    @DisplayName(
+            "Ghi đang bay (in-flight) hoàn tất trước khi revocation chiếm được exclusive fence")
     @Test
     void inFlightWriteFinishesBeforeFence() throws Exception {
         UUID partition = partition();
@@ -156,7 +157,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
-    @DisplayName("Token của actor qua luồng code PKCE thật vẫn sống qua JDBC session xuyên suốt native revocation")
+    @DisplayName(
+            "Token của actor qua luồng code PKCE thật vẫn sống qua JDBC session xuyên suốt native revocation")
     @Test
     void pkceTokenSurvivesNativeRevocation() throws Exception {
         try (var nativeGate = new NativeRevocationFixture();
@@ -219,11 +221,11 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         GRANT_FAILED
     }
 
-    @DisplayName("Các capability được bảo vệ phải từ chối khi dependency đã commit nhưng còn PENDING")
+    @DisplayName(
+            "Các capability được bảo vệ phải từ chối khi dependency đã commit nhưng còn PENDING")
     @ParameterizedTest
     @EnumSource(PendingScope.class)
-    void capabilitiesRejectPendingDependency(PendingScope pending)
-            throws Exception {
+    void capabilitiesRejectPendingDependency(PendingScope pending) throws Exception {
         // Hợp đồng request-fence đòi hỏi cùng một HTTP request đã xác thực
         // trước và sau một fence đã commit.
         try (var nativeGate = new NativeRevocationFixture();
@@ -691,7 +693,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
-    @DisplayName("Worker bản production phải reconcile app graph mới provision một phần sau lần retry")
+    @DisplayName(
+            "Worker bản production phải reconcile app graph mới provision một phần sau lần retry")
     @Test
     void workerReconcilesPartialGraph() throws Exception {
         // Reconciliation worker production phải tiếp tục operation này; nguồn là một
@@ -879,10 +882,10 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         return java.util.Arrays.asList(java.util.Objects.requireNonNull(names));
     }
 
-    @DisplayName("Crash sau native revoke nhưng trước database ack có thể replay mà không nhân đôi graph")
+    @DisplayName(
+            "Crash sau native revoke nhưng trước database ack có thể replay mà không nhân đôi graph")
     @Test
-    void crashBeforeAckReplaysCleanly()
-            throws Exception {
+    void crashBeforeAckReplaysCleanly() throws Exception {
         // Partition này không ghi projection nào, nên worker không thể xác minh hay publish nó;
         // test điều khiển cửa sổ crash mạng/commit bằng tay,
         // với Keycloak native, các revision PostgreSQL đã commit và một lần revoke thứ hai giống
@@ -1012,7 +1015,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                         partition));
     }
 
-    @DisplayName("Operation bị bỏ dở ở trạng thái APPLYING vẫn bị fence cho tới khi recovery publish revision")
+    @DisplayName(
+            "Operation bị bỏ dở ở trạng thái APPLYING vẫn bị fence cho tới khi recovery publish revision")
     @Test
     void abandonedOperationStaysFenced() {
         Recovery created =
@@ -1206,7 +1210,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         assertEquals(0, operationAttempts(younger));
     }
 
-    @DisplayName("Operation bị revision mới hơn vượt qua kết thúc ở trạng thái SUPERSEDED mà không bị fence")
+    @DisplayName(
+            "Operation bị revision mới hơn vượt qua kết thúc ở trạng thái SUPERSEDED mà không bị fence")
     @Test
     void overtakenOperationEndsSuperseded() throws Exception {
         UUID partition = partition();

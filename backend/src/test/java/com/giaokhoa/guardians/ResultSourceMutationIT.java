@@ -46,11 +46,11 @@ class ResultSourceMutationIT extends GuardianFixture {
     @Autowired private ResultPolicyProjector resultProjector;
     @Autowired private IdempotencyService idempotency;
 
-    @DisplayName("Mutation ở nguồn reconcile các kết quả đã publish và giữ nguyên quyền đọc độc lập")
+    @DisplayName(
+            "Mutation ở nguồn reconcile các kết quả đã publish và giữ nguyên quyền đọc độc lập")
     @ParameterizedTest
     @EnumSource(SourceMutation.class)
-    void sourceMutationReconcilesResults(
-            SourceMutation mutation) throws Exception {
+    void sourceMutationReconcilesResults(SourceMutation mutation) throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (RealSession owner = openSession(center.owner());
                 RealSession parent = openSession(center.parent())) {

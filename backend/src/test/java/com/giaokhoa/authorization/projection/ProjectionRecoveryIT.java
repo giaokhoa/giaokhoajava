@@ -294,8 +294,7 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
 
     @DisplayName("Crash sau khi graph đã áp dụng thì retry đúng graph đó thay vì nhân đôi grant")
     @Test
-    void crashAfterApplyRetriesSameGraph()
-            throws Exception {
+    void crashAfterApplyRetriesSameGraph() throws Exception {
         Actor actor = actor();
         seedWorkspace(actor, List.of());
         reconciler.reconcilePartition(actor.workspacePartition());
@@ -344,7 +343,8 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         assertEquals(applies.subList(0, 2), applies.subList(2, 4));
     }
 
-    @DisplayName("Failure ở trạng thái terminal giữ fence đóng cho tới khi một reconcile tường minh mở lại")
+    @DisplayName(
+            "Failure ở trạng thái terminal giữ fence đóng cho tới khi một reconcile tường minh mở lại")
     @Test
     void terminalFailureKeepsFenceClosed() throws Exception {
         Actor actor = actor();
@@ -412,7 +412,8 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         fence.acquire(resolver.resolve(actor.user(), actor.workspace(), List.of(actor.target())));
     }
 
-    @DisplayName("Retry bị crash không bao giờ áp dụng revision cũ sau khi revision mới hơn đã land")
+    @DisplayName(
+            "Retry bị crash không bao giờ áp dụng revision cũ sau khi revision mới hơn đã land")
     @Test
     void crashedRetrySkipsOldRevision() {
         Actor actor = actor();

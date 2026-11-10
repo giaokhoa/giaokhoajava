@@ -54,7 +54,8 @@ class GuardianAccessIT extends GuardianFixture {
     @Autowired private CenterService centers;
     @MockitoSpyBean private GuardianLinkService guardedLinks;
 
-    @DisplayName("Phụ huynh gửi yêu cầu liên kết và thấy yêu cầu ở trạng thái PENDING trong danh sách của mình")
+    @DisplayName(
+            "Phụ huynh gửi yêu cầu liên kết và thấy yêu cầu ở trạng thái PENDING trong danh sách của mình")
     @Test
     void parentRequestsLinkSeesPending() throws Exception {
         GuardianCenter center = seedGuardianCenter();
