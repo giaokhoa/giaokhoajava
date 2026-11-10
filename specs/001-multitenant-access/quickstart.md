@@ -1,6 +1,6 @@
 # Hướng dẫn chạy và nghiệm thu bộ khung
 
-**Trạng thái hiện tại**: Đây là hướng dẫn đích sau implementation. Repository hiện chưa có backend/frontend, wrapper, cấu hình infra bổ sung hoặc test suite; không thể coi các lệnh dưới đây là đã chạy hoặc các tiêu chí là đã đạt. Mục đích là thống nhất cách chứng minh [spec.md](spec.md) khi triển khai.
+**Trạng thái hiện tại**: Backend, frontend, wrapper, cấu hình infra và test suite đã có trong repository; cách bắt đầu và các lệnh kiểm chứng tổng quát nằm ở [README.md](../../README.md). Tài liệu này mô tả cách chạy và nghiệm thu bộ khung theo [spec.md](spec.md).
 
 ## 1. Điều kiện
 
