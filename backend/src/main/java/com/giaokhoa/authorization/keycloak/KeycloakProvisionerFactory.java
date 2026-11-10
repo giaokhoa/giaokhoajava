@@ -2,6 +2,7 @@ package com.giaokhoa.authorization.keycloak;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -44,7 +45,8 @@ public final class KeycloakProvisionerFactory {
             OAuth2AuthorizedClientManager manager) {
         var interceptor = new OAuth2ClientHttpRequestInterceptor(manager);
         interceptor.setClientRegistrationIdResolver(request -> "giaokhoa-provisioner");
-        interceptor.setPrincipalResolver(request -> () -> "giaokhoa-provisioner");
+        interceptor.setPrincipalResolver(
+                request -> new UsernamePasswordAuthenticationToken("giaokhoa-provisioner", null));
         return interceptor;
     }
 
