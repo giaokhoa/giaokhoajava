@@ -1,11 +1,11 @@
 package com.giaokhoa.verification.repository;
 
-import com.giaokhoa.verification.model.TeachingAssignment;
+import com.giaokhoa.teaching.model.TeachingAssignment;
 import java.util.Collection;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/** Điểm đọc phân công giảng dạy qua entity chuyển tiếp; repository đầy đủ thuộc teaching. */
+/** Điểm đọc phân công giảng dạy trên entity của module teaching. */
 public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssignment, UUID> {
 
     boolean existsByWorkspaceIdAndCourseSubjectIdAndStateIn(

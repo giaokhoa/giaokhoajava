@@ -1,6 +1,6 @@
 package com.giaokhoa.verification.repository;
 
-import com.giaokhoa.verification.model.Course;
+import com.giaokhoa.teaching.model.Course;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
