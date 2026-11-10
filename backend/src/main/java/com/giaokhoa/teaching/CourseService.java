@@ -88,7 +88,7 @@ public class CourseService {
                     "CLASS_NOT_ACTIVE",
                     "Lớp đã bị thu hồi, không tạo khóa được nữa.");
         }
-        requireSubscriptionCurrent(workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
         List<SubjectRow> catalog = subjects.stream().map(this::requireCatalogSubject).toList();
         UUID courseId = UUID.randomUUID();
         repository.insertCourse(courseId, workspaceId, classId, trimmed);
@@ -228,7 +228,7 @@ public class CourseService {
                     "Khóa đã bị thu hồi, không gắn thêm môn được nữa.");
         }
         requireClassActive(workspaceId, row.classId());
-        requireSubscriptionCurrent(workspaceId);
+        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
         List<SubjectRow> catalog = subjects.stream().map(this::requireCatalogSubject).toList();
         for (SubjectRow subject : catalog) {
             if (repository
@@ -314,15 +314,6 @@ public class CourseService {
             throw subjectNotFound();
         }
         return subject;
-    }
-
-    private void requireSubscriptionCurrent(UUID workspaceId) {
-        if (!repository.subscriptionCurrent(workspaceId)) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
-                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
-        }
     }
 
     private static String normalizeName(String name) {

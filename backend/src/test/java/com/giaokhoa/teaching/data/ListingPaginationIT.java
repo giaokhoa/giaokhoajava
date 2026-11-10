@@ -2,12 +2,14 @@ package com.giaokhoa.teaching.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.data.TeachingRepository.Page;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
@@ -18,10 +20,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
@@ -126,12 +130,9 @@ class ListingPaginationIT extends IntegrationEnvironment {
                 List.of(second),
                 next.items().stream().map(TeachingRepository.ClassRow::id).toList());
         assertNull(next.nextCursor());
-        assertTrue(
-                repository
-                        .pageClasses(workspace, foreign.toString(), 1, teacher)
-                        .items()
-                        .isEmpty());
-        assertTrue(repository.pageClasses(workspace, "bad", 1, teacher).items().isEmpty());
+        assertInvalidCursor(
+                () -> repository.pageClasses(workspace, foreign.toString(), 1, teacher));
+        assertInvalidCursor(() -> repository.pageClasses(workspace, "bad", 1, teacher));
     }
 
     @Test
@@ -230,16 +231,20 @@ class ListingPaginationIT extends IntegrationEnvironment {
                 cursor -> repository.pageHomeroomAssignments(workspace, classId, cursor, 1),
                 TeachingRepository.HomeroomAssignmentRow::id,
                 homerooms);
-        assertTrue(
-                repository
-                        .pageCourses(workspace, otherClass, courses.getFirst().toString(), 1)
-                        .items()
-                        .isEmpty());
-        assertTrue(
-                repository
-                        .pageRoster(workspace, otherClass, roster.getFirst().toString(), 1)
-                        .items()
-                        .isEmpty());
+        assertInvalidCursor(
+                () ->
+                        repository.pageCourses(
+                                workspace, otherClass, courses.getFirst().toString(), 1));
+        assertInvalidCursor(
+                () ->
+                        repository.pageRoster(
+                                workspace, otherClass, roster.getFirst().toString(), 1));
+    }
+
+    private static void assertInvalidCursor(Supplier<?> read) {
+        HttpProblemException problem = assertThrows(HttpProblemException.class, read::get);
+        assertEquals(HttpStatus.BAD_REQUEST, problem.getStatus());
+        assertEquals("INVALID_CURSOR", problem.getCode());
     }
 
     private static <T> void assertPages(

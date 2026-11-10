@@ -199,17 +199,6 @@ public class TeachingRepository {
         return count != null && count > 0;
     }
 
-    public boolean hasActiveCenterMembership(UUID workspaceId, UUID userId) {
-        Integer count =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM center_membership"
-                                + " WHERE workspace_id = ? AND user_id = ? AND state = 'ACTIVE'",
-                        Integer.class,
-                        workspaceId,
-                        userId);
-        return count != null && count > 0;
-    }
-
     /** Membership ACTIVE của center kèm đúng một role tiền đề — tiền đề của nguồn phân công. */
     public boolean hasActiveCenterMembershipWithRole(UUID workspaceId, UUID userId, String role) {
         Integer count =
