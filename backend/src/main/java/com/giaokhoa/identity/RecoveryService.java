@@ -1,21 +1,27 @@
 package com.giaokhoa.identity;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.identity.model.RecoveryMutation;
 import com.giaokhoa.identity.model.RecoveryRequest;
+import com.giaokhoa.identity.repository.RecoveryMutationRepository;
+import com.giaokhoa.identity.repository.RecoveryRequestRepository;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.tenancy.model.CenterMembership;
+import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,11 +32,12 @@ import org.springframework.transaction.annotation.Transactional;
  * tồn tại của tài khoản. Chỉ platform operator được xác minh và xử lý, với quyết định PDP tại
  * endpoint.
  *
- * <p>Service ép thứ tự REQUESTED → VERIFIED → RESOLVED/REJECTED bằng UPDATE có điều kiện trạng
- * thái; DB giữ tính nhất quán của verified_by/resolved_at. APPROVE chỉ ghi VERIFIED và giữ yêu cầu
- * PENDING. Operator khôi phục trực tiếp trên Keycloak và bàn giao credential qua kênh riêng cho
- * đúng người dùng trước khi xác nhận COMPLETE để ghi RESOLVED. COMPLETE ghi nhận xác nhận của
- * operator, không tự kiểm chứng thao tác credential trên Keycloak.
+ * <p>Service ép thứ tự REQUESTED → VERIFIED → RESOLVED/REJECTED bằng chuyển trạng thái trên entity
+ * đã nạp kèm kiểm tra lạc quan {@code @Version}; DB giữ tính nhất quán của verified_by/resolved_at.
+ * APPROVE chỉ ghi VERIFIED và giữ yêu cầu PENDING. Operator khôi phục trực tiếp trên Keycloak và
+ * bàn giao credential qua kênh riêng cho đúng người dùng trước khi xác nhận COMPLETE để ghi
+ * RESOLVED. COMPLETE ghi nhận xác nhận của operator, không tự kiểm chứng thao tác credential trên
+ * Keycloak.
  *
  * <p>Service không đặt lại credential hay đổi origin của danh tính dùng chung; credential không đi
  * qua response/list/poll của workflow và không trả cho center đã gửi yêu cầu. Các mutation HTTP
@@ -45,14 +52,29 @@ public class RecoveryService {
      */
     private static final int MAX_NOTE_LENGTH = 1000;
 
-    private final JdbcTemplate jdbc;
+    private final RecoveryRequestRepository requests;
+    private final RecoveryMutationRepository mutations;
+    private final UserAccountRepository accounts;
+    private final WorkspaceRepository workspaces;
+    private final CenterMembershipRepository memberships;
 
     private final IdempotencyService idempotency;
 
     private final AuditRecorder audit;
 
-    public RecoveryService(JdbcTemplate jdbc, IdempotencyService idempotency, AuditRecorder audit) {
-        this.jdbc = jdbc;
+    public RecoveryService(
+            RecoveryRequestRepository requests,
+            RecoveryMutationRepository mutations,
+            UserAccountRepository accounts,
+            WorkspaceRepository workspaces,
+            CenterMembershipRepository memberships,
+            IdempotencyService idempotency,
+            AuditRecorder audit) {
+        this.requests = requests;
+        this.mutations = mutations;
+        this.accounts = accounts;
+        this.workspaces = workspaces;
+        this.memberships = memberships;
         this.idempotency = idempotency;
         this.audit = audit;
     }
@@ -123,10 +145,7 @@ public class RecoveryService {
         requireAccount(requesterUserId);
 
         boolean self = requesterUserId.equals(targetUserId);
-        List<UUID> targets =
-                jdbc.queryForList(
-                        "SELECT id FROM user_account WHERE id = ?", UUID.class, targetUserId);
-        if (targets.isEmpty()) {
+        if (!accounts.existsById(targetUserId)) {
             throw targetNotFound();
         }
         if (workspaceId == null) {
@@ -134,62 +153,50 @@ public class RecoveryService {
                 throw targetNotFound();
             }
         } else {
-            List<Map<String, Object>> workspaces =
-                    jdbc.queryForList(
-                            "SELECT kind, state FROM workspace WHERE id = ?", workspaceId);
             boolean centerActive =
-                    !workspaces.isEmpty()
-                            && "CENTER".equals(workspaces.getFirst().get("kind"))
-                            && "ACTIVE".equals(workspaces.getFirst().get("state"));
-            List<UUID> targetMemberships =
+                    workspaces
+                            .findById(workspaceId)
+                            .filter(workspace ->
+                                    workspace.getKind() == Workspace.Kind.CENTER
+                                            && "ACTIVE".equals(workspace.getState()))
+                            .isPresent();
+            boolean targetIsMember =
                     centerActive
-                            ? jdbc.queryForList(
-                                    "SELECT id FROM center_membership WHERE workspace_id = ?"
-                                            + " AND user_id = ? AND state IN ('PENDING', 'ACTIVE')",
-                                    UUID.class,
+                            && memberships.existsByWorkspaceIdAndUserIdAndStateIn(
                                     workspaceId,
-                                    targetUserId)
-                            : List.of();
-            if (targetMemberships.isEmpty()) {
+                                    targetUserId,
+                                    List.of(
+                                            CenterMembership.State.PENDING,
+                                            CenterMembership.State.ACTIVE));
+            if (!targetIsMember) {
                 throw targetNotFound();
             }
             if (!self) {
-                List<String> managerRoles =
-                        jdbc.queryForList(
-                                "SELECT r.role FROM center_membership m"
-                                        + " JOIN membership_role r ON r.membership_id = m.id"
-                                        + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                        + " AND m.state = 'ACTIVE'"
-                                        + " AND r.role IN ('OWNER', 'MANAGER')",
-                                String.class,
-                                workspaceId,
-                                requesterUserId);
-                if (managerRoles.isEmpty()) {
+                Set<MembershipRole.Role> requesterRoles =
+                        memberships
+                                .findByWorkspaceIdAndUserIdAndState(
+                                        workspaceId, requesterUserId, CenterMembership.State.ACTIVE)
+                                .map(CenterMembership::getRoles)
+                                .orElse(Set.of());
+                if (!requesterRoles.contains(MembershipRole.Role.OWNER)
+                        && !requesterRoles.contains(MembershipRole.Role.MANAGER)) {
                     throw targetNotFound();
                 }
             }
         }
 
-        jdbc.update(
-                "INSERT INTO recovery_request"
-                        + " (id, requester_user_id, workspace_id, target_user_id, state, reason)"
-                        + " VALUES (?, ?, ?, ?, 'REQUESTED', ?)",
-                id,
-                requesterUserId,
-                workspaceId,
-                targetUserId,
-                normalizeReason(reason));
+        requests.saveAndFlush(
+                new RecoveryRequest(
+                        id, requesterUserId, workspaceId, targetUserId, normalizeReason(reason)));
         return loadView(id);
     }
 
     /** Hàng đợi yêu cầu hỗ trợ cho platform operator, cũ nhất trước. */
     @Transactional(readOnly = true)
     public List<RequestView> listRequests() {
-        return jdbc.query(
-                "SELECT id, requester_user_id, workspace_id, target_user_id, reason, state,"
-                        + " verified_by, resolved_at, verification_note, created_at, version"
-                        + " FROM recovery_request ORDER BY created_at ASC, id ASC",
-                REQUEST_MAPPER);
+        return requests.findAllByOrderByCreatedAtAscIdAsc().stream()
+                .map(RecoveryService::view)
+                .toList();
     }
 
     /**
@@ -203,17 +210,13 @@ public class RecoveryService {
         Objects.requireNonNull(requestId, "requestId");
         requireAccount(operatorUserId);
         String note = normalizeNote(verificationNote);
-        int updated =
-                jdbc.update(
-                        "UPDATE recovery_request SET state = 'VERIFIED', verified_by = ?,"
-                                + " verification_note = ?, version = version + 1"
-                                + " WHERE id = ? AND state = 'REQUESTED'",
-                        operatorUserId,
-                        note,
-                        requestId);
-        if (updated == 0) {
+        RecoveryRequest request =
+                requests.findById(requestId).orElseThrow(() -> stateConflict(requestId));
+        if (request.getState() != RecoveryRequest.State.REQUESTED) {
             throw stateConflict(requestId);
         }
+        request.verify(operatorUserId, note);
+        requests.flush();
         return loadView(requestId);
     }
 
@@ -231,15 +234,9 @@ public class RecoveryService {
         if (existing.isPresent()) {
             return loadView(existing.get());
         }
-        List<Long> versions =
-                jdbc.queryForList(
-                        "SELECT version FROM recovery_request WHERE id = ? FOR UPDATE",
-                        Long.class,
-                        requestId);
-        if (versions.isEmpty()) {
-            throw requestNotFound();
-        }
-        IdempotencyService.requireIfMatch(ifMatch, versions.getFirst());
+        RecoveryRequest request =
+                requests.findForUpdateById(requestId).orElseThrow(RecoveryService::requestNotFound);
+        IdempotencyService.requireIfMatch(ifMatch, request.getVersion());
         return resolve(operatorUserId, requestId, decision, verificationNote);
     }
 
@@ -276,18 +273,15 @@ public class RecoveryService {
             if (current == RecoveryRequest.State.REQUESTED) {
                 verify(operatorUserId, requestId, note);
             }
-            String state = decision == Decision.COMPLETE ? "RESOLVED" : "REJECTED";
-            int updated =
-                    jdbc.update(
-                            "UPDATE recovery_request SET state = ?, resolved_at = now(),"
-                                    + " verification_note = COALESCE(?, verification_note), version = version + 1"
-                                    + " WHERE id = ? AND state = 'VERIFIED'",
-                            state,
-                            note,
-                            requestId);
-            if (updated == 0) {
-                throw stateConflict(requestId);
-            }
+            RecoveryRequest request =
+                    requests.findById(requestId).orElseThrow(RecoveryService::requestNotFound);
+            request.resolve(
+                    decision == Decision.COMPLETE
+                            ? RecoveryRequest.State.RESOLVED
+                            : RecoveryRequest.State.REJECTED,
+                    Instant.now(),
+                    note);
+            requests.flush();
             result = loadView(requestId);
         }
         // Một dòng audit cho mỗi quyết định resolve thật: APPROVE mới tới VERIFIED nên outcome
@@ -309,36 +303,27 @@ public class RecoveryService {
     private Optional<UUID> replay(
             UUID actor, String key, String hash, UUID requestId, String kind) {
         idempotency.requireKey(key);
-        int inserted =
-                jdbc.update(
-                        "INSERT INTO recovery_mutation(actor_user_id,idempotency_key,payload_hash,request_id,kind)"
-                                + " VALUES (?,?,?,?,?) ON CONFLICT (actor_user_id,idempotency_key) DO NOTHING",
-                        actor,
-                        key,
-                        hash,
-                        requestId,
-                        kind);
-        if (inserted != 0) {
+        Optional<RecoveryMutation> previous =
+                mutations.findByActorUserIdAndIdempotencyKey(actor, key);
+        if (previous.isEmpty()) {
+            // Hàng mutation ghi trước khi request tồn tại; khóa ngoại của request_id là
+            // deferred nên thứ tự ghi này hợp lệ tới cuối transaction.
+            mutations.saveAndFlush(
+                    new RecoveryMutation(
+                            actor, key, hash, requestId, RecoveryMutation.Kind.valueOf(kind)));
             return Optional.empty();
         }
-        Map<String, Object> previous =
-                jdbc.queryForMap(
-                        "SELECT payload_hash, request_id FROM recovery_mutation WHERE actor_user_id = ? AND idempotency_key = ?",
-                        actor,
-                        key);
-        if (!hash.equals(previous.get("payload_hash"))) {
+        if (!hash.equals(previous.get().getPayloadHash())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "IDEMPOTENCY_CONFLICT",
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
-        return Optional.of((UUID) Objects.requireNonNull(previous.get("request_id")));
+        return Optional.of(previous.get().getRequestId());
     }
 
     private void requireAccount(UUID userId) {
-        List<UUID> accounts =
-                jdbc.queryForList("SELECT id FROM user_account WHERE id = ?", UUID.class, userId);
-        if (accounts.isEmpty()) {
+        if (!accounts.existsById(userId)) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     "ACCOUNT_NOT_FOUND",
@@ -347,38 +332,38 @@ public class RecoveryService {
     }
 
     private RecoveryRequest.State currentState(UUID requestId) {
-        List<String> states =
-                jdbc.queryForList(
-                        "SELECT state FROM recovery_request WHERE id = ?", String.class, requestId);
-        if (states.isEmpty()) {
-            throw requestNotFound();
-        }
-        return RecoveryRequest.State.valueOf(states.getFirst());
+        return requests.findById(requestId)
+                .orElseThrow(RecoveryService::requestNotFound)
+                .getState();
     }
 
     private RequestView loadView(UUID requestId) {
-        List<RequestView> rows =
-                jdbc.query(
-                        "SELECT id, requester_user_id, workspace_id, target_user_id, reason, state,"
-                                + " verified_by, resolved_at, verification_note, created_at, version"
-                                + " FROM recovery_request WHERE id = ?",
-                        REQUEST_MAPPER,
-                        requestId);
-        if (rows.isEmpty()) {
-            throw requestNotFound();
-        }
-        return rows.getFirst();
+        return requests.findById(requestId)
+                .map(RecoveryService::view)
+                .orElseThrow(RecoveryService::requestNotFound);
     }
 
     private HttpProblemException stateConflict(UUID requestId) {
         // Phân biệt yêu cầu không tồn tại với yêu cầu đã rời trạng thái cho phép.
-        List<String> states =
-                jdbc.queryForList(
-                        "SELECT state FROM recovery_request WHERE id = ?", String.class, requestId);
-        if (states.isEmpty()) {
+        if (requests.findById(requestId).isEmpty()) {
             return requestNotFound();
         }
         return invalidState(requestId);
+    }
+
+    private static RequestView view(RecoveryRequest request) {
+        return new RequestView(
+                request.getId(),
+                request.getRequesterUserId(),
+                request.getWorkspaceId(),
+                request.getTargetUserId(),
+                request.getReason(),
+                request.getState(),
+                request.getVerifiedBy(),
+                request.getResolvedAt(),
+                request.getVerificationNote(),
+                request.getCreatedAt(),
+                request.getVersion());
     }
 
     private static HttpProblemException targetNotFound() {
@@ -432,24 +417,4 @@ public class RecoveryService {
         }
         return trimmed;
     }
-
-    // Đọc thẳng OffsetDateTime theo kiểu đích: để pgjdbc tự chuyển cột TIMESTAMPTZ thay vì
-    // nhận java.sql.Timestamp qua Map rồi quy đổi thủ công.
-    private static final RowMapper<RequestView> REQUEST_MAPPER =
-            (rs, _) -> {
-                OffsetDateTime resolvedAt = rs.getObject("resolved_at", OffsetDateTime.class);
-                return new RequestView(
-                        rs.getObject("id", UUID.class),
-                        rs.getObject("requester_user_id", UUID.class),
-                        rs.getObject("workspace_id", UUID.class),
-                        rs.getObject("target_user_id", UUID.class),
-                        rs.getString("reason"),
-                        RecoveryRequest.State.valueOf(rs.getString("state")),
-                        rs.getObject("verified_by", UUID.class),
-                        resolvedAt == null ? null : resolvedAt.toInstant(),
-                        rs.getString("verification_note"),
-                        Objects.requireNonNull(rs.getObject("created_at", OffsetDateTime.class))
-                                .toInstant(),
-                        rs.getLong("version"));
-            };
 }

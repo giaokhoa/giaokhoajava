@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.jspecify.annotations.Nullable;
 
 @Entity
 @Table(name = "user_account")
@@ -31,7 +32,7 @@ public class UserAccount {
     private String username;
 
     @Column(name = "email", length = 320)
-    private String email;
+    private @Nullable String email;
 
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified;
@@ -61,7 +62,7 @@ public class UserAccount {
             UUID id,
             String keycloakSub,
             String username,
-            String email,
+            @Nullable String email,
             boolean emailVerified,
             Origin origin,
             String identityState) {
@@ -72,6 +73,15 @@ public class UserAccount {
         this.emailVerified = emailVerified;
         this.origin = origin;
         this.identityState = identityState;
+    }
+
+    /**
+     * Đồng bộ email và trạng thái verified từ profile Keycloak hiện hành. Origin, username và
+     * identity_state không bao giờ bị đồng bộ đổi.
+     */
+    public void syncEmail(@Nullable String email, boolean emailVerified) {
+        this.email = email;
+        this.emailVerified = emailVerified;
     }
 
     public UUID getId() {
@@ -86,7 +96,7 @@ public class UserAccount {
         return username;
     }
 
-    public String getEmail() {
+    public @Nullable String getEmail() {
         return email;
     }
 

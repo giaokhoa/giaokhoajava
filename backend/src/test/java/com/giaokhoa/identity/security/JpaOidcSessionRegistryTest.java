@@ -1,24 +1,25 @@
 package com.giaokhoa.identity.security;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
 
+import com.giaokhoa.identity.repository.OidcSessionCorrelationRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.client.oidc.session.OidcSessionInformation;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
+import org.springframework.session.Session;
+import org.springframework.session.SessionRepository;
 
-class JdbcOidcSessionRegistryTest {
+class JpaOidcSessionRegistryTest {
     @DisplayName("Thiếu issuer bị từ chối trước khi ghi correlation")
     @Test
     void missingIssuerRejectedEarly() {
-        var jdbc = unwritableJdbc();
-        var registry = new JdbcOidcSessionRegistry(jdbc, "client");
+        var registry = new JpaOidcSessionRegistry(unwritableCorrelations(), sessions(), "client");
         var token =
                 new OidcIdToken(
                         "id-token",
@@ -35,8 +36,7 @@ class JdbcOidcSessionRegistryTest {
     @DisplayName("Thiếu audience bị từ chối trước khi ghi correlation")
     @Test
     void missingAudienceRejectedEarly() {
-        var jdbc = unwritableJdbc();
-        var registry = new JdbcOidcSessionRegistry(jdbc, "client");
+        var registry = new JpaOidcSessionRegistry(unwritableCorrelations(), sessions(), "client");
         var token =
                 new OidcIdToken(
                         "id-token",
@@ -50,12 +50,16 @@ class JdbcOidcSessionRegistryTest {
                 IllegalArgumentException.class, () -> registry.saveSessionInformation(information));
     }
 
-    private static JdbcTemplate unwritableJdbc() {
-        return new JdbcTemplate() {
-            @Override
-            public int update(String sql, @Nullable Object @Nullable ... args) {
-                throw new AssertionError("Invalid OIDC input must not reach the database");
-            }
-        };
+    private static OidcSessionCorrelationRepository unwritableCorrelations() {
+        return mock(
+                OidcSessionCorrelationRepository.class,
+                invocation -> {
+                    throw new AssertionError("Invalid OIDC input must not reach the database");
+                });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static SessionRepository<? extends Session> sessions() {
+        return mock(SessionRepository.class);
     }
 }

@@ -8,8 +8,12 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +38,10 @@ import org.springframework.web.client.RestClientException;
  * của group eligibility cùng mọi graph phụ thuộc sau fence; operation còn pending thì account vẫn
  * bị fence và không quyết định bảo vệ nào được dùng trạng thái cũ. Profile không đọc được, hoặc
  * subject không khớp account, đều fail-closed 503 và không ghi gì.
+ *
+ * <p>Dữ kiện directory (account, workspace) đọc qua repository của module identity/tenancy; dữ kiện
+ * của mặt phẳng authorization (projection, partition) vẫn đọc tại đây cho tới khi repository của
+ * mặt phẳng đó land cùng đợt chuyển đổi của module authorization.
  */
 @Service
 public class IdentityEligibilitySynchronizer {
@@ -47,16 +55,22 @@ public class IdentityEligibilitySynchronizer {
             PermissionCatalog.ProfileScope.WORKSPACE_LIST.scopeName();
 
     private final JdbcTemplate jdbc;
+    private final UserAccountRepository accounts;
+    private final WorkspaceRepository workspaces;
     private final CurrentIdentityClient identities;
     private final AuthorizationOperationService operations;
     private final PersonalEntitlementProjector entitlementProjector;
 
     public IdentityEligibilitySynchronizer(
             JdbcTemplate jdbc,
+            UserAccountRepository accounts,
+            WorkspaceRepository workspaces,
             CurrentIdentityClient identities,
             AuthorizationOperationService operations,
             PersonalEntitlementProjector entitlementProjector) {
         this.jdbc = jdbc;
+        this.accounts = accounts;
+        this.workspaces = workspaces;
         this.identities = identities;
         this.operations = operations;
         this.entitlementProjector = entitlementProjector;
@@ -69,23 +83,18 @@ public class IdentityEligibilitySynchronizer {
     @Transactional
     public Optional<AuthorizationOperation> synchronizeEligibility(UUID actorUserId) {
         Objects.requireNonNull(actorUserId, "actorUserId");
-        List<Map<String, Object>> accounts =
-                jdbc.queryForList(
-                        "SELECT keycloak_sub, email, email_verified, origin FROM user_account"
-                                + " WHERE id = ?",
-                        actorUserId);
-        if (accounts.isEmpty()) {
+        Optional<UserAccount> found = accounts.findById(actorUserId);
+        if (found.isEmpty()) {
             // Không có directory account thì không có ACCOUNT partition để đồng bộ qua.
             throw AuthorizationFence.notReady();
         }
-        Map<String, Object> account = accounts.getFirst();
-        String keycloakSub =
-                Objects.requireNonNull((String) account.get("keycloak_sub"), "keycloak_sub");
-        String recordedEmail = (String) account.get("email");
-        boolean recordedVerified = Boolean.TRUE.equals(account.get("email_verified"));
+        UserAccount account = found.get();
+        String keycloakSub = account.getKeycloakSub();
+        String recordedEmail = account.getEmail();
+        boolean recordedVerified = account.isEmailVerified();
         // Chỉ chính record do backend tạo mới chứng minh CENTER_ISSUED; giá trị lưu khác đều là
         // origin unknown và được xử lý như SELF_REGISTERED.
-        boolean backendIssued = "CENTER_ISSUED".equals(account.get("origin"));
+        boolean backendIssued = account.getOrigin() == UserAccount.Origin.CENTER_ISSUED;
 
         CurrentIdentity current = readCurrent(keycloakSub);
 
@@ -118,16 +127,36 @@ public class IdentityEligibilitySynchronizer {
                                         && retractionWasApplied(actorUserId)));
         List<AuthorizationOperationService.PartitionChange> changes = new ArrayList<>();
         UUID accountPartition = accountPartition(actorUserId);
-        List<Map<String, Object>> personal =
-                jdbc.queryForList(
-                        "SELECT w.id, p.id AS partition_id, p.desired_revision FROM workspace w"
-                                + " JOIN authz_partition p ON p.owner_key = 'workspace:' || w.id"
-                                + " AND p.kind = 'WORKSPACE' WHERE w.kind = 'PERSONAL' AND w.owner_user_id = ?",
-                        actorUserId);
-        if (!personal.isEmpty()) {
-            Map<String, Object> workspace = personal.getFirst();
-            UUID workspaceId = (UUID) Objects.requireNonNull(workspace.get("id"));
-            String workspaceTarget = NativePolicyTemplates.workspaceKey(workspaceId);
+        // Workspace cá nhân tra qua repository directory; partition của nó thuộc mặt phẳng
+        // authorization nên vẫn tra tại đây theo owner_key suy từ chính workspace đó.
+        @Nullable UUID personalWorkspaceId = null;
+        @Nullable UUID personalPartitionId = null;
+        long personalDesiredRevision = 0;
+        List<Workspace> personalWorkspaces =
+                workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, actorUserId);
+        if (!personalWorkspaces.isEmpty()) {
+            UUID workspaceId = personalWorkspaces.getFirst().getId();
+            List<Map<String, Object>> partitions =
+                    jdbc.queryForList(
+                            "SELECT id AS partition_id, desired_revision FROM authz_partition"
+                                    + " WHERE owner_key = ? AND kind = 'WORKSPACE'",
+                            "workspace:" + workspaceId);
+            if (!partitions.isEmpty()) {
+                personalWorkspaceId = workspaceId;
+                personalPartitionId =
+                        (UUID)
+                                Objects.requireNonNull(
+                                        partitions.getFirst().get("partition_id"), "partition_id");
+                personalDesiredRevision =
+                        ((Number)
+                                        Objects.requireNonNull(
+                                                partitions.getFirst().get("desired_revision"),
+                                                "desired_revision"))
+                                .longValue();
+            }
+        }
+        if (personalWorkspaceId != null) {
+            String workspaceTarget = NativePolicyTemplates.workspaceKey(personalWorkspaceId);
             if (jdbc.queryForList(
                             "SELECT id FROM authz_projection WHERE target_key = ?",
                             UUID.class,
@@ -136,12 +165,13 @@ public class IdentityEligibilitySynchronizer {
                 String scope = PermissionCatalog.WorkspaceScope.ENTER.scopeName();
                 changes.add(
                         new AuthorizationOperationService.PartitionChange(
-                                (UUID) Objects.requireNonNull(workspace.get("partition_id")),
+                                personalPartitionId,
                                 List.of(
                                         new AuthorizationOperationService.DesiredProjection(
                                                 workspaceTarget,
                                                 scope,
-                                                entitlementProjector.bundleDescriptors(workspaceId),
+                                                entitlementProjector.bundleDescriptors(
+                                                        personalWorkspaceId),
                                                 List.of(accountPartition)))));
             }
         }
@@ -150,11 +180,7 @@ public class IdentityEligibilitySynchronizer {
         }
 
         if (profileChanged) {
-            jdbc.update(
-                    "UPDATE user_account SET email = ?, email_verified = ? WHERE id = ?",
-                    current.email(),
-                    current.emailVerified(),
-                    actorUserId);
+            account.syncEmail(current.email(), current.emailVerified());
         }
         Long recordedRevision =
                 jdbc.queryForObject(
@@ -177,10 +203,8 @@ public class IdentityEligibilitySynchronizer {
                     new AuthorizationOperationService.PartitionChange(
                             accountPartition, projections));
         } else {
-            long workspaceRevision =
-                    ((Number) Objects.requireNonNull(personal.getFirst().get("desired_revision")))
-                            .longValue();
-            idempotencyKey = "identity-personal:" + actorUserId + ":" + (workspaceRevision + 1);
+            idempotencyKey =
+                    "identity-personal:" + actorUserId + ":" + (personalDesiredRevision + 1);
         }
         AuthorizationOperation operation =
                 operations.applyDesiredState(

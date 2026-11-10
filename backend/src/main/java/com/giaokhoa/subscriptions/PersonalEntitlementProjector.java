@@ -4,15 +4,16 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
+import com.giaokhoa.identity.repository.UserAccountRepository;
+import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,6 +32,9 @@ import org.springframework.stereotype.Component;
  * {@link com.giaokhoa.tenancy.CenterPolicyProjector}: projector này vừa tính tập descriptor khi ghi
  * (bootstrap eligibility và xác nhận gói), vừa dựng lại đúng tập đó khi {@code
  * ProjectionReconciler} đối chiếu desired hash.
+ *
+ * <p>Dữ kiện nguồn đọc hai bước theo ID qua repository (workspace rồi account chủ sở hữu; kỳ gói
+ * qua repository dùng chung), không join xuyên mặt phẳng hệ thống/tenant.
  */
 @Component
 public class PersonalEntitlementProjector {
@@ -46,10 +50,17 @@ public class PersonalEntitlementProjector {
                     PermissionCatalog.WorkspaceScope.CLASS_LIST.scopeName(),
                     PermissionCatalog.WorkspaceScope.CLASS_CREATE.scopeName());
 
-    private final JdbcTemplate jdbc;
+    private final WorkspaceRepository workspaces;
+    private final UserAccountRepository accounts;
+    private final SubscriptionPeriodRepository periods;
 
-    public PersonalEntitlementProjector(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public PersonalEntitlementProjector(
+            WorkspaceRepository workspaces,
+            UserAccountRepository accounts,
+            SubscriptionPeriodRepository periods) {
+        this.workspaces = workspaces;
+        this.accounts = accounts;
+        this.periods = periods;
     }
 
     /** Scope danh nghĩa ghi trên projection row của bundle entitlement cá nhân. */
@@ -137,35 +148,20 @@ public class PersonalEntitlementProjector {
     private record OwnerRow(UUID userId, String keycloakSub) {}
 
     private @Nullable OwnerRow ownerOf(UUID workspaceId) {
-        List<OwnerRow> rows =
-                jdbc.query(
-                        "SELECT u.id, u.keycloak_sub FROM workspace w"
-                                + " JOIN user_account u ON u.id = w.owner_user_id"
-                                + " WHERE w.id = ? AND w.kind = 'PERSONAL'",
-                        (rs, _) ->
-                                new OwnerRow(
-                                        rs.getObject("id", UUID.class),
-                                        rs.getString("keycloak_sub")),
-                        workspaceId);
-        return rows.isEmpty() ? null : rows.getFirst();
+        Workspace workspace = workspaces.findById(workspaceId).orElse(null);
+        if (workspace == null
+                || workspace.getKind() != Workspace.Kind.PERSONAL
+                || workspace.getOwnerUserId() == null) {
+            return null;
+        }
+        UserAccount owner = accounts.findById(workspace.getOwnerUserId()).orElse(null);
+        return owner == null ? null : new OwnerRow(owner.getId(), owner.getKeycloakSub());
     }
 
-    private record SubscriptionPeriodRow(UUID id, Instant validFrom, Instant expiresAt) {}
-
     private List<SubscriptionPeriodRow> subscriptionPeriods(UUID workspaceId) {
-        return jdbc.query(
-                "SELECT id, valid_from, expires_at FROM subscription_period"
-                        + " WHERE workspace_id = ? ORDER BY valid_from, id",
-                (rs, _) ->
-                        new SubscriptionPeriodRow(
-                                rs.getObject("id", UUID.class),
-                                Objects.requireNonNull(
-                                                rs.getObject("valid_from", OffsetDateTime.class))
-                                        .toInstant(),
-                                Objects.requireNonNull(
-                                                rs.getObject("expires_at", OffsetDateTime.class))
-                                        .toInstant()),
-                workspaceId);
+        return periods.findByWorkspaceIdOrderByValidFromAscIdAsc(workspaceId).stream()
+                .map(SubscriptionPeriodRow::from)
+                .toList();
     }
 
     /** Canonical descriptor của nguồn chủ sở hữu bị gate bởi một kỳ gói cụ thể. */

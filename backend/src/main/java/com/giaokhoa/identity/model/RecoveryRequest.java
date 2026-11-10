@@ -80,6 +80,25 @@ public class RecoveryRequest {
         this.state = State.REQUESTED;
     }
 
+    /** Ghi nhận xác minh của operator: chỉ hợp lệ từ REQUESTED, điều kiện do tầng service ép. */
+    public void verify(UUID verifiedBy, @Nullable String verificationNote) {
+        this.state = State.VERIFIED;
+        this.verifiedBy = verifiedBy;
+        this.verificationNote = verificationNote;
+    }
+
+    /**
+     * Kết thúc vòng đời yêu cầu ở RESOLVED hoặc REJECTED. Ghi chú truyền vào null thì giữ ghi chú
+     * xác minh đã ghi, đúng ngữ nghĩa COALESCE của đường ghi trước đây.
+     */
+    public void resolve(State outcome, Instant resolvedAt, @Nullable String verificationNote) {
+        this.state = outcome;
+        this.resolvedAt = resolvedAt;
+        if (verificationNote != null) {
+            this.verificationNote = verificationNote;
+        }
+    }
+
     public UUID getId() {
         return id;
     }

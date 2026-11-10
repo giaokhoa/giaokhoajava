@@ -6,14 +6,21 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.guardians.GuardianRevocationContributor;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.infrastructure.tenancy.TenantSchemaProvisioner;
 import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingRevocationContributor;
+import com.giaokhoa.tenancy.model.Center;
+import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
-import java.time.OffsetDateTime;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
+import com.giaokhoa.tenancy.repository.CenterRepository;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
@@ -21,8 +28,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,24 +51,38 @@ import org.springframework.transaction.annotation.Transactional;
  * mới kiểm tra replay: hai lời gọi đồng thời cùng key không thể cùng đi qua điểm kiểm tra. OWNER
  * chỉ đến từ lúc tạo center; đường đổi role không cấp mới OWNER và không gỡ OWNER khỏi membership
  * của chủ sở hữu, vì center phải luôn có đúng một owner.
+ *
+ * <p>Dữ kiện directory đọc/ghi qua repository JPA; {@link JdbcOperations} chỉ còn phục vụ advisory
+ * lock trong transaction (hạ tầng khóa của PostgreSQL, không phải đường truy cập dữ kiện). Trước
+ * khi gọi các cộng tác viên của module khác đọc dữ kiện nguồn bằng đường riêng của chúng, service
+ * flush tường minh để thay đổi JPA đã ghi luôn nhìn thấy được trong cùng transaction.
  */
 @Service
 public class CenterService {
     private static final int CURSOR_PART_COUNT = 3;
-    private final JdbcTemplate jdbc;
+    private final JdbcOperations locks;
+    private final UserAccountRepository accounts;
+    private final WorkspaceRepository workspaces;
+    private final CenterRepository centers;
+    private final CenterMembershipRepository memberships;
+    private final MembershipIndexSynchronizer membershipIndex;
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator revocations;
     private final KeycloakProvisioningClient directory;
     private final TeachingRevocationContributor teachingRevocations;
     private final GuardianRevocationContributor guardianRevocations;
     private final AuditRecorder audit;
-
     private final TenantSchemaProvisioner tenantProvisioner;
 
     private final ResourceMutationCoordinator coordinator;
 
     public CenterService(
-            JdbcTemplate jdbc,
+            JdbcOperations locks,
+            UserAccountRepository accounts,
+            WorkspaceRepository workspaces,
+            CenterRepository centers,
+            CenterMembershipRepository memberships,
+            MembershipIndexSynchronizer membershipIndex,
             IdempotencyService idempotency,
             SourceRevocationCoordinator revocations,
             KeycloakProvisioningClient directory,
@@ -69,7 +91,12 @@ public class CenterService {
             GuardianRevocationContributor guardianRevocations,
             AuditRecorder audit,
             TenantSchemaProvisioner tenantProvisioner) {
-        this.jdbc = jdbc;
+        this.locks = locks;
+        this.accounts = accounts;
+        this.workspaces = workspaces;
+        this.centers = centers;
+        this.memberships = memberships;
+        this.membershipIndex = membershipIndex;
         this.idempotency = idempotency;
         this.revocations = revocations;
         this.directory = directory;
@@ -113,30 +140,23 @@ public class CenterService {
         UUID centerId = UUID.randomUUID();
         coordinator.lockWorkspace(workspaceId);
         String organizationId = directory.ensureOrganization(workspaceId, trimmed);
-        jdbc.update(
-                "INSERT INTO workspace (id, kind, owner_user_id, center_id, state)"
-                        + " VALUES (?, 'CENTER', NULL, ?, 'ACTIVE')",
-                workspaceId,
-                centerId);
+        workspaces.save(
+                new Workspace(workspaceId, Workspace.Kind.CENTER, null, centerId, "ACTIVE"));
         tenantProvisioner.provisionAfterCommit(workspaceId);
-        jdbc.update(
-                "INSERT INTO center (id, workspace_id, keycloak_organization_id, name,"
-                        + " owner_user_id, state) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
-                centerId,
-                workspaceId,
-                organizationId,
-                trimmed,
-                ownerUserId);
+        centers.save(
+                new Center(centerId, workspaceId, organizationId, trimmed, ownerUserId, "ACTIVE"));
         UUID membershipId = UUID.randomUUID();
-        jdbc.update(
-                "INSERT INTO center_membership (id, workspace_id, user_id, state, joined_at)"
-                        + " VALUES (?, ?, ?, 'ACTIVE', now())",
-                membershipId,
-                workspaceId,
-                ownerUserId);
-        jdbc.update(
-                "INSERT INTO membership_role (membership_id, role) VALUES (?, 'OWNER')",
-                membershipId);
+        CenterMembership membership =
+                new CenterMembership(
+                        membershipId,
+                        workspaceId,
+                        ownerUserId,
+                        CenterMembership.State.ACTIVE,
+                        Instant.now());
+        membership.getRoles().add(MembershipRole.Role.OWNER);
+        memberships.save(membership);
+        membershipIndex.sync(ownerUserId, workspaceId, CenterMembership.State.ACTIVE);
+        memberships.flush();
         AuthorizationOperation operation =
                 recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
         audit.record(
@@ -162,7 +182,7 @@ public class CenterService {
         Objects.requireNonNull(actor, "actor");
         int limit = Math.min(Math.max(requestedLimit, 1), 100);
         UUID anchorId = null;
-        OffsetDateTime createdAt = null;
+        Instant createdAt = null;
         if (cursor != null) {
             String[] parts = cursor.split("\\.", -1);
             if (parts.length != CURSOR_PART_COUNT
@@ -183,38 +203,29 @@ public class CenterService {
                         "Cursor danh sách không hợp lệ.",
                         ex);
             }
-            List<OffsetDateTime> anchors =
-                    jdbc.queryForList(
-                            "SELECT created_at FROM center WHERE id = ?",
-                            OffsetDateTime.class,
-                            anchorId);
-            if (anchors.isEmpty()) {
+            Optional<Center> anchor = centers.findById(anchorId);
+            if (anchor.isEmpty()) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
             }
-            createdAt = anchors.getFirst();
+            createdAt = anchor.get().getCreatedAt();
         }
-        String sql =
-                "SELECT id, workspace_id, name, owner_user_id, state FROM center"
-                        + (anchorId == null ? "" : " WHERE (created_at, id) > (?, ?)")
-                        + " ORDER BY created_at ASC, id ASC LIMIT ?";
-        Object[] params =
+        List<Center> rows =
                 anchorId == null
-                        ? new Object[] {limit + 1}
-                        : new Object[] {createdAt, anchorId, limit + 1};
-        List<CenterView> rows =
-                jdbc.query(
-                        sql,
-                        (rs, _) ->
-                                new CenterView(
-                                        rs.getObject("id", UUID.class),
-                                        rs.getObject("workspace_id", UUID.class),
-                                        rs.getString("name"),
-                                        rs.getObject("owner_user_id", UUID.class),
-                                        rs.getString("state")),
-                        params);
+                        ? centers.findAllByOrderByCreatedAtAscIdAsc(PageRequest.of(0, limit + 1))
+                        : centers.findAfter(createdAt, anchorId, PageRequest.of(0, limit + 1));
         boolean hasMore = rows.size() > limit;
-        List<CenterView> items = List.copyOf(rows.subList(0, Math.min(rows.size(), limit)));
+        List<CenterView> items =
+                rows.stream()
+                        .limit(limit)
+                        .map(center ->
+                                new CenterView(
+                                        center.getId(),
+                                        center.getWorkspaceId(),
+                                        center.getName(),
+                                        center.getOwnerUserId(),
+                                        center.getState()))
+                        .toList();
         return new CenterPage(
                 items,
                 hasMore && !items.isEmpty()
@@ -249,15 +260,16 @@ public class CenterService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        MembershipRow row = loadMembershipForUpdate(membershipId, workspaceId);
-        if (!"ACTIVE".equals(row.state()) && !"PENDING".equals(row.state())) {
+        CenterMembership membership = loadMembershipForUpdate(membershipId, workspaceId);
+        if (membership.getState() != CenterMembership.State.ACTIVE
+                && membership.getState() != CenterMembership.State.PENDING) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "MEMBERSHIP_NOT_ACTIVE",
                     "Membership đã bị thu hồi, không đổi role được nữa.");
         }
-        IdempotencyService.requireIfMatch(ifMatch, row.version());
-        Set<MembershipRole.Role> current = rolesOf(membershipId);
+        IdempotencyService.requireIfMatch(ifMatch, membership.getVersion());
+        Set<MembershipRole.Role> current = Set.copyOf(membership.getRoles());
         boolean hasOwner = current.contains(MembershipRole.Role.OWNER);
         if (desiredRoles.contains(MembershipRole.Role.OWNER) && !hasOwner) {
             throw new HttpProblemException(
@@ -268,36 +280,30 @@ public class CenterService {
         if (hasOwner && !desiredRoles.contains(MembershipRole.Role.OWNER)) {
             throw lastOwner();
         }
-        jdbc.update("DELETE FROM membership_role WHERE membership_id = ?", membershipId);
-        for (MembershipRole.Role role : desiredRoles) {
-            jdbc.update(
-                    "INSERT INTO membership_role (membership_id, role) VALUES (?, ?)",
-                    membershipId,
-                    role.name());
-        }
-        jdbc.update(
-                "UPDATE center_membership SET version = version + 1, updated_at = now()"
-                        + " WHERE id = ?",
-                membershipId);
+        membership.replaceRoles(desiredRoles);
+        // Role nằm ở bảng riêng nên phải chạm row membership thì version mới tăng: tăng tường
+        // minh bằng cập nhật hàng loạt sau khi thay role đã flush.
+        memberships.incrementVersionById(membershipId);
+        memberships.flush();
         // Gỡ role tiền đề thì đóng nguồn giảng dạy phụ thuộc trong cùng transaction/revision:
         // gỡ TEACHER đóng phân công của người đó, gỡ STUDENT đóng ghi danh của người đó. Các
-        // role còn lại của cùng người giữ nguồn độc lập của chúng.
+        // role còn lại của cùng người vẫn giữ nguồn độc lập của chúng.
         Set<MembershipRole.Role> removed = EnumSet.noneOf(MembershipRole.Role.class);
         removed.addAll(current);
         removed.removeAll(desiredRoles);
         if (removed.contains(MembershipRole.Role.TEACHER)) {
-            teachingRevocations.revokeAssignmentsOfTeacher(workspaceId, row.userId());
+            teachingRevocations.revokeAssignmentsOfTeacher(workspaceId, membership.getUserId());
         }
         if (removed.contains(MembershipRole.Role.STUDENT)) {
-            teachingRevocations.revokeEnrollmentsOfStudent(workspaceId, row.userId());
+            teachingRevocations.revokeEnrollmentsOfStudent(workspaceId, membership.getUserId());
         }
         // Cùng bất biến cho liên kết phụ huynh: gỡ PARENT đóng link đã duyệt của parent đó,
         // gỡ STUDENT đóng link đã duyệt của học sinh đó, trong đúng revision này.
         if (removed.contains(MembershipRole.Role.PARENT)) {
-            guardianRevocations.revokeLinksOfParent(workspaceId, row.userId());
+            guardianRevocations.revokeLinksOfParent(workspaceId, membership.getUserId());
         }
         if (removed.contains(MembershipRole.Role.STUDENT)) {
-            guardianRevocations.revokeLinksOfStudent(workspaceId, row.userId());
+            guardianRevocations.revokeLinksOfStudent(workspaceId, membership.getUserId());
         }
         AuthorizationOperation operation =
                 recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
@@ -335,27 +341,25 @@ public class CenterService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        MembershipRow row = loadMembershipForUpdate(membershipId, workspaceId);
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
-        if (alreadyRevoked) {
+        CenterMembership membership = loadMembershipForUpdate(membershipId, workspaceId);
+        if (membership.getState() == CenterMembership.State.REVOKED) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "MEMBERSHIP_ALREADY_REVOKED",
                     "Membership đã bị thu hồi trước đó.");
         }
-        if (rolesOf(membershipId).contains(MembershipRole.Role.OWNER)) {
+        if (membership.getRoles().contains(MembershipRole.Role.OWNER)) {
             throw lastOwner();
         }
-        jdbc.update(
-                "UPDATE center_membership SET state = 'REVOKED', revoked_at = now(),"
-                        + " version = version + 1, updated_at = now() WHERE id = ?",
-                membershipId);
+        membership.revoke(Instant.now());
+        membershipIndex.sync(membership.getUserId(), workspaceId, CenterMembership.State.REVOKED);
+        memberships.flush();
         // Mất membership là mất mọi tiền đề: đóng toàn bộ quan hệ giảng dạy của người này
         // trong center ở cùng transaction/revision, để phân công/ghi danh không sống lại ngầm
         // nếu người đó tham gia lại sau này.
-        teachingRevocations.revokeAllRelationsOfMember(workspaceId, row.userId());
+        teachingRevocations.revokeAllRelationsOfMember(workspaceId, membership.getUserId());
         // Liên kết phụ huynh cũng là nguồn theo membership: đóng link đã duyệt ở cả hai phía.
-        guardianRevocations.revokeAllLinksOfMember(workspaceId, row.userId());
+        guardianRevocations.revokeAllLinksOfMember(workspaceId, membership.getUserId());
         AuthorizationOperation operation =
                 recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
         audit.record(
@@ -369,41 +373,17 @@ public class CenterService {
         return operation;
     }
 
-    private record MembershipRow(UUID workspaceId, UUID userId, String state, long version) {}
-
-    private MembershipRow loadMembershipForUpdate(UUID membershipId, UUID workspaceId) {
-        List<MembershipRow> rows =
-                jdbc.query(
-                        "SELECT workspace_id, user_id, state, version FROM center_membership"
-                                + " WHERE id = ? FOR UPDATE",
-                        (rs, _) ->
-                                new MembershipRow(
-                                        rs.getObject("workspace_id", UUID.class),
-                                        rs.getObject("user_id", UUID.class),
-                                        rs.getString("state"),
-                                        rs.getLong("version")),
-                        membershipId);
+    private CenterMembership loadMembershipForUpdate(UUID membershipId, UUID workspaceId) {
+        Optional<CenterMembership> found = memberships.findForUpdateById(membershipId);
         // Sai workspace và không tồn tại trả cùng một 404: membership của center khác không
         // được lộ sự tồn tại qua đường quản trị của center này.
-        if (rows.isEmpty() || !workspaceId.equals(rows.getFirst().workspaceId())) {
+        if (found.isEmpty() || !workspaceId.equals(found.get().getWorkspaceId())) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     "MEMBERSHIP_NOT_FOUND",
                     "Không tìm thấy membership trong trung tâm này.");
         }
-        return rows.getFirst();
-    }
-
-    private Set<MembershipRole.Role> rolesOf(UUID membershipId) {
-        return Set.copyOf(
-                jdbc
-                        .queryForList(
-                                "SELECT role FROM membership_role WHERE membership_id = ?",
-                                String.class,
-                                membershipId)
-                        .stream()
-                        .map(MembershipRole.Role::valueOf)
-                        .toList());
+        return found.get();
     }
 
     /**
@@ -423,9 +403,7 @@ public class CenterService {
     }
 
     private void requireAccount(UUID userId) {
-        List<UUID> accounts =
-                jdbc.queryForList("SELECT id FROM user_account WHERE id = ?", UUID.class, userId);
-        if (accounts.isEmpty()) {
+        if (!accounts.existsById(userId)) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     "ACCOUNT_NOT_FOUND",
@@ -456,6 +434,6 @@ public class CenterService {
      * khoá riêng, và hai instance của ứng dụng vẫn tôn trọng nhau.
      */
     private void lockOn(String key) {
-        AdvisoryLocks.lock(jdbc, "giaokhoa:center-service:", key);
+        AdvisoryLocks.lock(locks, "giaokhoa:center-service:", key);
     }
 }

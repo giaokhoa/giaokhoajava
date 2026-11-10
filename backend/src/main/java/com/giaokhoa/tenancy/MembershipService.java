@@ -4,23 +4,29 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
+import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
-import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,16 +50,23 @@ import org.springframework.transaction.annotation.Transactional;
  * là CENTER đang ACTIVE; người cấp là OWNER/MANAGER ACTIVE) để lời gọi chắc chắn bị từ chối không
  * tạo rồi xoá một user Keycloak vô ích; registrar vẫn là chốt chặn cuối khi ghi directory. Quyết
  * định cho phép ở các route thành viên không qua PDP: theo ngoại lệ mục 10 của
- * contracts/authorization.md, controller quyết bằng dữ kiện SQL — {@link #requireAdmin} ép
+ * contracts/authorization.md, controller quyết bằng dữ kiện thư mục — {@link #requireAdmin} ép
  * OWNER/MANAGER ACTIVE và {@link #requireSubscriptionCurrent} ép gói còn hiệu lực bằng chính sách
  * gói trên dữ kiện kỳ gói — còn pipeline profile của executor chỉ đồng bộ eligibility hiện hành và
  * giữ ACCOUNT fence trước khi route chạy. Operation ghi cuối luồng qua {@link
  * MembershipPolicyProjector} mới là mốc hoàn tất bất đồng bộ: membership chỉ được coi là đã đồng bộ
  * khi operation SUCCEEDED.
+ *
+ * <p>Danh sách thành viên đọc hai bước theo ID: trang membership thuộc schema tenant trước, tên
+ * đăng nhập của account thuộc schema hệ thống tra theo tập ID của trang sau — không join xuyên hai
+ * mặt phẳng.
  */
 @Service
 public class MembershipService {
-    private final JdbcTemplate jdbc;
+    private final CenterMembershipRepository memberships;
+    private final UserAccountRepository accounts;
+    private final WorkspaceRepository workspaces;
+    private final SubscriptionPolicy subscriptionPolicy;
     private final IdempotencyService idempotency;
     private final InitialCredentialHandoff handoff;
     private final MembershipPolicyProjector projector;
@@ -61,13 +74,19 @@ public class MembershipService {
     private final AuditRecorder audit;
 
     public MembershipService(
-            JdbcTemplate jdbc,
+            CenterMembershipRepository memberships,
+            UserAccountRepository accounts,
+            WorkspaceRepository workspaces,
+            SubscriptionPolicy subscriptionPolicy,
             IdempotencyService idempotency,
             InitialCredentialHandoff handoff,
             MembershipPolicyProjector projector,
             ResourceMutationCoordinator coordinator,
             AuditRecorder audit) {
-        this.jdbc = jdbc;
+        this.memberships = memberships;
+        this.accounts = accounts;
+        this.workspaces = workspaces;
+        this.subscriptionPolicy = subscriptionPolicy;
         this.idempotency = idempotency;
         this.handoff = handoff;
         this.projector = projector;
@@ -123,6 +142,9 @@ public class MembershipService {
         requireCenterOperator(initiatorUserId, workspaceId);
         InitialCredentialHandoff.Handoff issued =
                 handoff.issueNewStudent(initiatorUserId, workspaceId, username, displayName, email);
+        // Registrar vừa ghi membership qua JPA trong cùng transaction: flush để projector của
+        // operation đọc được dữ kiện nguồn mới nhất bằng đường đọc riêng của nó.
+        memberships.flush();
         AuthorizationOperation operation =
                 projector.recordMembershipChange(
                         initiatorUserId, workspaceId, idempotencyKey, payloadHash);
@@ -152,7 +174,7 @@ public class MembershipService {
     public MembershipPage pageMemberships(UUID workspaceId, @Nullable String cursor, int pageSize) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         UUID cursorId = null;
-        OffsetDateTime joinedAt = null;
+        Instant joinedAt = null;
         if (cursor != null) {
             try {
                 cursorId = UUID.fromString(cursor);
@@ -162,76 +184,41 @@ public class MembershipService {
             } catch (IllegalArgumentException ex) {
                 return new MembershipPage(List.of(), null);
             }
-            List<OffsetDateTime> anchors =
-                    jdbc.queryForList(
-                            "SELECT joined_at FROM center_membership WHERE workspace_id = ? AND id = ?",
-                            OffsetDateTime.class,
-                            workspaceId,
-                            cursorId);
-            if (anchors.isEmpty()) {
+            Optional<CenterMembership> anchor = memberships.findById(cursorId);
+            if (anchor.isEmpty() || !workspaceId.equals(anchor.get().getWorkspaceId())) {
                 return new MembershipPage(List.of(), null);
             }
-            joinedAt = anchors.getFirst();
+            joinedAt = anchor.get().getJoinedAt();
         }
-        String sql =
-                "WITH page AS (SELECT id, user_id, state, version, joined_at"
-                        + " FROM center_membership WHERE workspace_id = ?"
-                        + " AND state IN ('PENDING', 'ACTIVE')"
-                        + (cursorId == null ? "" : " AND (joined_at, id) > (?, ?)")
-                        + " ORDER BY joined_at, id LIMIT ?)"
-                        + " SELECT m.id, m.user_id, u.username, m.state, m.version, r.role"
-                        + " FROM page m JOIN user_account u ON u.id = m.user_id"
-                        + " LEFT JOIN membership_role r ON r.membership_id = m.id"
-                        + " ORDER BY m.joined_at, m.id, r.role";
-        Object[] params =
-                cursorId == null
-                        ? new Object[] {workspaceId, pageSize + 1}
-                        : new Object[] {workspaceId, joinedAt, cursorId, pageSize + 1};
-        List<MembershipRow> rows =
-                jdbc.query(
-                        sql,
-                        (rs, _) ->
-                                new MembershipRow(
-                                        rs.getObject("id", UUID.class),
-                                        rs.getObject("user_id", UUID.class),
-                                        rs.getString("username"),
-                                        rs.getString("state"),
-                                        rs.getLong("version"),
-                                        rs.getString("role") == null
-                                                ? null
-                                                : MembershipRole.Role.valueOf(
-                                                        rs.getString("role"))),
-                        params);
-        Map<UUID, MembershipView> byId = new LinkedHashMap<>();
-        Map<UUID, List<MembershipRole.Role>> rolesById = new LinkedHashMap<>();
-        for (MembershipRow row : rows) {
-            byId.computeIfAbsent(
-                    row.id(),
-                    _ ->
-                            new MembershipView(
-                                    row.id(),
-                                    row.userId(),
-                                    row.username(),
-                                    List.of(),
-                                    row.state(),
-                                    row.version()));
-            if (row.role() != null) {
-                rolesById.computeIfAbsent(row.id(), _ -> new ArrayList<>()).add(row.role());
-            }
-        }
-        List<MembershipView> views = new ArrayList<>();
-        byId.forEach((membershipId, view) ->
-                views.add(
-                        new MembershipView(
-                                view.id(),
-                                view.userId(),
-                                view.username(),
-                                List.copyOf(rolesById.getOrDefault(membershipId, List.of())),
-                                view.state(),
-                                view.version())));
-        boolean hasMore = views.size() > pageSize;
+        List<CenterMembership> page =
+                memberships.findPageAfter(
+                        workspaceId,
+                        List.of(CenterMembership.State.PENDING, CenterMembership.State.ACTIVE),
+                        joinedAt,
+                        cursorId,
+                        PageRequest.of(0, pageSize + 1));
+        boolean hasMore = page.size() > pageSize;
+        List<CenterMembership> rows = page.subList(0, Math.min(pageSize, page.size()));
+        Map<UUID, String> usernames =
+                accounts
+                        .findByIdIn(rows.stream().map(CenterMembership::getUserId).toList())
+                        .stream()
+                        .collect(Collectors.toMap(UserAccount::getId, UserAccount::getUsername));
         List<MembershipView> items =
-                List.copyOf(views.subList(0, Math.min(pageSize, views.size())));
+                rows.stream()
+                        .map(membership ->
+                                new MembershipView(
+                                        membership.getId(),
+                                        membership.getUserId(),
+                                        usernames.get(membership.getUserId()),
+                                        membership.getRoles().stream()
+                                                .sorted(
+                                                        Comparator.comparing(
+                                                                MembershipRole.Role::name))
+                                                .toList(),
+                                        membership.getState().name(),
+                                        membership.getVersion()))
+                        .toList();
         return new MembershipPage(
                 items, hasMore && !items.isEmpty() ? items.getLast().id().toString() : null);
     }
@@ -239,19 +226,11 @@ public class MembershipService {
     /** Quyền nguồn của actor trong center; dữ kiện được đọc dưới lock/fence của route. */
     @Transactional(readOnly = true)
     public Set<MembershipRole.Role> activeRoles(UUID actorUserId, UUID workspaceId) {
-        return Set.copyOf(
-                jdbc
-                        .queryForList(
-                                "SELECT r.role FROM center_membership m"
-                                        + " JOIN membership_role r ON r.membership_id = m.id"
-                                        + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                        + " AND m.state = 'ACTIVE'",
-                                String.class,
-                                workspaceId,
-                                actorUserId)
-                        .stream()
-                        .map(MembershipRole.Role::valueOf)
-                        .toList());
+        return memberships
+                .findByWorkspaceIdAndUserIdAndState(
+                        workspaceId, actorUserId, CenterMembership.State.ACTIVE)
+                .map(membership -> Set.copyOf(membership.getRoles()))
+                .orElse(Set.of());
     }
 
     public Set<MembershipRole.Role> requireAdmin(UUID actorUserId, UUID workspaceId) {
@@ -267,7 +246,7 @@ public class MembershipService {
     }
 
     public void requireSubscriptionCurrent(UUID workspaceId) {
-        if (!SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspaceId)) {
+        if (!subscriptionPolicy.currentOrUnconfirmed(workspaceId)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
                     "SUBSCRIPTION_INACTIVE",
@@ -278,51 +257,33 @@ public class MembershipService {
     /** Chỉ đọc role của membership được sửa, không tải toàn bộ thành viên của center. */
     @Transactional(readOnly = true)
     public Set<MembershipRole.Role> currentRoles(UUID workspaceId, UUID membershipId) {
-        return Set.copyOf(
-                jdbc
-                        .queryForList(
-                                "SELECT r.role FROM center_membership m"
-                                        + " JOIN membership_role r ON r.membership_id = m.id"
-                                        + " WHERE m.workspace_id = ? AND m.id = ?"
-                                        + " AND m.state IN ('PENDING', 'ACTIVE') ORDER BY r.role",
-                                String.class,
-                                workspaceId,
-                                membershipId)
-                        .stream()
-                        .map(MembershipRole.Role::valueOf)
-                        .toList());
+        return memberships
+                .findById(membershipId)
+                .filter(membership ->
+                        workspaceId.equals(membership.getWorkspaceId())
+                                && membership.getState() != CenterMembership.State.REVOKED)
+                .map(membership -> Set.copyOf(membership.getRoles()))
+                .orElse(Set.of());
     }
 
-    private record MembershipRow(
-            UUID id,
-            UUID userId,
-            String username,
-            String state,
-            long version,
-            MembershipRole.@Nullable Role role) {}
-
     private void requireCenterOperator(UUID initiatorUserId, UUID workspaceId) {
-        List<Map<String, Object>> centers =
-                jdbc.queryForList("SELECT kind, state FROM workspace WHERE id = ?", workspaceId);
-        if (centers.isEmpty()
-                || !"CENTER".equals(centers.getFirst().get("kind"))
-                || !"ACTIVE".equals(centers.getFirst().get("state"))) {
+        boolean centerActive =
+                workspaces
+                        .findById(workspaceId)
+                        .filter(workspace ->
+                                workspace.getKind() == Workspace.Kind.CENTER
+                                        && "ACTIVE".equals(workspace.getState()))
+                        .isPresent();
+        if (!centerActive) {
             // Không phân biệt thiếu/không phải center/không ACTIVE: không lộ sự tồn tại.
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     "WORKSPACE_NOT_FOUND",
                     "Không tìm thấy trung tâm hợp lệ.");
         }
-        List<String> operatorRoles =
-                jdbc.queryForList(
-                        "SELECT r.role FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                + " AND m.state = 'ACTIVE' AND r.role IN ('OWNER', 'MANAGER')",
-                        String.class,
-                        workspaceId,
-                        initiatorUserId);
-        if (operatorRoles.isEmpty()) {
+        Set<MembershipRole.Role> operatorRoles = activeRoles(initiatorUserId, workspaceId);
+        if (!operatorRoles.contains(MembershipRole.Role.OWNER)
+                && !operatorRoles.contains(MembershipRole.Role.MANAGER)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
                     "OPERATOR_NOT_AUTHORIZED",
