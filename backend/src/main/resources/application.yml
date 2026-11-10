@@ -1,6 +1,8 @@
 spring:
   application:
     name: giaokhoa
+  # Datasource runtime phải là role bị giới hạn giaokhoa_runtime do migration V027 tạo
+  # (không owner, không BYPASSRLS) để RLS có hiệu lực; Flyway bên dưới giữ role migration riêng.
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
