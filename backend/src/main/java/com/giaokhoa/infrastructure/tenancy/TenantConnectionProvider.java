@@ -1,5 +1,7 @@
 package com.giaokhoa.infrastructure.tenancy;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serial;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -42,11 +44,22 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
      * phục đúng giá trị đó khi trả connection. WeakHashMap: mục của connection không được trả theo
      * đường này (đóng đột ngột, pool loại bỏ) tự hết hạn theo connection.
      */
-    private final transient Map<Connection, String> borrowedPaths =
-            Collections.synchronizedMap(new WeakHashMap<>());
+    private transient Map<Connection, String> borrowedPaths = newBorrowedPaths();
 
     public TenantConnectionProvider(DataSource dataSource) {
         this.dataSource = dataSource;
+    }
+
+    private static Map<Connection, String> newBorrowedPaths() {
+        return Collections.synchronizedMap(new WeakHashMap<>());
+    }
+
+    // Bean singleton không bao giờ được serialize trong ứng dụng, nhưng interface SPI của
+    // Hibernate kế thừa Serializable nên trường transient phải có đường dựng lại khi khử
+    // serialize, nếu không borrowedPaths sẽ null ở bản khử serialize.
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        borrowedPaths = newBorrowedPaths();
     }
 
     @Override
