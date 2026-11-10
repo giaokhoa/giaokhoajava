@@ -15,8 +15,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class KeycloakProvisionerTokens {
-    private final String realm;
-    private final OAuth2AuthorizedClientManager manager;
+    private final String realmName;
+    private final OAuth2AuthorizedClientManager authorizedClientManager;
 
     @Autowired
     public KeycloakProvisionerTokens(
@@ -33,17 +33,17 @@ public class KeycloakProvisionerTokens {
     }
 
     private KeycloakProvisionerTokens(String realm, OAuth2AuthorizedClientManager manager) {
-        this.realm = realm;
-        this.manager = manager;
+        this.realmName = realm;
+        this.authorizedClientManager = manager;
     }
 
     /** Realm suy ra từ issuer URI đã cấu hình. */
     public String realm() {
-        return realm;
+        return realmName;
     }
 
     /** Manager provisioner đã dựng một lần; client gắn Bearer qua interceptor của nó. */
     public OAuth2AuthorizedClientManager manager() {
-        return manager;
+        return authorizedClientManager;
     }
 }
