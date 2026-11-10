@@ -15,38 +15,70 @@ import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
 
 /** Kết quả phân trang trên PostgreSQL thật; không ràng buộc cú pháp hay số câu SQL. */
-@DataJpaTest(showSql = false)
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@ImportAutoConfiguration(FlywayAutoConfiguration.class)
+// Harness tối thiểu: class chỉ dùng JdbcTemplate và tự dựng service/repository bằng mock
+// thường, không cần bean nào của ứng dụng nên tự chạy Flyway và tự cấp JdbcTemplate trên
+// schema riêng, không dựng ApplicationContext. Mỗi test vẫn chạy trong một giao dịch và
+// rollback ở cuối như khi dùng @Transactional của Spring Test.
 class ListingPaginationIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "listing_pages_" + UUID.randomUUID().toString().replace("-", "");
 
-    @Autowired JdbcTemplate jdbc;
+    private static JdbcTemplate jdbc;
+    private static DataSourceTransactionManager txManager;
+    private TransactionStatus txStatus;
 
-    @DynamicPropertySource
-    static void configureSchema(DynamicPropertyRegistry registry) {
-        isolatedSchema(registry, SCHEMA);
+    @BeforeAll
+    static void migrateSchema() {
+        var migrator =
+                new DriverManagerDataSource(
+                        testDatabaseUrl(),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_USERNAME")),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_MIGRATOR_PASSWORD")));
+        Flyway.configure()
+                .dataSource(migrator)
+                .schemas(SCHEMA)
+                .defaultSchema(SCHEMA)
+                .load()
+                .migrate();
+        var source =
+                new DriverManagerDataSource(
+                        testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_USERNAME")),
+                        Objects.requireNonNull(System.getenv("TEST_DATABASE_PASSWORD")));
+        jdbc = new JdbcTemplate(source);
+        txManager = new DataSourceTransactionManager(source);
+    }
+
+    @BeforeEach
+    void beginTestTransaction() {
+        txStatus = txManager.getTransaction(new DefaultTransactionDefinition());
+    }
+
+    @AfterEach
+    void rollbackTestTransaction() {
+        txManager.rollback(txStatus);
     }
 
     @AfterAll
-    static void dropSchema(@Autowired JdbcTemplate jdbc) {
+    static void removeSchema() {
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 

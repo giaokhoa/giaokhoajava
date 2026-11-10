@@ -69,6 +69,9 @@ import org.springframework.web.context.WebApplicationContext;
 /** PostgreSQL thật; latch ở biên Keycloak kiểm soát chính xác thứ tự side effect của hai worker. */
 @SpringBootTest
 class ProjectionRecoveryIT extends IntegrationEnvironment {
+    // Schema cô lập là bắt buộc: test mock ProjectionWorker để tự poll thủ công, khóa thứ
+    // tự bằng latch và đếm lần áp graph qua fault injection; trên schema dùng chung, worker
+    // thật của context khác (poll mỗi giây) sẽ giành xử lý operation và phá tính xác định.
     private static final String SCHEMA =
             "projection_recovery_" + UUID.randomUUID().toString().replace("-", "");
 
