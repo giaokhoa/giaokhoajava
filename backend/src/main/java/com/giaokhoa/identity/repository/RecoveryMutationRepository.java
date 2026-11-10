@@ -14,4 +14,12 @@ public interface RecoveryMutationRepository
                     + " AND m.id.idempotencyKey = :idempotencyKey")
     Optional<RecoveryMutation> findByActorUserIdAndIdempotencyKey(
             UUID actorUserId, String idempotencyKey);
+
+    /** Actor đã gửi một mutation thuộc loại này cho yêu cầu khôi phục hay chưa. */
+    @Query(
+            "SELECT COUNT(m) > 0 FROM RecoveryMutation m"
+                    + " WHERE m.requestId = :requestId AND m.id.actorUserId = :actorUserId"
+                    + " AND m.kind = :kind")
+    boolean existsByRequestIdAndActorAndKind(
+            UUID requestId, UUID actorUserId, RecoveryMutation.Kind kind);
 }

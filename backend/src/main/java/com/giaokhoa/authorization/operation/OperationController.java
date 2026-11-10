@@ -6,6 +6,9 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates.TargetType;
 import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.identity.model.RecoveryMutation;
+import com.giaokhoa.identity.repository.RecoveryMutationRepository;
+import com.giaokhoa.identity.repository.RecoveryRequestRepository;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.UUID;
@@ -30,14 +33,20 @@ public class OperationController {
     private final ProtectedActionExecutor executor;
     private final AuthorizationOperationRepository operations;
     private final AuthzPartitionRepository partitions;
+    private final RecoveryRequestRepository recoveryRequests;
+    private final RecoveryMutationRepository recoveryMutations;
 
     public OperationController(
             ProtectedActionExecutor executor,
             AuthorizationOperationRepository operations,
-            AuthzPartitionRepository partitions) {
+            AuthzPartitionRepository partitions,
+            RecoveryRequestRepository recoveryRequests,
+            RecoveryMutationRepository recoveryMutations) {
         this.executor = executor;
         this.operations = operations;
         this.partitions = partitions;
+        this.recoveryRequests = recoveryRequests;
+        this.recoveryMutations = recoveryMutations;
     }
 
     public record OperationView(
@@ -87,20 +96,30 @@ public class OperationController {
      * hỗ trợ.
      */
     private OperationView recoveryStatus(UUID operationId, UUID actorUserId) {
-        var found = operations.findRecoveryStatus(operationId, actorUserId);
+        var found =
+                recoveryRequests
+                        .findById(operationId)
+                        .filter(
+                                request ->
+                                        request.getRequesterUserId().equals(actorUserId)
+                                                || recoveryMutations
+                                                        .existsByRequestIdAndActorAndKind(
+                                                                operationId,
+                                                                actorUserId,
+                                                                RecoveryMutation.Kind.RESOLVE));
         if (found.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy tài nguyên.");
         }
-        var row = found.get();
-        String requestState = row.getState();
+        var request = found.get();
+        String requestState = request.getState().name();
         String state =
                 switch (requestState) {
                     case "RESOLVED" -> "SUCCEEDED";
                     case "REJECTED" -> "FAILED";
                     default -> "PENDING";
                 };
-        UUID targetId = row.getTargetUserId() != null ? row.getTargetUserId() : actorUserId;
+        UUID targetId = request.getTargetUserId();
         return new OperationView(
                 operationId,
                 state,

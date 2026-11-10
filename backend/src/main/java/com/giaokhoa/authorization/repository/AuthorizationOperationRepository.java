@@ -91,25 +91,4 @@ public interface AuthorizationOperationRepository
             @Param("applying") State applying,
             @Param("attemptCount") int attemptCount);
 
-    /** Ảnh chụp trạng thái của một yêu cầu khôi phục danh tính cho đường poll operation. */
-    interface RecoveryStatus {
-        String getState();
-
-        UUID getTargetUserId();
-    }
-
-    // Điểm native tạm: bảng recovery_mutation chưa có entity trên main (entity thuộc wave
-    // directory+identity); khi entity land, chuyển điểm đọc này sang repository của nó và cho
-    // câu native này nghỉ hưu.
-    @Query(
-            nativeQuery = true,
-            value =
-                    "SELECT r.state AS \"state\", r.target_user_id AS \"targetUserId\""
-                            + " FROM recovery_request r"
-                            + " WHERE r.id = :operationId AND (r.requester_user_id = :actor"
-                            + " OR EXISTS (SELECT 1 FROM recovery_mutation m"
-                            + " WHERE m.request_id = r.id AND m.actor_user_id = :actor"
-                            + " AND m.kind = 'RESOLVE'))")
-    Optional<RecoveryStatus> findRecoveryStatus(
-            @Param("operationId") UUID operationId, @Param("actor") UUID actor);
 }
