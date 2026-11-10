@@ -172,12 +172,32 @@ public class CanonicalResourceRepository {
 
     /** Mọi grant ACCEPTED mà workspace nhận là bên nhận, trỏ đúng version này, cũ nhất trước. */
     public List<GrantRef> acceptedGrants(UUID workspaceId, UUID resourceId, UUID versionId) {
+        return queryAcceptedGrants(workspaceId, resourceId, versionId, false);
+    }
+
+    /**
+     * Như {@link #acceptedGrants} nhưng chỉ các grant còn trong cửa sổ hiệu lực tại thời điểm truy
+     * vấn: hết hạn là trạng thái suy ra từ thời gian, nên một grant ACCEPTED đã qua {@code
+     * expires_at} (hoặc chưa tới {@code valid_from}) không còn làm căn cứ quyền.
+     */
+    public List<GrantRef> acceptedGrantsInWindow(
+            UUID workspaceId, UUID resourceId, UUID versionId) {
+        return queryAcceptedGrants(workspaceId, resourceId, versionId, true);
+    }
+
+    private List<GrantRef> queryAcceptedGrants(
+            UUID workspaceId, UUID resourceId, UUID versionId, boolean withinWindow) {
         return jdbc.query(
                 "SELECT id, array_to_string(actions, ',') AS actions_csv,"
                         + " array_to_string(allowed_workspace_ids, ',') AS allowed_csv"
                         + " FROM share_grant WHERE recipient_workspace_id = ?"
                         + " AND source_resource_id = ? AND source_version_id = ?"
-                        + " AND state = 'ACCEPTED' ORDER BY created_at, id",
+                        + " AND state = 'ACCEPTED'"
+                        + (withinWindow
+                                ? " AND valid_from <= now()"
+                                        + " AND (expires_at IS NULL OR expires_at > now())"
+                                : "")
+                        + " ORDER BY created_at, id",
                 (rs, _) ->
                         new GrantRef(
                                 rs.getObject("id", UUID.class),

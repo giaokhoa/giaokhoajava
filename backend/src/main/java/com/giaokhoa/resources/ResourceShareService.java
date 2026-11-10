@@ -210,9 +210,9 @@ public class ResourceShareService {
     /**
      * Trần quyền nguồn của người cấp tại workspace nguồn (FR-035): chủ sở hữu của version thì toàn
      * catalog scope mức version; ngược lại, actions xin cấp (đã map sang scope) phải nằm trong hợp
-     * của các scope mà các grant đã ACCEPTED giao version này cho workspace và các phân công tường
-     * minh ACTIVE của chính người cấp cấp được. PDP đã cho qua scope {@code share} không tự làm
-     * trần này rộng hơn dữ kiện nguồn.
+     * của các scope mà các grant đã ACCEPTED còn trong cửa sổ hiệu lực giao version này cho
+     * workspace và các phân công tường minh ACTIVE của chính người cấp cấp được. PDP đã cho qua
+     * scope {@code share} không tự làm trần này rộng hơn dữ kiện nguồn.
      */
     private void enforceSourceCeiling(
             UUID actorUserId,
@@ -233,7 +233,7 @@ public class ResourceShareService {
         }
         Set<String> ceiling = new HashSet<>();
         for (CanonicalResourceRepository.GrantRef grant :
-                repository.acceptedGrants(
+                repository.acceptedGrantsInWindow(
                         workspaceId, metadata.resourceId(), metadata.versionId())) {
             ceiling.addAll(ResourcePolicyProjector.mapActions(grant.actions()));
         }
@@ -269,11 +269,11 @@ public class ResourceShareService {
     /**
      * Ràng buộc thành phần (FR-041): duyệt toàn bộ closure phụ thuộc của version xin chia sẻ bằng
      * truy vấn đệ quy theo mẫu WITH RECURSIVE của PostgreSQL — mọi cạnh mang một grant đều là nguồn
-     * giới hạn của version này. Grant đó phải còn {@code ACCEPTED}, phải tự cho phép chia tiếp
-     * (scope {@code share}), và phạm vi mới không được rộng hơn phạm vi của nó: nơi nhận phải nằm
-     * trong danh sách workspace cho phép của grant thành phần khi danh sách đó không rỗng, và danh
-     * sách cho phép của lượt cấp mới phải là tập con của nó; actions của lượt cấp mới cũng phải là
-     * tập con của actions của grant thành phần.
+     * giới hạn của version này. Grant đó phải còn {@code ACCEPTED} và còn trong cửa sổ hiệu lực của
+     * nó, phải tự cho phép chia tiếp (scope {@code share}), và phạm vi mới không được rộng hơn phạm
+     * vi của nó: nơi nhận phải nằm trong danh sách workspace cho phép của grant thành phần khi danh
+     * sách đó không rỗng, và danh sách cho phép của lượt cấp mới phải là tập con của nó; actions
+     * của lượt cấp mới cũng phải là tập con của actions của grant thành phần.
      */
     private void enforceComponentConstraints(
             UUID resourceId,
@@ -291,7 +291,8 @@ public class ResourceShareService {
                                 + " FROM resource_dependency d"
                                 + " JOIN closure c ON d.derived_resource_id = c.resource_id"
                                 + " AND d.derived_version_id = c.version_id)"
-                                + " SELECT g.state, array_to_string(g.actions, ',') AS actions_csv,"
+                                + " SELECT g.state, g.valid_from, g.expires_at,"
+                                + " array_to_string(g.actions, ',') AS actions_csv,"
                                 + " array_to_string(g.allowed_workspace_ids, ',') AS allowed_csv"
                                 + " FROM resource_dependency d"
                                 + " JOIN share_grant g ON g.id = d.share_grant_id"
@@ -299,8 +300,16 @@ public class ResourceShareService {
                                 + " (SELECT resource_id, version_id FROM closure)",
                         resourceId,
                         versionId);
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         for (Map<String, Object> grant : governing) {
             if (!"ACCEPTED".equals(grant.get("state"))) {
+                throw forbidden();
+            }
+            // Hết hạn là trạng thái suy ra từ thời gian: grant điều phối đã qua cửa sổ hiệu lực
+            // thì không còn cho chia tiếp, dù state trên dòng vẫn ACCEPTED.
+            OffsetDateTime expiresAt = (OffsetDateTime) grant.get("expires_at");
+            if (((OffsetDateTime) grant.get("valid_from")).isAfter(now)
+                    || (expiresAt != null && !expiresAt.isAfter(now))) {
                 throw forbidden();
             }
             List<String> grantScopes =
