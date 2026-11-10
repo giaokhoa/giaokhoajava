@@ -109,13 +109,16 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                 // quan để thấy hai confirm thật sự đang bị chặn ở đâu.
                 String waiting =
                         jdbc.queryForList(
-                                        "SELECT pid || ' | ' || coalesce(wait_event_type, '-') || ' | '"
-                                                + " coalesce(wait_event, '-') || ' | ' || left(query, 160)"
-                                                + " FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
-                                                + " AND (wait_event_type = 'Lock' OR query LIKE '%authz_partition%'"
-                                                + " OR query LIKE '%pg_advisory%')",
-                                        String.class)
-                                .toString();
+                                                "SELECT pid, state, wait_event_type, wait_event,"
+                                                        + " left(query, 160) AS q"
+                                                        + " FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
+                                                        + " AND (wait_event_type IS NOT NULL"
+                                                        + " OR state <> 'idle')")
+                                        .toString()
+                                + " firstDone="
+                                + first.isDone()
+                                + " secondDone="
+                                + second.isDone();
                 throw new AssertionError("Lock observation diagnostics: " + waiting, timeout);
             }
             connection.commit();
