@@ -12,6 +12,31 @@ function required(name: string): string {
   return value;
 }
 
+// Cặp làn TEST duy nhất phía TypeScript: JDBC và Keycloak base phải đi cùng một làn.
+// Allowlist đầy đủ phía Java khai báo ở IntegrationEnvironment.java — sửa cùng nhau.
+export const TEST_LANES: ReadonlyArray<readonly [string, string]> = [
+  ["jdbc:postgresql://127.0.0.1:15432/giaokhoa_test", "http://127.0.0.1:18081"],
+  ["jdbc:postgresql://127.0.0.1:15433/giaokhoa_test", "http://127.0.0.1:18082"],
+];
+
+// Redirect URI callback dùng chung của luồng Code+PKCE phía TypeScript; client TEST
+// đăng ký đúng URI này ở test-realm.json (tầng định nghĩa, giữ nguyên tại đó).
+export const TEST_REDIRECT_URI = "http://127.0.0.1:18888/callback";
+
+// Origin mặc định của Next dev ngoài chế độ gate: playwright.config và các spec
+// đọc cùng một hằng thay vì chép lại giá trị.
+export const DEFAULT_FRONTEND_ORIGIN = "http://localhost:3001";
+
+// Phân tích TEST_DATABASE_URL dạng jdbc:postgresql://host[:port]/database;
+// port vắng mặt thì mặc định 5432 như JDBC.
+export function parseTestDatabaseUrl(
+  databaseUrl: string,
+): { host: string; port: string; database: string } | undefined {
+  const match = databaseUrl.match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
+  if (!match) return undefined;
+  return { host: match[1], port: match[2] ?? "5432", database: match[3] };
+}
+
 // Đăng nhập form Keycloak, linh hoạt một/hai bước: Keycloak 26 chuyển sang
 // identity-first (bước 1 chỉ hỏi username, bước 2 mới hỏi password) ngay khi realm có
 // ≥1 organization — ứng dụng tạo 1 organization cho mỗi center nên form hai bước là
@@ -46,9 +71,8 @@ export class TestEnvironment {
       throw new Error("Chỉ cho phép realm giaokhoa-it để kiểm thử");
     }
     // shortcut: Chỉ Compose TEST cục bộ; chỉ thêm target bên ngoài sau khi TEST độc lập được kiểm chứng.
-    // Hai làn TEST local đều được phép: làn 1 Keycloak 18081, làn 2 Keycloak 18082.
-    if ((this.keycloak.href !== "http://127.0.0.1:18081/"
-        && this.keycloak.href !== "http://127.0.0.1:18082/")
+    // Hai làn TEST local đều được phép (khai báo ở TEST_LANES).
+    if (!TEST_LANES.some(([, keycloakBase]) => this.keycloak.href === `${keycloakBase}/`)
         || (this.mailpit.href !== "http://127.0.0.1:18025/"
           && this.mailpit.href !== "http://127.0.0.1:18026/")) {
       throw new Error("Chỉ dùng Keycloak/Mailpit TEST; không được kết nối DEV");
@@ -249,7 +273,7 @@ export class TestEnvironment {
 
   async exchangeAuthorizationCode(page: Page, user: TestUser): Promise<void> {
     // Trình duyệt dùng đăng nhập Keycloak thật; chỉ Node runner nhận và đổi code.
-    const redirectUri = "http://127.0.0.1:18888/callback";
+    const redirectUri = TEST_REDIRECT_URI;
     const state = randomBytes(20).toString("base64url");
     const nonce = randomBytes(20).toString("base64url");
     const verifier = randomBytes(32).toString("base64url");
@@ -267,11 +291,11 @@ export class TestEnvironment {
     });
     await new Promise<void>((resolve, reject) => {
       callbackServer.once("error", reject);
-      callbackServer.listen(18888, "127.0.0.1", resolve);
+      callbackServer.listen(Number(new URL(redirectUri).port), "127.0.0.1", resolve);
     });
     try {
       await loginViaKeycloakForm(page, authorize.toString(), user);
-      await page.waitForURL((url) => url.origin === "http://127.0.0.1:18888");
+      await page.waitForURL((url) => url.origin === new URL(redirectUri).origin);
     const callback = new URL(page.url());
     expect(callback.searchParams.get("state")).toBe(state);
     const code = callback.searchParams.get("code");

@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 
 const base = process.env.TEST_KEYCLOAK_BASE_URL;
+// Allowlist Keycloak TEST: bản chép của cặp làn ở frontend/tests/e2e/support/test-environment.ts
+// (TEST_LANES) — sửa cùng nhau.
 assert.ok(["http://127.0.0.1:18081", "http://127.0.0.1:18082"].includes(base));
 assert.equal(process.env.TEST_KEYCLOAK_REALM, "giaokhoa-it");
 assert.equal(process.env.TEST_OIDC_CLIENT_ID, "giaokhoa-it-web");
@@ -33,7 +35,7 @@ const clients = await admin("/clients?clientId=giaokhoa-it-web");
 assert.equal(clients.length, 1);
 const client = clients[0];
 client.attributes = { ...client.attributes,
-  "post.logout.redirect.uris": "http://127.0.0.1:8080/",
+  "post.logout.redirect.uris": `${process.env.NATIVE_GATE_APP_ORIGIN}/`,
   "backchannel.logout.session.required": "true",
   "backchannel.logout.url": "http://host.docker.internal:18080/logout/connect/back-channel/keycloak",
 };

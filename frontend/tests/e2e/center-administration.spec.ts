@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
 import {
   TestEnvironment, loginViaKeycloakForm, appRequestWhenReady,
-  luuPhienHienTai, khoiPhucPhienDaLuu,
+  luuPhienHienTai, khoiPhucPhienDaLuu, DEFAULT_FRONTEND_ORIGIN,
 } from "./support/test-environment";
 
 // E2E quản trị center ở biên trình duyệt: operator tạo center/xác nhận gói, owner bổ nhiệm
@@ -18,7 +18,7 @@ import {
 // - Token lời mời chỉ có trong response CREATE theo hợp đồng API; không có thư mời SMTP.
 // - UI và API dùng cùng origin TEST_FRONTEND_ORIGIN qua gateway do Playwright khởi động.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
-const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? "http://localhost:3001";
+const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? DEFAULT_FRONTEND_ORIGIN;
 
 // Nhóm nguồn cố định theo NativePolicyTemplates của backend.
 const NHOM_ELIGIBLE = "/gk/identity/eligible";

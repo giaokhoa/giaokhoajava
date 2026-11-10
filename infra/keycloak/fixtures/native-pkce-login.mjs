@@ -23,7 +23,7 @@ const server = createServer((_request, response) => {
 });
 await new Promise((done, reject) => {
     server.once("error", reject);
-    server.listen(18895, "127.0.0.1", done);
+    server.listen(Number(new URL(callback).port), "127.0.0.1", done);
 });
 
 let browser;
@@ -57,7 +57,7 @@ try {
             await page.locator('input[name="password"]').fill(password);
             await page.locator('#kc-login, button[type="submit"], input[type="submit"]').first().click();
             try {
-                await page.waitForURL((url) => url.origin === "http://127.0.0.1:18895", { timeout: 12000 });
+                await page.waitForURL((url) => url.origin === new URL(callback).origin, { timeout: 12000 });
             } catch {
                 const error = await page.locator("#input-error").textContent({ timeout: 500 }).catch(() => null);
                 throw new Error("Real browser Code login did not reach callback: " + (error?.trim() || page.url().split("?")[0]));

@@ -8,6 +8,8 @@ import {
   luuPhienHienTai,
   khoiPhucPhienDaLuu,
   moBoiCanhTuPhienDaLuu,
+  DEFAULT_FRONTEND_ORIGIN,
+  parseTestDatabaseUrl,
 } from "./support/test-environment";
 
 // E2E ma trận capability personal/center của US6 ở biên trình duyệt (FR-025–FR-028,
@@ -17,7 +19,7 @@ import {
 // Spec cần origin ứng dụng đang chạy (backend cùng stack TEST) qua
 // NATIVE_GATE_APP_ORIGIN, cùng cơ chế với teaching-administration.spec.ts.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
-const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? "http://localhost:3001";
+const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? DEFAULT_FRONTEND_ORIGIN;
 
 // Nhóm nguồn cố định theo NativePolicyTemplates của backend.
 const NHOM_ELIGIBLE = "/gk/identity/eligible";
@@ -643,13 +645,13 @@ function seedLichSuLuyenTap(
   if (!schema || !databaseUrl || !username || !password) {
     throw new Error("Seed lịch sử luyện tập cần TEST_E2E_SCHEMA (hoặc E2E_SCHEMA) và TEST_DATABASE_URL/USERNAME/PASSWORD");
   }
-  const match = databaseUrl.match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
-  const host = match?.[1];
-  const database = match?.[3];
-  if (!host || !database) {
+  const parsed = parseTestDatabaseUrl(databaseUrl);
+  if (!parsed) {
     throw new Error(`TEST_DATABASE_URL không đúng dạng jdbc:postgresql://host:port/db: ${databaseUrl}`);
   }
-  const port = match[2] ?? "5432";
+  const host = parsed.host;
+  const database = parsed.database;
+  const port = parsed.port;
   const resourceId = randomUUID();
   const versionId = randomUUID();
   const sql = `

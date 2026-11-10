@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { parseTestDatabaseUrl, TEST_LANES } from "./test-environment";
 
 type ResultSeed = {
   workspaceId: string;
@@ -17,10 +18,8 @@ const literal = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 
 /** Chỉ seed primitive trong schema của runner TEST; quyền vẫn do PAP/PDP thật dựng và xét. */
 export function seedGuardianResult(seed: ResultSeed): string {
-  const pairedTarget = [
-    ["jdbc:postgresql://127.0.0.1:15432/giaokhoa_test", "http://127.0.0.1:18081"],
-    ["jdbc:postgresql://127.0.0.1:15433/giaokhoa_test", "http://127.0.0.1:18082"],
-  ].some(([database, keycloak]) => process.env.TEST_DATABASE_URL === database
+  const pairedTarget = TEST_LANES.some(([database, keycloak]) =>
+    process.env.TEST_DATABASE_URL === database
     && process.env.TEST_KEYCLOAK_BASE_URL === keycloak);
   const schema = process.env.TEST_E2E_SCHEMA ?? "";
   if (!pairedTarget || process.env.TEST_KEYCLOAK_REALM !== "giaokhoa-it"
@@ -29,14 +28,13 @@ export function seedGuardianResult(seed: ResultSeed): string {
   }
   const username = process.env.TEST_DATABASE_USERNAME;
   const password = process.env.TEST_DATABASE_PASSWORD;
-  const match = (process.env.TEST_DATABASE_URL ?? "")
-    .match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
-  const host = match?.[1];
-  const database = match?.[3];
-  if (!username || !password || !host || !database) {
+  const parsed = parseTestDatabaseUrl(process.env.TEST_DATABASE_URL ?? "");
+  if (!username || !password || !parsed) {
     throw new Error("Fixture cần TEST_DATABASE_URL/USERNAME/PASSWORD của làn TEST.");
   }
-  const port = match?.[2] ?? "5432";
+  const host = parsed.host;
+  const database = parsed.database;
+  const port = parsed.port;
   for (const value of [seed.workspaceId, seed.teacherUserId, seed.studentUserId,
     seed.courseSubjectId, seed.subjectId]) {
     if (!uuid.test(value)) throw new Error("Fixture cần UUID hợp lệ.");

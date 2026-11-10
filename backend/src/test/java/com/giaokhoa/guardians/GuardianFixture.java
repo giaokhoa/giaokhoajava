@@ -81,7 +81,7 @@ abstract class GuardianFixture extends IntegrationEnvironment {
     protected static final RestClient HTTP = RestClient.create();
     protected static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
     protected static final String REALM = fixture("TEST_KEYCLOAK_REALM");
-    protected static final String REDIRECT_URI = "http://127.0.0.1:18888/callback";
+    protected static final String REDIRECT_URI = TEST_REDIRECT_URI;
     @Autowired protected JdbcTemplate jdbc;
     @Autowired protected PlatformTransactionManager transactionManager;
     @Autowired protected WebApplicationContext webContext;

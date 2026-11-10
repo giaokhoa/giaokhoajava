@@ -29,13 +29,18 @@ import org.springframework.web.client.HttpClientErrorException;
 public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để kế thừa.
     // shortcut: Fixture này chỉ nhắm Compose TEST cục bộ; TEST bên ngoài cần một allowlist
     // được kiểm chứng riêng.
-    private static final String TEST_DB = "jdbc:postgresql://127.0.0.1:15432/giaokhoa_test";
-    private static final String TEST_ISSUER = "http://127.0.0.1:18081/realms/giaokhoa-it";
+    static final String TEST_DB = "jdbc:postgresql://127.0.0.1:15432/giaokhoa_test";
+    static final String TEST_ISSUER = "http://127.0.0.1:18081/realms/giaokhoa-it";
     // Làn 2: stack TEST chuyên dụng thứ hai đã kiểm chứng (cùng realm/credential như làn 1,
     // chỉ khác cổng). DB và issuer phải đi cùng làn — cặp chéo vẫn bị từ chối.
-    private static final String TEST_DB_LANE_2 = "jdbc:postgresql://127.0.0.1:15433/giaokhoa_test";
+    static final String TEST_DB_LANE_2 = "jdbc:postgresql://127.0.0.1:15433/giaokhoa_test";
     private static final String OPERATION_FAILED = "FAILED";
-    private static final String TEST_ISSUER_LANE_2 = "http://127.0.0.1:18082/realms/giaokhoa-it";
+    static final String TEST_ISSUER_LANE_2 = "http://127.0.0.1:18082/realms/giaokhoa-it";
+    // Redirect URI callback dùng chung của các fixture Code+PKCE: khai báo duy nhất ở đây;
+    // client TEST đăng ký đúng URI này ở test-realm.json (tầng định nghĩa, giữ nguyên tại đó).
+    public static final String TEST_REDIRECT_URI = "http://127.0.0.1:18888/callback";
+    // Redirect URI callback của native gate; client native đăng ký ở install-native-gate.sh.
+    public static final String NATIVE_REDIRECT_URI = "http://127.0.0.1:18895/callback";
     // Schema mặc định của kết nối TEST — schema dùng chung cho toàn bộ nhóm IT full-context
     // (B1): các class không còn khai schema riêng, context được Spring cache và dùng lại giữa
     // các class cùng cấu hình; cô lập nằm ở dữ kiện, xem truncateSharedSchemaData.
@@ -67,7 +72,7 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
         return database;
     }
 
-    private static String testIssuerUri() {
+    public static String testIssuerUri() {
         return required("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "")
                 + "/realms/"
                 + required("TEST_KEYCLOAK_REALM");
@@ -295,7 +300,7 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
         }
     }
 
-    static void validateTargets(String database, String issuer) {
+    public static void validateTargets(String database, String issuer) {
         boolean lane1 = TEST_DB.equals(database) && TEST_ISSUER.equals(issuer);
         boolean lane2 = TEST_DB_LANE_2.equals(database) && TEST_ISSUER_LANE_2.equals(issuer);
         if (!lane1 && !lane2) {
