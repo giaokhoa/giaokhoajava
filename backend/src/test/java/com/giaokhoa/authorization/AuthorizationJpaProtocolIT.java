@@ -130,7 +130,7 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
             "Quét mảng partition bị ảnh hưởng chỉ trả operation thuộc tập trạng thái được lọc,"
                     + " bỏ qua operation đã kết thúc")
     @Test
-    void affectedPartitionsScanCoversOnlyRequestedStates() {
+    void affectedPartitionsScanFiltersByState() {
         UUID actor = user();
         UUID workspace = workspaceOf(actor);
         UUID pendingFirst = grantPartition();
