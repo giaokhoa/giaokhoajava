@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.resources.CorrectionService;
 import com.giaokhoa.resources.ResourceLibraryService;
 import com.giaokhoa.resources.ResourceShareService;
 import com.giaokhoa.resources.model.ResourceVersion;
@@ -55,11 +56,13 @@ import tools.jackson.databind.json.JsonMapper;
  * chờ không xong thì fail-closed 503 như mọi protected request khác. Các action thư viện
  * SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE uỷ cho {@link ResourceLibraryService}, nơi giữ
  * pipeline và giao thức biên nhận của chúng; các action chia sẻ SHARE_VERSION, ACCEPT_SHARE,
- * REVOKE_SHARE uỷ cho {@link ResourceShareService} theo cùng mẫu. Action lạ bị từ chối, không bao
- * giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính mình trong cùng
- * transaction với mutation (bảng sample_action_mutation, theo tiền lệ recovery_mutation): retry
- * cùng key và cùng payload trả lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload trả 409
- * như quy tắc mutation chung của hợp đồng HTTP.
+ * REVOKE_SHARE uỷ cho {@link ResourceShareService} theo cùng mẫu; action phát hành đính chính
+ * CORRECT_SOURCE uỷ cho {@link CorrectionService} và mang metadata của notice trong kết quả để phía
+ * gọi hiển thị đúng thông báo vừa phát hành. Action lạ bị từ chối, không bao giờ được lặng lẽ cho
+ * qua. Mọi action đều ghi biên nhận idempotency của chính mình trong cùng transaction với mutation
+ * (bảng sample_action_mutation, theo tiền lệ recovery_mutation): retry cùng key và cùng payload trả
+ * lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload trả 409 như quy tắc mutation chung
+ * của hợp đồng HTTP.
  *
  * <p>Tầng dữ liệu của service chỉ đi qua các Spring Data repository: bảng mẫu qua repository của
  * chính module, dữ kiện của module khác (workspace, kỳ gói, môn–khóa, version, ghi danh) qua
@@ -78,6 +81,7 @@ public class SampleActionService {
     private final ResultPolicyProjector resultProjector;
     private final ResourceLibraryService library;
     private final ResourceShareService shareService;
+    private final CorrectionService correctionService;
     private final WorkspaceTransaction workspaces;
     private final VerificationWorkspaceRepository workspaceDirectory;
     private final SubscriptionPeriodRepository periods;
@@ -98,6 +102,7 @@ public class SampleActionService {
             ResultPolicyProjector resultProjector,
             ResourceLibraryService library,
             ResourceShareService shareService,
+            CorrectionService correctionService,
             WorkspaceTransaction workspaces,
             VerificationWorkspaceRepository workspaceDirectory,
             SubscriptionPeriodRepository periods,
@@ -116,6 +121,7 @@ public class SampleActionService {
         this.resultProjector = resultProjector;
         this.library = library;
         this.shareService = shareService;
+        this.correctionService = correctionService;
         this.workspaces = workspaces;
         this.workspaceDirectory = workspaceDirectory;
         this.periods = periods;
@@ -231,6 +237,14 @@ public class SampleActionService {
                             request,
                             authentication,
                             httpRequest);
+            case "CORRECT_SOURCE" ->
+                    correctSource(
+                            workspaceId,
+                            idempotencyKey,
+                            payloadHash,
+                            request,
+                            authentication,
+                            httpRequest);
             default -> throw unsupported();
         };
     }
@@ -329,7 +343,8 @@ public class SampleActionService {
         return claimActionReceipt(
                         actorUserId, workspaceId, idempotencyKey, payloadHash, "RESOURCE", id)
                 .orElseGet(() ->
-                        new SampleActionResult(id, OPERATION_SUCCEEDED, true, "RESOURCE", id));
+                        new SampleActionResult(
+                                id, OPERATION_SUCCEEDED, true, "RESOURCE", id, null));
     }
 
     // ---------- ASSIGN_ACTIVITY / SUBMIT_ACTIVITY ----------
@@ -440,7 +455,7 @@ public class SampleActionService {
                         currentPeriods.getFirst(),
                         "ASSIGNED"));
         return new SampleActionResult(
-                activityId, OPERATION_SUCCEEDED, true, "ACTIVITY", activityId);
+                activityId, OPERATION_SUCCEEDED, true, "ACTIVITY", activityId, null);
     }
 
     private SampleActionResult submitActivity(
@@ -543,7 +558,7 @@ public class SampleActionService {
                         request.contentStub(),
                         "SUBMITTED"));
         return new SampleActionResult(
-                submissionId, OPERATION_SUCCEEDED, true, "SUBMISSION", submissionId);
+                submissionId, OPERATION_SUCCEEDED, true, "SUBMISSION", submissionId, null);
     }
 
     // ---------- GRADE_RESULT / PUBLISH_RESULT ----------
@@ -647,7 +662,12 @@ public class SampleActionService {
         result.grade(request.scoreStub(), request.commentStub(), actorUserId);
         results.flush();
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, RESULT_TARGET, request.resultId());
+                request.resultId(),
+                OPERATION_SUCCEEDED,
+                true,
+                RESULT_TARGET,
+                request.resultId(),
+                null);
     }
 
     private SampleActionResult applyPublish(UUID workspaceId, SampleActionRequest request) {
@@ -659,7 +679,12 @@ public class SampleActionService {
         result.publish(Instant.now());
         results.flush();
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, RESULT_TARGET, request.resultId());
+                request.resultId(),
+                OPERATION_SUCCEEDED,
+                true,
+                RESULT_TARGET,
+                request.resultId(),
+                null);
     }
 
     private SampleResult resultForUpdate(UUID workspaceId, UUID resultId) {
@@ -688,7 +713,8 @@ public class SampleActionService {
                         request.versionId(),
                         idempotencyKey,
                         payloadHash);
-        return new SampleActionResult(itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId);
+        return new SampleActionResult(
+                itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId, null);
     }
 
     private SampleActionResult forkVersion(
@@ -715,7 +741,7 @@ public class SampleActionService {
                         idempotencyKey,
                         payloadHash);
         return new SampleActionResult(
-                forkResourceId, OPERATION_SUCCEEDED, true, "RESOURCE", forkResourceId);
+                forkResourceId, OPERATION_SUCCEEDED, true, "RESOURCE", forkResourceId, null);
     }
 
     private SampleActionResult receiveUpdate(
@@ -737,7 +763,8 @@ public class SampleActionService {
                         request.replacementVersionId(),
                         idempotencyKey,
                         payloadHash);
-        return new SampleActionResult(itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId);
+        return new SampleActionResult(
+                itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId, null);
     }
 
     // ---------- Chia sẻ resource: cấp, nhận và thu hồi lượt cấp ----------
@@ -774,7 +801,8 @@ public class SampleActionService {
                         request.expiresAt(),
                         idempotencyKey,
                         payloadHash);
-        return new SampleActionResult(grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId);
+        return new SampleActionResult(
+                grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId, null);
     }
 
     private SampleActionResult acceptShare(
@@ -795,7 +823,8 @@ public class SampleActionService {
                         request.grantId(),
                         idempotencyKey,
                         payloadHash);
-        return new SampleActionResult(grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId);
+        return new SampleActionResult(
+                grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId, null);
     }
 
     private SampleActionResult revokeShare(
@@ -816,7 +845,39 @@ public class SampleActionService {
                         request.grantId(),
                         idempotencyKey,
                         payloadHash);
-        return new SampleActionResult(grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId);
+        return new SampleActionResult(
+                grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId, null);
+    }
+
+    // ---------- Đính chính nguồn: phát hành correction và thông báo nơi nhận ----------
+
+    private SampleActionResult correctSource(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.resourceId() == null
+                || request.affectedVersionId() == null
+                || request.replacementVersionId() == null
+                || request.reason() == null
+                || request.reason().isBlank()) {
+            throw invalid();
+        }
+        CorrectionService.CorrectionNoticeView notice =
+                correctionService.correctSource(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.resourceId(),
+                        request.affectedVersionId(),
+                        request.replacementVersionId(),
+                        request.reason(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(
+                notice.id(), OPERATION_SUCCEEDED, true, "CORRECTION_NOTICE", notice.id(), notice);
     }
 
     // ---------- Biên nhận idempotency của chính action ----------
@@ -871,7 +932,8 @@ public class SampleActionService {
                         OPERATION_SUCCEEDED,
                         true,
                         previous.getTargetType(),
-                        previous.getTargetId()));
+                        previous.getTargetId(),
+                        null));
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------

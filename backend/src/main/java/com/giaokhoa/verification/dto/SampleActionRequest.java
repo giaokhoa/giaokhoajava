@@ -30,7 +30,9 @@ public record SampleActionRequest(
         String mode,
         List<String> actions,
         List<UUID> allowedWorkspaceIds,
-        OffsetDateTime expiresAt) {
+        OffsetDateTime expiresAt,
+        UUID affectedVersionId,
+        String reason) {
     // Sao chép phòng thủ theo mẫu CapabilitiesController: hai danh sách là dữ kiện đầu vào
     // từ JSON, không cho caller giữ tham chiếu mutable vào trạng thái nội bộ của request.
     // Chuẩn hoá null về danh sách rỗng: controller từ chối null và rỗng giống nhau
