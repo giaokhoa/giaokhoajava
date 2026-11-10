@@ -128,6 +128,10 @@ class RequestDtoValidationTest {
                         new MembershipController.StudentIssueRequest("hs01", "Học Sinh", " ")));
     }
 
+    // Ca này cố ý truyền tên null để khóa vi phạm NotBlank: component name của
+    // ClassController.NameRequest không @Nullable trong package @NullMarked nên NullAway biến
+    // literal null thành lỗi biên dịch; miễn trừ chỉ trong phương thức này, ca test giữ nguyên.
+    @SuppressWarnings("NullAway")
     @Test
     void classAndCourseNamesAreNotBlankWithinLimit() {
         assertEquals(Set.of("name:NotBlank"), violationsOf(new ClassController.NameRequest("")));
