@@ -19,7 +19,7 @@ import com.giaokhoa.resources.repository.ResourceVersionRepository;
 import com.giaokhoa.resources.repository.ResourcesAuthorizationOperationRepository;
 import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
 import com.giaokhoa.resources.repository.ShareGrantRepository;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;

@@ -1,6 +1,7 @@
 package com.giaokhoa.teaching;
 
 import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.mock;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -15,7 +16,14 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.identity.InitialCredentialHandoff;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.resources.ResourceCopies;
+import com.giaokhoa.resources.repository.ResourceScopePreconditions;
+import com.giaokhoa.shared.audit.AuditRecorder;
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
+import com.giaokhoa.tenancy.MembershipPolicyProjector;
+import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.AssignmentService.HomeroomAssignmentView;
@@ -59,6 +67,7 @@ import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -468,14 +477,17 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
             WorkspaceTransaction runtimeWorkspaceTx =
                     new WorkspaceTransaction(runtimeJdbc, runtime.transactionManager);
             TeachingScopePreconditions runtimePreconditions =
-                    new TeachingScopePreconditions(runtimeJdbc);
+                    new TeachingScopePreconditions(
+                            runtime.workspaces,
+                            runtime.memberships,
+                            runtime.accounts,
+                            runtime.periods,
+                            new SubscriptionPolicy(runtime.periods));
             IdempotencyService runtimeIdempotency =
-                    new IdempotencyService(
-                            runtimeJdbc,
-                            SharedEntityManagerCreator.createSharedEntityManager(
-                                    entityManagerFactory));
+                    new IdempotencyService(runtime.operations, runtime.authzPartitions);
             AuthorizationOperationService runtimeOperations =
-                    new AuthorizationOperationService(runtimeJdbc, runtimeIdempotency);
+                    new AuthorizationOperationService(
+                            runtime.authzPartitions, runtime.authzProjections, runtimeIdempotency);
             TeachingPolicyProjector runtimeProjector =
                     new TeachingPolicyProjector(
                             runtime.schoolClasses,
@@ -488,11 +500,59 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             directory,
                             runtimeWorkspaceTx,
                             runtime.transactionManager);
+            ResourceMutationCoordinator runtimeCoordinator =
+                    new ResourceMutationCoordinator(runtimeJdbc, runtime.transactionManager);
+            MembershipService runtimeMemberships =
+                    new MembershipService(
+                            runtime.memberships,
+                            runtime.accounts,
+                            runtime.workspaces,
+                            new SubscriptionPolicy(runtime.periods),
+                            runtimeIdempotency,
+                            mock(InitialCredentialHandoff.class),
+                            mock(MembershipPolicyProjector.class),
+                            runtimeCoordinator,
+                            new AuditRecorder(runtimeJdbc));
+            com.giaokhoa.resources.ResourcePolicyProjector runtimeResourceProjector =
+                    new com.giaokhoa.resources.ResourcePolicyProjector(
+                            runtimeOperations,
+                            runtime.transactionManager,
+                            runtime.resourceVersions,
+                            runtime.resources,
+                            runtime.libraryItems,
+                            runtime.shareGrants,
+                            runtime.resourceDependencies,
+                            runtime.resourceAssignments,
+                            runtime.resourcesWorkspaces,
+                            runtime.resourcesAccounts,
+                            runtime.resourcesActivities,
+                            runtime.resourcesPartitions,
+                            new ResourceCopies(
+                                    runtime.resources,
+                                    runtime.resourceVersions,
+                                    runtime.resourceDependencies),
+                            new ResourceScopePreconditions(
+                                    runtime.periods,
+                                    runtime.memberships,
+                                    runtime.enrollments,
+                                    runtime.accounts));
+            // Projector nhận EntityManager qua @PersistenceContext khi chạy trong context;
+            // ở làn dựng tay này phải gán EntityManager dùng chung của bộ repository runtime.
+            ReflectionTestUtils.setField(
+                    runtimeResourceProjector,
+                    "entityManager",
+                    SharedEntityManagerCreator.createSharedEntityManager(
+                            runtime.entityManagerFactory));
             SourceRevocationCoordinator runtimeRevocations =
                     new SourceRevocationCoordinator(
-                            runtimeJdbc,
+                            runtime.authzPartitions,
                             runtimeOperations,
-                            new CenterPolicyProjector(runtimeJdbc, directory),
+                            new CenterPolicyProjector(
+                                    runtime.memberships,
+                                    runtime.workspaces,
+                                    runtime.accounts,
+                                    runtime.periods,
+                                    directory),
                             runtimeProjector,
                             new PersonalTeachingPolicyProjector(
                                     runtime.schoolClasses,
@@ -503,13 +563,18 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                                     runtimeWorkspaceTx,
                                     runtime.transactionManager),
                             new ResultPolicyProjector(
-                                    runtimeJdbc, runtimeOperations, runtime.transactionManager),
-                            new com.giaokhoa.resources.ResourcePolicyProjector(
-                                    runtimeDataSource,
+                                    runtime.sampleResults,
+                                    runtime.verificationPartitions,
+                                    runtime.teachingAssignments,
+                                    runtime.enrollments,
+                                    runtime.verificationWorkspaces,
+                                    runtime.verificationAccounts,
+                                    runtime.guardianLinks,
+                                    runtimeMemberships,
+                                    runtimeWorkspaceTx,
                                     runtimeOperations,
-                                    runtime.transactionManager));
-            ResourceMutationCoordinator runtimeCoordinator =
-                    new ResourceMutationCoordinator(runtimeJdbc, runtime.transactionManager);
+                                    runtime.transactionManager),
+                            runtimeResourceProjector);
             EnrollmentService runtimeEnrollments =
                     new EnrollmentService(
                             runtime.classStudents,

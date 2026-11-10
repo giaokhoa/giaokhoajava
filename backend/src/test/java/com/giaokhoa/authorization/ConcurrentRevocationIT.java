@@ -60,6 +60,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
     @Autowired IdempotencyService idempotency;
     @Autowired IdentityEligibilitySynchronizer eligibility;
     @Autowired ProjectionReconciler reconciler;
+    @Autowired PersonalEntitlementProjector entitlementProjector;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired WebApplicationContext webContext;
     @Autowired SessionRepositoryFilter<?> sessionFilter;
@@ -538,7 +539,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             ProjectionReconciler.desiredHash(
                                     target,
                                     "enter",
-                                    new PersonalEntitlementProjector(jdbc)
+                                    entitlementProjector
                                             .bundleDescriptors(actor.workspace())),
                             actor.account(),
                             actor.workspacePartition(),
@@ -712,7 +713,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                     ProjectionReconciler.desiredHash(
                             targetKey,
                             scope,
-                            new PersonalEntitlementProjector(jdbc)
+                            entitlementProjector
                                     .bundleDescriptors(actor.workspace()));
             try (var graph = nativeGate.partiallyProvisionApplicationResource(targetKey, scope)) {
                 UUID projection = UUID.randomUUID();

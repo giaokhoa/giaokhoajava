@@ -11,6 +11,9 @@ import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
@@ -18,12 +21,17 @@ import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.guardians.service.GuardianLinkService;
 import com.giaokhoa.guardians.service.GuardianLinkService.GuardianLinkView;
 import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.identity.repository.UserAccountRepository;
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
+import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
 import com.giaokhoa.tenancy.MembershipService;
+import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import com.giaokhoa.verification.repository.EnrollmentRepository;
@@ -41,6 +49,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
@@ -78,6 +89,11 @@ class GuardianLinkServiceIT extends GuardianFixture {
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
     private @Nullable EntityManagerFactory runtimeEmf;
+
+    /** Bật đăng ký repository của module authorization cho context tối thiểu của làn runtime. */
+    @Configuration(proxyBeanMethods = false)
+    @EnableJpaRepositories(basePackages = "com.giaokhoa.authorization.repository")
+    static class RuntimeFragmentRepositories {}
 
     @DisplayName(
             "Vòng đời liên kết đồng bộ tư cách thành viên guardian group thông qua các operation")
@@ -521,17 +537,39 @@ class GuardianLinkServiceIT extends GuardianFixture {
                         new JpaRepositoryFactory(runtimeEntityManager);
                 WorkspaceTransaction runtimeWorkspaceTx =
                         new WorkspaceTransaction(runtimeJdbc, runtimeTxManager);
+                // Repository có fragment của module authorization chỉ đăng ký được qua tầng
+                // cấu hình EnableJpaRepositories nên làn runtime dựng một context tối thiểu
+                // dùng lại đúng EMF, JdbcTemplate và transaction manager của role runtime.
+                var fragmentContext = new AnnotationConfigApplicationContext();
+                fragmentContext.register(RuntimeFragmentRepositories.class);
+                fragmentContext
+                        .getBeanFactory()
+                        .registerSingleton("entityManagerFactory", runtimeEmf);
+                fragmentContext.getBeanFactory().registerSingleton("jdbcTemplate", runtimeJdbc);
+                fragmentContext
+                        .getBeanFactory()
+                        .registerSingleton("transactionManager", runtimeTxManager);
+                fragmentContext.refresh();
                 IdempotencyService runtimeIdempotency =
                         new IdempotencyService(
-                                runtimeJdbc, entityManagerFactory.createEntityManager());
+                                fragmentContext.getBean(AuthorizationOperationRepository.class),
+                                fragmentContext.getBean(AuthzPartitionRepository.class));
                 AuthorizationOperationService runtimeOperations =
-                        new AuthorizationOperationService(runtimeJdbc, runtimeIdempotency);
+                        new AuthorizationOperationService(
+                                fragmentContext.getBean(AuthzPartitionRepository.class),
+                                fragmentContext.getBean(AuthzProjectionRepository.class),
+                                runtimeIdempotency);
                 ResourceMutationCoordinator runtimeCoordinator =
                         new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);
                 AuditRecorder runtimeAudit = new AuditRecorder(runtimeJdbc);
                 MembershipService runtimeMemberships =
                         new MembershipService(
-                                runtimeJdbc,
+                                runtimeRepositories.getRepository(CenterMembershipRepository.class),
+                                runtimeRepositories.getRepository(UserAccountRepository.class),
+                                runtimeRepositories.getRepository(WorkspaceRepository.class),
+                                new SubscriptionPolicy(
+                                        runtimeRepositories.getRepository(
+                                                SubscriptionPeriodRepository.class)),
                                 runtimeIdempotency,
                                 mock(InitialCredentialHandoff.class),
                                 mock(MembershipPolicyProjector.class),
@@ -571,7 +609,16 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 runtimeWorkspaceTx,
                                 directory,
                                 runtimeOperations,
-                                new CenterPolicyProjector(runtimeJdbc, directory),
+                                new CenterPolicyProjector(
+                                        runtimeRepositories.getRepository(
+                                                CenterMembershipRepository.class),
+                                        runtimeRepositories.getRepository(
+                                                WorkspaceRepository.class),
+                                        runtimeRepositories.getRepository(
+                                                UserAccountRepository.class),
+                                        runtimeRepositories.getRepository(
+                                                SubscriptionPeriodRepository.class),
+                                        directory),
                                 runtimeResultProjector,
                                 runtimeTxManager);
                 GuardianLinkService runtimeLinks =

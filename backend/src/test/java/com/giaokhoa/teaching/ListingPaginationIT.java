@@ -15,6 +15,7 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.util.ArrayList;
@@ -107,7 +108,10 @@ class ListingPaginationIT extends IntegrationEnvironment {
         UUID foreignCursor = member(foreignWorkspace, 13, "STUDENT");
         MembershipService service =
                 new MembershipService(
-                        jdbc,
+                        repositories.memberships,
+                        repositories.accounts,
+                        repositories.workspaces,
+                        new SubscriptionPolicy(repositories.periods),
                         mock(IdempotencyService.class),
                         mock(InitialCredentialHandoff.class),
                         mock(MembershipPolicyProjector.class),

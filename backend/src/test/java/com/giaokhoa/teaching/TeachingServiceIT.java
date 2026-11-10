@@ -63,6 +63,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
     @Autowired CourseService courses;
     @Autowired EnrollmentService enrollments;
     @Autowired MembershipService memberships;
+    @Autowired SubscriptionPolicy subscriptionPolicy;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
 
@@ -161,13 +162,13 @@ class TeachingServiceIT extends IntegrationEnvironment {
     void subscriptionPolicyMatchesRealPostgresLifecycle() {
         UUID owner = seedAccount();
         UUID workspace = seedCenter(owner);
-        assertTrue(SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspace));
+        assertTrue(subscriptionPolicy.currentOrUnconfirmed(workspace));
 
         seedSubscription(workspace, -20, -1, owner);
-        assertFalse(SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspace));
+        assertFalse(subscriptionPolicy.currentOrUnconfirmed(workspace));
 
         seedSubscription(workspace, -1, 20, owner);
-        assertTrue(SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspace));
+        assertTrue(subscriptionPolicy.currentOrUnconfirmed(workspace));
     }
 
     @Test
@@ -523,7 +524,12 @@ class TeachingServiceIT extends IntegrationEnvironment {
             WorkspaceTransaction runtimeWorkspaceTx =
                     new WorkspaceTransaction(runtimeJdbc, runtime.transactionManager);
             TeachingScopePreconditions runtimePreconditions =
-                    new TeachingScopePreconditions(runtimeJdbc);
+                    new TeachingScopePreconditions(
+                            runtime.workspaces,
+                            runtime.memberships,
+                            runtime.accounts,
+                            runtime.periods,
+                            new SubscriptionPolicy(runtime.periods));
             TeachingRevocationContributor runtimeContributor =
                     new TeachingRevocationContributor(
                             runtime.classStudents,

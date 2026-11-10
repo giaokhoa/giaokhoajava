@@ -26,6 +26,9 @@ import com.giaokhoa.authorization.fence.DependencyManifestResolver;
 import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.DesiredProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
 import com.giaokhoa.authorization.policy.PolicyGraph;
@@ -92,6 +95,10 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired ProjectionReconciler reconciler;
     @Autowired AuthorizationOperationService operations;
+    @Autowired PersonalEntitlementProjector entitlementProjector;
+    @Autowired AuthorizationOperationRepository operationRepository;
+    @Autowired AuthzPartitionRepository partitionRepository;
+    @Autowired AuthzProjectionRepository projectionRepository;
     @Autowired IdentityEligibilitySynchronizer eligibility;
     @Autowired AuthorizationFence fence;
     @Autowired DependencyManifestResolver resolver;
@@ -517,7 +524,7 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
 
     // Seed đúng bundle entitlement mà đường bootstrap production ghi cho personal workspace.
     private List<String> bundle(Actor actor) {
-        return new PersonalEntitlementProjector(jdbc).bundleDescriptors(actor.workspace());
+        return entitlementProjector.bundleDescriptors(actor.workspace());
     }
 
     private List<PolicyGraph> accountApplies(ProjectionFaultInjection faults, Actor actor) {
@@ -562,7 +569,13 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
     }
 
     private ProjectionWorker worker() {
-        return new ProjectionWorker(jdbc, reconciler, transactionManager, new AuditRecorder(jdbc));
+        return new ProjectionWorker(
+                operationRepository,
+                partitionRepository,
+                projectionRepository,
+                reconciler,
+                transactionManager,
+                new AuditRecorder(jdbc));
     }
 
     private TransactionTemplate tx() {
