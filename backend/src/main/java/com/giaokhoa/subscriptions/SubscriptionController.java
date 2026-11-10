@@ -72,12 +72,9 @@ public class SubscriptionController {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu trường bắt buộc của kỳ gói.",
                                 List.of(
-                                        new Violation(
-                                                "workspaceId", "NotNull", "Giá trị không hợp lệ."),
-                                        new Violation(
-                                                "validFrom", "NotNull", "Giá trị không hợp lệ."),
-                                        new Violation(
-                                                "expiresAt", "NotNull", "Giá trị không hợp lệ.")));
+                                        Violation.notNull("workspaceId"),
+                                        Violation.notNull("validFrom"),
+                                        Violation.notNull("expiresAt")));
                     }
                     UUID workspaceId = body.workspaceId();
                     OffsetDateTime validFrom = body.validFrom();
@@ -85,17 +82,13 @@ public class SubscriptionController {
                     if (workspaceId == null || validFrom == null || expiresAt == null) {
                         List<Violation> violations = new ArrayList<>();
                         if (workspaceId == null) {
-                            violations.add(
-                                    new Violation(
-                                            "workspaceId", "NotNull", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notNull("workspaceId"));
                         }
                         if (validFrom == null) {
-                            violations.add(
-                                    new Violation("validFrom", "NotNull", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notNull("validFrom"));
                         }
                         if (expiresAt == null) {
-                            violations.add(
-                                    new Violation("expiresAt", "NotNull", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notNull("expiresAt"));
                         }
                         throw HttpProblemException.validationFailed(
                                 "Thiếu trường bắt buộc của kỳ gói.", violations);

@@ -100,21 +100,13 @@ public class GuardianLinkController {
                     if (body == null) {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu studentUserId.",
-                                List.of(
-                                        new Violation(
-                                                "studentUserId",
-                                                "NotNull",
-                                                "Giá trị không hợp lệ.")));
+                                List.of(Violation.notNull("studentUserId")));
                     }
                     UUID studentUserId = body.studentUserId();
                     if (studentUserId == null) {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu studentUserId.",
-                                List.of(
-                                        new Violation(
-                                                "studentUserId",
-                                                "NotNull",
-                                                "Giá trị không hợp lệ.")));
+                                List.of(Violation.notNull("studentUserId")));
                     }
                     requireParent(actor, workspaceId);
                     AuthorizationOperation operation =
@@ -177,25 +169,18 @@ public class GuardianLinkController {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu decision hoặc expectedVersion.",
                                 List.of(
-                                        new Violation(
-                                                "decision", "NotNull", "Giá trị không hợp lệ."),
-                                        new Violation(
-                                                "expectedVersion",
-                                                "NotNull",
-                                                "Giá trị không hợp lệ.")));
+                                        Violation.notNull("decision"),
+                                        Violation.notNull("expectedVersion")));
                     }
                     String decision = body.decision();
                     Long expectedVersion = body.expectedVersion();
                     if (decision == null || expectedVersion == null) {
                         List<Violation> violations = new ArrayList<>();
                         if (decision == null) {
-                            violations.add(
-                                    new Violation("decision", "NotNull", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notNull("decision"));
                         }
                         if (expectedVersion == null) {
-                            violations.add(
-                                    new Violation(
-                                            "expectedVersion", "NotNull", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notNull("expectedVersion"));
                         }
                         throw HttpProblemException.validationFailed(
                                 "Thiếu decision hoặc expectedVersion.", violations);

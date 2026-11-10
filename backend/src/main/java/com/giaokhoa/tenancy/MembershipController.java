@@ -58,6 +58,9 @@ import tools.jackson.databind.json.JsonMapper;
 public class MembershipController {
     private static final JsonMapper JSON = new JsonMapper();
 
+    /** Tên trường danh sách role trong body yêu cầu mời/đổi role. */
+    private static final String ROLES_FIELD = "roles";
+
     private final MembershipService memberships;
     private final InvitationService invitations;
     private final CenterService centers;
@@ -174,9 +177,7 @@ public class MembershipController {
                     if (body == null) {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu danh sách role của lời mời.",
-                                List.of(
-                                        new Violation(
-                                                "roles", "NotNull", "Giá trị không hợp lệ.")));
+                                List.of(Violation.notNull(ROLES_FIELD)));
                     }
                     Set<MembershipRole.Role> roles = parseRoles(body.roles());
                     memberships.requireAdmin(actor, workspaceId);
@@ -252,9 +253,7 @@ public class MembershipController {
                     if (body == null) {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu thông tin học sinh cần cấp.",
-                                List.of(
-                                        new Violation(
-                                                "username", "NotNull", "Giá trị không hợp lệ.")));
+                                List.of(Violation.notNull("username")));
                     }
                     String username = body.username();
                     String displayName = body.displayName();
@@ -266,17 +265,13 @@ public class MembershipController {
                             || (email != null && email.isBlank())) {
                         List<Violation> violations = new ArrayList<>();
                         if (username == null || username.isBlank()) {
-                            violations.add(
-                                    new Violation("username", "NotBlank", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notBlank("username"));
                         }
                         if (displayName == null || displayName.isBlank()) {
-                            violations.add(
-                                    new Violation(
-                                            "displayName", "NotBlank", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notBlank("displayName"));
                         }
                         if (email != null && email.isBlank()) {
-                            violations.add(
-                                    new Violation("email", "NotBlank", "Giá trị không hợp lệ."));
+                            violations.add(Violation.notBlank("email"));
                         }
                         throw HttpProblemException.validationFailed(
                                 "Thiếu tên đăng nhập hoặc tên hiển thị của học sinh.", violations);
@@ -338,9 +333,7 @@ public class MembershipController {
                     if (body == null) {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu danh sách role đích.",
-                                List.of(
-                                        new Violation(
-                                                "roles", "NotNull", "Giá trị không hợp lệ.")));
+                                List.of(Violation.notNull(ROLES_FIELD)));
                     }
                     Set<MembershipRole.Role> desired = parseRoles(body.roles());
                     Set<MembershipRole.Role> actorRoles =
@@ -462,16 +455,13 @@ public class MembershipController {
         for (String role : roles) {
             if (role == null) {
                 throw HttpProblemException.validationFailed(
-                        "Role không hợp lệ.",
-                        List.of(new Violation("roles", "INVALID", "Giá trị không hợp lệ.")));
+                        "Role không hợp lệ.", List.of(Violation.invalid(ROLES_FIELD)));
             }
             try {
                 parsed.add(MembershipRole.Role.valueOf(role));
             } catch (IllegalArgumentException ex) {
                 throw HttpProblemException.validationFailed(
-                        "Role không hợp lệ.",
-                        List.of(new Violation("roles", "INVALID", "Giá trị không hợp lệ.")),
-                        ex);
+                        "Role không hợp lệ.", List.of(Violation.invalid(ROLES_FIELD)), ex);
             }
         }
         return Set.copyOf(parsed);

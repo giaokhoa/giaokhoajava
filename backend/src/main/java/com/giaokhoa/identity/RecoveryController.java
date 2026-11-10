@@ -90,15 +90,14 @@ public class RecoveryController {
         if (body == null || body.targetUserId() == null) {
             throw HttpProblemException.validationFailed(
                     "Thiếu tài khoản đích của yêu cầu.",
-                    List.of(new Violation("targetUserId", "NotNull", "Giá trị không hợp lệ.")));
+                    List.of(Violation.notNull("targetUserId")));
         }
         // Giữ lý do trong biến cục bộ: gọi body.reason() hai lần khiến phân tích null
         // không nối được lần kiểm tra với lần dùng.
         String reason = body.reason();
         if (reason == null || reason.isBlank()) {
             throw HttpProblemException.validationFailed(
-                    "Thiếu lý do cần hỗ trợ.",
-                    List.of(new Violation("reason", "NotBlank", "Giá trị không hợp lệ.")));
+                    "Thiếu lý do cần hỗ trợ.", List.of(Violation.notBlank("reason")));
         }
         UUID actor = executor.actorUserId(authentication);
         RequestView created =
@@ -164,9 +163,7 @@ public class RecoveryController {
                     if (body == null || body.decision() == null) {
                         throw HttpProblemException.validationFailed(
                                 "Thiếu quyết định xử lý yêu cầu.",
-                                List.of(
-                                        new Violation(
-                                                "decision", "NotNull", "Giá trị không hợp lệ.")));
+                                List.of(Violation.notNull("decision")));
                     }
                     Decision decision;
                     try {
@@ -174,9 +171,7 @@ public class RecoveryController {
                     } catch (IllegalArgumentException ex) {
                         throw HttpProblemException.validationFailed(
                                 "Quyết định xử lý không hợp lệ.",
-                                List.of(
-                                        new Violation(
-                                                "decision", "INVALID", "Giá trị không hợp lệ.")),
+                                List.of(Violation.invalid("decision")),
                                 ex);
                     }
                     UUID operator = executor.actorUserId(authentication);
