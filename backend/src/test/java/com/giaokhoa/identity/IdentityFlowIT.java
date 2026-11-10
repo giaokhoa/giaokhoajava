@@ -310,10 +310,10 @@ class IdentityFlowIT extends IntegrationEnvironment {
         }
     }
 
-    // Endpoint invitations thuộc các task US2, chưa được triển khai; bật lại test khi endpoint đó
-    // land.
+    // Hợp đồng invitations của test này đã được bao phủ ở MembershipInvitationIT; giữ tắt để
+    // tránh trùng lặp.
     @Test
-    @Disabled("Endpoint invitations thuộc US2, chưa triển khai")
+    @Disabled("Đã bao phủ ở MembershipInvitationIT; giữ tắt để tránh trùng lặp")
     void invitationEndpointRegistersExistingIdentityWithoutOriginChange() throws Exception {
         String username = "flow-inviter-" + UUID.randomUUID();
         String password = "flow-password-" + UUID.randomUUID();

@@ -73,8 +73,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Ma trận thu hồi US5 (test-first): sáu scenario khóa hành vi thu hồi ở tầng HTTP với phiên thật và
- * worker thật, theo hợp đồng quyền trong thân issue.
+ * Ma trận thu hồi US5: sáu scenario khóa hành vi thu hồi ở tầng HTTP với phiên thật và worker thật,
+ * theo hợp đồng quyền trong thân issue.
  *
  * <ul>
  *   <li>US5.1 — gỡ phân công giáo viên: cùng phiên cũ đọc roster môn đó phải 403, giáo viên còn lại

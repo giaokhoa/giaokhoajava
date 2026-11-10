@@ -11,16 +11,7 @@ import {
 // E2E ma trận capability personal/center của US6 ở biên trình duyệt (FR-025–FR-028,
 // acceptance US6.1–US6.5 của spec.md): gói cá nhân mở lớp/kho cá nhân theo owner+gói;
 // membership/phân công center không mở quyền cá nhân và gói cá nhân không mở quyền
-// center; operator xác nhận gói thủ công, không qua payment gateway. Spec viết trước
-// implementation US6 (PersonalEntitlementProjector, PersonalClassService, trang
-// /personal/classes). Trạng thái đã kiểm chứng trên main ae5c762 (lượt chạy đại diện
-// trên stack TEST native): nhánh dương của US6.2 đã xanh — owner có gói tạo được
-// lớp/khóa/roster/ghi danh và CREATE_RESOURCE trong personal workspace. Phần còn
-// thiếu đúng phạm vi implementation US6: cửa gói trên đường giảng dạy personal chưa
-// có (US6.1 đỏ có bằng chứng: chưa có gói vẫn nhận 202 khi tạo lớp cá nhân và lớp
-// được ghi thật vào personal workspace, thay vì 403 như FR-025 yêu cầu) và giao diện
-// /personal/classes + trạng thái gói ở /personal chưa có. Đỏ ở các điểm còn lại
-// (luồng center, xác nhận gói, CREATE_RESOURCE) là lỗi thật, không phải test-first.
+// center; operator xác nhận gói thủ công, không qua payment gateway.
 // Spec cần origin ứng dụng đang chạy (backend cùng stack TEST) qua
 // NATIVE_GATE_APP_ORIGIN, cùng cơ chế với teaching-administration.spec.ts.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;

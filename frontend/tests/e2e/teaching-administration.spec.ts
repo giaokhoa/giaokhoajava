@@ -14,9 +14,8 @@ import { TestEnvironment, loginViaKeycloakForm, appRequestWhenReady } from "./su
 // Lưu ý kiểm chứng:
 // - Ghi danh/phân công chỉ dùng môn HIỆN CÓ lúc thao tác: thêm môn vào khóa sau không tự
 //   tạo ghi danh hay phân công (FR-015); test 3 khẳng định trực tiếp điều này.
-// - Kiểm tra giao/chấm/xem đáp án của chủ nhiệm cần sample action ASSIGN_ACTIVITY và
-//   GRADE_RESULT, hiện chỉ có CREATE_RESOURCE được cài đặt nên spec này chưa chạm tới;
-//   xem đáp án/chấm bài thuộc bề mặt sample action (US4/US7), không thuộc quản trị lớp.
+// - Kiểm tra giao/chấm/xem đáp án của chủ nhiệm thuộc bề mặt sample action
+//   (ASSIGN_ACTIVITY, GRADE_RESULT), không thuộc quản trị lớp, nên spec này chưa chạm tới.
 // - Mã lỗi vi phạm invariant chéo lớp/workspace ở test 7 lấy theo quy tắc lỗi chung của
 //   hợp đồng HTTP (field violations → 400); xem Sổ điểm chưa chắc chắn.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
