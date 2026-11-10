@@ -57,7 +57,12 @@ export function OnboardingContent() {
         if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
           setReason("");
         }
-        recoveryAttempt.current = null;
+        // Key chỉ được xóa khi operation đã hoàn tất: gửi lại cùng payload trong
+        // lúc operation đầu còn PENDING phải replay biên nhận của nó, không tạo
+        // yêu cầu khôi phục thứ hai.
+        if (nextOperation.completed) {
+          recoveryAttempt.current = null;
+        }
       }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Thao tác không thành công.");

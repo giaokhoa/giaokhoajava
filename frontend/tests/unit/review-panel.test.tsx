@@ -8,6 +8,7 @@ import {
 import {
   buildSampleActionPayload,
   parseSampleActionResult,
+  sampleActionAttemptSignature,
   SAMPLE_ACTION_SPECS,
 } from "../../src/features/resources/sample-actions-panel";
 
@@ -85,6 +86,26 @@ describe("dựng payload sample action", () => {
       attemptLimit: "1",
     });
     expect(assign.attemptLimit).toBe(1);
+  });
+});
+
+describe("chữ ký attempt của action mẫu", () => {
+  it("cùng workspace + cùng payload dùng một chữ ký, khác workspace hoặc payload thì khác", () => {
+    const payload = buildSampleActionPayload("SAVE_VERSION", { resourceId: "r-1", versionId: "v-1" });
+    const same = sampleActionAttemptSignature("w-1", payload);
+    expect(
+      sampleActionAttemptSignature(
+        "w-1",
+        buildSampleActionPayload("SAVE_VERSION", { resourceId: "r-1", versionId: "v-1" }),
+      ),
+    ).toBe(same);
+    expect(sampleActionAttemptSignature("w-2", payload)).not.toBe(same);
+    expect(
+      sampleActionAttemptSignature(
+        "w-1",
+        buildSampleActionPayload("SAVE_VERSION", { resourceId: "r-1", versionId: "v-2" }),
+      ),
+    ).not.toBe(same);
   });
 });
 

@@ -75,7 +75,8 @@ admin_get '' > "$TMP/realm-current.json"
 PENDING_BOOTSTRAP="$(jq -r '.attributes["gk.bootstrap.pending"] // "false"' "$TMP/realm-current.json")"
 jq -s '.[0] * (.[1] | {
   organizationsEnabled, registrationAllowed, registrationEmailAsUsername,
-  loginWithEmailAllowed, verifyEmail, duplicateEmailsAllowed
+  loginWithEmailAllowed, verifyEmail, duplicateEmailsAllowed,
+  sslRequired, bruteForceProtected, passwordPolicy, resetPasswordAllowed
 })' "$TMP/realm-current.json" "$BASELINE" > "$TMP/realm-update.json"
 admin_send PUT '' "$TMP/realm-update.json"
 
@@ -107,6 +108,8 @@ for id in giaokhoa-web giaokhoa-api giaokhoa-provisioner; do
       .secret = $webSecret |
       .baseUrl = $origin |
       .redirectUris = [$origin + "/login/oauth2/code/keycloak"] |
+      # URL back-channel và post-logout lấy từ APP_ORIGIN tại đây, không hardcode
+      # trong baseline (xem Sổ A4): origin/TLS production chưa chốt.
       .attributes += {
         "post.logout.redirect.uris": ($origin + "/"),
         "backchannel.logout.url": ($origin + "/logout/connect/back-channel/keycloak")

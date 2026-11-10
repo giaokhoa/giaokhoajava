@@ -4,6 +4,10 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, requestWhenReady } from "../../lib/api-client";
 import { useSession } from "../identity/session-provider";
 import {
+  attemptKey,
+  closeAttempt,
+} from "../operations/operation-attempts";
+import {
   operationStatus,
   pollOperationUntilSettled,
   type OperationView,
@@ -87,6 +91,17 @@ export function buildSampleActionPayload(
     }
   }
   return payload;
+}
+
+// Cùng workspace + cùng payload là một ý định: dùng lại một key giữa các lần
+// gửi lại khi operation chưa hoàn tất, để retry fence không sinh key mới.
+// Dạng tuple theo đúng quy ước chữ ký của các form quản trị; phạm vi theo
+// user đã có sẵn vì form được dựng lại từ đầu khi đổi tài khoản (key theo user).
+export function sampleActionAttemptSignature(
+  workspaceId: string,
+  payload: Record<string, unknown>,
+): string {
+  return JSON.stringify([workspaceId, payload]);
 }
 
 type Entry = [string, string];
@@ -180,6 +195,7 @@ function SampleActionForm() {
   const [content, setContent] = useState<ContentState | null>(null);
   const [contentBusy, setContentBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const attemptsRef = useRef(new Map<string, string>());
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -209,16 +225,23 @@ function SampleActionForm() {
     setOutcome(null);
     setActionError(null);
     const payload = buildSampleActionPayload(action, values);
+    const signature = sampleActionAttemptSignature(workspaceId, payload);
     const sentEntries: Entry[] = [["workspaceId", workspaceId], ...entriesOf(payload)];
     try {
       const result = await requestWhenReady<unknown>(
         `/api/workspaces/${encodeURIComponent(workspaceId)}/samples/actions`,
-        { method: "POST", body: JSON.stringify(payload), signal },
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+          signal,
+          headers: { "Idempotency-Key": attemptKey(attemptsRef.current, signature) },
+        },
       );
       if (result.kind === "pending") {
         const pendingView = parseOperationView(result.data);
         if (!pendingView) throw new Error("Phản hồi 202 thao tác không hợp lệ.");
         const settled = await pollOperationUntilSettled(pendingView.id, parseOperationView, signal);
+        closeAttempt(attemptsRef.current, signature, settled);
         const status = operationStatus(settled);
         setOutcome({
           state: settled.state,
@@ -231,6 +254,7 @@ function SampleActionForm() {
       }
       const parsed = parseSampleActionResult(result.data);
       if (!parsed) throw new Error("Phản hồi action mẫu không hợp lệ.");
+      closeAttempt(attemptsRef.current, signature, parsed);
       // State lạ vẫn được operationStatus xếp vào nhóm chưa hoàn tất, không thành công giả.
       const status = operationStatus({
         state: parsed.state as OperationView["state"],

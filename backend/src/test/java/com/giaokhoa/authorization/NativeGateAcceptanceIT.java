@@ -76,8 +76,8 @@ class NativeGateAcceptanceIT {
     private static final String REALM = "giaokhoa";
     private static final String LOGIN_CLIENT = "native-gate-test";
     private static final String REDIRECT_URI = "http://127.0.0.1:18895/callback";
-    private static final String ACTOR_PASSWORD = "acceptance-only-password";
-    private static final String TEMPORARY_PASSWORD = "temporary-only-password";
+    private static final String ACTOR_PASSWORD = "acceptance-only-password-Aa1";
+    private static final String TEMPORARY_PASSWORD = "temporary-only-password-Aa1";
     private static final Pattern LOGIN_FORM =
             Pattern.compile("<form[^>]*id=\"kc-form-login\"[^>]*action=\"([^\"]+)\"");
     private static final Pattern UPDATE_PASSWORD_FORM =

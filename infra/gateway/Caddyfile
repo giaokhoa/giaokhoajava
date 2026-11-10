@@ -7,6 +7,22 @@ http://giaokhoa.localhost:3000 {
 		}
 	}
 	handle {
+		# Header bảo mật cho tài liệu HTML do Next phục vụ; `>` (defer) để đặt
+		# sau khi proxy đã ghi header của nó. script-src cần 'unsafe-inline'
+		# vì Next chèn inline script chứa RSC payload — không có nonce thì
+		# 'self' trần chặn hydration (nâng cấp: cấp nonce theo request).
+		# Chỉ ở môi trường dev: script-src thêm 'unsafe-eval' vì React dùng
+		# eval cho Fast Refresh/tái dựng stack lỗi, style-src thêm
+		# 'unsafe-inline' vì dev chèn style nội tuyến — Caddyfile.test
+		# (production) không có hai nới này.
+		# form-action phải khai cả origin Keycloak dev: Chrome áp form-action
+		# lên cả redirect sau POST, mà logout OIDC bắt buộc form POST
+		# /api/logout rồi redirect qua end_session của Keycloak — thiếu
+		# origin này thì trình duyệt hủy điều hướng, logout không hoàn tất.
+		header {
+			>Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self' http://auth.giaokhoa.localhost:8081"
+			>X-Content-Type-Options "nosniff"
+		}
 		reverse_proxy app:3001
 	}
 }

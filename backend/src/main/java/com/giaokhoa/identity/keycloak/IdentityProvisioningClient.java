@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -29,7 +28,6 @@ public class IdentityProvisioningClient {
     private final String baseUrl;
     private final String realm;
     private final String webClientId;
-    private final OAuth2AuthorizedClientManager manager;
 
     @Autowired
     public IdentityProvisioningClient(
@@ -58,11 +56,13 @@ public class IdentityProvisioningClient {
             String realm,
             String webClientId,
             OAuth2AuthorizedClientManager manager) {
-        this.http = builder.build();
+        this.http =
+                builder.requestInterceptor(
+                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                        .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;
         this.webClientId = webClientId;
-        this.manager = manager;
     }
 
     /**
@@ -89,7 +89,6 @@ public class IdentityProvisioningClient {
         ResponseEntity<Void> response =
                 http.post()
                         .uri(endpoint("users"))
-                        .headers(headers -> headers.setBearerAuth(accessToken()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(body)
                         .retrieve()
@@ -109,11 +108,7 @@ public class IdentityProvisioningClient {
         if (keycloakUserId == null || keycloakUserId.isBlank()) {
             throw new IllegalArgumentException("Keycloak user ID is required");
         }
-        http.delete()
-                .uri(endpoint("users", keycloakUserId))
-                .headers(headers -> headers.setBearerAuth(accessToken()))
-                .retrieve()
-                .toBodilessEntity();
+        http.delete().uri(endpoint("users", keycloakUserId)).retrieve().toBodilessEntity();
     }
 
     /**
@@ -137,11 +132,7 @@ public class IdentityProvisioningClient {
                         .build()
                         .encode()
                         .toUri();
-        http.put()
-                .uri(uri)
-                .headers(headers -> headers.setBearerAuth(accessToken()))
-                .retrieve()
-                .toBodilessEntity();
+        http.put().uri(uri).retrieve().toBodilessEntity();
     }
 
     private URI endpoint(String... segments) {
@@ -151,17 +142,5 @@ public class IdentityProvisioningClient {
             builder.pathSegment(segment);
         }
         return builder.build().encode().toUri();
-    }
-
-    private String accessToken() {
-        var client =
-                manager.authorize(
-                        OAuth2AuthorizeRequest.withClientRegistrationId("giaokhoa-provisioner")
-                                .principal("giaokhoa-provisioner")
-                                .build());
-        if (client == null || client.getAccessToken() == null) {
-            throw new IllegalStateException("Keycloak provisioner cannot obtain an access token");
-        }
-        return client.getAccessToken().getTokenValue();
     }
 }

@@ -29,6 +29,8 @@
       "serviceAccountsEnabled": false,
       "attributes": {
         "backchannel.logout.session.required": "true",
+        "backchannel.logout.url": "http://host.docker.internal:18080/logout/connect/back-channel/keycloak",
+        "post.logout.redirect.uris": "http://127.0.0.1:8080/",
         "pkce.code.challenge.method": "S256"
       },
       "redirectUris": [
