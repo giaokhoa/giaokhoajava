@@ -63,7 +63,8 @@ public class HttpProblemException extends RuntimeException {
 
     public @Nullable List<Violation> getViolations() {
         // Trả bản sao để không bao giờ lộ chính list đang giữ bên trong (bất biến đã chốt
-        // ở constructor bằng List.copyOf, bản sao ở đây giữ nguyên tính chất đó).
-        return violations == null ? null : List.copyOf(violations);
+        // ở constructor bằng List.copyOf, bản sao ở đây giữ nguyên tính chất đó); nhánh
+        // null trả chính field đang null nên không lộ gì và giữ nguyên hợp đồng @Nullable.
+        return violations == null ? violations : List.copyOf(violations);
     }
 }
