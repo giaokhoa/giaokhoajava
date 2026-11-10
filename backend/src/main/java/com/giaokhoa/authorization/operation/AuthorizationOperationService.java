@@ -19,6 +19,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -177,20 +179,40 @@ public class AuthorizationOperationService {
                 projections.findAllById(closure.projectionIds())) {
             projection.setState(AuthorizationProjection.State.PENDING);
         }
+        // Nạp mọi projection hiện có của cả operation bằng một truy vấn thay vì tra từng
+        // target: bản đồ được cập nhật tại chỗ khi chèn mới nên một target xuất hiện hai lần
+        // trong cùng operation vẫn giữ ngữ nghĩa last-wins của đường tra cứu cũ.
+        Map<String, AuthorizationProjection> existingByTarget =
+                new HashMap<>(
+                        projections
+                                .findByTargetKeyIn(
+                                        changes.stream()
+                                                .flatMap(
+                                                        change ->
+                                                                change.projections().stream())
+                                                .map(DesiredProjection::targetKey)
+                                                .toList())
+                                .stream()
+                                .collect(
+                                        Collectors.toMap(
+                                                AuthorizationProjection::getTargetKey,
+                                                Function.identity())));
         for (PartitionChange change : changes) {
             for (DesiredProjection desired : change.projections()) {
-                upsertDesired(change.partitionId(), desired);
+                upsertDesired(change.partitionId(), desired, existingByTarget);
             }
         }
     }
 
-    private void upsertDesired(UUID partitionId, DesiredProjection desired) {
+    private void upsertDesired(
+            UUID partitionId,
+            DesiredProjection desired,
+            Map<String, AuthorizationProjection> existingByTarget) {
         String desiredHash =
                 ProjectionReconciler.desiredHash(
                         desired.targetKey(), desired.scope(), desired.sourceDescriptors());
-        var existing = projections.findByTargetKey(desired.targetKey());
-        if (existing.isPresent()) {
-            AuthorizationProjection projection = existing.get();
+        AuthorizationProjection projection = existingByTarget.get(desired.targetKey());
+        if (projection != null) {
             if (!partitionId.equals(projection.getPartitionId())) {
                 throw new IllegalStateException(
                         "Projection target belongs to another partition: " + desired.targetKey());
@@ -200,7 +222,7 @@ public class AuthorizationOperationService {
             projection.setState(AuthorizationProjection.State.PENDING);
             return;
         }
-        projections.save(
+        AuthorizationProjection created =
                 new AuthorizationProjection(
                         UUID.randomUUID(),
                         partitionId,
@@ -210,7 +232,9 @@ public class AuthorizationOperationService {
                         desired.dependencyPartitionIds(),
                         desiredHash,
                         null,
-                        AuthorizationProjection.State.PENDING));
+                        AuthorizationProjection.State.PENDING);
+        projections.save(created);
+        existingByTarget.put(desired.targetKey(), created);
     }
 
     private record Closure(Set<UUID> partitionIds, List<UUID> projectionIds) {}

@@ -17,6 +17,9 @@ public interface AuthzProjectionRepository
 
     Optional<AuthorizationProjection> findByTargetKey(String targetKey);
 
+    /** Mọi projection hiện có của một tập target key, nạp một lần cho đường upsert theo lô. */
+    List<AuthorizationProjection> findByTargetKeyIn(Collection<String> targetKeys);
+
     List<AuthorizationProjection> findByPartitionIdIn(Collection<UUID> partitionIds);
 
     void deleteByPartitionIdAndTargetKey(UUID partitionId, String targetKey);
