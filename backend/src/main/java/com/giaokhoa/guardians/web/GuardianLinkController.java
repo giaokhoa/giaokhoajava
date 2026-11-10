@@ -1,4 +1,4 @@
-package com.giaokhoa.guardians;
+package com.giaokhoa.guardians.web;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
@@ -7,8 +7,10 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.guardians.GuardianLinkService.GuardianLinkView;
+import com.giaokhoa.guardians.service.GuardianLinkService;
+import com.giaokhoa.guardians.service.GuardianLinkService.GuardianLinkView;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -19,7 +21,6 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,19 +46,19 @@ public class GuardianLinkController {
     private final GuardianLinkService links;
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
-    private final JdbcTemplate jdbc;
+    private final MembershipService memberships;
     private final ResourceMutationCoordinator coordinator;
 
     public GuardianLinkController(
             GuardianLinkService links,
             ProtectedActionExecutor executor,
             IdempotencyService idempotency,
-            JdbcTemplate jdbc,
+            MembershipService memberships,
             ResourceMutationCoordinator coordinator) {
         this.links = links;
         this.executor = executor;
         this.idempotency = idempotency;
-        this.jdbc = jdbc;
+        this.memberships = memberships;
         this.coordinator = coordinator;
     }
 
@@ -250,19 +251,7 @@ public class GuardianLinkController {
     }
 
     private Set<MembershipRole.Role> actorRoles(UUID actorUserId, UUID workspaceId) {
-        return Set.copyOf(
-                jdbc
-                        .queryForList(
-                                "SELECT r.role FROM center_membership m"
-                                        + " JOIN membership_role r ON r.membership_id = m.id"
-                                        + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                        + " AND m.state = 'ACTIVE'",
-                                String.class,
-                                workspaceId,
-                                actorUserId)
-                        .stream()
-                        .map(MembershipRole.Role::valueOf)
-                        .toList());
+        return memberships.activeRoles(actorUserId, workspaceId);
     }
 
     private <T> T withEligibleActor(

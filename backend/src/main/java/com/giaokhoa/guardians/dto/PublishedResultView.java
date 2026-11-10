@@ -1,4 +1,4 @@
-package com.giaokhoa.guardians;
+package com.giaokhoa.guardians.dto;
 
 import java.time.Instant;
 import java.util.UUID;

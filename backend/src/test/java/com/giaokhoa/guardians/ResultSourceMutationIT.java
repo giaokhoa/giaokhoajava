@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.guardians.service.GuardianLinkService;
 import com.giaokhoa.teaching.AssignmentService;
 import com.giaokhoa.teaching.EnrollmentService;
 import com.giaokhoa.tenancy.CenterService;

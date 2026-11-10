@@ -1,14 +1,14 @@
 package com.giaokhoa.verification;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.WorkspaceDirectory;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.verification.repository.SystemPracticeAttemptRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -18,15 +18,15 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class SystemPracticeService {
-    private final JdbcTemplate jdbc;
+    private final SystemPracticeAttemptRepository attempts;
     private final WorkspaceDirectory directory;
     private final WorkspaceTransaction workspaceTransaction;
 
     public SystemPracticeService(
-            JdbcTemplate jdbc,
+            SystemPracticeAttemptRepository attempts,
             WorkspaceDirectory directory,
             WorkspaceTransaction workspaceTransaction) {
-        this.jdbc = jdbc;
+        this.attempts = attempts;
         this.directory = directory;
         this.workspaceTransaction = workspaceTransaction;
     }
@@ -48,21 +48,17 @@ public class SystemPracticeService {
                 workspaceTransaction.inWorkspace(
                         personalWorkspace.get(),
                         () ->
-                                jdbc.query(
-                                        "SELECT id, attempted_at, system_resource_id, version_id,"
-                                                + " outcome_stub FROM"
-                                                + " system_practice_attempt_sample"
-                                                + " WHERE user_id = ?"
-                                                + " ORDER BY attempted_at DESC, id DESC",
-                                        (rs, _) ->
+                                attempts
+                                        .findByUserIdOrderByAttemptedAtDescIdDesc(actorUserId)
+                                        .stream()
+                                        .map(attempt ->
                                                 new PracticeEntry(
-                                                        rs.getObject("id", UUID.class),
-                                                        rs.getTimestamp("attempted_at").toInstant(),
-                                                        rs.getObject(
-                                                                "system_resource_id", UUID.class),
-                                                        rs.getObject("version_id", UUID.class),
-                                                        rs.getString("outcome_stub")),
-                                        actorUserId));
+                                                        attempt.getId(),
+                                                        attempt.getAttemptedAt(),
+                                                        attempt.getSystemResourceId(),
+                                                        attempt.getVersionId(),
+                                                        attempt.getOutcomeStub()))
+                                        .toList());
         return entries == null ? List.of() : entries;
     }
 }

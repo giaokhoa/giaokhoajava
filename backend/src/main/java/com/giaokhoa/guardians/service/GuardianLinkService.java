@@ -1,19 +1,25 @@
-package com.giaokhoa.guardians;
+package com.giaokhoa.guardians.service;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.guardians.GuardianPolicyProjector;
+import com.giaokhoa.guardians.model.GuardianLink;
+import com.giaokhoa.guardians.repository.GuardianLinkRepository;
+import com.giaokhoa.guardians.repository.WorkspaceRepository;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.subscriptions.SubscriptionPolicy;
+import com.giaokhoa.tenancy.MembershipService;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.model.Workspace;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,7 +49,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class GuardianLinkService {
-    private final JdbcTemplate jdbc;
+    private final GuardianLinkRepository links;
+    private final WorkspaceRepository workspaces;
+    private final MembershipService memberships;
     private final WorkspaceTransaction workspaceTransaction;
     private final IdempotencyService idempotency;
     private final GuardianPolicyProjector projector;
@@ -51,13 +59,17 @@ public class GuardianLinkService {
     private final AuditRecorder audit;
 
     public GuardianLinkService(
-            JdbcTemplate jdbc,
+            GuardianLinkRepository links,
+            WorkspaceRepository workspaces,
+            MembershipService memberships,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,
             GuardianPolicyProjector projector,
             ResourceMutationCoordinator coordinator,
             AuditRecorder audit) {
-        this.jdbc = jdbc;
+        this.links = links;
+        this.workspaces = workspaces;
+        this.memberships = memberships;
         this.workspaceTransaction = workspaceTransaction;
         this.idempotency = idempotency;
         this.projector = projector;
@@ -73,9 +85,6 @@ public class GuardianLinkService {
             UUID studentUserId,
             String state,
             long version) {}
-
-    private record LinkRow(
-            UUID id, UUID parentUserId, UUID studentUserId, String state, long version) {}
 
     /**
      * Parent gửi request liên kết tới một học sinh của center cho chính mình. Trả operation chưa
@@ -100,25 +109,21 @@ public class GuardianLinkService {
             return existing.get();
         }
         requireCenterWorkspace(workspaceId);
-        if (!hasCurrentRole(workspaceId, actorUserId, "PARENT")) {
+        if (!hasCurrentRole(workspaceId, actorUserId, MembershipRole.Role.PARENT)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
                     "GUARDIAN_PARENT_NOT_CURRENT",
                     "Chỉ phụ huynh hiện hành của trung tâm mới gửi được yêu cầu liên kết.");
         }
-        if (!hasCurrentRole(workspaceId, studentUserId, "STUDENT")) {
+        if (!hasCurrentRole(workspaceId, studentUserId, MembershipRole.Role.STUDENT)) {
             throw linkTargetNotFound();
         }
         boolean alreadyCurrent =
-                !jdbc.queryForList(
-                                "SELECT id FROM guardian_link WHERE workspace_id = ?"
-                                        + " AND parent_user_id = ? AND student_user_id = ?"
-                                        + " AND state IN ('REQUESTED', 'APPROVED')",
-                                UUID.class,
-                                workspaceId,
-                                actorUserId,
-                                studentUserId)
-                        .isEmpty();
+                links.existsByWorkspaceIdAndParentUserIdAndStudentUserIdAndStateIn(
+                        workspaceId,
+                        actorUserId,
+                        studentUserId,
+                        List.of(GuardianLink.REQUESTED, GuardianLink.APPROVED));
         if (alreadyCurrent) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
@@ -126,15 +131,7 @@ public class GuardianLinkService {
                     "Đã có liên kết hiện hành cho cặp phụ huynh và học sinh này.");
         }
         UUID linkId = UUID.randomUUID();
-        jdbc.update(
-                "INSERT INTO guardian_link"
-                        + " (id, workspace_id, parent_user_id, student_user_id, state, requested_by)"
-                        + " VALUES (?, ?, ?, ?, 'REQUESTED', ?)",
-                linkId,
-                workspaceId,
-                actorUserId,
-                studentUserId,
-                actorUserId);
+        links.save(new GuardianLink(linkId, workspaceId, actorUserId, studentUserId, actorUserId));
         AuthorizationOperation operation =
                 projector.recordGuardianChange(
                         actorUserId, workspaceId, idempotencyKey, payloadHash);
@@ -176,33 +173,26 @@ public class GuardianLinkService {
             return existing.get();
         }
         requireCenterWorkspace(workspaceId);
-        LinkRow row = lockLink(workspaceId, linkId);
+        GuardianLink link = lockLink(workspaceId, linkId);
         requireAdmin(workspaceId, actorUserId);
-        if (!"REQUESTED".equals(row.state())) {
+        if (!GuardianLink.REQUESTED.equals(link.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "GUARDIAN_LINK_ALREADY_DECIDED",
                     "Liên kết đã có quyết định hoặc đã đóng, không quyết định lại được.");
         }
-        if (expectedVersion != row.version()) {
+        if (expectedVersion != link.getVersion()) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "VERSION_CONFLICT", "Phiên bản dữ liệu đã thay đổi.");
         }
         if (approve) {
-            requirePrerequisitesCurrent(workspaceId, row);
+            requirePrerequisitesCurrent(workspaceId, link);
             requireSubscriptionCurrent(workspaceId);
-            jdbc.update(
-                    "UPDATE guardian_link SET state = 'APPROVED', approved_by = ?,"
-                            + " approved_at = now(), version = version + 1, updated_at = now()"
-                            + " WHERE id = ?",
-                    actorUserId,
-                    linkId);
+            link.approve(actorUserId, Instant.now());
         } else {
-            jdbc.update(
-                    "UPDATE guardian_link SET state = 'REJECTED',"
-                            + " version = version + 1, updated_at = now() WHERE id = ?",
-                    linkId);
+            link.reject();
         }
+        links.flush();
         AuthorizationOperation operation =
                 projector.recordGuardianChange(
                         actorUserId, workspaceId, idempotencyKey, payloadHash);
@@ -235,34 +225,33 @@ public class GuardianLinkService {
             return existing.get();
         }
         requireCenterWorkspace(workspaceId);
-        LinkRow row = lockLink(workspaceId, linkId);
+        GuardianLink link = lockLink(workspaceId, linkId);
         requireAdmin(workspaceId, actorUserId);
-        switch (row.state()) {
-            case "APPROVED" -> {
+        switch (link.getState()) {
+            case GuardianLink.APPROVED -> {
                 // Trạng thái duy nhất thu hồi được; xử lý ở dưới sau switch.
             }
-            case "REQUESTED" ->
+            case GuardianLink.REQUESTED ->
                     throw new HttpProblemException(
                             HttpStatus.CONFLICT,
                             "GUARDIAN_LINK_NOT_APPROVED",
                             "Liên kết chưa được duyệt thì không có nguồn nào để gỡ.");
-            case "REJECTED" ->
+            case GuardianLink.REJECTED ->
                     throw new HttpProblemException(
                             HttpStatus.CONFLICT,
                             "GUARDIAN_LINK_ALREADY_CLOSED",
                             "Liên kết đã bị từ chối và đã đóng.");
-            case "REVOKED" ->
+            case GuardianLink.REVOKED ->
                     throw new HttpProblemException(
                             HttpStatus.CONFLICT,
                             "GUARDIAN_LINK_ALREADY_REVOKED",
                             "Liên kết đã bị gỡ trước đó.");
             default ->
-                    throw new IllegalStateException("Unknown guardian link state: " + row.state());
+                    throw new IllegalStateException(
+                            "Unknown guardian link state: " + link.getState());
         }
-        jdbc.update(
-                "UPDATE guardian_link SET state = 'REVOKED', revoked_at = now(),"
-                        + " version = version + 1, updated_at = now() WHERE id = ?",
-                linkId);
+        link.revoke(Instant.now());
+        links.flush();
         AuthorizationOperation operation =
                 projector.recordGuardianChange(
                         actorUserId, workspaceId, idempotencyKey, payloadHash);
@@ -276,20 +265,11 @@ public class GuardianLinkService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(parentUserId, "parentUserId");
         workspaceTransaction.applyContext(workspaceId);
-        return jdbc.query(
-                "SELECT id, parent_user_id, student_user_id, state, version FROM guardian_link"
-                        + " WHERE workspace_id = ? AND parent_user_id = ?"
-                        + " ORDER BY created_at ASC, id ASC",
-                (rs, _) ->
-                        new GuardianLinkView(
-                                rs.getObject("id", UUID.class),
-                                workspaceId,
-                                rs.getObject("parent_user_id", UUID.class),
-                                rs.getObject("student_user_id", UUID.class),
-                                rs.getString("state"),
-                                rs.getLong("version")),
-                workspaceId,
-                parentUserId);
+        return links
+                .findByWorkspaceIdAndParentUserIdOrderByCreatedAtAscIdAsc(workspaceId, parentUserId)
+                .stream()
+                .map(link -> view(workspaceId, link))
+                .toList();
     }
 
     /**
@@ -300,49 +280,28 @@ public class GuardianLinkService {
     public List<GuardianLinkView> listLinksForReview(UUID workspaceId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         workspaceTransaction.applyContext(workspaceId);
-        return jdbc.query(
-                "SELECT id, parent_user_id, student_user_id, state, version FROM guardian_link"
-                        + " WHERE workspace_id = ? AND state IN ('REQUESTED', 'APPROVED')"
-                        + " ORDER BY created_at ASC, id ASC",
-                (rs, _) ->
-                        new GuardianLinkView(
-                                rs.getObject("id", UUID.class),
-                                workspaceId,
-                                rs.getObject("parent_user_id", UUID.class),
-                                rs.getObject("student_user_id", UUID.class),
-                                rs.getString("state"),
-                                rs.getLong("version")),
-                workspaceId);
+        return links
+                .findByWorkspaceIdAndStateInOrderByCreatedAtAscIdAsc(
+                        workspaceId, List.of(GuardianLink.REQUESTED, GuardianLink.APPROVED))
+                .stream()
+                .map(link -> view(workspaceId, link))
+                .toList();
     }
 
-    private LinkRow lockLink(UUID workspaceId, UUID linkId) {
-        List<LinkRow> rows =
-                jdbc.query(
-                        "SELECT id, parent_user_id, student_user_id, state, version"
-                                + " FROM guardian_link WHERE workspace_id = ? AND id = ?"
-                                + " FOR UPDATE",
-                        (rs, _) ->
-                                new LinkRow(
-                                        rs.getObject("id", UUID.class),
-                                        rs.getObject("parent_user_id", UUID.class),
-                                        rs.getObject("student_user_id", UUID.class),
-                                        rs.getString("state"),
-                                        rs.getLong("version")),
-                        workspaceId,
-                        linkId);
-        if (rows.isEmpty()) {
-            throw new HttpProblemException(
-                    HttpStatus.NOT_FOUND,
-                    "GUARDIAN_LINK_NOT_FOUND",
-                    "Không tìm thấy liên kết phụ huynh trong trung tâm này.");
-        }
-        return rows.getFirst();
+    private GuardianLink lockLink(UUID workspaceId, UUID linkId) {
+        return links.findByWorkspaceIdAndIdForUpdate(workspaceId, linkId)
+                .orElseThrow(() ->
+                        new HttpProblemException(
+                                HttpStatus.NOT_FOUND,
+                                "GUARDIAN_LINK_NOT_FOUND",
+                                "Không tìm thấy liên kết phụ huynh trong trung tâm này."));
     }
 
     /** Tiền đề của cả hai phía phải còn hiện hành tại thời điểm duyệt, không chỉ lúc gửi. */
-    private void requirePrerequisitesCurrent(UUID workspaceId, LinkRow row) {
-        if (!hasCurrentRole(workspaceId, row.parentUserId(), "PARENT")
-                || !hasCurrentRole(workspaceId, row.studentUserId(), "STUDENT")) {
+    private void requirePrerequisitesCurrent(UUID workspaceId, GuardianLink link) {
+        if (!hasCurrentRole(workspaceId, link.getParentUserId(), MembershipRole.Role.PARENT)
+                || !hasCurrentRole(
+                        workspaceId, link.getStudentUserId(), MembershipRole.Role.STUDENT)) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "GUARDIAN_PREREQUISITE_NOT_CURRENT",
@@ -356,8 +315,8 @@ public class GuardianLinkService {
      * service, theo đúng tiền lệ MembershipService, để lời gọi thẳng service cũng bị chặn.
      */
     private void requireAdmin(UUID workspaceId, UUID actorUserId) {
-        if (!hasCurrentRole(workspaceId, actorUserId, "OWNER")
-                && !hasCurrentRole(workspaceId, actorUserId, "MANAGER")) {
+        if (!hasCurrentRole(workspaceId, actorUserId, MembershipRole.Role.OWNER)
+                && !hasCurrentRole(workspaceId, actorUserId, MembershipRole.Role.MANAGER)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
                     "PERMISSION_DENIED",
@@ -365,27 +324,15 @@ public class GuardianLinkService {
         }
     }
 
-    private boolean hasCurrentRole(UUID workspaceId, UUID userId, String role) {
-        Integer count =
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                + " AND m.state = 'ACTIVE' AND r.role = ?",
-                        Integer.class,
-                        workspaceId,
-                        userId,
-                        role);
-        return count != null && count > 0;
+    private boolean hasCurrentRole(UUID workspaceId, UUID userId, MembershipRole.Role role) {
+        return memberships.activeRoles(userId, workspaceId).contains(role);
     }
 
     private void requireCenterWorkspace(UUID workspaceId) {
-        List<String> kinds =
-                jdbc.queryForList(
-                        "SELECT kind FROM workspace WHERE id = ? AND state = 'ACTIVE'",
-                        String.class,
-                        workspaceId);
-        if (kinds.isEmpty() || !"CENTER".equals(kinds.getFirst())) {
+        Workspace workspace = workspaces.findById(workspaceId).orElse(null);
+        if (workspace == null
+                || !"ACTIVE".equals(workspace.getState())
+                || workspace.getKind() != Workspace.Kind.CENTER) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     "WORKSPACE_NOT_FOUND",
@@ -395,15 +342,11 @@ public class GuardianLinkService {
 
     /**
      * Gói còn hiệu lực theo đúng mẫu của các service nguồn quyền khác: workspace chưa từng có kỳ
-     * gói nào thì không bị chặn; đã có kỳ thì phải có ít nhất một kỳ đang trong hiệu lực.
+     * gói nào thì không bị chặn; đã có kỳ thì phải có ít nhất một kỳ đang trong hiệu lực — qua
+     * MembershipService, nơi giữ cùng chính sách và cùng lỗi 403 SUBSCRIPTION_INACTIVE.
      */
     private void requireSubscriptionCurrent(UUID workspaceId) {
-        if (!SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspaceId)) {
-            throw new HttpProblemException(
-                    HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
-                    "Gói sử dụng của trung tâm đã hết hiệu lực.");
-        }
+        memberships.requireSubscriptionCurrent(workspaceId);
     }
 
     private void recordAudit(
@@ -416,6 +359,16 @@ public class GuardianLinkService {
                 linkId,
                 operation.getId(),
                 AuditEvent.Outcome.PENDING);
+    }
+
+    private static GuardianLinkView view(UUID workspaceId, GuardianLink link) {
+        return new GuardianLinkView(
+                link.getId(),
+                workspaceId,
+                link.getParentUserId(),
+                link.getStudentUserId(),
+                link.getState(),
+                link.getVersion());
     }
 
     private static HttpProblemException linkTargetNotFound() {

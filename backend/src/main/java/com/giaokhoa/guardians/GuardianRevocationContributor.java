@@ -1,13 +1,15 @@
 package com.giaokhoa.guardians;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.guardians.model.GuardianLink;
+import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.TreeSet;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -40,12 +42,12 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class GuardianRevocationContributor {
-    private final JdbcTemplate jdbc;
+    private final GuardianLinkRepository links;
     private final WorkspaceTransaction workspaceTransaction;
 
     public GuardianRevocationContributor(
-            JdbcTemplate jdbc, WorkspaceTransaction workspaceTransaction) {
-        this.jdbc = jdbc;
+            GuardianLinkRepository links, WorkspaceTransaction workspaceTransaction) {
+        this.links = links;
         this.workspaceTransaction = workspaceTransaction;
     }
 
@@ -54,21 +56,12 @@ public class GuardianRevocationContributor {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(parentUserId, "parentUserId");
         workspaceTransaction.applyContext(workspaceId);
+        List<GuardianLink> approved =
+                links.findByWorkspaceIdAndParentUserIdAndState(
+                        workspaceId, parentUserId, GuardianLink.APPROVED);
         List<UUID> studentIds =
-                jdbc.queryForList(
-                        "SELECT DISTINCT student_user_id FROM guardian_link"
-                                + " WHERE workspace_id = ? AND parent_user_id = ?"
-                                + " AND state = 'APPROVED'",
-                        UUID.class,
-                        workspaceId,
-                        parentUserId);
-        jdbc.update(
-                "UPDATE guardian_link SET state = 'REVOKED', revoked_at = now(),"
-                        + " version = version + 1, updated_at = now()"
-                        + " WHERE workspace_id = ? AND parent_user_id = ?"
-                        + " AND state = 'APPROVED'",
-                workspaceId,
-                parentUserId);
+                approved.stream().map(GuardianLink::getStudentUserId).distinct().toList();
+        closeAll(approved);
         return groupPaths(workspaceId, studentIds);
     }
 
@@ -77,23 +70,12 @@ public class GuardianRevocationContributor {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(studentUserId, "studentUserId");
         workspaceTransaction.applyContext(workspaceId);
-        List<UUID> parentIds =
-                jdbc.queryForList(
-                        "SELECT DISTINCT parent_user_id FROM guardian_link"
-                                + " WHERE workspace_id = ? AND student_user_id = ?"
-                                + " AND state = 'APPROVED'",
-                        UUID.class,
-                        workspaceId,
-                        studentUserId);
-        jdbc.update(
-                "UPDATE guardian_link SET state = 'REVOKED', revoked_at = now(),"
-                        + " version = version + 1, updated_at = now()"
-                        + " WHERE workspace_id = ? AND student_user_id = ?"
-                        + " AND state = 'APPROVED'",
-                workspaceId,
-                studentUserId);
+        List<GuardianLink> approved =
+                links.findByWorkspaceIdAndStudentUserIdAndState(
+                        workspaceId, studentUserId, GuardianLink.APPROVED);
+        closeAll(approved);
         // Group bị ảnh hưởng là group của chính học sinh này, không phụ thuộc số parent.
-        return parentIds.isEmpty()
+        return approved.isEmpty()
                 ? List.of()
                 : List.of(NativePolicyTemplates.guardiansGroup(workspaceId, studentUserId));
     }
@@ -105,6 +87,16 @@ public class GuardianRevocationContributor {
         List<String> targets = new ArrayList<>(revokeLinksOfParent(workspaceId, userId));
         targets.addAll(revokeLinksOfStudent(workspaceId, userId));
         return List.copyOf(new TreeSet<>(targets));
+    }
+
+    /** Đóng toàn bộ link đã nạp và flush ngay để phép đóng thấy được trong cùng transaction. */
+    private void closeAll(List<GuardianLink> approved) {
+        if (approved.isEmpty()) {
+            return;
+        }
+        Instant revokedAt = Instant.now();
+        approved.forEach(link -> link.revoke(revokedAt));
+        links.flush();
     }
 
     private static List<String> groupPaths(UUID workspaceId, List<UUID> studentIds) {

@@ -13,14 +13,20 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.guardians.repository.UserAccountRepository;
+import com.giaokhoa.guardians.service.PublishedResultService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.verification.repository.CourseRepository;
+import com.giaokhoa.verification.repository.CourseSubjectRepository;
+import com.giaokhoa.verification.repository.SampleResultRepository;
+import com.giaokhoa.verification.repository.SchoolClassRepository;
+import com.giaokhoa.verification.repository.SubjectRepository;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
@@ -38,7 +44,6 @@ class PublishedResultEmptyPageTest {
     private Fixture fixture() {
         ProtectedActionExecutor executor = mock(ProtectedActionExecutor.class);
         WorkspaceTransaction workspaces = mock(WorkspaceTransaction.class);
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
         Authentication authentication = mock(Authentication.class);
         when(executor.actorUserId(authentication)).thenReturn(ACTOR);
         doAnswer(call -> ((Supplier<?>) call.getArgument(1)).get())
@@ -48,7 +53,17 @@ class PublishedResultEmptyPageTest {
                 .when(executor)
                 .execute(eq(authentication), any(), any(), anyList(), any());
         return new Fixture(
-                new PublishedResultService(executor, workspaces, jdbc), executor, authentication);
+                new PublishedResultService(
+                        executor,
+                        workspaces,
+                        mock(SampleResultRepository.class),
+                        mock(CourseSubjectRepository.class),
+                        mock(CourseRepository.class),
+                        mock(SchoolClassRepository.class),
+                        mock(SubjectRepository.class),
+                        mock(UserAccountRepository.class)),
+                executor,
+                authentication);
     }
 
     @Test

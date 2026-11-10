@@ -1,18 +1,31 @@
 package com.giaokhoa.verification;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.guardians.model.GuardianLink;
+import com.giaokhoa.guardians.repository.GuardianLinkRepository;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.tenancy.MembershipService;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.verification.model.SampleResult;
+import com.giaokhoa.verification.repository.AuthorizationPartitionRepository;
+import com.giaokhoa.verification.repository.EnrollmentRepository;
+import com.giaokhoa.verification.repository.SampleResultRepository;
+import com.giaokhoa.verification.repository.TeachingAssignmentRepository;
+import com.giaokhoa.verification.repository.UserAccountRepository;
+import com.giaokhoa.verification.repository.WorkspaceRepository;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -42,7 +55,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>Các bảng kết quả/liên kết nằm dưới RLS theo context workspace của transaction, mà phía
  * reconcile không có transaction bao quanh sẵn: mọi phép dựng bundle ở đây tự bọc trong một
  * transaction ngắn có đặt context của đúng workspace trước truy vấn đầu tiên, như projector giảng
- * dạy.
+ * dạy. Dữ kiện của module khác (ghi danh, phân công, workspace, tài khoản, liên kết phụ huynh) được
+ * đọc qua repository của module sở tại và phân giải theo định danh ở tầng ứng dụng.
  */
 @Component
 public class ResultPolicyProjector {
@@ -52,15 +66,39 @@ public class ResultPolicyProjector {
     private static final String GUARDIAN_DESCRIPTOR = "GUARDIAN_GROUP";
     private static final String BUNDLE_SCOPE = PermissionCatalog.ResultScope.READ.scopeName();
 
-    private final JdbcTemplate jdbc;
+    private final SampleResultRepository results;
+    private final AuthorizationPartitionRepository partitions;
+    private final TeachingAssignmentRepository assignments;
+    private final EnrollmentRepository enrollments;
+    private final WorkspaceRepository workspaces;
+    private final UserAccountRepository userAccounts;
+    private final GuardianLinkRepository guardianLinks;
+    private final MembershipService memberships;
+    private final WorkspaceTransaction workspaceTransaction;
     private final AuthorizationOperationService operations;
     private final TransactionTemplate transactions;
 
     public ResultPolicyProjector(
-            JdbcTemplate jdbc,
+            SampleResultRepository results,
+            AuthorizationPartitionRepository partitions,
+            TeachingAssignmentRepository assignments,
+            EnrollmentRepository enrollments,
+            WorkspaceRepository workspaces,
+            UserAccountRepository userAccounts,
+            GuardianLinkRepository guardianLinks,
+            MembershipService memberships,
+            WorkspaceTransaction workspaceTransaction,
             AuthorizationOperationService operations,
             PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+        this.results = results;
+        this.partitions = partitions;
+        this.assignments = assignments;
+        this.enrollments = enrollments;
+        this.workspaces = workspaces;
+        this.userAccounts = userAccounts;
+        this.guardianLinks = guardianLinks;
+        this.memberships = memberships;
+        this.workspaceTransaction = workspaceTransaction;
         this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -93,25 +131,15 @@ public class ResultPolicyProjector {
         UUID resultId = targetIdOf(targetKey);
         List<String> bundle =
                 transactions.execute(_ -> {
-                    applyContext(workspaceId);
-                    List<Map<String, Object>> rows =
-                            jdbc.queryForList(
-                                    "SELECT student_user_id, course_subject_id, state"
-                                            + " FROM sample_result WHERE workspace_id = ?"
-                                            + " AND id = ?",
-                                    workspaceId,
-                                    resultId);
-                    if (rows.isEmpty()) {
+                    workspaceTransaction.applyContext(workspaceId);
+                    SampleResult result =
+                            results.findByWorkspaceIdAndId(workspaceId, resultId).orElse(null);
+                    if (result == null) {
                         return List.of();
                     }
-                    Map<String, Object> result = rows.getFirst();
-                    UUID studentUserId =
-                            Objects.requireNonNull(
-                                    (UUID) result.get("student_user_id"), "student_user_id");
-                    UUID courseSubjectId =
-                            Objects.requireNonNull(
-                                    (UUID) result.get("course_subject_id"), "course_subject_id");
-                    boolean published = "PUBLISHED".equals(result.get("state"));
+                    UUID studentUserId = result.getStudentUserId();
+                    UUID courseSubjectId = result.getCourseSubjectId();
+                    boolean published = "PUBLISHED".equals(result.getState());
                     List<String> descriptors = new ArrayList<>();
                     if (isCenter(workspaceId)) {
                         centerSources(
@@ -147,13 +175,8 @@ public class ResultPolicyProjector {
     public List<String> allBundleTargetKeys(UUID workspaceId) {
         List<String> targets =
                 transactions.execute(_ -> {
-                    applyContext(workspaceId);
-                    return jdbc
-                            .queryForList(
-                                    "SELECT id FROM sample_result WHERE workspace_id = ?",
-                                    UUID.class,
-                                    workspaceId)
-                            .stream()
+                    workspaceTransaction.applyContext(workspaceId);
+                    return results.findIdsByWorkspaceId(workspaceId).stream()
                             .map(resultId -> NativePolicyTemplates.resultKey(workspaceId, resultId))
                             .toList();
                 });
@@ -187,13 +210,14 @@ public class ResultPolicyProjector {
             String idempotencyKey,
             String payloadHash,
             List<String> targetKeys) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
+        List<UUID> partitionIds =
+                partitions
+                        .findByKindAndOwnerKey(
+                                AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
+                        .stream()
+                        .map(AuthorizationPartition::getId)
+                        .toList();
+        if (partitionIds.isEmpty()) {
             throw new IllegalStateException(
                     "Workspace authorization partition is missing: " + workspaceId);
         }
@@ -210,7 +234,7 @@ public class ResultPolicyProjector {
                 payloadHash,
                 List.of(
                         new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(), List.copyOf(projections))));
+                                partitionIds.getFirst(), List.copyOf(projections))));
     }
 
     /**
@@ -253,11 +277,8 @@ public class ResultPolicyProjector {
         String teachers =
                 NativePolicyTemplates.courseSubjectTeachersGroup(workspaceId, courseSubjectId);
         boolean teachersPresent =
-                rowExists(
-                        "SELECT id FROM teaching_assignment WHERE workspace_id = ?"
-                                + " AND course_subject_id = ? AND state IN ('PENDING', 'ACTIVE')",
-                        workspaceId,
-                        courseSubjectId);
+                assignments.existsByWorkspaceIdAndCourseSubjectIdAndStateIn(
+                        workspaceId, courseSubjectId, List.of("PENDING", "ACTIVE"));
         if (teachersPresent) {
             descriptors.add(groupDescriptor(workspaceId, teachers, targetKey, "read"));
             descriptors.add(groupDescriptor(workspaceId, teachers, targetKey, "grade"));
@@ -293,23 +314,22 @@ public class ResultPolicyProjector {
             UUID studentUserId,
             UUID courseSubjectId,
             boolean published) {
-        List<Map<String, Object>> owners =
-                jdbc.queryForList(
-                        "SELECT u.id AS user_id, u.keycloak_sub AS subject FROM workspace w"
-                                + " JOIN user_account u ON u.id = w.owner_user_id"
-                                + " WHERE w.id = ? AND w.kind = 'PERSONAL'",
-                        workspaceId);
-        if (!owners.isEmpty()) {
-            Map<String, Object> owner = owners.getFirst();
-            UUID ownerId = Objects.requireNonNull((UUID) owner.get("user_id"), "user_id");
-            String subject = Objects.requireNonNull((String) owner.get("subject"), "keycloak_sub");
-            descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "read"));
-            descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "grade"));
-            descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "publish"));
-            if (published) {
+        Workspace workspace = workspaces.findById(workspaceId).orElse(null);
+        if (workspace != null && workspace.getKind() == Workspace.Kind.PERSONAL) {
+            UUID ownerId = workspace.getOwnerUserId();
+            UserAccount owner =
+                    ownerId == null ? null : userAccounts.findById(ownerId).orElse(null);
+            if (owner != null) {
+                String subject = Objects.requireNonNull(owner.getKeycloakSub(), "keycloak_sub");
+                descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "read"));
+                descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "grade"));
                 descriptors.add(
-                        actorDescriptor(
-                                workspaceId, ownerId, subject, targetKey, "read.published"));
+                        actorDescriptor(workspaceId, ownerId, subject, targetKey, "publish"));
+                if (published) {
+                    descriptors.add(
+                            actorDescriptor(
+                                    workspaceId, ownerId, subject, targetKey, "read.published"));
+                }
             }
         }
         if (!published) {
@@ -333,33 +353,18 @@ public class ResultPolicyProjector {
      */
     private Optional<String> studentSubject(
             UUID workspaceId, UUID studentUserId, UUID courseSubjectId, boolean center) {
-        String sql =
-                "SELECT u.keycloak_sub FROM enrollment e"
-                        + " JOIN class_student cs ON cs.id = e.class_student_id"
-                        + " JOIN user_account u ON u.id = cs.student_user_id"
-                        + " WHERE e.workspace_id = ? AND e.course_subject_id = ?"
-                        + " AND cs.student_user_id = ? AND e.state IN ('PENDING', 'ACTIVE')";
-        if (center) {
-            sql +=
-                    " AND EXISTS (SELECT 1 FROM center_membership m"
-                            + " JOIN membership_role r ON r.membership_id = m.id"
-                            + " WHERE m.workspace_id = e.workspace_id AND m.user_id = ?"
-                            + " AND m.state = 'ACTIVE' AND r.role = 'STUDENT')";
-            return jdbc
-                    .queryForList(
-                            sql,
-                            String.class,
-                            workspaceId,
-                            courseSubjectId,
-                            studentUserId,
-                            studentUserId)
-                    .stream()
-                    .findFirst();
+        List<UUID> enrolled =
+                enrollments.findEnrolledStudentIds(workspaceId, courseSubjectId, studentUserId);
+        if (enrolled.isEmpty()) {
+            return Optional.empty();
         }
-        return jdbc
-                .queryForList(sql, String.class, workspaceId, courseSubjectId, studentUserId)
-                .stream()
-                .findFirst();
+        if (center
+                && !memberships
+                        .activeRoles(studentUserId, workspaceId)
+                        .contains(MembershipRole.Role.STUDENT)) {
+            return Optional.empty();
+        }
+        return userAccounts.findById(studentUserId).map(UserAccount::getKeycloakSub);
     }
 
     /**
@@ -369,23 +374,19 @@ public class ResultPolicyProjector {
      * dụng, để group của descriptor luôn có ít nhất một thành viên thật khi writer áp graph.
      */
     private boolean guardianSourcePresent(UUID workspaceId, UUID studentUserId) {
-        return rowExists(
-                "SELECT l.id FROM guardian_link l"
-                        + " WHERE l.workspace_id = ? AND l.student_user_id = ?"
-                        + " AND l.state = 'APPROVED'"
-                        + " AND EXISTS (SELECT 1 FROM center_membership m"
-                        + " JOIN membership_role r ON r.membership_id = m.id"
-                        + " WHERE m.workspace_id = l.workspace_id"
-                        + " AND m.user_id = l.parent_user_id AND m.state = 'ACTIVE'"
-                        + " AND r.role = 'PARENT')"
-                        + " AND EXISTS (SELECT 1 FROM center_membership m"
-                        + " JOIN membership_role r ON r.membership_id = m.id"
-                        + " WHERE m.workspace_id = l.workspace_id"
-                        + " AND m.user_id = l.student_user_id AND m.state = 'ACTIVE'"
-                        + " AND r.role = 'STUDENT')"
-                        + " LIMIT 1",
-                workspaceId,
-                studentUserId);
+        if (!memberships
+                .activeRoles(studentUserId, workspaceId)
+                .contains(MembershipRole.Role.STUDENT)) {
+            return false;
+        }
+        return guardianLinks
+                .findByWorkspaceIdAndStudentUserIdAndState(
+                        workspaceId, studentUserId, GuardianLink.APPROVED)
+                .stream()
+                .anyMatch(link ->
+                        memberships
+                                .activeRoles(link.getParentUserId(), workspaceId)
+                                .contains(MembershipRole.Role.PARENT));
     }
 
     // ---------- Tiện ích dựng descriptor ----------
@@ -445,24 +446,18 @@ public class ResultPolicyProjector {
         return null;
     }
 
-    private boolean rowExists(String sql, Object... args) {
-        return !jdbc.queryForList(sql, UUID.class, args).isEmpty();
-    }
-
     private boolean isCenter(UUID workspaceId) {
-        return rowExists("SELECT id FROM workspace WHERE id = ? AND kind = 'CENTER'", workspaceId);
+        return workspaces
+                .findById(workspaceId)
+                .map(workspace -> workspace.getKind() == Workspace.Kind.CENTER)
+                .orElse(false);
     }
 
     private boolean isPersonal(UUID workspaceId) {
-        return rowExists(
-                "SELECT id FROM workspace WHERE id = ? AND kind = 'PERSONAL'", workspaceId);
-    }
-
-    private void applyContext(UUID workspaceId) {
-        jdbc.queryForObject(
-                "SELECT set_config('app.workspace_id', ?, true)",
-                String.class,
-                workspaceId.toString());
+        return workspaces
+                .findById(workspaceId)
+                .map(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
+                .orElse(false);
     }
 
     private static UUID workspaceIdOf(String targetKey) {

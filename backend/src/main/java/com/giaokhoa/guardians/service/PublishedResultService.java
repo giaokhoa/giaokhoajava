@@ -1,29 +1,45 @@
-package com.giaokhoa.guardians;
+package com.giaokhoa.guardians.service;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.guardians.dto.PublishedResultView;
+import com.giaokhoa.guardians.repository.UserAccountRepository;
+import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.verification.model.Course;
+import com.giaokhoa.verification.model.CourseSubject;
+import com.giaokhoa.verification.model.SampleResult;
+import com.giaokhoa.verification.model.SchoolClass;
+import com.giaokhoa.verification.model.Subject;
+import com.giaokhoa.verification.repository.CourseRepository;
+import com.giaokhoa.verification.repository.CourseSubjectRepository;
+import com.giaokhoa.verification.repository.SampleResultCandidateView;
+import com.giaokhoa.verification.repository.SampleResultRepository;
+import com.giaokhoa.verification.repository.SchoolClassRepository;
+import com.giaokhoa.verification.repository.SubjectRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 /**
  * Phía đọc kết quả đã công bố của một học sinh trong một workspace, phục vụ route {@code GET
@@ -38,8 +54,12 @@ import org.springframework.stereotype.Component;
  * 403 thay vì trả danh sách rỗng: với phụ huynh chưa được duyệt, liên kết đã gỡ, con khác hoặc
  * center khác, "không có kết quả nào" và "không có quyền" không được phép trông giống nhau. Chính
  * học sinh đọc kết quả của mình thì được danh sách rỗng khi chưa có kết quả nào công bố.
+ *
+ * <p>Dữ kiện hiển thị (tên lớp/khóa/môn, username của học sinh) được phân giải theo định danh ở
+ * tầng ứng dụng từ các repository của module sở tại, không join xuyên mặt phẳng trong một câu truy
+ * vấn: hàng nào thiếu mắt xích phân giải thì bị loại đúng như join nội bộ trước đây.
  */
-@Component
+@Service
 public class PublishedResultService {
 
     private static final String READ_PUBLISHED =
@@ -47,7 +67,12 @@ public class PublishedResultService {
 
     private final ProtectedActionExecutor executor;
     private final WorkspaceTransaction workspaces;
-    private final JdbcTemplate jdbc;
+    private final SampleResultRepository results;
+    private final CourseSubjectRepository courseSubjects;
+    private final CourseRepository courses;
+    private final SchoolClassRepository schoolClasses;
+    private final SubjectRepository subjects;
+    private final UserAccountRepository userAccounts;
     private static final SecureRandom CURSOR_RANDOM = new SecureRandom();
     private static final int SCAN_BATCH = 100;
     private static final int MAX_CURSOR_LENGTH = 256;
@@ -60,13 +85,25 @@ public class PublishedResultService {
         }
     }
 
-    private record Candidate(UUID id, OffsetDateTime publishedAt) {}
+    private record Candidate(UUID id, Instant publishedAt) {}
 
     public PublishedResultService(
-            ProtectedActionExecutor executor, WorkspaceTransaction workspaces, JdbcTemplate jdbc) {
+            ProtectedActionExecutor executor,
+            WorkspaceTransaction workspaces,
+            SampleResultRepository results,
+            CourseSubjectRepository courseSubjects,
+            CourseRepository courses,
+            SchoolClassRepository schoolClasses,
+            SubjectRepository subjects,
+            UserAccountRepository userAccounts) {
         this.executor = executor;
         this.workspaces = workspaces;
-        this.jdbc = jdbc;
+        this.results = results;
+        this.courseSubjects = courseSubjects;
+        this.courses = courses;
+        this.schoolClasses = schoolClasses;
+        this.subjects = subjects;
+        this.userAccounts = userAccounts;
         CURSOR_RANDOM.nextBytes(cursorKey);
     }
 
@@ -102,23 +139,13 @@ public class PublishedResultService {
             anchor =
                     workspaces.inWorkspace(
                             workspaceId,
-                            () -> {
-                                List<Candidate> anchors =
-                                        jdbc.query(
-                                                "SELECT id, published_at FROM sample_result"
-                                                        + " WHERE workspace_id = ? AND student_user_id = ?"
-                                                        + " AND state = 'PUBLISHED' AND id = ?",
-                                                (rs, _) ->
-                                                        new Candidate(
-                                                                rs.getObject("id", UUID.class),
-                                                                rs.getObject(
-                                                                        "published_at",
-                                                                        OffsetDateTime.class)),
-                                                workspaceId,
-                                                studentUserId,
-                                                id);
-                                return anchors.isEmpty() ? null : anchors.getFirst();
-                            });
+                            () ->
+                                    results.findByWorkspaceIdAndStudentUserIdAndStateAndId(
+                                                    workspaceId, studentUserId, "PUBLISHED", id)
+                                            .map(view ->
+                                                    new Candidate(
+                                                            view.getId(), view.getPublishedAt()))
+                                            .orElse(null));
             if (anchor == null) {
                 throw invalidCursor();
             }
@@ -132,35 +159,24 @@ public class PublishedResultService {
                             workspaces.inWorkspace(
                                     workspaceId,
                                     () -> {
-                                        String sql =
-                                                "SELECT id, published_at FROM sample_result"
-                                                        + " WHERE workspace_id = ? AND student_user_id = ?"
-                                                        + " AND state = 'PUBLISHED'"
-                                                        + (from == null
-                                                                ? ""
-                                                                : " AND (published_at, id) < (?, ?)")
-                                                        + " ORDER BY published_at DESC, id DESC LIMIT ?";
-                                        Object[] params =
+                                        List<SampleResultCandidateView> batch =
                                                 from == null
-                                                        ? new Object[] {
-                                                            workspaceId, studentUserId, SCAN_BATCH
-                                                        }
-                                                        : new Object[] {
-                                                            workspaceId,
-                                                            studentUserId,
-                                                            from.publishedAt(),
-                                                            from.id(),
-                                                            SCAN_BATCH
-                                                        };
-                                        return jdbc.query(
-                                                sql,
-                                                (rs, _) ->
+                                                        ? results.findPublishedBatch(
+                                                                workspaceId,
+                                                                studentUserId,
+                                                                PageRequest.of(0, SCAN_BATCH))
+                                                        : results.findPublishedBatchAfter(
+                                                                workspaceId,
+                                                                studentUserId,
+                                                                from.publishedAt(),
+                                                                from.id(),
+                                                                PageRequest.of(0, SCAN_BATCH));
+                                        return batch.stream()
+                                                .map(view ->
                                                         new Candidate(
-                                                                rs.getObject("id", UUID.class),
-                                                                rs.getObject(
-                                                                        "published_at",
-                                                                        OffsetDateTime.class)),
-                                                params);
+                                                                view.getId(),
+                                                                view.getPublishedAt()))
+                                                .toList();
                                     }),
                             "candidates");
             if (candidates.isEmpty()) {
@@ -302,42 +318,74 @@ public class PublishedResultService {
 
     private List<PublishedResultView> readViews(
             UUID workspaceId, UUID studentUserId, List<UUID> resultIds) {
-        String placeholders = String.join(", ", Collections.nCopies(resultIds.size(), "?"));
-        List<Object> args = new ArrayList<>();
-        args.add(workspaceId);
-        args.add(studentUserId);
-        args.addAll(resultIds);
-        return jdbc.query(
-                "SELECT r.id, r.student_user_id, u.username, sc.name AS class_name,"
-                        + " c.name AS course_name, s.name AS subject_name, r.score_stub,"
-                        + " r.comment_stub, r.published_at"
-                        + " FROM sample_result r"
-                        + " JOIN course_subject cs ON cs.id = r.course_subject_id"
-                        + " AND cs.workspace_id = r.workspace_id"
-                        + " JOIN course c ON c.id = cs.course_id AND c.workspace_id = r.workspace_id"
-                        + " JOIN school_class sc ON sc.id = c.class_id"
-                        + " AND sc.workspace_id = r.workspace_id"
-                        + " JOIN subject s ON s.id = cs.subject_id"
-                        + " JOIN user_account u ON u.id = r.student_user_id"
-                        + " WHERE r.workspace_id = ? AND r.student_user_id = ?"
-                        + " AND r.state = 'PUBLISHED' AND r.id IN ("
-                        + placeholders
-                        + ")"
-                        + " ORDER BY r.published_at DESC, r.id DESC",
-                (rs, _) -> {
-                    OffsetDateTime publishedAt = rs.getObject("published_at", OffsetDateTime.class);
-                    return new PublishedResultView(
-                            rs.getObject("id", UUID.class),
-                            new PublishedResultView.Student(
-                                    rs.getObject("student_user_id", UUID.class),
-                                    rs.getString("username")),
-                            rs.getString("class_name"),
-                            rs.getString("course_name"),
-                            rs.getString("subject_name"),
-                            rs.getString("score_stub"),
-                            rs.getString("comment_stub"),
-                            publishedAt == null ? null : publishedAt.toInstant());
-                },
-                args.toArray());
+        List<SampleResult> rows = results.findPublishedByIds(workspaceId, studentUserId, resultIds);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        // Phân giải hiển thị theo định danh: thiếu bất kỳ mắt xích nào thì hàng bị loại, đúng
+        // ngữ nghĩa join nội bộ của câu SQL cũ (học sinh, môn–khóa, khóa, lớp, môn).
+        UserAccount student = userAccounts.findById(studentUserId).orElse(null);
+        if (student == null) {
+            return List.of();
+        }
+        Map<UUID, CourseSubject> courseSubjectById =
+                courseSubjects
+                        .findAllById(
+                                rows.stream()
+                                        .map(SampleResult::getCourseSubjectId)
+                                        .distinct()
+                                        .toList())
+                        .stream()
+                        .collect(Collectors.toMap(CourseSubject::getId, Function.identity()));
+        Map<UUID, Course> courseById =
+                courses
+                        .findAllById(
+                                courseSubjectById.values().stream()
+                                        .map(CourseSubject::getCourseId)
+                                        .distinct()
+                                        .toList())
+                        .stream()
+                        .collect(Collectors.toMap(Course::getId, Function.identity()));
+        Map<UUID, SchoolClass> classById =
+                schoolClasses
+                        .findAllById(
+                                courseById.values().stream()
+                                        .map(Course::getClassId)
+                                        .distinct()
+                                        .toList())
+                        .stream()
+                        .collect(Collectors.toMap(SchoolClass::getId, Function.identity()));
+        Map<UUID, Subject> subjectById =
+                subjects
+                        .findAllById(
+                                courseSubjectById.values().stream()
+                                        .map(CourseSubject::getSubjectId)
+                                        .distinct()
+                                        .toList())
+                        .stream()
+                        .collect(Collectors.toMap(Subject::getId, Function.identity()));
+        List<PublishedResultView> views = new ArrayList<>(rows.size());
+        for (SampleResult row : rows) {
+            CourseSubject courseSubject = courseSubjectById.get(row.getCourseSubjectId());
+            Course course =
+                    courseSubject == null ? null : courseById.get(courseSubject.getCourseId());
+            SchoolClass schoolClass = course == null ? null : classById.get(course.getClassId());
+            Subject subject =
+                    courseSubject == null ? null : subjectById.get(courseSubject.getSubjectId());
+            if (courseSubject == null || course == null || schoolClass == null || subject == null) {
+                continue;
+            }
+            views.add(
+                    new PublishedResultView(
+                            row.getId(),
+                            new PublishedResultView.Student(studentUserId, student.getUsername()),
+                            schoolClass.getName(),
+                            course.getName(),
+                            subject.getName(),
+                            row.getScoreStub(),
+                            row.getCommentStub(),
+                            row.getPublishedAt()));
+        }
+        return List.copyOf(views);
     }
 }

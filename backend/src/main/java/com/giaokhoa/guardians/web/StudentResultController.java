@@ -1,6 +1,8 @@
-package com.giaokhoa.guardians;
+package com.giaokhoa.guardians.web;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.giaokhoa.guardians.dto.PublishedResultView;
+import com.giaokhoa.guardians.service.PublishedResultService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
