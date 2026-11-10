@@ -3,7 +3,7 @@ package com.giaokhoa.shared.http;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.giaokhoa.authorization.decision.CapabilitiesController;
-import com.giaokhoa.guardians.GuardianLinkController;
+import com.giaokhoa.guardians.web.GuardianLinkController;
 import com.giaokhoa.identity.RecoveryController;
 import com.giaokhoa.subscriptions.SubscriptionController;
 import com.giaokhoa.teaching.AssignmentController;

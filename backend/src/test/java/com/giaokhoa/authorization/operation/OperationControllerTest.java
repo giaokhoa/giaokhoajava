@@ -13,6 +13,8 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.identity.repository.RecoveryMutationRepository;
+import com.giaokhoa.identity.repository.RecoveryRequestRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
 import java.util.List;
@@ -38,8 +40,13 @@ class OperationControllerTest {
             mock(AuthorizationOperationRepository.class);
     private final AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
     private final Authentication authentication = mock(Authentication.class);
+    private final RecoveryRequestRepository recoveryRequests =
+            mock(RecoveryRequestRepository.class);
+    private final RecoveryMutationRepository recoveryMutations =
+            mock(RecoveryMutationRepository.class);
     private final OperationController controller =
-            new OperationController(executor, operations, partitions);
+            new OperationController(
+                    executor, operations, partitions, recoveryRequests, recoveryMutations);
 
     @BeforeEach
     void actorResolvedFromSession() {
@@ -92,7 +99,7 @@ class OperationControllerTest {
     @Test
     void operationOutsideTheInitiatorScopeIsNotFound() {
         when(operations.findByIdAndInitiatorUserId(OPERATION, ACTOR)).thenReturn(Optional.empty());
-        when(operations.findRecoveryStatus(OPERATION, ACTOR)).thenReturn(Optional.empty());
+        when(recoveryRequests.findById(OPERATION)).thenReturn(Optional.empty());
 
         HttpProblemException problem =
                 assertThrows(

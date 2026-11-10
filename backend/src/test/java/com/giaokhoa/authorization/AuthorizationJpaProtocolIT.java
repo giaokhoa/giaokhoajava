@@ -3,6 +3,7 @@ package com.giaokhoa.authorization;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
@@ -12,6 +13,9 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.OperationController;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.identity.model.RecoveryMutation;
+import com.giaokhoa.identity.repository.RecoveryMutationRepository;
+import com.giaokhoa.identity.repository.RecoveryRequestRepository;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
@@ -61,6 +65,8 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
     @Autowired AuthorizationOperationRepository operations;
     @Autowired AuthorizationOperationService operationService;
     @Autowired OperationController operationController;
+    @Autowired RecoveryRequestRepository recoveryRequests;
+    @Autowired RecoveryMutationRepository recoveryMutations;
     @Autowired JdbcTemplate jdbc;
     @Autowired EntityManager entities;
     @Autowired PlatformTransactionManager transactions;
@@ -198,24 +204,26 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
                 "a".repeat(64),
                 resolved);
 
-        // Câu native chạy thật: alias quoted khớp projection, trạng thái gốc và tài khoản
-        // đích trả đúng cho người gửi.
-        var byRequester = operations.findRecoveryStatus(resolved, requester).orElseThrow();
-        assertEquals("RESOLVED", byRequester.getState());
+        // Đọc qua entity của module identity: trạng thái gốc và tài khoản đích của yêu
+        // cầu đã xử lý đọc đúng từ RecoveryRequest.
+        var byRequester = recoveryRequests.findById(resolved).orElseThrow();
+        assertEquals("RESOLVED", byRequester.getState().name());
         assertEquals(target, byRequester.getTargetUserId());
         // Operator không phải người gửi nhưng là actor của mutation RESOLVE nên nhánh
         // EXISTS cho thấy cùng yêu cầu; trên yêu cầu rejected operator chỉ là người xác
         // minh (verified_by), không có mutation RESOLVE nên không thấy.
-        var byOperator = operations.findRecoveryStatus(resolved, operator).orElseThrow();
-        assertEquals("RESOLVED", byOperator.getState());
-        assertEquals(target, byOperator.getTargetUserId());
-        assertTrue(operations.findRecoveryStatus(rejected, operator).isEmpty());
+        assertTrue(
+                recoveryMutations.existsByRequestIdAndActorAndKind(
+                        resolved, operator, RecoveryMutation.Kind.RESOLVE));
+        assertFalse(
+                recoveryMutations.existsByRequestIdAndActorAndKind(
+                        rejected, operator, RecoveryMutation.Kind.RESOLVE));
 
         // Qua controller: trạng thái yêu cầu ánh xạ sang vòng đời operation.
         var resolvedView =
                 Objects.requireNonNull(
                         operationController
-                                .status(resolved, authenticationFor(requester))
+                                .getStatus(resolved, authenticationFor(requester))
                                 .getBody());
         assertEquals("SUCCEEDED", resolvedView.state());
         assertTrue(resolvedView.completed());
@@ -226,7 +234,7 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
         var rejectedView =
                 Objects.requireNonNull(
                         operationController
-                                .status(rejected, authenticationFor(requester))
+                                .getStatus(rejected, authenticationFor(requester))
                                 .getBody());
         assertEquals("FAILED", rejectedView.state());
         assertTrue(rejectedView.completed());
@@ -235,7 +243,7 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
         HttpProblemException problem =
                 assertThrows(
                         HttpProblemException.class,
-                        () -> operationController.status(resolved, authenticationFor(outsider)));
+                        () -> operationController.getStatus(resolved, authenticationFor(outsider)));
         assertEquals(HttpStatus.NOT_FOUND, problem.getStatus());
     }
 
