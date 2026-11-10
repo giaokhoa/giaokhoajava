@@ -1,8 +1,8 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.teaching.data.TeachingRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
