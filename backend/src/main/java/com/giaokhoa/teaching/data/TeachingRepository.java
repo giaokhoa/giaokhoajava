@@ -178,7 +178,18 @@ public class TeachingRepository {
     }
 
     public boolean subscriptionCurrent(UUID workspaceId) {
-        return SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspaceId);
+        // Personal lấy gói làm entitlement bắt buộc: phải có kỳ đang hiệu lực mới mở rộng
+        // được. Center giữ quy tắc của SubscriptionPolicy: chưa từng xác nhận gói thì chưa
+        // bị khóa, đã có gói thì phải còn hiệu lực.
+        boolean personal =
+                !jdbc.queryForList(
+                                "SELECT id FROM workspace WHERE id = ? AND kind = 'PERSONAL'",
+                                UUID.class,
+                                workspaceId)
+                        .isEmpty();
+        return personal
+                ? SubscriptionPolicy.current(jdbc, workspaceId)
+                : SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspaceId);
     }
 
     public boolean accountExists(UUID userId) {

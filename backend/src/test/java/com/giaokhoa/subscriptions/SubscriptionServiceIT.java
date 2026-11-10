@@ -50,6 +50,7 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired SubscriptionService service;
     @Autowired CenterPolicyProjector projector;
+    @Autowired PersonalEntitlementProjector personalProjector;
 
     @Test
     void concurrentConfirmationsKeepTheWholeDesiredBundle() throws Exception {
@@ -395,7 +396,7 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
     }
 
     @Test
-    void confirmPersonalWorkspaceRecordsPeriodAnchoredAtCurrentRevision() {
+    void confirmPersonalWorkspaceRecordsPeriodAndEntitlementBundle() {
         UUID operator = seedAccount();
         UUID user = seedAccount();
         UUID personal = personalWorkspaceOf(user);
@@ -412,20 +413,29 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                         HASH_A);
 
         assertEquals(1, periodCount(personal));
-        // Không có thay đổi desired nào, nhưng bất biến DB cấm operation rỗng partition: kỳ
-        // personal neo vào partition của chính workspace ở revision hiện tại (seed mới tạo nên
-        // revision 0), không bump revision, không ghi desired mới.
+        // Kỳ mới làm descriptor gate của bundle entitlement đổi nên xác nhận ghi PartitionChange
+        // thật trên partition của chính workspace: bump revision (seed tạo partition ở revision
+        // 0) và lưu desired là bundle entitlement hiện hành, kỳ gói nằm trong tập descriptor.
         UUID partition = partitionOf(personal);
         assertEquals(List.of(partition), uuidArray(operation.getId(), "affected_partitions"));
-        assertEquals(List.of(0L), longArray(operation.getId(), "affected_revisions"));
-        assertEquals(0L, operation.getDesiredRevision());
+        assertEquals(List.of(1L), longArray(operation.getId(), "affected_revisions"));
+        assertEquals(1L, operation.getDesiredRevision());
         assertEquals(
-                0L,
+                1L,
                 Objects.requireNonNull(
                         jdbc.queryForObject(
                                 "SELECT desired_revision FROM authz_partition WHERE id = ?",
                                 Long.class,
                                 partition)));
+        assertEquals(
+                ProjectionReconciler.desiredHash(
+                        "workspace:" + personal,
+                        "enter",
+                        personalProjector.bundleDescriptors(personal)),
+                jdbc.queryForObject(
+                        "SELECT desired_hash FROM authz_projection WHERE target_key = ?",
+                        String.class,
+                        "workspace:" + personal));
     }
 
     private int periodCount(UUID workspaceId) {

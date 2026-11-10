@@ -34,6 +34,7 @@ import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.support.ProjectionFaultInjection;
 import java.util.ArrayList;
@@ -491,21 +492,19 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
                 UUID.randomUUID(),
                 actor.workspacePartition(),
                 actor.target(),
-                ProjectionReconciler.desiredHash(
-                        actor.target(), "enter", List.of(descriptor(actor))),
+                ProjectionReconciler.desiredHash(actor.target(), "enter", bundle(actor)),
                 "{"
                         + String.join(",", dependencies.stream().map(id -> id.toString()).toList())
                         + "}");
     }
 
     private DesiredProjection desired(Actor actor, List<UUID> dependencies) {
-        return new DesiredProjection(
-                actor.target(), "enter", List.of(descriptor(actor)), dependencies);
+        return new DesiredProjection(actor.target(), "enter", bundle(actor), dependencies);
     }
 
-    private String descriptor(Actor actor) {
-        return ProjectionReconciler.personalOwnerDescriptor(
-                actor.workspace(), actor.user(), actor.subject(), actor.target(), "enter");
+    // Seed đúng bundle entitlement mà đường bootstrap production ghi cho personal workspace.
+    private List<String> bundle(Actor actor) {
+        return new PersonalEntitlementProjector(jdbc).bundleDescriptors(actor.workspace());
     }
 
     private List<PolicyGraph> accountApplies(ProjectionFaultInjection faults, Actor actor) {

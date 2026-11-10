@@ -103,6 +103,7 @@ class SourceRevocationCoordinatorTest {
                         operations,
                         mock(CenterPolicyProjector.class),
                         mock(TeachingPolicyProjector.class),
+                        mock(com.giaokhoa.teaching.PersonalTeachingPolicyProjector.class),
                         mock(ResultPolicyProjector.class));
 
         assertThrows(
@@ -125,7 +126,13 @@ class SourceRevocationCoordinatorTest {
         final TeachingPolicyProjector teaching = mock(TeachingPolicyProjector.class);
         final ResultPolicyProjector results = mock(ResultPolicyProjector.class);
         final SourceRevocationCoordinator coordinator =
-                new SourceRevocationCoordinator(jdbc, operations, center, teaching, results);
+                new SourceRevocationCoordinator(
+                        jdbc,
+                        operations,
+                        center,
+                        teaching,
+                        mock(com.giaokhoa.teaching.PersonalTeachingPolicyProjector.class),
+                        results);
 
         Fixture() {
             when(jdbc.queryForList(contains("authz_partition"), eq(UUID.class), anyString()))

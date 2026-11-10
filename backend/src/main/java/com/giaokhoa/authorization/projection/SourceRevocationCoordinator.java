@@ -4,6 +4,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
@@ -48,6 +49,7 @@ public class SourceRevocationCoordinator {
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
+    private final PersonalTeachingPolicyProjector personalTeachingProjector;
     private final ResultPolicyProjector resultProjector;
 
     public SourceRevocationCoordinator(
@@ -55,11 +57,13 @@ public class SourceRevocationCoordinator {
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
             TeachingPolicyProjector teachingProjector,
+            PersonalTeachingPolicyProjector personalTeachingProjector,
             ResultPolicyProjector resultProjector) {
         this.jdbc = jdbc;
         this.operations = operations;
         this.centerProjector = centerProjector;
         this.teachingProjector = teachingProjector;
+        this.personalTeachingProjector = personalTeachingProjector;
         this.resultProjector = resultProjector;
     }
 
@@ -78,13 +82,16 @@ public class SourceRevocationCoordinator {
             String idempotencyKey,
             String payloadHash,
             List<String> teachingTargetKeys) {
+        boolean personal = isPersonalWorkspace(workspaceId);
         List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
         for (String targetKey : teachingTargetKeys) {
             projections.add(
                     new AuthorizationOperationService.DesiredProjection(
                             targetKey,
                             TeachingPolicyProjector.bundleScope(),
-                            teachingProjector.bundleDescriptors(targetKey),
+                            personal
+                                    ? personalTeachingProjector.bundleDescriptors(targetKey)
+                                    : teachingProjector.bundleDescriptors(targetKey),
                             List.of()));
         }
         projections.addAll(resultProjector.allBundleProjections(workspaceId));
@@ -126,6 +133,15 @@ public class SourceRevocationCoordinator {
                 List.of(
                         new AuthorizationOperationService.PartitionChange(
                                 workspacePartition(workspaceId), List.copyOf(projections))));
+    }
+
+    /** Bundle giảng dạy của personal do projector riêng của personal dựng, tách khỏi center. */
+    private boolean isPersonalWorkspace(UUID workspaceId) {
+        return !jdbc.queryForList(
+                        "SELECT id FROM workspace WHERE id = ? AND kind = 'PERSONAL'",
+                        UUID.class,
+                        workspaceId)
+                .isEmpty();
     }
 
     private UUID workspacePartition(UUID workspaceId) {

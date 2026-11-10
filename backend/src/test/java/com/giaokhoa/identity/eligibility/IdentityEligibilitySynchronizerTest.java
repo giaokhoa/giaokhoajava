@@ -45,7 +45,11 @@ class IdentityEligibilitySynchronizerTest {
     private final AuthorizationOperationService operations =
             mock(AuthorizationOperationService.class);
     private final IdentityEligibilitySynchronizer synchronizer =
-            new IdentityEligibilitySynchronizer(jdbc, identities, operations);
+            new IdentityEligibilitySynchronizer(
+                    jdbc,
+                    identities,
+                    operations,
+                    mock(com.giaokhoa.subscriptions.PersonalEntitlementProjector.class));
 
     @Test
     void verifiedSelfRegisteredAccountRecordsTheEligibilitySourceThroughTheAccountFence() {
