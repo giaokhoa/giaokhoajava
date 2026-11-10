@@ -15,8 +15,12 @@ http://127.0.0.1:8080 {
 		# sau khi proxy đã ghi header của nó. script-src cần 'unsafe-inline'
 		# vì Next chèn inline script chứa RSC payload — không có nonce thì
 		# 'self' trần chặn hydration (nâng cấp: cấp nonce theo request).
+		# form-action phải khai cả origin Keycloak TEST (cả hai làn): Chrome áp
+		# form-action lên cả redirect sau POST, mà logout OIDC bắt buộc form
+		# POST /api/logout rồi redirect qua end_session của Keycloak — thiếu
+		# origin này thì trình duyệt hủy điều hướng, logout không hoàn tất.
 		header {
-			>Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'"
+			>Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self' http://127.0.0.1:18081 http://127.0.0.1:18082"
 			>X-Content-Type-Options "nosniff"
 		}
 		reverse_proxy 127.0.0.1:3001
