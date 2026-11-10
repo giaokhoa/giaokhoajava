@@ -15,11 +15,13 @@ import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.model.Workspace;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -79,6 +81,8 @@ class CenterServiceIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired CenterService centers;
+    @Autowired WorkspaceDirectory directory;
+    @Autowired MembershipService memberships;
     @Autowired IdempotencyService idempotency;
     @Autowired ProjectionReconciler reconciler;
 
@@ -225,24 +229,18 @@ class CenterServiceIT extends IntegrationEnvironment {
             assertEquals(
                     first.getId(), replay.getId(), "Replay cùng key trả đúng operation đã ghi");
             awaitOperationSucceeded(first.getId());
+            List<UUID> ownerCenterIds =
+                    directory.listWorkspaces(owner.userId()).stream()
+                            .filter(workspace -> workspace.kind() == Workspace.Kind.CENTER)
+                            .map(WorkspaceDirectory.ListedWorkspace::id)
+                            .toList();
+            assertEquals(1, ownerCenterIds.size(), "Replay không tạo tenant thứ hai");
             assertEquals(
-                    1,
-                    Objects.requireNonNull(
-                            jdbc.queryForObject(
-                                    "SELECT count(*) FROM center WHERE owner_user_id = ?",
-                                    Integer.class,
-                                    owner.userId())),
-                    "Replay không tạo tenant thứ hai");
-            assertEquals(
-                    1,
-                    Objects.requireNonNull(
-                            jdbc.queryForObject(
-                                    "SELECT count(*) FROM center_membership m"
-                                            + " JOIN membership_role r"
-                                            + " ON r.membership_id = m.id"
-                                            + " WHERE m.user_id = ? AND r.role = 'OWNER'",
-                                    Integer.class,
-                                    owner.userId())),
+                    1L,
+                    membershipViews(ownerCenterIds.get(0)).stream()
+                            .filter(view -> view.userId().equals(owner.userId()))
+                            .filter(view -> view.roles().contains(MembershipRole.Role.OWNER))
+                            .count(),
                     "Replay không tạo owner thứ hai");
 
             HttpProblemException conflict =
@@ -773,6 +771,18 @@ class CenterServiceIT extends IntegrationEnvironment {
             return null;
         });
         return new Fixture(userId, subject);
+    }
+
+    private List<MembershipService.MembershipView> membershipViews(UUID workspaceId) {
+        List<MembershipService.MembershipView> all = new ArrayList<>();
+        String cursor = null;
+        do {
+            MembershipService.MembershipPage page =
+                    memberships.pageMemberships(workspaceId, cursor, 100);
+            all.addAll(page.items());
+            cursor = page.nextCursor();
+        } while (cursor != null);
+        return all;
     }
 
     private UUID createCenterAndAwait(Fixture operator, Fixture owner) throws Exception {

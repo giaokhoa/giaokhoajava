@@ -20,7 +20,6 @@ import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -432,14 +431,18 @@ class InvitationMembershipServiceIT extends IntegrationEnvironment {
     }
 
     private @Nullable String membershipState(UUID workspaceId, UUID userId) {
-        List<String> states =
-                jdbc.queryForList(
-                        "SELECT state FROM center_membership WHERE workspace_id = ? AND user_id = ?"
-                                + " AND state IN ('PENDING', 'ACTIVE')",
-                        String.class,
-                        workspaceId,
-                        userId);
-        return states.isEmpty() ? null : states.getFirst();
+        String cursor = null;
+        do {
+            MembershipService.MembershipPage page =
+                    memberships.pageMemberships(workspaceId, cursor, 100);
+            for (MembershipService.MembershipView view : page.items()) {
+                if (view.userId().equals(userId)) {
+                    return view.state();
+                }
+            }
+            cursor = page.nextCursor();
+        } while (cursor != null);
+        return null;
     }
 
     private Set<String> activeRoles(UUID workspaceId, UUID userId) {

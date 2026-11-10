@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -204,6 +205,10 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                 assertFalse(body.get("statusUrl").stringValue().isBlank());
                 UUID operationId = UUID.fromString(body.get("operationId").stringValue());
                 awaitOperationSucceeded(session, operationId);
+                assertFalse(
+                        membershipUserIds(session, center).contains(invitee),
+                        "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời"
+                                + " chấp nhận");
             }
 
             assertEquals(
@@ -217,15 +222,6 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                             "SELECT keycloak_sub FROM user_account WHERE id = ?",
                             String.class,
                             invitee));
-            assertEquals(
-                    0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM center_membership"
-                                    + " WHERE workspace_id = ? AND user_id = ?",
-                            Integer.class,
-                            center,
-                            invitee),
-                    "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời chấp nhận");
         } finally {
             deleteUser(ownerLogin.subject());
             deleteUser(inviteeLogin.subject());
@@ -274,6 +270,10 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                 assertFalse(body.get("completed").booleanValue());
                 UUID operationId = UUID.fromString(body.get("operationId").stringValue());
                 awaitOperationSucceeded(session, operationId);
+                assertFalse(
+                        membershipUserIds(session, center).contains(invitee),
+                        "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời"
+                                + " chấp nhận");
             }
 
             assertEquals(
@@ -281,15 +281,6 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                     jdbc.queryForObject(
                             "SELECT origin FROM user_account WHERE id = ?", String.class, invitee),
                     "Mời bằng email không đổi origin của danh tính đó");
-            assertEquals(
-                    0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM center_membership"
-                                    + " WHERE workspace_id = ? AND user_id = ?",
-                            Integer.class,
-                            center,
-                            invitee),
-                    "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời chấp nhận");
         } finally {
             deleteUser(ownerLogin.subject());
             deleteUser(inviteeLogin.subject());
@@ -487,17 +478,12 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                                 .getResponse();
 
                 assertEquals(403, managerInvite.getStatus(), "Chỉ owner mới được mời manager");
+                assertFalse(
+                        membershipUserIds(session, center).contains(invitee),
+                        "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời"
+                                + " chấp nhận");
             }
 
-            assertEquals(
-                    0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM center_membership"
-                                    + " WHERE workspace_id = ? AND user_id = ?",
-                            Integer.class,
-                            center,
-                            invitee),
-                    "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời chấp nhận");
             assertEquals(
                     Set.of(),
                     activeRoles(center, inviteeTwo),
@@ -600,17 +586,10 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                         409,
                         conflict.getStatus(),
                         "Cùng Idempotency-Key với yêu cầu khác phải bị từ chối 409");
+                assertFalse(
+                        membershipUserIds(session, center).contains(inviteeTwo),
+                        "Lời mời xung đột key không được tạo membership");
             }
-
-            assertEquals(
-                    0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM center_membership"
-                                    + " WHERE workspace_id = ? AND user_id = ?",
-                            Integer.class,
-                            center,
-                            inviteeTwo),
-                    "Lời mời xung đột key không được tạo membership");
         } finally {
             deleteUser(ownerLogin.subject());
             deleteUser(inviteeLogin.subject());
@@ -1161,6 +1140,32 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             return null;
         });
         return membership;
+    }
+
+    /** Đọc danh sách thành viên qua API như người dùng thật: tập userId đang PENDING/ACTIVE. */
+    private Set<UUID> membershipUserIds(RealSession session, UUID workspaceId) throws Exception {
+        Set<UUID> userIds = new HashSet<>();
+        String cursor = null;
+        do {
+            String path =
+                    "/api/workspaces/"
+                            + workspaceId
+                            + "/memberships?limit=100"
+                            + (cursor == null ? "" : "&cursor=" + cursor);
+            MockHttpServletResponse response =
+                    mockMvc().perform(get(path).cookie(session.cookie())).andReturn().getResponse();
+            assertEquals(200, response.getStatus());
+            JsonNode body = JSON.readTree(response.getContentAsString());
+            for (JsonNode item : body.get("items")) {
+                userIds.add(UUID.fromString(item.get("user").get("id").stringValue()));
+            }
+            cursor = nextCursorOf(body);
+        } while (cursor != null);
+        return userIds;
+    }
+
+    private static @Nullable String nextCursorOf(JsonNode body) {
+        return body.hasNonNull("nextCursor") ? body.get("nextCursor").stringValue() : null;
     }
 
     private Set<String> activeRoles(UUID workspaceId, UUID userId) {

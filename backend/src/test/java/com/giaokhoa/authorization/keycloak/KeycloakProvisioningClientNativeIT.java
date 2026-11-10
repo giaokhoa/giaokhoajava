@@ -28,6 +28,8 @@ class KeycloakProvisioningClientNativeIT {
         KeycloakProvisioningClient client =
                 new KeycloakProvisioningClient(
                         RestClient.builder(), base, "giaokhoa-provisioner", secret);
+        // ID giữ cố định: chạy lại verify-native.sh phải hội tụ trên cùng organization nhờ
+        // ensureOrganization idempotent, không tạo organization rác mới ở mỗi lần chạy.
         UUID workspace = UUID.fromString("aaaabbbb-cccc-dddd-eeee-000000000010");
         String organizationId = client.ensureOrganization(workspace, "Native integration center");
         assertFalse(organizationId.isBlank());

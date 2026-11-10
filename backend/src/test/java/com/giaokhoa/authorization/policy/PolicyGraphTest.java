@@ -9,14 +9,15 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates.PrerequisiteRole;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates.TargetType;
 import com.giaokhoa.authorization.policy.PolicyGraph.Gate;
 import com.giaokhoa.authorization.policy.PolicyGraph.Source;
+import com.giaokhoa.support.RandomIds;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class PolicyGraphTest {
-    private static final UUID WORKSPACE = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
-    private static final UUID OBJECT = UUID.fromString("11111111-2222-3333-4444-555555555555");
+    private static final UUID WORKSPACE = RandomIds.randomId();
+    private static final UUID OBJECT = RandomIds.randomId();
     private static final Instant FROM = Instant.parse("2030-01-01T00:00:00Z");
     private static final Instant UNTIL = Instant.parse("2030-02-01T00:00:00Z");
 

@@ -5,12 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.support.RandomIds;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class EligibilitySourceTest {
-    private static final UUID USER = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID USER = RandomIds.randomId();
     private static final String TARGET = "account:" + USER;
 
     @Test

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.support.RandomIds;
 import java.sql.ResultSet;
 import java.util.List;
 import java.util.Map;
@@ -23,14 +24,13 @@ import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowMapper;
 
 class DependencyManifestResolverTest {
-    private static final UUID ACTOR = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID WORKSPACE = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final UUID ACCOUNT = UUID.fromString("33333333-3333-3333-3333-333333333333");
-    private static final UUID WORKSPACE_PARTITION =
-            UUID.fromString("44444444-4444-4444-4444-444444444444");
-    private static final UUID GRANT = UUID.fromString("55555555-5555-5555-5555-555555555555");
-    private static final UUID SOURCE = UUID.fromString("66666666-6666-6666-6666-666666666666");
-    private static final UUID INDEPENDENT = UUID.fromString("77777777-7777-7777-7777-777777777777");
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
+    private static final UUID ACCOUNT = RandomIds.randomId();
+    private static final UUID WORKSPACE_PARTITION = RandomIds.randomId();
+    private static final UUID GRANT = RandomIds.randomId();
+    private static final UUID SOURCE = RandomIds.randomId();
+    private static final UUID INDEPENDENT = RandomIds.randomId();
     private static final String VERSION_KEY =
             "workspace:"
                     + WORKSPACE
@@ -69,7 +69,7 @@ class DependencyManifestResolverTest {
                 new DependencyManifestResolver(jdbc)
                         .resolve(ACTOR, WORKSPACE, List.of("workspace:" + WORKSPACE));
 
-        assertEquals(List.of(ACCOUNT, WORKSPACE_PARTITION), sorted(manifest.partitionIds()));
+        assertEquals(sorted(List.of(ACCOUNT, WORKSPACE_PARTITION)), manifest.partitionIds());
         assertTrue(manifest.recordedResourceIds().isEmpty());
     }
 
@@ -92,7 +92,7 @@ class DependencyManifestResolverTest {
         var manifest =
                 new DependencyManifestResolver(jdbc).resolve(ACTOR, WORKSPACE, List.of(resultKey));
 
-        assertEquals(List.of(ACCOUNT, WORKSPACE_PARTITION), sorted(manifest.partitionIds()));
+        assertEquals(sorted(List.of(ACCOUNT, WORKSPACE_PARTITION)), manifest.partitionIds());
         assertEquals("result-resource", manifest.recordedResourceIds().get(resultKey));
     }
 

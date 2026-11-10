@@ -60,6 +60,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired ClassService classes;
     @Autowired CourseService courses;
+    @Autowired EnrollmentService enrollments;
     @Autowired MembershipService memberships;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
@@ -211,11 +212,8 @@ class TeachingServiceIT extends IntegrationEnvironment {
         assertEquals(HttpStatus.BAD_REQUEST, problem.getStatus());
         assertEquals("STUDENT_NOT_CENTER_MEMBER", problem.getCode());
         assertEquals(
-                0,
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM class_student WHERE class_id = ?",
-                        Integer.class,
-                        clazz.id()),
+                List.of(),
+                classes.listStudents(workspace, clazz.id()),
                 "Lô có một học sinh không hợp lệ thì không ghi phần nào");
 
         List<RosterEntryView> added = classes.addStudents(workspace, clazz.id(), List.of(member));
@@ -279,23 +277,15 @@ class TeachingServiceIT extends IntegrationEnvironment {
 
         RosterEntryView revoked = classes.revokeStudent(workspace, clazz.id(), entry.id());
         assertEquals("REVOKED", revoked.state());
-        assertEquals(
-                "REVOKED",
-                jdbc.queryForObject(
-                        "SELECT state FROM class_student WHERE id = ?", String.class, entry.id()));
         assertNotNull(
                 jdbc.queryForObject(
                         "SELECT revoked_at FROM class_student WHERE id = ?",
                         OffsetDateTime.class,
                         entry.id()),
                 "Thu hồi ghi thời điểm, giữ nguyên dòng lịch sử");
-        assertEquals(
-                0,
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM enrollment WHERE class_student_id = ?"
-                                + " AND state = 'ACTIVE'",
-                        Integer.class,
-                        entry.id()),
+        assertTrue(
+                enrollments.listEnrollments(workspace, courseSubjectId).stream()
+                        .noneMatch(e -> e.classStudentId().equals(entry.id())),
                 "Ghi danh phụ thuộc bị thu hồi cùng roster");
         assertEquals(
                 "REVOKED",
@@ -321,10 +311,9 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         HttpProblemException.class,
                         () -> courses.createCourse(workspace, clazz.id(), "Khóa rỗng", List.of()));
         assertEquals(HttpStatus.BAD_REQUEST, problem.getStatus());
-        assertEquals(
-                0,
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM course WHERE name = 'Khóa rỗng'", Integer.class),
+        assertTrue(
+                courses.listCourses(workspace, clazz.id()).stream()
+                        .noneMatch(course -> "Khóa rỗng".equals(course.name())),
                 "Khóa không hợp lệ không được ghi");
 
         List<UUID> subjects = courses.listSubjects().stream().map(s -> s.id()).toList();
@@ -368,11 +357,8 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         .orElseThrow()
                         .id();
         assertEquals(
-                0,
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM enrollment WHERE course_subject_id = ?",
-                        Integer.class,
-                        addedCourseSubject),
+                List.of(),
+                enrollments.listEnrollments(workspace, addedCourseSubject),
                 "Môn thêm sau không tự ghi danh học sinh đã có");
     }
 

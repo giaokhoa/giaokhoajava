@@ -37,6 +37,8 @@ class NativePermissionGateIT {
         byte[] decoded = Base64.getUrlDecoder().decode(encodedClaims);
         JsonNode claims = new JsonMapper().readTree(decoded);
 
+        // ID giữ cố định: phải khớp byte-exact với group đã seed ở
+        // infra/keycloak/fixtures/native-gate.json, vì claim groups trong JWT lấy từ đó.
         assertEquals(
                 "/gk/workspaces/71000000-0000-4000-8000-000000000015"
                         + "/course-subjects/71000000-0000-4000-8000-0000000000a1/teachers",

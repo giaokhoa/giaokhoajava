@@ -150,8 +150,16 @@ class TeachingStructureIT extends TeachingFixture {
             assertEquals(400, response.getStatus(), "Khóa phải có ít nhất một môn");
             assertEquals(
                     0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM course WHERE name = 'Khóa rỗng'", Integer.class),
+                    getJson(
+                                    session,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + classId
+                                            + "/courses",
+                                    200)
+                            .get("items")
+                            .size(),
                     "Khóa không hợp lệ không được ghi");
         }
     }
@@ -274,11 +282,7 @@ class TeachingStructureIT extends TeachingFixture {
                     "Môn thêm sau không tự ghi danh học sinh đã ghi danh trước đó");
             assertEquals(
                     0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM teaching_assignment"
-                                    + " WHERE course_subject_id = ?",
-                            Integer.class,
-                            added),
+                    teacherAssignmentCount(session, fixture.workspaceId(), added),
                     "Môn thêm sau không tự phân công giáo viên cho môn–khóa mới");
             assertEquals(
                     1,
@@ -304,11 +308,7 @@ class TeachingStructureIT extends TeachingFixture {
                     List.of(fixture.teacherAId(), fixture.teacherBId()));
             assertEquals(
                     2,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM teaching_assignment"
-                                    + " WHERE course_subject_id = ? AND state = 'ACTIVE'",
-                            Integer.class,
-                            courseSubject),
+                    teacherAssignmentCount(session, fixture.workspaceId(), courseSubject),
                     "Hai giáo viên cùng phụ trách một môn–khóa");
         }
     }
@@ -333,11 +333,7 @@ class TeachingStructureIT extends TeachingFixture {
                     session, fixture.workspaceId(), firstSubject, List.of(fixture.teacherAId()));
             assertEquals(
                     0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM teaching_assignment"
-                                    + " WHERE course_subject_id = ? AND state = 'ACTIVE'",
-                            Integer.class,
-                            secondSubject),
+                    teacherAssignmentCount(session, fixture.workspaceId(), secondSubject),
                     "Phân công ở khóa một không lan sang khóa hai");
         }
     }
@@ -480,12 +476,16 @@ class TeachingStructureIT extends TeachingFixture {
                         "Người không phải thành viên center không được vào roster");
                 assertEquals(
                         0,
-                        jdbc.queryForObject(
-                                "SELECT count(*) FROM class_student"
-                                        + " WHERE class_id = ? AND student_user_id = ?",
-                                Integer.class,
-                                classId,
-                                outsider),
+                        getJson(
+                                        session,
+                                        "/api/workspaces/"
+                                                + fixture.workspaceId()
+                                                + "/classes/"
+                                                + classId
+                                                + "/students",
+                                        200)
+                                .get("items")
+                                .size(),
                         "Roster không hợp lệ không được ghi");
             }
         } finally {
@@ -540,11 +540,10 @@ class TeachingStructureIT extends TeachingFixture {
                     "Roster bị thu hồi phải ghi thời điểm thu hồi");
             assertEquals(
                     0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM enrollment"
-                                    + " WHERE class_student_id = ? AND state = 'ACTIVE'",
-                            Integer.class,
-                            classStudentId),
+                    enrollmentCount(
+                            session,
+                            fixture.workspaceId(),
+                            courseSubjectId(courseId, subjects.get(0))),
                     "Thu hồi roster phải thu hồi ghi danh phụ thuộc");
         }
     }

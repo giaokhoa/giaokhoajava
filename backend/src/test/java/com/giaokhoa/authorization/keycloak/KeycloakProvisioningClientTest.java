@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.giaokhoa.support.RandomIds;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -28,7 +29,7 @@ import org.springframework.web.client.RestClient;
 
 class KeycloakProvisioningClientTest {
     private static final String HOST = "http://keycloak.test";
-    private static final UUID WORKSPACE = UUID.fromString("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    private static final UUID WORKSPACE = RandomIds.randomId();
     private static final String NAME = "center-" + WORKSPACE;
     private static final String ORG_QUERY =
             HOST
@@ -99,7 +100,7 @@ class KeycloakProvisioningClientTest {
                                                 + "/guardians\"}")
                                 .collect(java.util.stream.Collectors.joining(","))
                         + "]";
-        String lastPath = prefix + "ffffffff-ffff-ffff-ffff-ffffffffffff/guardians";
+        String lastPath = prefix + RandomIds.randomId() + "/guardians";
         server.expect(
                         requestTo(
                                 HOST

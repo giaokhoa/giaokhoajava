@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.support.RandomIds;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,10 +27,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 
 class OperationControllerTest {
-    private static final UUID ACTOR = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID OPERATION = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final UUID WORKSPACE = UUID.fromString("33333333-3333-3333-3333-333333333333");
-    private static final UUID GRANT = UUID.fromString("44444444-4444-4444-4444-444444444444");
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID OPERATION = RandomIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
+    private static final UUID GRANT = RandomIds.randomId();
 
     private final ProtectedActionExecutor executor = mock(ProtectedActionExecutor.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
