@@ -19,6 +19,9 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Projector của share grant: nguồn sự thật duy nhất về desired native graph của các target {@code
@@ -65,9 +68,11 @@ public class SharePolicyProjector {
     private final ResourcesUserAccountRepository userAccounts;
     private final ResourcesAuthorizationPartitionRepository partitions;
     private final ResourceCopies copies;
+    private final TransactionTemplate requiresNew;
 
     public SharePolicyProjector(
             AuthorizationOperationService operations,
+            PlatformTransactionManager transactionManager,
             ResourcePolicyProjector resourceProjector,
             ShareGrantRepository grants,
             ResourceRepository resources,
@@ -83,6 +88,8 @@ public class SharePolicyProjector {
         this.userAccounts = userAccounts;
         this.partitions = partitions;
         this.copies = copies;
+        this.requiresNew = new TransactionTemplate(transactionManager);
+        this.requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /** Scope danh nghĩa ghi trên projection row của mọi bundle share grant. */
@@ -245,8 +252,10 @@ public class SharePolicyProjector {
     /**
      * GRANT partition của một grant, tạo nếu chưa có: một grant có đúng một partition mang
      * owner_key {@code grant:{id}}, tạo lười ở lần ghi đầu tiên. Hàng mới mang đúng các giá trị mặc
-     * định của schema (revision 0, state PENDING); hai lượt ghi đầu đồng thời thì lượt thua unique
-     * (kind, owner_key) đọc lại hàng của lượt thắng.
+     * định của schema (revision 0, state PENDING). Phép tạo chạy trong một transaction ngắn riêng
+     * (REQUIRES_NEW) để hai lượt ghi đầu đồng thời thì lượt thua unique (kind, owner_key) chỉ mất
+     * đơn vị riêng đó — transaction của caller không bị PostgreSQL đặt vào trạng thái aborted — rồi
+     * đọc lại hàng của lượt thắng ở ngoài đơn vị riêng.
      */
     UUID ensureGrantPartition(UUID grantId) {
         String ownerKey = "grant:" + grantId;
@@ -257,14 +266,15 @@ public class SharePolicyProjector {
         }
         UUID candidate = UUID.randomUUID();
         try {
-            partitions.saveAndFlush(
-                    new AuthorizationPartition(
-                            candidate,
-                            AuthorizationPartition.Kind.GRANT,
-                            ownerKey,
-                            0,
-                            0,
-                            AuthorizationPartition.State.PENDING));
+            requiresNew.executeWithoutResult(_ ->
+                    partitions.saveAndFlush(
+                            new AuthorizationPartition(
+                                    candidate,
+                                    AuthorizationPartition.Kind.GRANT,
+                                    ownerKey,
+                                    0,
+                                    0,
+                                    AuthorizationPartition.State.PENDING)));
             return candidate;
         } catch (DataIntegrityViolationException race) {
             return partitions
