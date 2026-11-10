@@ -10,13 +10,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * Repository canonical của resource/version theo data-model: resource và version không bị nhân
- * bản khi lưu về kho khác, nên repository này là điểm truy cập duy nhất của tầng service tới các
- * bảng {@code resource}, {@code resource_version}, {@code library_item}, {@code share_grant} và
- * {@code resource_dependency}. Việc resolve metadata phục vụ dựng authorization key chỉ đọc các
- * cột định danh/phân loại; {@code body_stub} và {@code answer_stub} là hai cột nội dung tách
- * bạch, chỉ được đọc qua {@link #content} sau khi quyết định PDP tương ứng đã cho phép — không có
- * đường nào trong repository trả cả hai cột cho một lời gọi đọc thân bài hay đáp án ở tầng trên.
+ * Repository canonical của resource/version theo data-model: resource và version không bị nhân bản
+ * khi lưu về kho khác, nên repository này là điểm truy cập duy nhất của tầng service tới các bảng
+ * {@code resource}, {@code resource_version}, {@code library_item}, {@code share_grant} và {@code
+ * resource_dependency}. Việc resolve metadata phục vụ dựng authorization key chỉ đọc các cột định
+ * danh/phân loại; {@code body_stub} và {@code answer_stub} là hai cột nội dung tách bạch, chỉ được
+ * đọc qua {@link #content} sau khi quyết định PDP tương ứng đã cho phép — không có đường nào trong
+ * repository trả cả hai cột cho một lời gọi đọc thân bài hay đáp án ở tầng trên.
  *
  * <p>Các phép đọc/ghi trên {@code library_item} và {@code resource_assignment} chịu RLS theo
  * workspace nhận: caller phải đặt context workspace của transaction trước khi gọi (qua {@code
@@ -55,8 +55,12 @@ public class CanonicalResourceRepository {
 
     /** Một mục thư viện đã lưu, kèm căn cứ custody để nhận bản cập nhật giữ nguyên căn cứ đó. */
     public record LibraryItemRef(
-            UUID id, UUID workspaceId, UUID resourceId, UUID versionId,
-            @Nullable UUID shareGrantId, String custody) {}
+            UUID id,
+            UUID workspaceId,
+            UUID resourceId,
+            UUID versionId,
+            @Nullable UUID shareGrantId,
+            String custody) {}
 
     public Optional<VersionMetadata> metadata(UUID resourceId, UUID versionId) {
         List<Map<String, Object>> rows =
@@ -194,10 +198,10 @@ public class CanonicalResourceRepository {
     /**
      * Tạo resource fork: resource mới thuộc workspace nhận, người tạo là actor, giữ đúng kind và
      * môn của nguồn (fork đúng môn theo invariant), version đầu ở DRAFT mang nội dung sao từ
-     * version nguồn, một cạnh provenance về đúng version nguồn kèm grant đã cấp quyền fork (nếu
-     * căn cứ là license), và sao toàn bộ cạnh dependency mà chính version nguồn đang mang để bản
-     * fork giữ nguyên source dependencies của nguồn. Caller serialize việc tạo cạnh theo resource
-     * nguồn trong cùng fence transaction.
+     * version nguồn, một cạnh provenance về đúng version nguồn kèm grant đã cấp quyền fork (nếu căn
+     * cứ là license), và sao toàn bộ cạnh dependency mà chính version nguồn đang mang để bản fork
+     * giữ nguyên source dependencies của nguồn. Caller serialize việc tạo cạnh theo resource nguồn
+     * trong cùng fence transaction.
      */
     public UUID insertFork(
             UUID forkResourceId,

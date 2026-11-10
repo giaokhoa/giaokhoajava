@@ -42,13 +42,12 @@ import tools.jackson.databind.json.JsonMapper;
  * thể chưa từng được chiếu khi chuỗi được seed thẳng, nên trước khi hỏi PDP mỗi action ghi lại
  * bundle hiện hành của target qua cơ chế operation dùng chung và chờ chiếu xong — chờ không xong
  * thì fail-closed 503 như mọi protected request khác. Các action thư viện SAVE_VERSION,
- * FORK_VERSION, RECEIVE_UPDATE và hai route đọc thân bài/đáp án của resource version uỷ cho
- * {@link ResourceLibraryService}, nơi giữ pipeline và giao thức biên nhận của chúng. Action lạ bị
- * từ chối, không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính
- * mình trong cùng transaction với
- * mutation (bảng sample_action_mutation, theo tiền lệ recovery_mutation): retry cùng key và cùng
- * payload trả lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload trả 409 như quy tắc
- * mutation chung của hợp đồng HTTP.
+ * FORK_VERSION, RECEIVE_UPDATE và hai route đọc thân bài/đáp án của resource version uỷ cho {@link
+ * ResourceLibraryService}, nơi giữ pipeline và giao thức biên nhận của chúng. Action lạ bị từ chối,
+ * không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính mình trong
+ * cùng transaction với mutation (bảng sample_action_mutation, theo tiền lệ recovery_mutation):
+ * retry cùng key và cùng payload trả lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload
+ * trả 409 như quy tắc mutation chung của hợp đồng HTTP.
  */
 @RestController
 public class SampleActionController {
@@ -794,15 +793,15 @@ public class SampleActionController {
         return new SampleActionResult(itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId);
     }
 
-    @GetMapping(
-            "/api/workspaces/{workspaceId}/samples/resources/{resourceId}/versions/{versionId}")
+    @GetMapping("/api/workspaces/{workspaceId}/samples/resources/{resourceId}/versions/{versionId}")
     public ResponseEntity<ResourceBodyView> readResourceBody(
             @PathVariable UUID workspaceId,
             @PathVariable UUID resourceId,
             @PathVariable UUID versionId,
             Authentication authentication,
             HttpServletRequest httpRequest) {
-        String body = library.readBody(authentication, httpRequest, workspaceId, resourceId, versionId);
+        String body =
+                library.readBody(authentication, httpRequest, workspaceId, resourceId, versionId);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .body(new ResourceBodyView(resourceId, versionId, body));

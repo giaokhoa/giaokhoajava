@@ -26,9 +26,9 @@ import org.springframework.stereotype.Component;
  * công giảng dạy, ghi danh, liên kết phụ huynh đã duyệt và membership/role tiền đề của chúng, tức
  * đúng các nguồn mà một lần thu hồi role/membership/lớp/ phân công/ghi danh/phụ huynh có thể đổi;
  * bundle nào không đổi thì hash khớp nguyên nên chỉ là ghi lại, không đổi graph. Cùng lý do đó,
- * bundle resource version của toàn bộ workspace cũng được ghi kèm: nguồn của nó có nhánh tác giả
- * và phân công tường minh tiền đề là membership hiện hành, và nhánh học sinh tiền đề là hoạt động
- * được giao từ phân công/ghi danh.
+ * bundle resource version của toàn bộ workspace cũng được ghi kèm: nguồn của nó có nhánh tác giả và
+ * phân công tường minh tiền đề là membership hiện hành, và nhánh học sinh tiền đề là hoạt động được
+ * giao từ phân công/ghi danh.
  *
  * <p>Closure này chỉ bao phủ các bundle thuộc WORKSPACE partition của workspace đó. Mọi nguồn của
  * sáu nhóm đều là dòng bền trong workspace và mọi projection bị ảnh hưởng đều thuộc cùng partition

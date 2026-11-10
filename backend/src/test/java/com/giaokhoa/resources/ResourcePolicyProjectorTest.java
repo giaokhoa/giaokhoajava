@@ -31,12 +31,14 @@ class ResourcePolicyProjectorTest {
 
     @Test
     void storedActionsMapToVersionScopes() {
-        assertEquals(Optional.of("content.read"), ResourcePolicyProjector.mapAction("content.read"));
+        assertEquals(
+                Optional.of("content.read"), ResourcePolicyProjector.mapAction("content.read"));
         assertEquals(Optional.of("answer.read"), ResourcePolicyProjector.mapAction("answer.read"));
         assertEquals(Optional.of("use"), ResourcePolicyProjector.mapAction("use"));
         assertEquals(Optional.of("review"), ResourcePolicyProjector.mapAction("review"));
         assertEquals(Optional.of("share"), ResourcePolicyProjector.mapAction("share"));
-        assertEquals(Optional.of("library.save"), ResourcePolicyProjector.mapAction("library.save"));
+        assertEquals(
+                Optional.of("library.save"), ResourcePolicyProjector.mapAction("library.save"));
         // Biên soạn trên target version là tạo bản chỉnh sửa.
         assertEquals(Optional.of("fork"), ResourcePolicyProjector.mapAction("draft.edit"));
         assertEquals(Optional.of("fork"), ResourcePolicyProjector.mapAction("fork"));

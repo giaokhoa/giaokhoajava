@@ -26,23 +26,23 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Service thư viện resource của US7: đọc contextual (thân bài/đáp án), lưu version về kho, fork
- * và nhận cập nhật cho bản đã lưu — mọi thao tác đều qua canonical repository và chỉ sau quyết
- * định PDP trên target version tại workspace ngữ cảnh, theo đúng giao thức của hợp đồng
- * authorization: trước khi hỏi PDP, service ghi lại bundle hiện hành của target qua {@link
+ * Service thư viện resource của US7: đọc contextual (thân bài/đáp án), lưu version về kho, fork và
+ * nhận cập nhật cho bản đã lưu — mọi thao tác đều qua canonical repository và chỉ sau quyết định
+ * PDP trên target version tại workspace ngữ cảnh, theo đúng giao thức của hợp đồng authorization:
+ * trước khi hỏi PDP, service ghi lại bundle hiện hành của target qua {@link
  * ResourcePolicyProjector} bằng operation dùng chung và chờ chiếu xong (chờ không xong thì
- * fail-closed 503); mutation ghi biên nhận idempotency của chính action trong cùng transaction
- * với mutation (bảng {@code sample_action_mutation}, cùng giao thức với các sample action khác)
- * và ghi lại bundle sau khi đổi dữ kiện nguồn để graph phản ánh trạng thái mới.
+ * fail-closed 503); mutation ghi biên nhận idempotency của chính action trong cùng transaction với
+ * mutation (bảng {@code sample_action_mutation}, cùng giao thức với các sample action khác) và ghi
+ * lại bundle sau khi đổi dữ kiện nguồn để graph phản ánh trạng thái mới.
  *
  * <p>Lưu không nhân bản resource/version và không đổi chủ sở hữu canonical: mục thư viện trỏ về
- * đúng version nguồn, custody OWNED khi workspace nhận là chủ sở hữu, LICENSED khi version đến
- * từ hệ thống hoặc một grant. Fork tạo resource mới thuộc workspace nhận với người tạo là actor,
- * giữ đúng môn và nội dung của version nguồn, ghi cạnh provenance về version nguồn kèm grant đã
- * cấp quyền fork (nếu căn cứ là license) và sao toàn bộ dependency của version nguồn; fork không
- * bao giờ ghi đè quyền của chủ sở hữu nguồn. Nhận cập nhật tạo mục thư viện mới trỏ version thay
- * thế của cùng resource, giữ nguyên custody và grant của mục gốc, không đụng hoạt động hay lịch
- * sử đã giao trên version cũ.
+ * đúng version nguồn, custody OWNED khi workspace nhận là chủ sở hữu, LICENSED khi version đến từ
+ * hệ thống hoặc một grant. Fork tạo resource mới thuộc workspace nhận với người tạo là actor, giữ
+ * đúng môn và nội dung của version nguồn, ghi cạnh provenance về version nguồn kèm grant đã cấp
+ * quyền fork (nếu căn cứ là license) và sao toàn bộ dependency của version nguồn; fork không bao
+ * giờ ghi đè quyền của chủ sở hữu nguồn. Nhận cập nhật tạo mục thư viện mới trỏ version thay thế
+ * của cùng resource, giữ nguyên custody và grant của mục gốc, không đụng hoạt động hay lịch sử đã
+ * giao trên version cũ.
  */
 @Service
 public class ResourceLibraryService {
@@ -138,8 +138,8 @@ public class ResourceLibraryService {
     }
 
     /**
-     * Lưu version về kho của workspace nhận sau quyết định {@code library.save}: trả định danh
-     * mục thư viện (mục đã có của đúng bộ ba thì tái dùng, không tạo trùng).
+     * Lưu version về kho của workspace nhận sau quyết định {@code library.save}: trả định danh mục
+     * thư viện (mục đã có của đúng bộ ba thì tái dùng, không tạo trùng).
      */
     public UUID saveVersion(
             Authentication authentication,
@@ -187,7 +187,9 @@ public class ResourceLibraryService {
 
     private UUID applySave(UUID workspaceId, UUID resourceId, UUID versionId) {
         CanonicalResourceRepository.VersionMetadata metadata =
-                repository.metadata(resourceId, versionId).orElseThrow(ResourceLibraryService::notFound);
+                repository
+                        .metadata(resourceId, versionId)
+                        .orElseThrow(ResourceLibraryService::notFound);
         Optional<UUID> existing = repository.findLibraryItem(workspaceId, resourceId, versionId);
         if (existing.isPresent()) {
             return existing.get();
@@ -285,9 +287,13 @@ public class ResourceLibraryService {
             String label,
             UUID forkResourceId) {
         CanonicalResourceRepository.VersionMetadata metadata =
-                repository.metadata(resourceId, versionId).orElseThrow(ResourceLibraryService::notFound);
+                repository
+                        .metadata(resourceId, versionId)
+                        .orElseThrow(ResourceLibraryService::notFound);
         CanonicalResourceRepository.VersionContent content =
-                repository.content(resourceId, versionId).orElseThrow(ResourceLibraryService::notFound);
+                repository
+                        .content(resourceId, versionId)
+                        .orElseThrow(ResourceLibraryService::notFound);
         // Căn cứ license của fork: grant ACCEPTED đầu tiên cấp scope fork cho workspace nhận và
         // cho phép dùng tại chính workspace này; provenance và giới hạn của bản fork bám grant đó.
         CanonicalResourceRepository.GrantRef authorizingGrant = null;
@@ -306,7 +312,8 @@ public class ResourceLibraryService {
         }
         String usageConstraints =
                 authorizingGrant == null
-                        ? ResourcePolicyProjector.forkOriginMarker() + ";grant=-;actions=-;allowed=-"
+                        ? ResourcePolicyProjector.forkOriginMarker()
+                                + ";grant=-;actions=-;allowed=-"
                         : ResourcePolicyProjector.forkOriginMarker()
                                 + ";grant="
                                 + authorizingGrant.id()
@@ -334,10 +341,10 @@ public class ResourceLibraryService {
     }
 
     /**
-     * Nhận cập nhật cho một mục đã lưu: mục phải thuộc đúng workspace của route (mục của
-     * workspace khác thì 403), version thay thế phải thuộc cùng resource với version của mục, và
-     * quyết định {@code library.save} trên target của version thay thế phải cho phép. Trả định
-     * danh mục thư viện mới trỏ version thay thế, giữ custody và grant của mục gốc.
+     * Nhận cập nhật cho một mục đã lưu: mục phải thuộc đúng workspace của route (mục của workspace
+     * khác thì 403), version thay thế phải thuộc cùng resource với version của mục, và quyết định
+     * {@code library.save} trên target của version thay thế phải cho phép. Trả định danh mục thư
+     * viện mới trỏ version thay thế, giữ custody và grant của mục gốc.
      */
     public UUID receiveUpdate(
             Authentication authentication,
@@ -387,16 +394,20 @@ public class ResourceLibraryService {
                                                                         repository
                                                                                 .findLibraryItem(
                                                                                         workspaceId,
-                                                                                        item.resourceId(),
+                                                                                        item
+                                                                                                .resourceId(),
                                                                                         replacementVersionId)
                                                                                 .orElseGet(() ->
                                                                                         repository
                                                                                                 .insertLibraryItem(
                                                                                                         workspaceId,
-                                                                                                        item.resourceId(),
+                                                                                                        item
+                                                                                                                .resourceId(),
                                                                                                         replacementVersionId,
-                                                                                                        item.shareGrantId(),
-                                                                                                        item.custody())))),
+                                                                                                        item
+                                                                                                                .shareGrantId(),
+                                                                                                        item
+                                                                                                                .custody())))),
                                         "library item"));
         ensureProjection(actorUserId, workspaceId, idempotencyKey + "#update-sync", targetKey);
         return updatedItemId;
@@ -405,9 +416,9 @@ public class ResourceLibraryService {
     // ---------- Biên nhận idempotency của chính action ----------
 
     /**
-     * Chèn biên nhận của action trong cùng transaction với mutation, cùng giao thức với các
-     * sample action khác: chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp; đã có biên
-     * nhận cùng payload thì trả định danh đích đầu tiên thay vì ghi lại; khác payload thì 409.
+     * Chèn biên nhận của action trong cùng transaction với mutation, cùng giao thức với các sample
+     * action khác: chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp; đã có biên nhận cùng
+     * payload thì trả định danh đích đầu tiên thay vì ghi lại; khác payload thì 409.
      */
     private Optional<UUID> claimReceipt(
             UUID actorUserId,
@@ -443,8 +454,7 @@ public class ResourceLibraryService {
                     "IDEMPOTENCY_CONFLICT",
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
-        return Optional.of(
-                Objects.requireNonNull((UUID) previous.get("target_id"), "target_id"));
+        return Optional.of(Objects.requireNonNull((UUID) previous.get("target_id"), "target_id"));
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------

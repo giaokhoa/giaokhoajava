@@ -23,29 +23,29 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Projector của resource version: nguồn sự thật duy nhất về desired native graph của các target
- * {@code workspace:{wid}:resource:{rid}:version:{vid}}, dựng thuần từ các dòng bền. Các nhánh
- * nguồn tách scope theo hợp đồng authorization và thân issue: chủ sở hữu native của resource (ở
- * personal là owner của workspace kèm gate kỳ gói cho các scope mở rộng; ở center là người tạo
- * khi còn membership ACTIVE, scope mở rộng gate theo kỳ gói của center), phân công tường minh
- * {@code resource_assignment} ACTIVE của đúng workspace ngữ cảnh, license {@code share_grant} đã
- * ACCEPTED cho workspace nhận với cửa sổ hiệu lực là time policy và phạm vi workspace cho phép
- * là invariant của nhánh, và học sinh qua hoạt động đã giao trên đúng version (chỉ {@code
- * content.read}, không bao giờ {@code answer.read}). Version hệ thống đã LOCKED chỉ cho {@code
- * library.save} trước khi lưu và cho đọc/dùng/fork sau khi đã có mục thư viện không gắn grant tại
- * workspace nhận — chưa nhận cập nhật thì version mới của nguồn không có nhánh nào ở workspace
- * nhận. Bản fork phái sinh từ một grant (cạnh dependency mang dấu {@code origin=FORK} và grant)
- * chỉ còn nhánh license phái sinh giới hạn ở các scope đọc/dùng của chính grant đó: nhánh
- * owner/tác giả bị khử trên version phái sinh để quyền của grantor không bị ghi đè bởi quyền sở
- * hữu bản sao, và khi grant bị thu hồi thì bản phái sinh mất mọi nguồn.
+ * {@code workspace:{wid}:resource:{rid}:version:{vid}}, dựng thuần từ các dòng bền. Các nhánh nguồn
+ * tách scope theo hợp đồng authorization và thân issue: chủ sở hữu native của resource (ở personal
+ * là owner của workspace kèm gate kỳ gói cho các scope mở rộng; ở center là người tạo khi còn
+ * membership ACTIVE, scope mở rộng gate theo kỳ gói của center), phân công tường minh {@code
+ * resource_assignment} ACTIVE của đúng workspace ngữ cảnh, license {@code share_grant} đã ACCEPTED
+ * cho workspace nhận với cửa sổ hiệu lực là time policy và phạm vi workspace cho phép là invariant
+ * của nhánh, và học sinh qua hoạt động đã giao trên đúng version (chỉ {@code content.read}, không
+ * bao giờ {@code answer.read}). Version hệ thống đã LOCKED chỉ cho {@code library.save} trước khi
+ * lưu và cho đọc/dùng/fork sau khi đã có mục thư viện không gắn grant tại workspace nhận — chưa
+ * nhận cập nhật thì version mới của nguồn không có nhánh nào ở workspace nhận. Bản fork phái sinh
+ * từ một grant (cạnh dependency mang dấu {@code origin=FORK} và grant) chỉ còn nhánh license phái
+ * sinh giới hạn ở các scope đọc/dùng của chính grant đó: nhánh owner/tác giả bị khử trên version
+ * phái sinh để quyền của grantor không bị ghi đè bởi quyền sở hữu bản sao, và khi grant bị thu hồi
+ * thì bản phái sinh mất mọi nguồn.
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
- * workspace ngữ cảnh với scope danh nghĩa {@code content.read}; projection mang dependency là
- * GRANT partition của các grant làm nguồn cho nó để fence của protected request và phép đóng phụ
- * thuộc luôn thấy grant đang đổi trạng thái. Projector vừa tính bundle khi ghi (qua {@link
+ * workspace ngữ cảnh với scope danh nghĩa {@code content.read}; projection mang dependency là GRANT
+ * partition của các grant làm nguồn cho nó để fence của protected request và phép đóng phụ thuộc
+ * luôn thấy grant đang đổi trạng thái. Projector vừa tính bundle khi ghi (qua {@link
  * #recordResourceChange}), vừa dựng lại đúng bundle đó khi {@code ProjectionReconciler} đối chiếu
- * desired hash. Các bảng thư viện/phân công/hoạt động nằm dưới RLS theo workspace ngữ cảnh nên
- * mọi phép dựng bundle tự bọc trong một transaction ngắn có đặt context của đúng workspace trước
- * truy vấn đầu tiên, như các projector bundle khác.
+ * desired hash. Các bảng thư viện/phân công/hoạt động nằm dưới RLS theo workspace ngữ cảnh nên mọi
+ * phép dựng bundle tự bọc trong một transaction ngắn có đặt context của đúng workspace trước truy
+ * vấn đầu tiên, như các projector bundle khác.
  */
 @Component
 public class ResourcePolicyProjector {
@@ -119,8 +119,8 @@ public class ResourcePolicyProjector {
 
     /**
      * Map một token action lưu ở tầng grant/assignment sang scope mức version tương ứng: {@code
-     * draft.edit} trên target version nghĩa là tạo bản chỉnh sửa, tức scope {@code fork}; các
-     * token trùng tên scope thì giữ nguyên; token lạ không cho scope nào.
+     * draft.edit} trên target version nghĩa là tạo bản chỉnh sửa, tức scope {@code fork}; các token
+     * trùng tên scope thì giữ nguyên; token lạ không cho scope nào.
      */
     public static Optional<String> mapAction(String action) {
         return switch (action) {
@@ -129,8 +129,7 @@ public class ResourcePolicyProjector {
             case "answer.read" ->
                     Optional.of(PermissionCatalog.ResourceVersionScope.ANSWER_READ.scopeName());
             case "use" -> Optional.of(PermissionCatalog.ResourceVersionScope.USE.scopeName());
-            case "review" ->
-                    Optional.of(PermissionCatalog.ResourceVersionScope.REVIEW.scopeName());
+            case "review" -> Optional.of(PermissionCatalog.ResourceVersionScope.REVIEW.scopeName());
             case "share" -> Optional.of(PermissionCatalog.ResourceVersionScope.SHARE.scopeName());
             case "fork" -> Optional.of(PermissionCatalog.ResourceVersionScope.FORK.scopeName());
             case "library.save" ->
@@ -143,7 +142,8 @@ public class ResourcePolicyProjector {
 
     /** Các scope mức version mà một danh sách token action lưu trữ cấp được. */
     public static List<String> mapActions(List<String> actions) {
-        return actions.stream().map(ResourcePolicyProjector::mapAction)
+        return actions.stream()
+                .map(ResourcePolicyProjector::mapAction)
                 .flatMap(Optional::stream)
                 .distinct()
                 .toList();
@@ -184,8 +184,8 @@ public class ResourcePolicyProjector {
 
     /**
      * Mọi target resource version có thể có nguồn tại workspace: mọi version của resource thuộc
-     * workspace, mọi version đã lưu/giao/được cấp grant/phân công tại workspace và mọi version
-     * phái sinh của resource thuộc workspace.
+     * workspace, mọi version đã lưu/giao/được cấp grant/phân công tại workspace và mọi version phái
+     * sinh của resource thuộc workspace.
      */
     public List<String> allBundleTargetKeys(UUID workspaceId) {
         List<String> targets =
@@ -298,8 +298,8 @@ public class ResourcePolicyProjector {
      * Các gate native của một canonical descriptor resource: actor cụ thể cho descriptor actor,
      * group nguồn cho descriptor group, mỗi dạng kèm time policy khi descriptor mang cửa sổ kỳ
      * gói/grant; descriptor license mang đúng một audience (actor của owner ở personal hoặc group
-     * thành viên ở center) AND cửa sổ hiệu lực của grant. Dùng bởi reconciliation để dựng lại
-     * đúng graph đã ghi.
+     * thành viên ở center) AND cửa sổ hiệu lực của grant. Dùng bởi reconciliation để dựng lại đúng
+     * graph đã ghi.
      */
     public static List<PolicyGraph.Gate> gatesFor(String descriptor) {
         String[] parts = descriptor.split("\\|", -1);
@@ -308,13 +308,15 @@ public class ResourcePolicyProjector {
         }
         List<PolicyGraph.Gate> gates = new ArrayList<>();
         switch (parts[0]) {
-            case ACTOR_DESCRIPTOR -> gates.add(new PolicyGraph.Gate.Actor(requireSubject(parts, descriptor)));
+            case ACTOR_DESCRIPTOR ->
+                    gates.add(new PolicyGraph.Gate.Actor(requireSubject(parts, descriptor)));
             case ACTOR_PERIOD_DESCRIPTOR -> {
                 gates.add(new PolicyGraph.Gate.Actor(requireSubject(parts, descriptor)));
                 gates.add(validityGate(parts, descriptor, true));
             }
             case GROUP_DESCRIPTOR ->
-                    gates.add(new PolicyGraph.Gate.GroupMembership(requireGroup(parts, descriptor)));
+                    gates.add(
+                            new PolicyGraph.Gate.GroupMembership(requireGroup(parts, descriptor)));
             case GROUP_PERIOD_DESCRIPTOR -> {
                 gates.add(new PolicyGraph.Gate.GroupMembership(requireGroup(parts, descriptor)));
                 gates.add(validityGate(parts, descriptor, true));
@@ -367,8 +369,7 @@ public class ResourcePolicyProjector {
                 Objects.requireNonNull((String) meta.get("context_kind"), "context_kind");
 
         List<String> descriptors = new ArrayList<>();
-        Optional<Map<String, Object>> derivedGrant =
-                derivedForkGrant(resourceId, versionId);
+        Optional<Map<String, Object>> derivedGrant = derivedForkGrant(resourceId, versionId);
         if (derivedGrant.isPresent()) {
             derivedLicenseSources(
                     descriptors, workspaceId, contextKind, derivedGrant.get(), targetKey);
@@ -392,9 +393,9 @@ public class ResourcePolicyProjector {
 
     /**
      * Grant làm căn cứ phái sinh của version khi version này là bản fork theo license: cạnh
-     * provenance mang grant và dấu origin do fork ghi, ở bất kỳ trạng thái nào của grant — cạnh
-     * tồn tại là đủ để version này là bản phái sinh bị giới hạn bởi grant đó. Rỗng khi version
-     * không phái sinh từ grant nào (bản gốc hoặc fork theo quyền owner/phân công).
+     * provenance mang grant và dấu origin do fork ghi, ở bất kỳ trạng thái nào của grant — cạnh tồn
+     * tại là đủ để version này là bản phái sinh bị giới hạn bởi grant đó. Rỗng khi version không
+     * phái sinh từ grant nào (bản gốc hoặc fork theo quyền owner/phân công).
      */
     private Optional<Map<String, Object>> derivedForkGrant(UUID resourceId, UUID versionId) {
         List<Map<String, Object>> rows =
@@ -407,8 +408,7 @@ public class ResourcePolicyProjector {
                                 + " AND d.share_grant_id IS NOT NULL"
                                 + " AND d.usage_constraints LIKE 'origin=FORK%'"
                                 + " ORDER BY d.created_at, d.id LIMIT 1",
-                        resourceId,
-                        versionId);
+                        resourceId, versionId);
         return rows.stream().findFirst();
     }
 
@@ -445,7 +445,11 @@ public class ResourcePolicyProjector {
         for (String scope : OWNER_READ_SCOPES) {
             descriptors.add(
                     actorDescriptor(
-                            workspaceId, owner.get().userId(), owner.get().subject(), targetKey, scope));
+                            workspaceId,
+                            owner.get().userId(),
+                            owner.get().subject(),
+                            targetKey,
+                            scope));
         }
         for (PeriodRow period : subscriptionPeriods(workspaceId)) {
             for (String scope : OWNER_EXPANSION_SCOPES) {
@@ -481,7 +485,8 @@ public class ResourcePolicyProjector {
             return;
         }
         String subject =
-                Objects.requireNonNull((String) authors.getFirst().get("keycloak_sub"), "keycloak_sub");
+                Objects.requireNonNull(
+                        (String) authors.getFirst().get("keycloak_sub"), "keycloak_sub");
         for (String scope : AUTHOR_READ_SCOPES) {
             descriptors.add(actorDescriptor(workspaceId, authorUserId, subject, targetKey, scope));
         }
@@ -495,10 +500,10 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Nhánh phân công tường minh: assignment ACTIVE của đúng workspace ngữ cảnh khớp resource
-     * hoặc môn của resource; ở center người được phân công phải còn membership ACTIVE. Token lưu
-     * trữ map sang scope mức version qua {@link #mapAction} — {@code draft.edit} thành {@code
-     * fork}, {@code content.read} giữ nguyên nhờ catalog đã nới ở migration V028.
+     * Nhánh phân công tường minh: assignment ACTIVE của đúng workspace ngữ cảnh khớp resource hoặc
+     * môn của resource; ở center người được phân công phải còn membership ACTIVE. Token lưu trữ map
+     * sang scope mức version qua {@link #mapAction} — {@code draft.edit} thành {@code fork}, {@code
+     * content.read} giữ nguyên nhờ catalog đã nới ở migration V028.
      */
     private void assignmentSources(
             List<String> descriptors,
@@ -522,11 +527,9 @@ public class ResourcePolicyProjector {
         }
         for (Map<String, Object> assignment :
                 jdbc.queryForList(sql, workspaceId, resourceId, subjectId, subjectId)) {
-            UUID userId =
-                    Objects.requireNonNull((UUID) assignment.get("user_id"), "user_id");
+            UUID userId = Objects.requireNonNull((UUID) assignment.get("user_id"), "user_id");
             String subject =
-                    Objects.requireNonNull(
-                            (String) assignment.get("keycloak_sub"), "keycloak_sub");
+                    Objects.requireNonNull((String) assignment.get("keycloak_sub"), "keycloak_sub");
             for (String scope : mapActions(csv(assignment.get("actions_csv")))) {
                 descriptors.add(actorDescriptor(workspaceId, userId, subject, targetKey, scope));
             }
@@ -535,11 +538,11 @@ public class ResourcePolicyProjector {
 
     /**
      * Nhánh học sinh theo hoạt động: hoạt động ASSIGNED trên đúng version tại workspace cho học
-     * sinh của môn–khóa đó đọc nội dung — ở center qua group học sinh của môn–khóa (membership
-     * thật do projector giảng dạy đồng bộ), ở personal qua actor của từng học sinh còn ghi danh
-     * (đúng hình nguồn ghi danh của projector giảng dạy personal, vì personal không có group
-     * nguồn được đồng bộ). Không scope nào khác — đáp án có route và scope riêng mà nhánh này
-     * không bao giờ cấp.
+     * sinh của môn–khóa đó đọc nội dung — ở center qua group học sinh của môn–khóa (membership thật
+     * do projector giảng dạy đồng bộ), ở personal qua actor của từng học sinh còn ghi danh (đúng
+     * hình nguồn ghi danh của projector giảng dạy personal, vì personal không có group nguồn được
+     * đồng bộ). Không scope nào khác — đáp án có route và scope riêng mà nhánh này không bao giờ
+     * cấp.
      */
     private void activitySources(
             List<String> descriptors,
@@ -630,8 +633,8 @@ public class ResourcePolicyProjector {
      * phép nền tảng trước cả khi lưu — ở personal là owner kèm gate kỳ gói cá nhân (điều kiện nhận
      * là cá nhân có gói), ở center là group thành viên không kèm kỳ gói của center (giấy phép nội
      * dung nền tảng không gắn gói center, theo bảng nguồn của hợp đồng authorization); đọc/dùng/
-     * fork chỉ sau khi workspace đã có mục thư viện của chính version này không gắn grant — bản
-     * lưu đứng yên ở version đã lưu, version mới của nguồn chưa được nhận thì không có nhánh đọc.
+     * fork chỉ sau khi workspace đã có mục thư viện của chính version này không gắn grant — bản lưu
+     * đứng yên ở version đã lưu, version mới của nguồn chưa được nhận thì không có nhánh đọc.
      */
     private void systemSources(
             List<String> descriptors,
@@ -788,9 +791,9 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * GRANT partition của các grant làm nguồn cho target này (grant trực tiếp tới workspace nhận
-     * và grant của cạnh phái sinh), chỉ khi partition đó đã tồn tại: projection phụ thuộc vào nó
-     * để thu hồi/revoke của grant fence đúng các request đọc/ghi trên target.
+     * GRANT partition của các grant làm nguồn cho target này (grant trực tiếp tới workspace nhận và
+     * grant của cạnh phái sinh), chỉ khi partition đó đã tồn tại: projection phụ thuộc vào nó để
+     * thu hồi/revoke của grant fence đúng các request đọc/ghi trên target.
      */
     private List<UUID> grantDependencyPartitions(
             UUID workspaceId, UUID resourceId, UUID versionId) {
@@ -868,8 +871,8 @@ public class ResourcePolicyProjector {
 
     /**
      * Descriptor license: audience theo loại workspace nhận (actor của owner ở personal, group
-     * thành viên ở center), grant và cửa sổ hiệu lực của nó; {@code until=-} khi grant không có
-     * mốc hết hạn.
+     * thành viên ở center), grant và cửa sổ hiệu lực của nó; {@code until=-} khi grant không có mốc
+     * hết hạn.
      */
     private String licenseDescriptor(
             UUID workspaceId,
@@ -883,9 +886,7 @@ public class ResourcePolicyProjector {
         Instant validFrom = instantOf(grant.get("valid_from")).truncatedTo(ChronoUnit.SECONDS);
         Object expiresAt = grant.get("expires_at");
         StringBuilder descriptor =
-                new StringBuilder(LICENSE_DESCRIPTOR)
-                        .append("|workspace=")
-                        .append(workspaceId);
+                new StringBuilder(LICENSE_DESCRIPTOR).append("|workspace=").append(workspaceId);
         if ("PERSONAL".equals(contextKind)) {
             OwnerRow owner =
                     personalOwner(workspaceId)
@@ -898,11 +899,10 @@ public class ResourcePolicyProjector {
                     .append("|subject=")
                     .append(owner.subject());
         } else {
-            descriptor
-                    .append("|group=")
-                    .append(NativePolicyTemplates.membersGroup(workspaceId));
+            descriptor.append("|group=").append(NativePolicyTemplates.membersGroup(workspaceId));
         }
-        return descriptor.append("|grant=")
+        return descriptor
+                .append("|grant=")
                 .append(grantId)
                 .append("|from=")
                 .append(validFrom)

@@ -866,8 +866,9 @@ public class ProjectionReconciler {
 
     /**
      * Bundle của một target resource version thuộc workspace ngữ cảnh: cùng hình dạng với bundle
-     * kết quả — desired hash đã ghi phải khớp đúng tập descriptor mà {@link ResourcePolicyProjector}
-     * dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa CONTENT_READ của projector.
+     * kết quả — desired hash đã ghi phải khớp đúng tập descriptor mà {@link
+     * ResourcePolicyProjector} dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa
+     * CONTENT_READ của projector.
      */
     private Resolved resolveResourceBundle(ProjectionRow projection) {
         List<String> bundle = resourceProjector.bundleDescriptors(projection.targetKey());
