@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.awaitility.Awaitility;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,8 +33,9 @@ class TeachingAccessIT extends TeachingFixture {
     @Autowired private CenterService centers;
     @Autowired private ResourceMutationCoordinator coordinator;
 
+    @DisplayName("Actor chưa xác minh không đọc hay tạo được dữ liệu teaching bằng session cũ")
     @Test
-    void unverifiedActorCannotReadOrCreateTeachingWithOldSession() throws Exception {
+    void unverifiedActorDeniedWithOldSession() throws Exception {
         KeycloakLogin login = createVerifiedUser("review-eligibility");
         UUID actor = seedAccount(login.subject(), "SELF_REGISTERED", login.email(), true);
         UUID workspace = seedCenter(actor);
@@ -77,8 +79,9 @@ class TeachingAccessIT extends TeachingFixture {
         }
     }
 
+    @DisplayName("Owner do center cấp phát, không có email, vẫn đọc được dữ liệu teaching")
     @Test
-    void centerIssuedOwnerWithoutEmailCanReadTeaching() throws Exception {
+    void emailLessCenterOwnerReadsTeaching() throws Exception {
         KeycloakLogin login = createVerifiedUser("issued-owner");
         UUID actor = seedAccount(login.subject(), "CENTER_ISSUED", login.email(), true);
         UUID workspace = seedCenter(actor);
@@ -114,8 +117,9 @@ class TeachingAccessIT extends TeachingFixture {
         }
     }
 
+    @DisplayName("Manager bị revoke trong lúc chờ workspace lock không tạo được lớp")
     @Test
-    void managerRevokedWhileWaitingForWorkspaceLockCannotCreateClass() throws Exception {
+    void revokedManagerCannotCreateClass() throws Exception {
         KeycloakLogin login = createVerifiedUser("review-manager-race");
         UUID owner = seedAccount("owner-" + UUID.randomUUID(), "CENTER_ISSUED", null, false);
         UUID manager = seedAccount(login.subject(), "SELF_REGISTERED", login.email(), true);

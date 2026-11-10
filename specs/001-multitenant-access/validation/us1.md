@@ -52,7 +52,7 @@ DB deletion, restart and old cookie rejection`.
 - `IdentityFlowIT.unverifiedSelfRegisteredUserHasNoEligibilityUntilEmailVerified`
 - `IdentityFlowIT.changingEmailToAnUnverifiedOneRevokesEligibility` (đổi sang email chưa xác
   minh làm mất eligibility)
-- `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail` (khôi phục qua email)
+- `RecoveryFlowIT.verifiedUserGetsPasswordEmail` (khôi phục qua email)
 - E2E `identity.spec.ts`: “email chưa xác minh: đăng nhập bị chặn ở bước verify email của
   Keycloak và không lập phiên ứng dụng”; “bấm link xác minh trong email (Mailpit) thì đăng
   nhập được và session báo email đã xác minh” — **chưa có bằng chứng e2e**: cả 7 test của
@@ -89,10 +89,10 @@ Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ (gồm `opposite
 - `IdentityFlowIT.centerIssuedUserWithoutEmailIsEligibleWithoutVerification`
 - `BootstrapProfileIT.registrarIssuesStudentWithoutEmailAndReissueIsIdempotent`
 - `BootstrapProfileIT.registrarActivatesPendingMembershipOnReissue`
-- `RecoveryWorkflowIT.issueNewStudentHandsOffTemporaryCredentialOnce`
-- `RecoveryWorkflowIT.issueFailureAfterIdentityCreateDeletesOrphanKeycloakUser`
-- `RecoveryWorkflowIT.issueWithAppDbUsernameSquattedCompensatesCreatedUser`
-- `RecoveryWorkflowIT.issueWithExistingKeycloakIdentityConflictsAndKeepsPassword`
+- `RecoveryWorkflowIT.issueHandsOffCredentialOnce`
+- `RecoveryWorkflowIT.issueFailureDeletesOrphanUser`
+- `RecoveryWorkflowIT.issueWithSquattedNameCompensates`
+- `RecoveryWorkflowIT.issueWithExistingIdentityConflicts`
 
 Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ; `BootstrapProfileIT` 12/12; `RecoveryWorkflowIT` 17/17 (gồm test cấp credential một lần và 3 test reconcile/compensation/xung đột). Điều kiện “issued student phải email” của issue KHÔNG xảy ra:
 học sinh không email vẫn eligible và đăng nhập được (test đầu tiên trong danh sách trên).
@@ -112,31 +112,31 @@ Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ; `BootstrapProfi
 
 ### US1.6 — Tài khoản không email cần khôi phục: chỉ platform operator xử lý sau xác minh; quản lý trung tâm không tự đổi mật khẩu của danh tính dùng chung
 
-- `RecoveryFlowIT.operatorCredentialResetsIssuedUsersPasswordWithoutChangingIdentity`
-- `RecoveryFlowIT.ordinaryUserCredentialCannotResetAnotherUsersPassword`
-- `RecoveryFlowIT.operatorResetLetsVerifiedUserAuthenticateWithNewPasswordOnly`
-- `RecoveryFlowIT.platformRecoveryEndpointsRequireOperatorScope` (không có scope operator
+- `RecoveryFlowIT.operatorResetKeepsIdentity`
+- `RecoveryFlowIT.ordinaryUserCannotResetOthers`
+- `RecoveryFlowIT.resetUserLogsInWithNewPasswordOnly`
+- `RecoveryFlowIT.recoveryEndpointsNeedOperatorScope` (không có scope operator
   thì list/resolve bị 403)
 - `RecoveryWorkflowIT`: `submitForSelfCreatesRequestedRequest`,
-  `submitForMissingTargetReturnsNotFound`, `submitForAnotherUserWithoutWorkspaceReturnsNotFound`,
-  `centerManagerSubmitsForStudentMember`, `studentMemberCannotSubmitForAnotherMember`,
-  `managerOfAnotherCenterCannotSubmitForThisCenter`,
-  `verifyMovesRequestedToVerifiedAndRejectsRepeat`,
+  `submitForMissingTargetReturnsNotFound`, `submitForOtherWithoutWorkspace404`,
+  `centerManagerSubmitsForStudentMember`, `studentCannotSubmitForAnother`,
+  `foreignManagerCannotSubmitHere`,
+  `verifyTransitionsAndRejectsRepeat`,
   `resolveVerifiedApproveResolvesAndLeavesIdentityUntouched`,
   `resolveVerifiedRejectMarksRejected`, `resolveRequestedVerifiesInlineBeforeResolving`,
-  `resolveTerminalRequestConflicts`, `listRequestsReturnsSubmittedRequestsOldestFirst`,
-  `submitWithReasonKeepsReasonForOperatorQueue` (mới trong gate này)
+  `resolveTerminalRequestConflicts`, `listRequestsOldestFirst`,
+  `submitKeepsReasonForOperator` (mới trong gate này)
 - `RecoveryFlowIT.submitWithoutReasonIsRejected` (mới trong gate này: thiếu lý do → 400)
 - `RecoveryFlowIT.rejectedRequestPollShowsRejectionCode` (mới trong gate này: poll sau khi
   bị từ chối trả `FAILED` + `errorCode` `RECOVERY_REJECTED`)
 - Happy-path HTTP của platform operator (list/resolve trả 200): **chưa có test** — xem Note
   mở (a) dưới đây. Mức đã chứng minh: resolve/list ở tầng service + chặn 403 ở tầng HTTP.
 
-Kết quả local: `RecoveryFlowIT` 10 run, 0 failure, 1 error duy nhất là test SMTP (xem US1.7); `RecoveryWorkflowIT` 17/17; `RecoveryRequestIT` 4/4. Cả 3 test mới của gate đều pass: `submitWithReasonKeepsReasonForOperatorQueue`, `submitWithoutReasonIsRejected`, `rejectedRequestPollShowsRejectionCode`.
+Kết quả local: `RecoveryFlowIT` 10 run, 0 failure, 1 error duy nhất là test SMTP (xem US1.7); `RecoveryWorkflowIT` 17/17; `RecoveryRequestIT` 4/4. Cả 3 test mới của gate đều pass: `submitKeepsReasonForOperator`, `submitWithoutReasonIsRejected`, `rejectedRequestPollShowsRejectionCode`.
 
 ### US1.7 — Tài khoản có email đã xác minh quên mật khẩu: khôi phục qua email đó
 
-- `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail` — test này gửi mail thật
+- `RecoveryFlowIT.verifiedUserGetsPasswordEmail` — test này gửi mail thật
   qua Mailpit: **xanh ở CI, đỏ ở local** (local không có Mailpit; Keycloak trả 500 “Failed
   to send execute actions email”). Đây là giới hạn môi trường local đã biết, không phải lỗi
   code; bằng chứng xanh lấy từ CI head `51b31f24` (suite 194 test 0 error).
@@ -144,7 +144,7 @@ Kết quả local: `RecoveryFlowIT` 10 run, 0 failure, 1 error duy nhất là te
   không dùng lại được” — **chưa có bằng chứng e2e**: test này nằm trong 7 test của
   `identity.spec.ts` đều bị skip ở CI vì thiếu `NATIVE_GATE_APP_ORIGIN`.
 
-Kết quả local: `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail` đỏ đúng như dự kiến — 500 `Failed to send execute actions email` vì local không có Mailpit (xem chi tiết ở mục “Hạn chế”). Toàn suite còn lại 0 failure.
+Kết quả local: `RecoveryFlowIT.verifiedUserGetsPasswordEmail` đỏ đúng như dự kiến — 500 `Failed to send execute actions email` vì local không có Mailpit (xem chi tiết ở mục “Hạn chế”). Toàn suite còn lại 0 failure.
 
 ### US1.8 — Rời A nhưng còn tham gia B: danh tính, quyền hợp lệ tại B và gói cá nhân vẫn giữ
 
@@ -158,8 +158,8 @@ Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ; `BootstrapProfi
 - `IdentityFlowIT.anonymousCallerIsRedirectedToLogin`
 - `IdentityFlowIT.forgedSessionCookieDoesNotAuthenticate`
 - `IdentityFlowIT.sessionEndpointDescribesAnonymousState`
-- `RecoveryFlowIT.anonymousRecoveryRequestIsRedirectedToLogin`
-- `RecoveryFlowIT.anonymousWithForgedCookieStaysUnauthenticated`
+- `RecoveryFlowIT.anonymousRequestRedirectsToLogin`
+- `RecoveryFlowIT.forgedCookieStaysUnauthenticated`
 - E2E `session-security.spec.ts`: không token trong DOM/network/SSR; no-store; CSRF (mutation
   thiếu token bị 403; token sai hình dạng vẫn bị 400); chưa eligible thì không tạo được action
   mới (503 fail-closed); khởi động lại trình duyệt giữ phiên từ storage state; storage state
@@ -172,11 +172,11 @@ Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ (gồm 3 test �
 
 ## Minh chứng restart giữ session + authorized client + OIDC correlation
 
-- `OidcSessionPersistenceIT` (6 test): `sessionAndCorrelationSurviveNewRegistryAndMatchOnlyCorrectSid`,
-  `subjectLogoutInvalidatesAllMatchingSessionsButNotAnotherSubject`,
-  `jdbcSessionDeletionAndIdRotationKeepCorrelationInSync`,
-  `expiredSessionCannotBeSelectedForBackChannelLogout`,
-  `authorizedAccessAndRefreshTokensSurviveJdbcSessionReload`,
+- `OidcSessionPersistenceIT` (6 test): `sessionSurvivesNewRegistry`,
+  `subjectLogoutKillsOwnSessionsOnly`,
+  `sessionDeleteAndRotateSync`,
+  `expiredSessionSkipsBackChannel`,
+  `tokensSurviveSessionReload`,
   `cleanupOnlyDeletesOldOrphans`. Kết quả local: 6/6 trong lượt integration (197 test).
 - `infra/keycloak/verify-oidc-logout.mjs` trên CI head `51b31f24` (job integration
   `128315371509`): `PASS: Keycloak-signed logout, issuer/aud/events/sid/sub, DB deletion,
@@ -196,7 +196,7 @@ Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ (gồm 3 test �
 - Đã xác minh: không có test nào gọi `GET /api/platform/recovery-requests` hoặc
   `POST /api/platform/recovery-requests/{id}/resolve` với operator có quyền. Mức đã có:
   resolve/list ở tầng service (`RecoveryWorkflowIT`, 17 test) và chặn 403 ở tầng HTTP
-  (`RecoveryFlowIT.platformRecoveryEndpointsRequireOperatorScope`).
+  (`RecoveryFlowIT.recoveryEndpointsNeedOperatorScope`).
 - Vì sao chưa làm trong gate này: để PDP cho phép cần fixture platform grant trong realm IT
   — tạo client resource-server `giaokhoa-it-api`, resource `platform`, scope-permission
   `account.recover` + group policy cho `/gk/platform/operators` rồi chờ Keycloak lan truyền
@@ -229,7 +229,7 @@ Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ (gồm 3 test �
     `VALIDATION_FAILED`); `RequestItem` trả `reason` cho operator.
   - `platform-recovery-content.tsx`: kiểu `PlatformRecoveryRequest` + parse + hiển thị
     “Lý do cần hỗ trợ” trong danh sách operator.
-  - Test mới: `RecoveryWorkflowIT.submitWithReasonKeepsReasonForOperatorQueue`,
+  - Test mới: `RecoveryWorkflowIT.submitKeepsReasonForOperator`,
     `RecoveryFlowIT.submitWithoutReasonIsRejected`,
     `RecoveryRequestIT` round-trip entity với `reason`,
     `recovery-personal.test.ts` parse danh sách giữ `reason`.
@@ -262,7 +262,7 @@ Kết quả local: `IdentityFlowIT` 12 run / 1 skipped, 0 đỏ (gồm 3 test �
 
 - `verify-oidc-logout.mjs` và `verify-native.sh` cần Docker: không chạy được ở local; bằng
   chứng restart/back-channel lấy từ CI head `51b31f24` (job integration success).
-- `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail` cần Mailpit: đỏ ở local,
+- `RecoveryFlowIT.verifiedUserGetsPasswordEmail` cần Mailpit: đỏ ở local,
   xanh ở CI head `51b31f24` (suite 194 test, 0 error).
 - Test invitations `IdentityFlowIT.invitationEndpointRegistersExistingIdentityWithoutOriginChange`
   đang `@Disabled` — endpoint invitations thuộc US2, chờ T034/T036/T038/T040.
@@ -294,7 +294,7 @@ Còn mở, đã ghi rõ và không giấu trong kết luận:
    backend 8080/Mailpit). `verify-oidc-logout.mjs` và `verify-native.sh` chỉ có bằng
    chứng CI (head `51b31f24`, job integration `128315371509` success); local không chạy
    được vì cần Docker/Mailpit/backend 8080.
-3. `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail` đỏ ở local vì thiếu
+3. `RecoveryFlowIT.verifiedUserGetsPasswordEmail` đỏ ở local vì thiếu
    Mailpit; xanh ở CI.
 
 Việc đóng story do bước review/merge quyết định trên cơ sở tài liệu này.
@@ -302,7 +302,7 @@ Việc đóng story do bước review/merge quyết định trên cơ sở tài 
 ## Phụ lục — Số liệu lượt integration chốt ở local (lượt 2, sau khi sửa test)
 
 Lượt 1 (197 test, 1 failure, 1 error) đỏ 1 test mới do chính nô tài viết sai khẳng định
-(`submitWithReasonKeepsReasonForOperatorQueue` cho rằng hàng đợi chỉ có 1 yêu cầu, thực tế
+(`submitKeepsReasonForOperator` cho rằng hàng đợi chỉ có 1 yêu cầu, thực tế
 class dùng chung schema nên hàng đợi có 9 yêu cầu); đã sửa test (tìm đúng yêu cầu vừa gửi
 theo ID) rồi chạy lại đủ hai cổng theo đúng thứ tự (clean verify trước, integration sau).
 Lượt 2 là số liệu chốt:

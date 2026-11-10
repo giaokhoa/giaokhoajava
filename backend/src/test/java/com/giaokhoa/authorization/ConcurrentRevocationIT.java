@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.awaitility.core.ConditionTimeoutException;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -66,8 +67,10 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
     @Autowired ClientRegistrationRepository clientRegistrations;
     @Autowired SessionRepository<?> sessions;
 
+    @DisplayName(
+            "Ghi đang bay (in-flight) hoàn tất trước khi revocation chiếm được exclusive fence")
     @Test
-    void inFlightWriteFinishesBeforeRevocationCanAcquireExclusiveFence() throws Exception {
+    void inFlightWriteFinishesBeforeFence() throws Exception {
         UUID partition = partition();
         CountDownLatch protectedLock = new CountDownLatch(1);
         CountDownLatch releaseWrite = new CountDownLatch(1);
@@ -111,8 +114,9 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Ghi bắt đầu sau revocation không thể quan sát revision READY cũ")
     @Test
-    void writeStartedAfterRevocationCannotObserveAnOldReadyRevision() throws Exception {
+    void writeAfterRevokeSeesNoOldRevision() throws Exception {
         UUID partition = partition();
         CountDownLatch revokedButNotCommitted = new CountDownLatch(1);
         CountDownLatch commitRevoke = new CountDownLatch(1);
@@ -153,8 +157,10 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName(
+            "Token của actor qua luồng code PKCE thật vẫn sống qua JDBC session xuyên suốt native revocation")
     @Test
-    void realCodePkceActorTokenSurvivesJdbcSessionAcrossNativeRevocation() throws Exception {
+    void pkceTokenSurvivesNativeRevocation() throws Exception {
         try (var nativeGate = new NativeRevocationFixture();
                 var session = nativeSession(nativeGate)) {
             String first = session.currentAccessToken();
@@ -173,8 +179,9 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Dọn dẹp fixture của native API giữ nguyên các grant độc lập của resource server")
     @Test
-    void nativeApiFixtureCleanupPreservesIndependentResourceServerGrants() {
+    void cleanupKeepsIndependentRsGrants() {
         // Graph đầu tiên sở hữu TEST API client tách biệt; graph thứ hai chỉ dùng chung resource
         // server của nó.
         try (var nativeGate = new NativeRevocationFixture();
@@ -214,10 +221,11 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         GRANT_FAILED
     }
 
+    @DisplayName(
+            "Các capability được bảo vệ phải từ chối khi dependency đã commit nhưng còn PENDING")
     @ParameterizedTest
     @EnumSource(PendingScope.class)
-    void protectedCapabilitiesMustRejectCommittedPendingDependency(PendingScope pending)
-            throws Exception {
+    void capabilitiesRejectPendingDependency(PendingScope pending) throws Exception {
         // Hợp đồng request-fence đòi hỏi cùng một HTTP request đã xác thực
         // trước và sau một fence đã commit.
         try (var nativeGate = new NativeRevocationFixture();
@@ -380,8 +388,9 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                 "READY must produce a native allow, not a constant HTTP 200/deny");
     }
 
+    @DisplayName("Mutation đồng thời lên fixture phải chờ revocation fence ở tầng database")
     @Test
-    void concurrentFixtureMutationMustWaitForDatabaseRevocationFence() throws Exception {
+    void fixtureMutationWaitsForFence() throws Exception {
         // Sample action phải dùng cùng PEP production và giao thức khóa.
         try (var nativeGate = new NativeRevocationFixture();
                 var session = nativeSession(nativeGate)) {
@@ -506,8 +515,9 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Request trong cùng session làm mới eligibility trước khi dùng native permission")
     @Test
-    void sameSessionRequestRefreshesEligibilityBeforeUsingTheNativePermission() throws Exception {
+    void sessionRefreshesEligibilityFirst() throws Exception {
         try (var nativeGate = new NativeRevocationFixture();
                 var session = nativeSession(nativeGate)) {
             ActorScope actor = actorWithReadyPersonalWorkspace(nativeGate.userSubject());
@@ -683,8 +693,10 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName(
+            "Worker bản production phải reconcile app graph mới provision một phần sau lần retry")
     @Test
-    void productionWorkerMustReconcilePartiallyProvisionedAppGraphAfterRetry() throws Exception {
+    void workerReconcilesPartialGraph() throws Exception {
         // Reconciliation worker production phải tiếp tục operation này; nguồn là một
         // PERSONAL owner thật trong V001, không phải share_grant bịa ra
         // (vốn chưa có schema production trước các task user-story sau này).
@@ -870,9 +882,10 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         return java.util.Arrays.asList(java.util.Objects.requireNonNull(names));
     }
 
+    @DisplayName(
+            "Crash sau native revoke nhưng trước database ack có thể replay mà không nhân đôi graph")
     @Test
-    void crashAfterNativeRevokeBeforeDatabaseAckCanReplayWithoutDuplicatingGraph()
-            throws Exception {
+    void crashBeforeAckReplaysCleanly() throws Exception {
         // Partition này không ghi projection nào, nên worker không thể xác minh hay publish nó;
         // test điều khiển cửa sổ crash mạng/commit bằng tay,
         // với Keycloak native, các revision PostgreSQL đã commit và một lần revoke thứ hai giống
@@ -973,8 +986,9 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Worker stale không thể publish revision cũ sau một lần revoke mới")
     @Test
-    void staleWorkerCannotPublishOldRevisionAfterNewRevoke() {
+    void staleWorkerCannotPublishOldRevision() {
         UUID partition = partition();
         tx(() -> {
             fence(partition, 2);
@@ -1001,8 +1015,10 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                         partition));
     }
 
+    @DisplayName(
+            "Operation bị bỏ dở ở trạng thái APPLYING vẫn bị fence cho tới khi recovery publish revision")
     @Test
-    void abandonedApplyingOperationStaysFencedUntilRecoveryPublishesRevision() {
+    void abandonedOperationStaysFenced() {
         Recovery created =
                 tx(() -> {
                     UUID actor = UUID.randomUUID();
@@ -1118,8 +1134,9 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                         created.actor()));
     }
 
+    @DisplayName("Operation trẻ hơn không thể vượt qua operation cũ hơn trên cùng một partition")
     @Test
-    void youngerOperationCannotOvertakeAnOlderOperationOnTheSamePartition() throws Exception {
+    void youngerOperationCannotOvertake() throws Exception {
         UUID partition = partition();
         UUID[] operations =
                 tx(() -> {
@@ -1193,8 +1210,10 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
         assertEquals(0, operationAttempts(younger));
     }
 
+    @DisplayName(
+            "Operation bị revision mới hơn vượt qua kết thúc ở trạng thái SUPERSEDED mà không bị fence")
     @Test
-    void operationOvertakenByANewerRevisionEndsSupersededWithoutFencing() throws Exception {
+    void overtakenOperationEndsSuperseded() throws Exception {
         UUID partition = partition();
         UUID operation =
                 tx(() -> {

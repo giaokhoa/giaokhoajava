@@ -18,6 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -66,8 +67,9 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
 
     @Autowired SessionRepositoryFilter<?> sessionFilter;
 
+    @DisplayName("Session và correlation sống sót qua registry mới và chỉ khớp đúng sid")
     @Test
-    void sessionAndCorrelationSurviveNewRegistryAndMatchOnlyCorrectSid() {
+    void sessionSurvivesNewRegistry() {
         assertInstanceOf(HttpSessionOAuth2AuthorizedClientRepository.class, authorizedClients);
         var session =
                 persistedSession(
@@ -125,8 +127,10 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName(
+            "Logout theo subject vô hiệu mọi session khớp của subject đó nhưng không đụng subject khác")
     @Test
-    void subjectLogoutInvalidatesAllMatchingSessionsButNotAnotherSubject() {
+    void subjectLogoutKillsOwnSessionsOnly() {
         var a = persistedSession(sessions);
         var b = persistedSession(sessions);
         var other = persistedSession(sessions);
@@ -151,8 +155,9 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Xóa session JDBC và xoay id giữ correlation đồng bộ")
     @Test
-    void jdbcSessionDeletionAndIdRotationKeepCorrelationInSync() {
+    void sessionDeleteAndRotateSync() {
         var session = persistedSession(sessions);
         String newId = java.util.UUID.randomUUID().toString();
         try {
@@ -180,8 +185,9 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Session đã hết hạn không thể được chọn cho back-channel logout")
     @Test
-    void expiredSessionCannotBeSelectedForBackChannelLogout() {
+    void expiredSessionSkipsBackChannel() {
         var session = persistedSession(sessions);
         try {
             registry.saveSessionInformation(info(session.getId(), "user-5", "sid-5", null));
@@ -198,8 +204,9 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Access token và refresh token đã authorize sống sót qua việc reload JDBC session")
     @Test
-    void authorizedAccessAndRefreshTokensSurviveJdbcSessionReload() throws Exception {
+    void tokensSurviveSessionReload() throws Exception {
         var registration =
                 ClientRegistration.withRegistrationId("keycloak")
                         .clientId(CLIENT)

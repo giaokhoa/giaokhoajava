@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -52,8 +53,9 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
     @Autowired CenterPolicyProjector projector;
     @Autowired PersonalEntitlementProjector personalProjector;
 
+    @DisplayName("Các lần confirm đồng thời giữ nguyên toàn bộ desired bundle")
     @Test
-    void concurrentConfirmationsKeepTheWholeDesiredBundle() throws Exception {
+    void concurrentConfirmsKeepBundle() throws Exception {
         UUID operator = seedAccount();
         UUID workspace = seedCenter(seedAccount());
         UUID partition = partitionOf(workspace);
@@ -113,8 +115,9 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                 "Hai confirmation đã commit phải cho hash chứa cả hai kỳ");
     }
 
+    @DisplayName("Confirm cho center ghi period, audit và desired bundle")
     @Test
-    void confirmCenterRecordsPeriodAuditAndDesiredBundle() {
+    void confirmCenterRecordsBundle() {
         UUID operator = seedAccount();
         UUID owner = seedAccount();
         UUID workspace = seedCenter(owner);
@@ -195,8 +198,9 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                 "Bundle phải gate các scope cấp quyền bằng đúng kỳ vừa xác nhận");
     }
 
+    @DisplayName("Replay confirm trả đúng operation cũ mà không nhân đôi")
     @Test
-    void confirmReplayReturnsSameOperationWithoutDuplicating() {
+    void confirmReplayReturnsSameOperation() {
         UUID operator = seedAccount();
         UUID owner = seedAccount();
         UUID workspace = seedCenter(owner);
@@ -360,8 +364,9 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
         assertEquals(1, periodCount(workspace));
     }
 
+    @DisplayName("Confirm cho center không khôi phục các group mà thành viên duy nhất đã bị revoke")
     @Test
-    void confirmForCenterDoesNotRestoreGroupsWhoseOnlyMemberIsRevoked() {
+    void confirmSkipsRevokedOnlyGroups() {
         UUID operator = seedAccount();
         UUID owner = seedAccount();
         UUID workspace = seedCenter(owner);
@@ -395,8 +400,9 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                 "Owner còn ACTIVE thì group owners vẫn phải có nguồn trong bundle");
     }
 
+    @DisplayName("Confirm cho personal workspace ghi period và entitlement bundle")
     @Test
-    void confirmPersonalWorkspaceRecordsPeriodAndEntitlementBundle() {
+    void confirmPersonalRecordsBundle() {
         UUID operator = seedAccount();
         UUID user = seedAccount();
         UUID personal = personalWorkspaceOf(user);

@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -124,8 +125,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Quyết định ALLOW không được cache giữa các request")
     @Test
-    void doesNotCacheAllowDecisionsBetweenRequests() {
+    void allowDecisionsAreNotCached() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
@@ -142,8 +144,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Fail-closed khi response quyết định không có kết quả boolean")
     @Test
-    void failsClosedWhenTheDecisionResponseHasNoBooleanResult() {
+    void failsClosedWithoutBooleanResult() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
@@ -167,8 +170,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Fail-closed khi Keycloak trả lỗi server")
     @Test
-    void failsClosedWhenKeycloakReturnsAServerError() {
+    void failsClosedOnKeycloakServerError() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
@@ -191,8 +195,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Fail-closed khi session không có authorized client")
     @Test
-    void failsClosedWhenTheSessionHasNoAuthorizedClient() {
+    void failsClosedWithoutAuthorizedClient() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = new Session(new HttpSessionOAuth2AuthorizedClientRepository());
@@ -212,8 +217,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Fail-closed khi token của session thuộc về người dùng khác")
     @Test
-    void failsClosedWhenTheSessionTokenBelongsToAnotherUser() {
+    void failsClosedOnForeignSessionToken() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken("another-user", tokenExpiringIn(300));
@@ -233,8 +239,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Token session hết hạn được refresh và quyết định dùng token mới")
     @Test
-    void refreshesAnExpiredSessionTokenAndDecidesWithTheNewToken() {
+    void refreshesExpiredTokenAndDecides() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestClient.Builder tokenBuilder = RestClient.builder();
@@ -277,8 +284,9 @@ class KeycloakDecisionClientTest {
                 java.util.Objects.requireNonNull(stored).getAccessToken().getTokenValue());
     }
 
+    @DisplayName("Fail-closed khi Keycloak từ chối refresh token")
     @Test
-    void failsClosedWhenKeycloakRejectsTheRefreshToken() {
+    void failsClosedWhenRefreshRejected() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestClient.Builder tokenBuilder = RestClient.builder();
@@ -307,8 +315,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Fail-closed khi token session đã hết hạn mà không refresh được")
     @Test
-    void failsClosedWhenTheExpiredSessionTokenCannotBeRefreshed() {
+    void failsClosedWhenRefreshImpossible() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(-120));

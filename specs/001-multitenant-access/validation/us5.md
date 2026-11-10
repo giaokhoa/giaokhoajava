@@ -59,12 +59,12 @@ US5.1–US5.6 là 6 acceptance scenarios của User Story 5 trong
 
 | Scenario | Test method | Kết quả |
 | --- | --- | --- |
-| US5.1 gỡ phân công giảng dạy | `revokedTeacherLosesRosterReadInSameSession` | 6/6 xanh (xem §3.1) |
-| US5.2 gỡ membership tại A | `removedMemberLosesWorkspaceAndRosterInSameSession` | 6/6 xanh |
-| US5.3 gỡ ghi danh | `unenrolledStudentLosesResultReadAndDisappearsFromRoster` | 6/6 xanh |
-| US5.4 thông tin giả không mở quyền | `forgedTenantHeaderAndForeignSubjectAreRejected` | 6/6 xanh |
+| US5.1 gỡ phân công giảng dạy | `revokedTeacherLosesRosterRead` | 6/6 xanh (xem §3.1) |
+| US5.2 gỡ membership tại A | `removedMemberLosesWorkspaceAccess` | 6/6 xanh |
+| US5.3 gỡ ghi danh | `unenrolledStudentLosesResultRead` | 6/6 xanh |
+| US5.4 thông tin giả không mở quyền | `forgedTenantIdentityIsRejected` | 6/6 xanh |
 | US5.5 nguồn OR độc lập | `revokingOneSubjectKeepsOtherSubject` | 6/6 xanh |
-| US5.6 202/fail-closed | `revokeReturns202AndNextRequestNeverSucceedsBeforeCompletion` | 6/6 xanh |
+| US5.6 202/fail-closed | `revokeReturns202UntilCompletion` | 6/6 xanh |
 
 Phạm vi ma trận ghi rõ trong javadoc đầu lớp (đã đọc trực tiếp file trên
 worktree `test-perf-round2`): **không bao phủ** cạnh tranh thu hồi đồng

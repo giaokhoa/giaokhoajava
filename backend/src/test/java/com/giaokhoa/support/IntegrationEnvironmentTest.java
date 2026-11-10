@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
@@ -38,8 +39,9 @@ class IntegrationEnvironmentTest {
         assertEquals(1, calls.get());
     }
 
+    @DisplayName("Xóa user gặp 409 dai dẳng thì ném lỗi kèm nội dung phản hồi của Keycloak")
     @Test
-    void xoaUser409DaiDangThiNemLoiKemNoiDungKeycloak() {
+    void deleteUserPersistent409Throws() {
         AtomicInteger calls = new AtomicInteger();
         IllegalStateException error =
                 assertThrows(

@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -53,8 +54,10 @@ class GuardianAccessIT extends GuardianFixture {
     @Autowired private CenterService centers;
     @MockitoSpyBean private GuardianLinkService guardedLinks;
 
+    @DisplayName(
+            "Phụ huynh gửi yêu cầu liên kết và thấy yêu cầu ở trạng thái PENDING trong danh sách của mình")
     @Test
-    void parentRequestsLinkAndSeesItPendingInOwnList() throws Exception {
+    void parentRequestsLinkSeesPending() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var parent = openSession(center.parent())) {
             JsonNode link = requestLinkSucceeded(parent, center.workspaceId(), center.studentX());
@@ -227,8 +230,9 @@ class GuardianAccessIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Phụ huynh không thể yêu cầu liên kết với học sinh ngoài center")
     @Test
-    void parentCannotRequestLinkForStudentOutsideCenter() throws Exception {
+    void parentCannotLinkForeignStudent() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         KeycloakLogin outsider = createVerifiedUser("guardian-outsider");
         UUID outsiderId = seedAccount(outsider);
@@ -336,8 +340,9 @@ class GuardianAccessIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Danh sách duyệt guardian giữ source lock sau khi kiểm tra vai trò manager")
     @Test
-    void guardianReviewListKeepsTheSourceLockAfterCheckingTheManagerRole() throws Exception {
+    void reviewListKeepsSourceLock() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         CountDownLatch roleChecked = new CountDownLatch(1);
         CountDownLatch releaseList = new CountDownLatch(1);

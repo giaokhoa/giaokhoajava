@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Propagation;
@@ -148,8 +149,9 @@ class TeachingAssignmentListIT extends TeachingFixture {
         }
     }
 
+    @DisplayName("Danh sách phân công tuân theo các tiền lệ NOT_FOUND và bị từ chối (denied)")
     @Test
-    void assignmentListsFollowNotFoundAndDeniedPrecedents() throws Exception {
+    void assignmentListsFollowPrecedents() throws Exception {
         Fixture fixture = seedTeachingCenter();
         try (var owner = openSession(fixture.owner());
                 var teacher = openSession(fixture.teacherA())) {

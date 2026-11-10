@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -60,8 +61,9 @@ class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
     @Autowired IdentityEligibilitySynchronizer synchronizer;
     @Autowired PlatformTransactionManager transactionManager;
 
+    @DisplayName("Eligibility của tài khoản tự đăng ký đi theo profile hiện hành theo cả hai chiều")
     @Test
-    void selfRegisteredEligibilityFollowsTheCurrentProfileBothWays() {
+    void selfRegisteredFollowsProfile() {
         String subject = createUser("sync-self-" + UUID.randomUUID(), "self@example.test", true);
         try {
             UUID actor = account(subject, "SELF_REGISTERED", null, false, "self@example.test");
@@ -97,8 +99,9 @@ class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Tài khoản do center cấp phát đủ eligibility mà không cần email đã xác minh nào")
     @Test
-    void centerIssuedAccountIsEligibleWithoutAnyVerifiedEmail() {
+    void centerIssuedEligibleWithoutEmail() {
         String subject = createUser("sync-issued-" + UUID.randomUUID(), null, false);
         try {
             UUID actor = account(subject, "CENTER_ISSUED", subject, false, null);
@@ -113,8 +116,9 @@ class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Identity không đọc được khiến hệ thống fail-closed và không ghi lại gì")
     @Test
-    void anIdentityThatCannotBeReadFailsClosedAndRecordsNothing() {
+    void unreadableIdentityFailsClosed() {
         String missingSubject = UUID.randomUUID().toString();
         UUID actor = account(missingSubject, "SELF_REGISTERED", null, false, "ghost@example.test");
 

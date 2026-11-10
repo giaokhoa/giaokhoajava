@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementCreator;
@@ -21,8 +22,9 @@ class TeachingRepositoryPaginationTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final TeachingRepository repository = new TeachingRepository(jdbc);
 
+    @DisplayName("Đọc batch course subjects giữ các dòng theo nhóm và bỏ qua đầu vào rỗng")
     @Test
-    void batchCourseSubjectsKeepsRowsGroupedAndSkipsEmptyInput() {
+    void batchSubjectsGroupedSkipsEmpty() {
         UUID courseA = FIRST;
         UUID courseB = SECOND;
         UUID subjectId = PREVIOUS;

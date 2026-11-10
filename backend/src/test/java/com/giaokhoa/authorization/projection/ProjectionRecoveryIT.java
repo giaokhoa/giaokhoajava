@@ -51,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -129,8 +130,9 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
                 .setRealmGroupMembership(anyString(), anyString(), anyBoolean());
     }
 
+    @DisplayName("Lỗi đọc identity trên một HTTP request đã xác thực khiến request fail-closed")
     @Test
-    void anIdentityReadFailureOnAnAuthenticatedHttpRequestFailsClosed() throws Exception {
+    void identityReadFailureFailsClosed() throws Exception {
         Actor actor = actor();
         when(identities.readCurrentIdentity(actor.subject()))
                 .thenThrow(new HttpServerErrorException(HttpStatus.BAD_GATEWAY));
@@ -155,8 +157,9 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
                         actor.user()));
     }
 
+    @DisplayName("Worker mới chờ worker cũ và giữ nguyên revocation đã được áp dụng")
     @Test
-    void aNewWorkerWaitsForTheOldWorkerAndLeavesTheRevocationApplied() throws Exception {
+    void newWorkerWaitsForOldWorker() throws Exception {
         Actor actor = actor();
         seedWorkspace(actor, List.of());
         CountDownLatch oldAtWriter = new CountDownLatch(1);
@@ -230,8 +233,9 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Dependency closure với UUID bị đảo ngược hoàn tất trong đúng một chu kỳ worker")
     @Test
-    void reversedUuidDependencyClosureCompletesInOneWorkerCycle() {
+    void reversedUuidClosureInOneCycle() {
         List<Actor> actors = new ArrayList<>(List.of(actor(), actor(), actor()));
         actors.sort(Comparator.comparing(a -> a.workspacePartition().toString()));
         Actor a = actors.get(1);
@@ -261,8 +265,9 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Mất rồi lấy lại verification vẫn giữ ownership và khiến toàn bộ closure hội tụ")
     @Test
-    void losingAndRegainingVerificationKeepsOwnershipAndConvergesTheWholeClosure() {
+    void verificationToggleConvergesClosure() {
         Actor actor = actor();
         seedWorkspace(actor, List.of(actor.account()));
         reconciler.reconcilePartition(actor.workspacePartition());
@@ -287,9 +292,9 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Crash sau khi graph đã áp dụng thì retry đúng graph đó thay vì nhân đôi grant")
     @Test
-    void aCrashAfterTheGraphIsAppliedRetriesTheSameGraphInsteadOfDuplicatingTheGrant()
-            throws Exception {
+    void crashAfterApplyRetriesSameGraph() throws Exception {
         Actor actor = actor();
         seedWorkspace(actor, List.of());
         reconciler.reconcilePartition(actor.workspacePartition());
@@ -338,8 +343,10 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         assertEquals(applies.subList(0, 2), applies.subList(2, 4));
     }
 
+    @DisplayName(
+            "Failure ở trạng thái terminal giữ fence đóng cho tới khi một reconcile tường minh mở lại")
     @Test
-    void aTerminalFailureKeepsTheFenceClosedUntilAnExplicitReconcileReopensIt() throws Exception {
+    void terminalFailureKeepsFenceClosed() throws Exception {
         Actor actor = actor();
         seedWorkspace(actor, List.of());
         reconciler.reconcilePartition(actor.workspacePartition());
@@ -405,8 +412,10 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
         fence.acquire(resolver.resolve(actor.user(), actor.workspace(), List.of(actor.target())));
     }
 
+    @DisplayName(
+            "Retry bị crash không bao giờ áp dụng revision cũ sau khi revision mới hơn đã land")
     @Test
-    void aCrashedRetryNeverAppliesTheOldRevisionAfterANewerRevisionLanded() {
+    void crashedRetrySkipsOldRevision() {
         Actor actor = actor();
         seedWorkspace(actor, List.of());
         reconciler.reconcilePartition(actor.workspacePartition());

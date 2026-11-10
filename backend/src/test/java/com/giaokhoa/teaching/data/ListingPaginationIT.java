@@ -29,6 +29,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -87,8 +88,9 @@ class ListingPaginationIT extends IntegrationEnvironment {
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
+    @DisplayName("Trang membership giữ mọi role và tiến qua cursor đã bị revoke")
     @Test
-    void membershipPageKeepsEveryRoleAndAdvancesPastRevokedCursor() {
+    void membershipPageKeepsEveryRole() {
         UUID workspace = center();
         UUID previous = member(workspace, 10, "STUDENT");
         UUID first = member(workspace, 11, "MANAGER", "TEACHER");
@@ -124,8 +126,9 @@ class ListingPaginationIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Trang lớp lọc theo giáo viên và workspace trước khi chọn trang")
     @Test
-    void classPagesFilterTeacherAndWorkspaceBeforeChoosingThePage() {
+    void classPagesFilterBeforePaging() {
         UUID workspace = center();
         UUID teacher = user();
         membership(workspace, UUID.randomUUID(), teacher, "TEACHER");
@@ -163,8 +166,9 @@ class ListingPaginationIT extends IntegrationEnvironment {
         assertInvalidCursor(() -> repository.pageClasses(workspace, "bad", 1, teacher));
     }
 
+    @DisplayName("Danh sách teaching không thiếu hay trùng dòng và từ chối cursor của parent lạ")
     @Test
-    void teachingListsHaveNoMissingOrRepeatedRowsAndRejectForeignParentCursors() {
+    void teachingListsAreGapless() {
         UUID workspace = center();
         UUID classId = schoolClass(workspace, 1);
         UUID otherClass = schoolClass(workspace, 2);

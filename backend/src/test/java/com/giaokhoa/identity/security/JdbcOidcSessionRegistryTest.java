@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.client.oidc.session.OidcSessionInformation;
@@ -13,8 +14,9 @@ import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 
 class JdbcOidcSessionRegistryTest {
+    @DisplayName("Thiếu issuer bị từ chối trước khi ghi correlation")
     @Test
-    void missingIssuerIsRejectedBeforeWritingCorrelation() {
+    void missingIssuerRejectedEarly() {
         var jdbc = unwritableJdbc();
         var registry = new JdbcOidcSessionRegistry(jdbc, "client");
         var token =
@@ -30,8 +32,9 @@ class JdbcOidcSessionRegistryTest {
                 IllegalArgumentException.class, () -> registry.saveSessionInformation(information));
     }
 
+    @DisplayName("Thiếu audience bị từ chối trước khi ghi correlation")
     @Test
-    void missingAudienceIsRejectedBeforeWritingCorrelation() {
+    void missingAudienceRejectedEarly() {
         var jdbc = unwritableJdbc();
         var registry = new JdbcOidcSessionRegistry(jdbc, "client");
         var token =

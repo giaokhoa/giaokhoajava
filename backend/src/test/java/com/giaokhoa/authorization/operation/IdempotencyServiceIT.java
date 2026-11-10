@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -41,8 +42,10 @@ class IdempotencyServiceIT extends IntegrationEnvironment {
     @Autowired EntityManager entities;
     @Autowired PlatformTransactionManager transactions;
 
+    @DisplayName(
+            "Cùng actor và cùng key tái sử dụng operation PENDING mà không nhân đôi mục trong hàng đợi")
     @Test
-    void sameActorAndKeyReusesPendingOperationWithoutDuplicatingQueueItem() {
+    void sameKeyReusesPendingOperation() {
         UUID actor = user();
         UUID partition = workspacePartition(actor);
         var first = operation(actor, partition, "key-one", "a".repeat(64));
@@ -109,9 +112,10 @@ class IdempotencyServiceIT extends IntegrationEnvironment {
                         Integer.class));
     }
 
+    @DisplayName("Hai retry đồng thời cùng thấy key chưa có nhưng chỉ một lần áp dụng mutation")
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void simultaneousRetriesBothSeeMissingKeyButOnlyOneAppliesMutation() throws Exception {
+    void simultaneousRetriesApplyOnce() throws Exception {
         TransactionTemplate tx = new TransactionTemplate(transactions);
         UUID actor = tx.execute(_ -> user());
         UUID partition = workspacePartition(actor);
@@ -183,9 +187,10 @@ class IdempotencyServiceIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Mutation thất bại rollback cả operation lẫn desired state cùng nhau")
     @Test
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    void failingMutationRollsBackOperationAndDesiredStateTogether() {
+    void failingMutationRollsBackTogether() {
         TransactionTemplate tx = new TransactionTemplate(transactions);
         UUID actor = tx.execute(_ -> user());
         UUID partition = workspacePartition(actor);

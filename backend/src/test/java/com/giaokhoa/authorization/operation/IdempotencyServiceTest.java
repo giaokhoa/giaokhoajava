@@ -8,6 +8,7 @@ import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.persistence.EntityManager;
 import java.util.Objects;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,8 +19,10 @@ class IdempotencyServiceTest {
             new IdempotencyService(mock(JdbcTemplate.class), mock(EntityManager.class));
     private final JsonMapper json = new JsonMapper();
 
+    @DisplayName(
+            "Hash là canonical theo thứ tự field của object nhưng bị scope theo method và target")
     @Test
-    void hashIsCanonicalForObjectFieldOrderButScopedToMethodAndTarget() {
+    void hashIsCanonicalAndScoped() {
         var first = json.readTree("{\"roles\":[\"TEACHER\"],\"nested\":{\"b\":2,\"a\":1}}");
         var reordered = json.readTree("{\"nested\":{\"a\":1,\"b\":2},\"roles\":[\"TEACHER\"]}");
         String hash = service.payloadHash("PUT", "/api/workspaces/one/memberships/two", first);
@@ -39,8 +42,9 @@ class IdempotencyServiceTest {
                         json.readTree("{\"roles\":[\"STUDENT\"]}")));
     }
 
+    @DisplayName("Key và strong ETag là bắt buộc, và xung đột version được xử lý an toàn")
     @Test
-    void keyAndStrongEtagAreRequiredAndVersionConflictIsSafe() {
+    void keyAndStrongEtagAreRequired() {
         assertEquals(
                 HttpStatus.PRECONDITION_REQUIRED,
                 assertThrows(HttpProblemException.class, () -> service.requireKey(null))
@@ -86,8 +90,9 @@ class IdempotencyServiceTest {
         assertDoesNotThrow(() -> IdempotencyService.requireIfMatch("\"2\"", 2));
     }
 
+    @DisplayName("Trạng thái PENDING và RETRYABLE không thể được trình bày thành COMPLETED")
     @Test
-    void pendingAndRetryableCannotBePresentedAsCompleted() {
+    void pendingIsNotPresentedAsCompleted() {
         UUID actor = UUID.randomUUID();
         UUID partition = UUID.randomUUID();
         AuthorizationOperation operation =

@@ -23,6 +23,7 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -84,8 +85,10 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
     @Autowired PlatformProjectionSeeder platformSeeder;
     @Autowired ProjectionReconciler projectionReconciler;
 
+    @DisplayName(
+            "Credential của operator reset mật khẩu của user đã được cấp phát mà không đổi identity")
     @Test
-    void operatorCredentialResetsIssuedUsersPasswordWithoutChangingIdentity() {
+    void operatorResetKeepsIdentity() {
         String subject =
                 createUser(issuedUser("recovery-issued", "recovery-temp-" + UUID.randomUUID()));
 
@@ -106,8 +109,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Credential của người dùng thường không thể reset mật khẩu của người dùng khác")
     @Test
-    void ordinaryUserCredentialCannotResetAnotherUsersPassword() {
+    void ordinaryUserCannotResetOthers() {
         String actorSubject = null;
         String targetSubject = null;
         ensureDirectGrantClient();
@@ -160,8 +164,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Sau khi operator reset, user đã xác minh chỉ đăng nhập được bằng mật khẩu mới")
     @Test
-    void operatorResetLetsVerifiedUserAuthenticateWithNewPasswordOnly() {
+    void resetUserLogsInWithNewPasswordOnly() {
         ensureDirectGrantClient();
         String oldPassword = "recovery-old-" + UUID.randomUUID();
         String username = "recovery-verified";
@@ -185,8 +190,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("User có email đã xác minh được gửi email hành động mật khẩu (password action)")
     @Test
-    void verifiedEmailUserCanBeSentPasswordActionEmail() {
+    void verifiedUserGetsPasswordEmail() {
         String subject =
                 createUser(
                         keycloakUser(
@@ -217,8 +223,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Endpoint yêu cầu khôi phục tạo request cho chính actor")
     @Test
-    void recoveryRequestEndpointCreatesRequestForActor() throws Exception {
+    void recoveryEndpointCreatesRequest() throws Exception {
         String username = "recovery-request-" + UUID.randomUUID();
         String password = "recovery-password-" + UUID.randomUUID();
         String subject =
@@ -326,8 +333,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Các endpoint khôi phục của platform đòi hỏi operator scope")
     @Test
-    void platformRecoveryEndpointsRequireOperatorScope() throws Exception {
+    void recoveryEndpointsNeedOperatorScope() throws Exception {
         String username = "recovery-plain-" + UUID.randomUUID();
         String password = "recovery-password-" + UUID.randomUUID();
         String subject =
@@ -370,8 +378,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Operator của platform liệt kê và resolve yêu cầu khôi phục qua HTTP")
     @Test
-    void platformOperatorListsAndResolvesRecoveryRequestOverHttp() throws Exception {
+    void operatorResolvesRequestOverHttp() throws Exception {
         publishPlatform();
         String requesterName = "recovery-queue-requester-" + UUID.randomUUID();
         String operatorName = "recovery-queue-operator-" + UUID.randomUUID();
@@ -463,8 +472,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Yêu cầu khôi phục ẩn danh bị chuyển hướng tới trang đăng nhập")
     @Test
-    void anonymousRecoveryRequestIsRedirectedToLogin() throws Exception {
+    void anonymousRequestRedirectsToLogin() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
                         .perform(
@@ -488,8 +498,9 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         assertFalse(response.getContentAsString().contains("targetUserId"));
     }
 
+    @DisplayName("Request ẩn danh với cookie giả mạo vẫn không được xác thực")
     @Test
-    void anonymousWithForgedCookieStaysUnauthenticated() throws Exception {
+    void forgedCookieStaysUnauthenticated() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
                         .perform(

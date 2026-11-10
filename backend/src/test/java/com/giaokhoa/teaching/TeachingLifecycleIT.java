@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -42,8 +43,9 @@ class TeachingLifecycleIT extends TeachingFixture {
                 "A revoked course must reject new enrollment even when its course_subject remains ACTIVE");
     }
 
+    @DisplayName("Lớp đã revoke không nhận thêm môn mới thông qua course còn ACTIVE")
     @Test
-    void revokedClassCannotReceiveNewSubjectsThroughActiveCourse() {
+    void revokedClassGetsNoNewSubjects() {
         Setup setup = setup();
         classes.revokeClass(setup.workspace(), setup.schoolClass());
         UUID otherSubject =
@@ -75,8 +77,9 @@ class TeachingLifecycleIT extends TeachingFixture {
                 "Removing STUDENT must prevent new enrollment while roster is retained");
     }
 
+    @DisplayName("Chấp nhận lời mời manager đầu tiên làm mới các teaching bundle hiện có")
     @Test
-    void acceptingFirstManagerInvitationRefreshesExistingTeachingBundles() {
+    void firstManagerAcceptRefreshesBundles() {
         Setup setup = setup();
         String target = NativePolicyTemplates.classKey(setup.workspace(), setup.schoolClass());
         tx(() ->

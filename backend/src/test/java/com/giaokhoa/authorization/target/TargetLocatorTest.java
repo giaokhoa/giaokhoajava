@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates.TargetType;
 import com.giaokhoa.authorization.target.TargetLocator.TargetMetadata;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class TargetLocatorTest {
@@ -58,8 +59,9 @@ class TargetLocatorTest {
                 TargetLocator.locate(TargetType.GRANT, WORKSPACE, ACTOR, ID, null).targetKey());
     }
 
+    @DisplayName("Metadata chỉ mang các phần định vị (location), không bao giờ mang nội dung")
     @Test
-    void metadataCarriesOnlyLocationPartsNeverContent() {
+    void metadataCarriesLocationOnly() {
         TargetMetadata metadata =
                 TargetLocator.locate(TargetType.RESOURCE_VERSION, WORKSPACE, ACTOR, ID, VERSION);
         assertEquals(TargetType.RESOURCE_VERSION, metadata.type());
@@ -102,8 +104,9 @@ class TargetLocatorTest {
                 () -> TargetLocator.locate(TargetType.PROFILE, WORKSPACE, null, ACTOR, null));
     }
 
+    @DisplayName("Target thuộc workspace phải khớp workspace của route")
     @Test
-    void workspaceTargetMustMatchTheRouteWorkspace() {
+    void workspaceTargetMustMatchRoute() {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> TargetLocator.locate(TargetType.WORKSPACE, WORKSPACE, ACTOR, ID, null));

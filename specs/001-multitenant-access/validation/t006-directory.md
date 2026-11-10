@@ -32,7 +32,7 @@ Các test hồi quy đi qua transaction thật trên PostgreSQL TEST; không th�
 
 ## Review lại: thời gian transaction
 
-**Nhận xét đúng.** `CURRENT_TIMESTAMP` cố định từ đầu transaction, khiến kỳ gói đã đi qua `valid_from` vẫn có thể bị đổi ngày. Test `subscriptionCannotChangeAfterStartWithinSameTransaction` bắt đầu transaction, tạo kỳ sắp có hiệu lực, dùng PostgreSQL `pg_sleep_until` chờ qua mốc, xác nhận `CURRENT_TIMESTAMP < valid_from` nhưng `clock_timestamp() > valid_from`, sau đó thử tăng `expires_at` và `version`.
+**Nhận xét đúng.** `CURRENT_TIMESTAMP` cố định từ đầu transaction, khiến kỳ gói đã đi qua `valid_from` vẫn có thể bị đổi ngày. Test `subscriptionLockedAfterStart` bắt đầu transaction, tạo kỳ sắp có hiệu lực, dùng PostgreSQL `pg_sleep_until` chờ qua mốc, xác nhận `CURRENT_TIMESTAMP < valid_from` nhưng `clock_timestamp() > valid_from`, sau đó thử tăng `expires_at` và `version`.
 
 - **Trước sửa:** test mới thất bại vì `UPDATE` vẫn được cho phép.
 - **Sau sửa:** trigger dùng `clock_timestamp()` tại lúc cập nhật; test mới đạt, tổng cộng **26/26 integration tests đạt**; Maven `verify` thành công.

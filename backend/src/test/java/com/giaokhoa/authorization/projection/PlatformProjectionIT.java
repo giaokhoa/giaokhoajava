@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -70,8 +71,9 @@ class PlatformProjectionIT extends IntegrationEnvironment {
     @Autowired PlatformProjectionSeeder seeder;
     @Autowired PolicyGraphWriter writer;
 
+    @DisplayName("Publish cấp quyền cho operator theo tư cách thành viên group hiện hành")
     @Test
-    void publishGrantsOperatorsByCurrentGroupMembership() {
+    void publishGrantsCurrentOperators() {
         publishPlatform();
         UUID partitionId = platformPartitionId();
         assertEquals(
@@ -147,8 +149,9 @@ class PlatformProjectionIT extends IntegrationEnvironment {
                         partitionId));
     }
 
+    @DisplayName("Desired rỗng retract mọi root và việc seed lại khôi phục grant")
     @Test
-    void emptyDesiredRetractsEveryRootAndReseedingRestoresTheGrant() {
+    void emptyDesiredRetractsEveryRoot() {
         publishPlatform();
         UUID partitionId = platformPartitionId();
         String resourceId =
@@ -192,8 +195,9 @@ class PlatformProjectionIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Rời khỏi operator group khiến cùng token đó bị từ chối ở quyết định tiếp theo")
     @Test
-    void leavingTheOperatorGroupDeniesTheSameTokenOnTheNextDecision() {
+    void leavingOperatorGroupDeniesToken() {
         publishPlatform();
         String resourceId =
                 writer.findResourceId(NativePolicyTemplates.platformKey()).orElseThrow();
@@ -211,8 +215,9 @@ class PlatformProjectionIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Drift ở một root permission được phát hiện và sửa chữa (repair)")
     @Test
-    void driftInARootPermissionIsDetectedAndRepaired() {
+    void rootPermissionDriftIsRepaired() {
         publishPlatform();
         UUID partitionId = platformPartitionId();
         assertTrue(reconciler.verifyStoredGraph(partitionId));

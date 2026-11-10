@@ -15,6 +15,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -71,8 +72,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
         jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
+    @DisplayName("Bootstrap center với đúng một owner và các role bổ sung")
     @Test
-    void bootstrapsCenterWithOneOwnerAndAdditionalRoles() {
+    void bootstrapsCenterWithOneOwner() {
         UUID owner = user();
         UUID workspace = center(owner, true);
         UUID membership =
@@ -168,8 +170,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 membership));
     }
 
+    @DisplayName("Account không có personal workspace bị từ chối")
     @Test
-    void accountWithoutPersonalWorkspaceIsRejected() {
+    void accountWithoutPersonalWsRejected() {
         UUID id = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO user_account(id,keycloak_sub,username,email_verified,origin,identity_state)"
@@ -181,16 +184,18 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                 DataAccessException.class, () -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Không thể gỡ personal workspace duy nhất của một account")
     @Test
-    void cannotRemoveAnAccountsOnlyPersonalWorkspace() {
+    void cannotRemoveOnlyPersonalWs() {
         UUID owner = user();
         jdbc.update("DELETE FROM workspace WHERE id = ?", personal(owner));
         assertThrows(
                 DataAccessException.class, () -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Personal workspace trùng và membership hiện hành trùng đều bị từ chối")
     @Test
-    void duplicatePersonalWorkspaceAndCurrentMembershipAreRejected() {
+    void duplicatePersonalWsRejected() {
         UUID owner = user();
         assertThrows(
                 DataAccessException.class,
@@ -201,15 +206,17 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 owner));
     }
 
+    @DisplayName("Membership trùng giữa trạng thái PENDING và ACTIVE bị từ chối")
     @Test
-    void duplicatePendingAndActiveMembershipIsRejected() {
+    void duplicateMembershipIsRejected() {
         UUID owner = user();
         UUID workspace = center(owner, true);
         assertThrows(DataAccessException.class, () -> member(workspace, owner));
     }
 
+    @DisplayName("Membership (của center) không thể thuộc về personal workspace")
     @Test
-    void membershipCannotBelongToPersonalWorkspace() {
+    void membershipNotForPersonalWs() {
         UUID owner = user();
         assertThrows(DataAccessException.class, () -> member(personal(owner), owner));
     }
@@ -229,8 +236,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 Instant.parse("2026-02-01T00:00:00Z")));
     }
 
+    @DisplayName("Subscription theo khoảng nửa mở (half-open) và đòi hỏi thời lượng dương")
     @Test
-    void subscriptionIsHalfOpenAndRequiresPositiveDuration() {
+    void subscriptionHalfOpenPositive() {
         UUID owner = user();
         UUID personal = personal(owner);
         Instant start = Instant.parse("2026-01-01T00:00:00Z");
@@ -241,8 +249,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
         assertThrows(DataAccessException.class, () -> period(personal, owner, end, start));
     }
 
+    @DisplayName("Liên kết workspace của center phải trỏ ngược về đúng center của nó")
     @Test
-    void centerWorkspaceLinkMustPointBackToItsOwnCenter() {
+    void centerLinkPointsToOwnCenter() {
         UUID owner = user();
         UUID workspace = UUID.randomUUID();
         UUID centerId = UUID.randomUUID();
@@ -264,8 +273,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                 DataAccessException.class, () -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Membership đã revoke không thể được kích hoạt lại với các role cũ")
     @Test
-    void revokedMembershipCannotBeReactivatedWithOldRoles() {
+    void revokedMembershipStaysRevoked() {
         UUID owner = user();
         UUID member = user();
         UUID workspace = center(owner, true);
@@ -286,8 +296,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 membership));
     }
 
+    @DisplayName("Membership đã revoke chỉ được cấp lại thông qua một membership mới")
     @Test
-    void revokedMembershipCanBeRegrantedOnlyThroughNewMembership() {
+    void regrantOnlyViaNewMembership() {
         UUID owner = user();
         UUID member = user();
         UUID workspace = center(owner, true);
@@ -396,8 +407,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 workspace));
     }
 
+    @DisplayName("Tham chiếu subscription đã confirm không thể bị ghi lại")
     @Test
-    void confirmedSubscriptionReferenceCannotBeRewritten() {
+    void confirmedSubscriptionRefLocked() {
         UUID owner = user();
         UUID workspace = personal(owner);
         period(
@@ -414,8 +426,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 workspace));
     }
 
+    @DisplayName("Ngày của subscription đã bắt đầu không thể bị ghi lại")
     @Test
-    void startedSubscriptionDatesCannotBeRewritten() {
+    void startedSubscriptionDatesLocked() {
         UUID owner = user();
         UUID workspace = personal(owner);
         period(
@@ -433,8 +446,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 workspace));
     }
 
+    @DisplayName("Subscription không thể thay đổi sau khi bắt đầu ngay trong cùng transaction")
     @Test
-    void subscriptionCannotChangeAfterStartWithinSameTransaction() {
+    void subscriptionLockedAfterStart() {
         UUID owner = user();
         UUID workspace = personal(owner);
         OffsetDateTime databaseStart =
@@ -473,8 +487,9 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                                 workspace));
     }
 
+    @DisplayName("Ngày subscription trong tương lai cập nhật được kèm version")
     @Test
-    void futureSubscriptionDatesCanBeUpdatedWithVersion() {
+    void futureDatesUpdatableWithVersion() {
         UUID owner = user();
         UUID workspace = personal(owner);
         period(

@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -48,8 +49,9 @@ class AuditRecordingIT extends IntegrationEnvironment {
     @Autowired RecoveryService recovery;
     @Autowired InvitationService invitations;
 
+    @DisplayName("Confirm subscription ghi đúng một dòng audit và replay không nhân đôi")
     @Test
-    void subscriptionConfirmRecordsOneAuditRowAndReplayDoesNotDuplicate() {
+    void confirmRecordsOneAuditRow() {
         UUID operator = seedAccount();
         UUID workspace = seedCenter(seedAccount());
         Instant from = Instant.now().truncatedTo(ChronoUnit.SECONDS);
@@ -120,8 +122,9 @@ class AuditRecordingIT extends IntegrationEnvironment {
         assertEquals(resolved.targetUserId(), target);
     }
 
+    @DisplayName("Accept invitation ghi đúng một dòng audit cho thay đổi membership")
     @Test
-    void invitationAcceptRecordsOneAuditRowForTheMembershipChange() {
+    void acceptRecordsOneAuditRow() {
         UUID owner = seedAccount();
         UUID workspace = seedCenter(owner);
         UUID acceptor = seedAccount();

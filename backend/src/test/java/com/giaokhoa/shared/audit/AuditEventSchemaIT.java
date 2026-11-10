@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -35,8 +36,9 @@ class AuditEventSchemaIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired EntityManager entities;
 
+    @DisplayName("Audit event chỉ ghi metadata tối thiểu và ánh xạ occurred_at")
     @Test
-    void recordsOnlyMinimalMetadataAndMapsOccurredAt() {
+    void recordsMinimalMetadataOnly() {
         UUID target = UUID.randomUUID();
         UUID id = UUID.randomUUID();
         entities.persist(
@@ -84,8 +86,9 @@ class AuditEventSchemaIT extends IntegrationEnvironment {
                 fields);
     }
 
+    @DisplayName("Lịch sử audit không thể bị ghi lại hay xóa cứng (hard delete)")
     @Test
-    void auditHistoryCannotBeRewrittenOrHardDeleted() {
+    void auditHistoryIsImmutable() {
         UUID id = UUID.randomUUID();
         jdbc.update(
                 """
@@ -119,8 +122,9 @@ class AuditEventSchemaIT extends IntegrationEnvironment {
         assertThrows(DataAccessException.class, () -> jdbc.execute("TRUNCATE audit_event"));
     }
 
+    @DisplayName("Action tùy ý không thể bị lợi dụng để lưu nội dung nhạy cảm")
     @Test
-    void arbitraryActionCannotBeUsedToStoreSensitiveContent() {
+    void arbitraryActionStoresNoSecrets() {
         assertThrows(
                 DataAccessException.class,
                 () ->

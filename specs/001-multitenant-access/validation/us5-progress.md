@@ -18,7 +18,7 @@ Các thay đổi trong báo cáo này **chưa commit/chưa merge**; không dùng
 | Gate | Kết quả | Bằng chứng tại máy TEST |
 | --- | --- | --- |
 | Maven `verify` (unit, NullAway, Spotless, PMD, SpotBugs) | ĐẠT, 190/190 unit tests, 0 failure/error | `/tmp/gk-fix-verify9.log`, `backend/target/surefire-reports/` |
-| `PublishedResultServiceIT#approvedParentReadsOnlyPublishedResultsOfOwnChild` trên PostgreSQL/Keycloak TEST | ĐẠT 1/1 (lần cuối `BUILD SUCCESS`), gồm hai trang và không tái dùng cursor giữa học sinh hay khi đổi `limit` | `/tmp/gk-fix-result-it-final.log` |
+| `PublishedResultServiceIT#approvedParentReadsOwnChildOnly` trên PostgreSQL/Keycloak TEST | ĐẠT 1/1 (lần cuối `BUILD SUCCESS`), gồm hai trang và không tái dùng cursor giữa học sinh hay khi đổi `limit` | `/tmp/gk-fix-result-it-final.log` |
 | `CenterAdministrationIT#operatorListsPlatformCenters` trên PostgreSQL/Keycloak TEST | ĐẠT 1/1 ở lần chạy lại; test chờ có giới hạn chỉ khi response có `AUTHORIZATION_NOT_READY` | `/tmp/gk-fix-center-it-retry.log` (`BUILD SUCCESS`) |
 | Frontend TypeScript, ESLint, Vitest | ĐẠT, 80/80 unit tests | `/tmp/gk-fix-front-advanced.log` |
 | Next.js production build | ĐẠT | `/tmp/gk-fix-next-final.log` |

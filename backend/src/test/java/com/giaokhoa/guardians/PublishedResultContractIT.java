@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -195,8 +196,9 @@ class PublishedResultContractIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Phụ huynh có liên kết PENDING không đọc được kết quả của con")
     @Test
-    void parentWithPendingLinkCannotReadChildResults() throws Exception {
+    void pendingLinkParentCannotRead() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var parent = openSession(center.parent())) {
             requestLinkSucceeded(parent, center.workspaceId(), center.studentX());
@@ -209,8 +211,9 @@ class PublishedResultContractIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Phụ huynh đã được duyệt chỉ đọc kết quả đã publish của đúng con mình")
     @Test
-    void approvedParentReadsOnlyPublishedResultsOfOwnChild() throws Exception {
+    void approvedParentReadsOwnChildOnly() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var owner = openSession(center.owner());
                 var parent = openSession(center.parent());
@@ -290,8 +293,9 @@ class PublishedResultContractIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Phụ huynh đã được duyệt không đọc được kết quả của trẻ khác")
     @Test
-    void approvedParentCannotReadOtherChildResults() throws Exception {
+    void approvedParentCannotReadOthers() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var owner = openSession(center.owner());
                 var parent = openSession(center.parent())) {
@@ -315,8 +319,9 @@ class PublishedResultContractIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Liên kết đã duyệt ở một center không cấp quyền ở center khác")
     @Test
-    void approvedLinkInOneCenterDoesNotGrantAnotherCenter() throws Exception {
+    void linkInOneCenterGrantsNoOther() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         UUID workspaceB = seedSecondCenter(center);
         try (var owner = openSession(center.owner());

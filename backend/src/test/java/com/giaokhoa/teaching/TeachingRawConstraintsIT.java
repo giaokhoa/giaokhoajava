@@ -14,6 +14,7 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.dao.DataAccessException;
@@ -185,8 +186,9 @@ class TeachingRawConstraintsIT extends TeachingFixture {
         }
     }
 
+    @DisplayName("Insert thô dưới context workspace sai vi phạm kiểm tra RLS")
     @Test
-    void rawInsertUnderWrongWorkspaceContextViolatesRlsCheck() {
+    void rawInsertWrongContextViolatesRls() {
         RawGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
@@ -227,8 +229,9 @@ class TeachingRawConstraintsIT extends TeachingFixture {
         }
     }
 
+    @DisplayName("Khóa ngoại composite ở tầng raw từ chối tham chiếu chéo workspace")
     @Test
-    void rawCompositeForeignKeysRejectCrossWorkspaceReferences() {
+    void rawCompositeKeysRejectCrossRefs() {
         RawGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
@@ -325,8 +328,9 @@ class TeachingRawConstraintsIT extends TeachingFixture {
         }
     }
 
+    @DisplayName("Ghi danh raw chéo lớp trong cùng workspace vi phạm trigger cùng lớp (same-class)")
     @Test
-    void rawEnrollmentAcrossClassesInSameWorkspaceViolatesSameClassTrigger() {
+    void rawCrossClassEnrollmentBlocked() {
         RawGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
@@ -352,8 +356,9 @@ class TeachingRawConstraintsIT extends TeachingFixture {
         }
     }
 
+    @DisplayName("Insert raw vào roster và homeroom đòi hỏi membership center đang ACTIVE")
     @Test
-    void rawRosterAndHomeroomInsertsRequireActiveCenterMembership() {
+    void rawRosterInsertsNeedMembership() {
         RawGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {

@@ -123,14 +123,14 @@ do driver tương đương `verify-native.sh` cấp):
 | Case | Lớp kiểm chứng | Kết quả |
 |---|---|---|
 | §9.1 Không group claim nhưng policy nhận đúng membership; claim/role giả không mở quyền | `NativePermissionGateIT` | ĐẠT (3/3 test) |
-| §9.2 Cùng session/token, gỡ membership: lần gọi sau bị từ chối, actor B không đổi | `NativeGateAcceptanceIT.sameTokenDeniedAfterMembershipRemovalPeerUnaffected` (tầng writer + PDP) và các suite sẵn có `ProjectionFenceGateIT`, `ConcurrentRevocationIT` ở profile integration | ĐẠT |
+| §9.2 Cùng session/token, gỡ membership: lần gọi sau bị từ chối, actor B không đổi | `NativeGateAcceptanceIT.tokenDeniedAfterMembershipRemoval` (tầng writer + PDP) và các suite sẵn có `ProjectionFenceGateIT`, `ConcurrentRevocationIT` ở profile integration | ĐẠT |
 | §9.3 Hai cặp permission, chỉ một được cấp: batch không đủ, từng cặp phải đúng | `NativePermissionGateIT` | ĐẠT (trong 3/3 test) |
-| §9.4 Ba môn/nhiều giáo viên/học sinh chọn môn/homeroom giao + track/phụ huynh đúng con + published | `NativeGateAcceptanceIT.classRosterSemanticsAcrossSubjectsHomeroomAndParent` | **KHÔNG ĐẠT** — lỗi ở Finding 1 khi apply `activity.assign` (scope thứ hai của course-subject) |
+| §9.4 Ba môn/nhiều giáo viên/học sinh chọn môn/homeroom giao + track/phụ huynh đúng con + published | `NativeGateAcceptanceIT.rosterSemanticsAcrossRoles` | **KHÔNG ĐẠT** — lỗi ở Finding 1 khi apply `activity.assign` (scope thứ hai của course-subject) |
 | §9.5 Time policy `[start, end)` UTC trước/đúng/sau mốc, không phụ thuộc cron | `NativeTimePolicyIT` | ĐẠT (1/1 test) |
 | §9.6 Expired completion: hoàn tất attempt cũ trong deadline activity; extend/new attempt/reassign bị từ chối; revoke enrollment chặn cả completion | `NativeGateAcceptanceIT.expiredEnrollmentCompletesOldAttemptOnly` | **KHÔNG ĐẠT** — lỗi ở Finding 1 khi apply `attempt.open` (scope thứ hai của activity) |
-| §9.7 Grant dài hạn sống sau grantor rời; grant revocable bị thu hồi chặn bản nhận và bản fork; nguồn độc lập còn tồn tại | `NativeGateAcceptanceIT.longTermGrantSurvivesGrantorExitAndRevocableRevokeBlocksFork` | **KHÔNG ĐẠT** — lỗi ở Finding 1 khi apply `use` (scope thứ hai của resource version) |
+| §9.7 Grant dài hạn sống sau grantor rời; grant revocable bị thu hồi chặn bản nhận và bản fork; nguồn độc lập còn tồn tại | `NativeGateAcceptanceIT.longTermGrantSurvivesGrantorExit` | **KHÔNG ĐẠT** — lỗi ở Finding 1 khi apply `use` (scope thứ hai của resource version) |
 | §9.8 Lỗi/crash giữa directory/policy/commit; retry không nhân bản; concurrent revoke/write không commit trên revision cũ | `ConcurrentRevocationIT`, `ProjectionFenceGateIT` (profile integration, realm TEST) | ĐẠT (nằm trong 120 IT của cổng integration dưới đây) |
-| §9.9 Self-register chưa verified không có nghiệp vụ; center-issued không email vẫn login được, không bị ép bổ sung email | `NativeGateAcceptanceIT.unverifiedUserWithoutEligibilityHasNoBusinessAccess`, `NativeGateAcceptanceIT.userWithoutEmailLogsInWithoutForcedProfileActions` | ĐẠT (chi tiết hành vi thật ở dưới) |
+| §9.9 Self-register chưa verified không có nghiệp vụ; center-issued không email vẫn login được, không bị ép bổ sung email | `NativeGateAcceptanceIT.unverifiedUserHasNoBusinessAccess`, `NativeGateAcceptanceIT.userWithoutEmailLogsInCleanly` | ĐẠT (chi tiết hành vi thật ở dưới) |
 
 Hành vi thật ghi nhận ở §9.9 (đúng hợp đồng dòng "User self-register chưa verified không có
 nghiệp vụ; center-issued không email vẫn login được mà không bị ép bổ sung email"):

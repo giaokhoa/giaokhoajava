@@ -17,6 +17,7 @@ import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.dao.DataAccessException;
@@ -148,8 +149,9 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Insert thô dưới context workspace sai vi phạm kiểm tra RLS")
     @Test
-    void rawInsertUnderWrongWorkspaceContextViolatesRlsCheck() {
+    void rawInsertWrongContextViolatesRls() {
         SampleGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
@@ -176,8 +178,9 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Khóa ngoại composite ở tầng raw từ chối các tham chiếu chéo")
     @Test
-    void rawCompositeForeignKeysRejectCrossReferences() {
+    void rawCompositeKeysRejectCrossRefs() {
         SampleGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
@@ -259,8 +262,9 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Submission raw đòi hỏi ghi danh hiện hành và giới hạn số lần làm (attempt)")
     @Test
-    void rawSubmissionRequiresCurrentEnrollmentAndAttemptLimit() {
+    void rawSubmissionNeedsEnrollment() {
         SampleGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
@@ -353,8 +357,9 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Result raw phải suy ra học sinh và môn học từ submission")
     @Test
-    void rawResultMustDeriveStudentAndSubjectFromSubmission() {
+    void rawResultDerivesFromSubmission() {
         SampleGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
