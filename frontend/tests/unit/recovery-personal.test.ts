@@ -9,7 +9,7 @@ import {
 } from "@/features/identity/recovery-request-form";
 import {
   parseTrackedOperation,
-} from "@/features/operations/operation-status";
+} from "@/lib/operation-status";
 
 describe("form khôi phục chỉ gửi target của chính actor", () => {
   it("gửi đúng targetUserId của actor và lý do đã cắt khoảng trắng", () => {

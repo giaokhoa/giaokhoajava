@@ -62,6 +62,15 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
@@ -95,6 +104,7 @@
                     <failOnWarning>true</failOnWarning>
                     <compilerArgs>
                         <arg>-Xlint:all</arg>
+                        <arg>-Xlint:-processing</arg>
                         <arg>-XDcompilePolicy=simple</arg>
                         <arg>--should-stop=ifError=FLOW</arg>
                         <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
@@ -111,6 +121,11 @@
                         <arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED</arg>
                     </compilerArgs>
                     <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${project.parent.version}</version>
+                        </path>
                         <path>
                             <groupId>com.google.errorprone</groupId>
                             <artifactId>error_prone_core</artifactId>
@@ -154,6 +169,7 @@
                     <linkXRef>false</linkXRef>
                     <rulesets>
                         <ruleset>${project.basedir}/config/pmd.xml</ruleset>
+                        <ruleset>${project.basedir}/config/pmd-main.xml</ruleset>
                     </rulesets>
                 </configuration>
                 <dependencies>
@@ -219,7 +235,7 @@
                             <failIfNoTests>true</failIfNoTests>
                             <!-- Native Keycloak dùng stack riêng và được CI chạy qua verify-native.sh. -->
                             <excludes>
-                                <exclude>**/KeycloakProvisioningClientNativeIT.java</exclude>
+                                <exclude>**/AuthorizationProvisioningClientNativeIT.java</exclude>
                                 <exclude>**/NativePermissionGateIT.java</exclude>
                                 <exclude>**/NativeTimePolicyIT.java</exclude>
                             </excludes>

@@ -59,6 +59,18 @@ public class ResourcePolicyProjector {
             PermissionCatalog.ResourceVersionScope.CONTENT_READ.scopeName();
     private static final String FORK_ORIGIN_MARKER = "origin=FORK";
 
+    /** Đoạn phân cách workspace trong canonical descriptor. */
+    private static final String WORKSPACE_MARKER = "|workspace=";
+
+    /** Đoạn phân cách target trong canonical descriptor. */
+    private static final String TARGET_MARKER = "|target=";
+
+    /** Tên cột subject Keycloak trong dòng account/assignment đọc từ cơ sở dữ liệu. */
+    private static final String KEYCLOAK_SUB_COLUMN = "keycloak_sub";
+
+    /** Tên cột id người dùng trong dòng assignment đọc từ cơ sở dữ liệu. */
+    private static final String USER_ID_COLUMN = "user_id";
+
     /** Giá trị cột workspace.kind cho không gian cá nhân. */
     private static final String PERSONAL_KIND = "PERSONAL";
 
@@ -192,7 +204,7 @@ public class ResourcePolicyProjector {
     /** Các descriptor của riêng một scope trong bundle của target, dựng lại từ dữ kiện nguồn. */
     public List<String> sourcesFor(String targetKey, String scope) {
         return bundleDescriptors(targetKey).stream()
-                .filter(descriptor -> descriptor.endsWith("|scope=" + scope))
+                .filter(descriptor -> descriptor.endsWith(PolicyGraph.SCOPE_MARKER + scope))
                 .toList();
     }
 
@@ -500,7 +512,7 @@ public class ResourcePolicyProjector {
         }
         String subject =
                 Objects.requireNonNull(
-                        (String) authors.getFirst().get("keycloak_sub"), "keycloak_sub");
+                        (String) authors.getFirst().get(KEYCLOAK_SUB_COLUMN), KEYCLOAK_SUB_COLUMN);
         for (String scope : AUTHOR_READ_SCOPES) {
             descriptors.add(actorDescriptor(workspaceId, authorUserId, subject, targetKey, scope));
         }
@@ -541,9 +553,11 @@ public class ResourcePolicyProjector {
         }
         for (Map<String, Object> assignment :
                 jdbc.queryForList(sql, workspaceId, resourceId, subjectId, subjectId)) {
-            UUID userId = Objects.requireNonNull((UUID) assignment.get("user_id"), "user_id");
+            UUID userId =
+                    Objects.requireNonNull((UUID) assignment.get(USER_ID_COLUMN), USER_ID_COLUMN);
             String subject =
-                    Objects.requireNonNull((String) assignment.get("keycloak_sub"), "keycloak_sub");
+                    Objects.requireNonNull(
+                            (String) assignment.get(KEYCLOAK_SUB_COLUMN), KEYCLOAK_SUB_COLUMN);
             for (String scope : mapActions(csv(assignment.get("actions_csv")))) {
                 descriptors.add(actorDescriptor(workspaceId, userId, subject, targetKey, scope));
             }
@@ -599,9 +613,10 @@ public class ResourcePolicyProjector {
                             actorDescriptor(
                                     workspaceId,
                                     Objects.requireNonNull(
-                                            (UUID) student.get("user_id"), "user_id"),
+                                            (UUID) student.get(USER_ID_COLUMN), USER_ID_COLUMN),
                                     Objects.requireNonNull(
-                                            (String) student.get("keycloak_sub"), "keycloak_sub"),
+                                            (String) student.get(KEYCLOAK_SUB_COLUMN),
+                                            KEYCLOAK_SUB_COLUMN),
                                     targetKey,
                                     readScope));
                 }
@@ -764,7 +779,7 @@ public class ResourcePolicyProjector {
                         (rs, _) ->
                                 new OwnerRow(
                                         rs.getObject("id", UUID.class),
-                                        rs.getString("keycloak_sub")),
+                                        rs.getString(KEYCLOAK_SUB_COLUMN)),
                         workspaceId);
         return rows.stream().findFirst();
     }
@@ -832,15 +847,15 @@ public class ResourcePolicyProjector {
     private static String actorDescriptor(
             UUID workspaceId, UUID userId, String subject, String targetKey, String scope) {
         return ACTOR_DESCRIPTOR
-                + "|workspace="
+                + WORKSPACE_MARKER
                 + workspaceId
                 + "|user="
                 + userId
                 + "|subject="
                 + subject
-                + "|target="
+                + TARGET_MARKER
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -852,7 +867,7 @@ public class ResourcePolicyProjector {
             String targetKey,
             String scope) {
         return ACTOR_PERIOD_DESCRIPTOR
-                + "|workspace="
+                + WORKSPACE_MARKER
                 + workspaceId
                 + "|user="
                 + userId
@@ -864,22 +879,22 @@ public class ResourcePolicyProjector {
                 + period.validFrom()
                 + "|until="
                 + period.expiresAt()
-                + "|target="
+                + TARGET_MARKER
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
     private static String groupDescriptor(
             UUID workspaceId, String groupPath, String targetKey, String scope) {
         return GROUP_DESCRIPTOR
-                + "|workspace="
+                + WORKSPACE_MARKER
                 + workspaceId
                 + "|group="
                 + groupPath
-                + "|target="
+                + TARGET_MARKER
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -900,7 +915,7 @@ public class ResourcePolicyProjector {
         Instant validFrom = instantOf(grant.get("valid_from")).truncatedTo(ChronoUnit.SECONDS);
         Object expiresAt = grant.get("expires_at");
         StringBuilder descriptor =
-                new StringBuilder(LICENSE_DESCRIPTOR).append("|workspace=").append(workspaceId);
+                new StringBuilder(LICENSE_DESCRIPTOR).append(WORKSPACE_MARKER).append(workspaceId);
         if (PERSONAL_KIND.equals(contextKind)) {
             OwnerRow owner =
                     personalOwner(workspaceId)
@@ -925,9 +940,9 @@ public class ResourcePolicyProjector {
                         expiresAt == null
                                 ? "-"
                                 : instantOf(expiresAt).truncatedTo(ChronoUnit.SECONDS).toString())
-                .append("|target=")
+                .append(TARGET_MARKER)
                 .append(targetKey)
-                .append("|scope=")
+                .append(PolicyGraph.SCOPE_MARKER)
                 .append(scope)
                 .toString();
     }

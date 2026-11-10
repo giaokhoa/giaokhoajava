@@ -8,13 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.decision.KeycloakDecisionClient;
 import com.giaokhoa.authorization.decision.RequiredPermissions;
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
+import com.giaokhoa.authorization.keycloak.KeycloakProvisionerTokens;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraph.Gate;
 import com.giaokhoa.authorization.policy.PolicyGraph.Source;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import java.io.IOException;
 import java.net.CookieManager;
 import java.net.URI;
@@ -90,7 +92,7 @@ class NativeGateAcceptanceIT {
     private RestClient http;
     private String adminToken;
     private PolicyGraphWriter writer;
-    private KeycloakProvisioningClient directory;
+    private AuthorizationProvisioningClient directory;
     private ClientRegistration webRegistration;
 
     @BeforeEach
@@ -112,16 +114,21 @@ class NativeGateAcceptanceIT {
                         return action.get();
                     }
                 };
+        var properties =
+                new GiaokhoaProperties(
+                        "http://127.0.0.1",
+                        new GiaokhoaProperties.Keycloak(
+                                base,
+                                AUDIENCE,
+                                new GiaokhoaProperties.Keycloak.Provisioner(
+                                        PROVISIONER_CLIENT, secret)));
         writer =
                 new PolicyGraphWriter(
-                        base,
-                        base + "/realms/" + REALM,
-                        PROVISIONER_CLIENT,
-                        secret,
-                        AUDIENCE,
+                        properties,
+                        new KeycloakProvisionerTokens(properties, base + "/realms/" + REALM),
                         directCoordinator);
         directory =
-                new KeycloakProvisioningClient(
+                new AuthorizationProvisioningClient(
                         RestClient.builder(), base, PROVISIONER_CLIENT, secret);
         webRegistration =
                 ClientRegistration.withRegistrationId("keycloak")
@@ -257,11 +264,18 @@ class NativeGateAcceptanceIT {
         RequestContextHolder.setRequestAttributes(
                 new ServletRequestAttributes(request, new MockHttpServletResponse()));
         try {
+            // Client quyết định chỉ đọc authorizationAudience trong cây cấu hình.
             KeycloakDecisionClient decision =
                     new KeycloakDecisionClient(
                             repository,
                             new InMemoryClientRegistrationRepository(webRegistration),
-                            AUDIENCE);
+                            new GiaokhoaProperties(
+                                    "http://127.0.0.1",
+                                    new GiaokhoaProperties.Keycloak(
+                                            base,
+                                            AUDIENCE,
+                                            new GiaokhoaProperties.Keycloak.Provisioner(
+                                                    PROVISIONER_CLIENT, ""))));
             return decision.isAllowed(
                     subject,
                     request,

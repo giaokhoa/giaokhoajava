@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isRecord, requestAllPages, requestWhenReady } from "@/lib/api-client";
-import type { Membership } from "@/features/tenancy/center-administration";
+import type { Membership } from "@/lib/memberships";
 import {
   ifMatchValue,
   nameBody,

@@ -1,10 +1,11 @@
 package com.giaokhoa.identity;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
+import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.List;
 import java.util.Map;
@@ -27,19 +28,18 @@ import org.springframework.web.client.RestClientException;
  */
 @Service
 public class IdentityService {
-    static final String IDENTITY_UNAVAILABLE_CODE = "IDENTITY_UNAVAILABLE";
 
     private final JdbcTemplate jdbc;
     private final CurrentIdentityClient identities;
 
     private final ResourceMutationCoordinator coordinator;
-    private final IdentityEligibilitySynchronizer eligibility;
+    private final IdentityEligibilityService eligibility;
 
     public IdentityService(
             JdbcTemplate jdbc,
             CurrentIdentityClient identities,
             ResourceMutationCoordinator coordinator,
-            IdentityEligibilitySynchronizer eligibility) {
+            IdentityEligibilityService eligibility) {
         this.jdbc = jdbc;
         this.identities = identities;
         this.coordinator = coordinator;
@@ -117,7 +117,7 @@ public class IdentityService {
         if (!takenUsernames.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "USERNAME_TAKEN",
+                    ErrorCodes.USERNAME_TAKEN,
                     "Tên đăng nhập đã thuộc về một danh tính khác.");
         }
         UUID userId = UUID.randomUUID();
@@ -151,7 +151,7 @@ public class IdentityService {
         if (accounts.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "ACCOUNT_NOT_FOUND",
+                    ErrorCodes.ACCOUNT_NOT_FOUND,
                     "Chưa có tài khoản cho danh tính này.");
         }
         Map<String, Object> account = accounts.getFirst();
@@ -176,7 +176,7 @@ public class IdentityService {
             // Bất biến DB đáng lẽ ngăn trạng thái này; thấy nó là dữ liệu hỏng, không đoán.
             throw new HttpProblemException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    IDENTITY_UNAVAILABLE_CODE,
+                    ErrorCodes.IDENTITY_UNAVAILABLE,
                     "Không xác minh được danh tính hiện hành, thử lại sau.");
         }
         return found.getFirst();
@@ -199,7 +199,7 @@ public class IdentityService {
     private static HttpProblemException unavailable(@Nullable Throwable cause) {
         return new HttpProblemException(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                IDENTITY_UNAVAILABLE_CODE,
+                ErrorCodes.IDENTITY_UNAVAILABLE,
                 "Không xác minh được danh tính hiện hành, thử lại sau.",
                 cause);
     }

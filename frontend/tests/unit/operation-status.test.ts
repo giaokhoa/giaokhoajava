@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { operationStatus } from "@/features/operations/operation-status";
+import { operationStatus } from "@/lib/operation-status";
 
 describe("hiển thị trạng thái operation", () => {
   it("không thông báo thành công khi chưa đồng bộ xong", () => {
@@ -26,7 +26,7 @@ describe("hiển thị trạng thái operation", () => {
 });
 
 import { afterEach, vi } from "vitest";
-import { pollOperationUntilSettled } from "@/features/operations/operation-status";
+import { pollOperationUntilSettled } from "@/lib/operation-status";
 
 const parse = (data: unknown) => {
   if (!data || typeof data !== "object") return null;

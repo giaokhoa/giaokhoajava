@@ -15,7 +15,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
 
 /** Chạy qua infra/keycloak/verify-native.sh trên Keycloak 26.8.1 dùng một lần của nó. */
-class KeycloakProvisioningClientNativeIT {
+class AuthorizationProvisioningClientNativeIT {
     @Test
     void provisionsOrganizationGroupAndMembershipUsingRealClientCredentials() {
         String base = System.getenv("PROVISIONING_TEST_KEYCLOAK_BASE_URL");
@@ -25,8 +25,8 @@ class KeycloakProvisioningClientNativeIT {
         assertNotNull(secret);
         assertNotNull(userId);
 
-        KeycloakProvisioningClient client =
-                new KeycloakProvisioningClient(
+        AuthorizationProvisioningClient client =
+                new AuthorizationProvisioningClient(
                         RestClient.builder(), base, "giaokhoa-provisioner", secret);
         // ID giữ cố định: chạy lại verify-native.sh phải hội tụ trên cùng organization nhờ
         // ensureOrganization idempotent, không tạo organization rác mới ở mỗi lần chạy.

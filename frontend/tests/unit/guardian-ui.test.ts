@@ -10,9 +10,9 @@ import {
   attemptKey,
   closeAttempt,
 } from "@/features/operations/operation-attempts";
-import type { TrackedOperation } from "@/features/operations/operation-status";
+import type { TrackedOperation } from "@/lib/operation-status";
 import { parsePublishedResults } from "@/features/guardians/published-results";
-import type { Membership } from "@/features/tenancy/center-administration";
+import type { Membership } from "@/lib/memberships";
 
 const lienKetDung: GuardianLink = {
   id: "l-1",

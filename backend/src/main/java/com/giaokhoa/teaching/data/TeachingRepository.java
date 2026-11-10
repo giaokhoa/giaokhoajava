@@ -35,11 +35,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class TeachingRepository {
     private final JdbcTemplate jdbc;
-    private final TeachingPageQueries pages;
+    private final TeachingPageRepository pages;
 
     public TeachingRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
-        this.pages = new TeachingPageQueries(jdbc);
+        this.pages = new TeachingPageRepository(jdbc);
     }
 
     /** Thông tin tối thiểu của workspace để service kiểm tra tiền điều kiện dữ kiện. */

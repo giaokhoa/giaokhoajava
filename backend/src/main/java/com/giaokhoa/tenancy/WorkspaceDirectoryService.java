@@ -26,10 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  * mà hai vai trò không cộng thành quyền tổng.
  */
 @Service
-public class WorkspaceDirectory {
+public class WorkspaceDirectoryService {
     private final JdbcTemplate jdbc;
 
-    public WorkspaceDirectory(JdbcTemplate jdbc) {
+    public WorkspaceDirectoryService(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 

@@ -1,6 +1,6 @@
 package com.giaokhoa.tenancy;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
@@ -9,6 +9,7 @@ import com.giaokhoa.guardians.GuardianRevocationContributor;
 import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingRevocationContributor;
 import com.giaokhoa.tenancy.model.MembershipRole;
@@ -49,7 +50,7 @@ public class CenterService {
     private final JdbcTemplate jdbc;
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator revocations;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
     private final TeachingRevocationContributor teachingRevocations;
     private final GuardianRevocationContributor guardianRevocations;
     private final AuditRecorder audit;
@@ -60,7 +61,7 @@ public class CenterService {
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             SourceRevocationCoordinator revocations,
-            KeycloakProvisioningClient directory,
+            AuthorizationProvisioningClient directory,
             ResourceMutationCoordinator coordinator,
             TeachingRevocationContributor teachingRevocations,
             GuardianRevocationContributor guardianRevocations,
@@ -163,7 +164,9 @@ public class CenterService {
                     || !actor.toString().equals(parts[0])
                     || !Integer.toString(limit).equals(parts[1])) {
                 throw new HttpProblemException(
-                        HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.INVALID_CURSOR,
+                        "Cursor danh sách không hợp lệ.");
             }
             try {
                 anchorId = UUID.fromString(parts[2]);
@@ -173,7 +176,7 @@ public class CenterService {
             } catch (IllegalArgumentException ex) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
-                        "INVALID_CURSOR",
+                        ErrorCodes.INVALID_CURSOR,
                         "Cursor danh sách không hợp lệ.",
                         ex);
             }
@@ -184,7 +187,9 @@ public class CenterService {
                             anchorId);
             if (anchors.isEmpty()) {
                 throw new HttpProblemException(
-                        HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.INVALID_CURSOR,
+                        "Cursor danh sách không hợp lệ.");
             }
             createdAt = anchors.getFirst();
         }
@@ -247,7 +252,7 @@ public class CenterService {
         if (!"ACTIVE".equals(row.state()) && !"PENDING".equals(row.state())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "MEMBERSHIP_NOT_ACTIVE",
+                    ErrorCodes.MEMBERSHIP_NOT_ACTIVE,
                     "Membership đã bị thu hồi, không đổi role được nữa.");
         }
         IdempotencyService.requireIfMatch(ifMatch, row.version());
@@ -256,7 +261,7 @@ public class CenterService {
         if (desiredRoles.contains(MembershipRole.Role.OWNER) && !hasOwner) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "OWNER_ROLE_NOT_ASSIGNABLE",
+                    ErrorCodes.OWNER_ROLE_NOT_ASSIGNABLE,
                     "Role OWNER chỉ đến từ lúc tạo center, không gán qua đổi role.");
         }
         if (hasOwner && !desiredRoles.contains(MembershipRole.Role.OWNER)) {
@@ -334,7 +339,7 @@ public class CenterService {
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "MEMBERSHIP_ALREADY_REVOKED",
+                    ErrorCodes.MEMBERSHIP_ALREADY_REVOKED,
                     "Membership đã bị thu hồi trước đó.");
         }
         if (rolesOf(membershipId).contains(MembershipRole.Role.OWNER)) {
@@ -382,7 +387,7 @@ public class CenterService {
         if (rows.isEmpty() || !workspaceId.equals(rows.getFirst().workspaceId())) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "MEMBERSHIP_NOT_FOUND",
+                    ErrorCodes.MEMBERSHIP_NOT_FOUND,
                     "Không tìm thấy membership trong trung tâm này.");
         }
         return rows.getFirst();
@@ -422,7 +427,7 @@ public class CenterService {
         if (accounts.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "ACCOUNT_NOT_FOUND",
+                    ErrorCodes.ACCOUNT_NOT_FOUND,
                     "Chưa có tài khoản cho danh tính này.");
         }
     }
@@ -431,7 +436,7 @@ public class CenterService {
         if (name == null || name.isBlank() || name.trim().length() > 255) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_CENTER_NAME",
+                    ErrorCodes.INVALID_CENTER_NAME,
                     "Tên trung tâm phải có từ 1 đến 255 ký tự.");
         }
         return name.trim();
@@ -440,7 +445,7 @@ public class CenterService {
     private static HttpProblemException lastOwner() {
         return new HttpProblemException(
                 HttpStatus.BAD_REQUEST,
-                "CANNOT_REMOVE_LAST_OWNER",
+                ErrorCodes.CANNOT_REMOVE_LAST_OWNER,
                 "Không được gỡ owner cuối cùng của trung tâm.");
     }
 

@@ -1,0 +1,6 @@
+.next
+out
+build
+playwright-report
+test-results
+package-lock.json

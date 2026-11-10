@@ -1,5 +1,5 @@
 import { requestWhenReady } from "@/lib/api-client";
-import type { OperationView } from "./operation-status";
+import type { OperationView } from "@/lib/operation-status";
 
 // Gửi mutation kèm Idempotency-Key cho trước và trả dữ liệu của phản hồi.
 export async function submitMutation(

@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import java.util.ArrayList;
@@ -36,8 +37,7 @@ import org.springframework.web.client.RestClientException;
  * subject không khớp account, đều fail-closed 503 và không ghi gì.
  */
 @Service
-public class IdentityEligibilitySynchronizer {
-    static final String IDENTITY_UNAVAILABLE_CODE = "IDENTITY_UNAVAILABLE";
+public class IdentityEligibilityService {
 
     /**
      * Checkpoint account ghi cùng nguồn actor/eligibility cho hai scope đọc US1, mỗi scope có root
@@ -51,7 +51,7 @@ public class IdentityEligibilitySynchronizer {
     private final AuthorizationOperationService operations;
     private final PersonalEntitlementProjector entitlementProjector;
 
-    public IdentityEligibilitySynchronizer(
+    public IdentityEligibilityService(
             JdbcTemplate jdbc,
             CurrentIdentityClient identities,
             AuthorizationOperationService operations,
@@ -230,7 +230,7 @@ public class IdentityEligibilitySynchronizer {
     private static HttpProblemException unavailable(@Nullable Throwable cause) {
         return new HttpProblemException(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                IDENTITY_UNAVAILABLE_CODE,
+                ErrorCodes.IDENTITY_UNAVAILABLE,
                 "Không xác minh được danh tính hiện hành, thử lại sau.",
                 cause);
     }

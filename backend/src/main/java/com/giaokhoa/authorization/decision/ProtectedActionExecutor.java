@@ -5,7 +5,8 @@ import com.giaokhoa.authorization.fence.DependencyManifestResolver;
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
-import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
+import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
@@ -38,7 +39,7 @@ public class ProtectedActionExecutor {
     private final KeycloakDecisionClient decisions;
     private final PolicyGraphWriter writer;
     private final JdbcTemplate jdbc;
-    private final IdentityEligibilitySynchronizer eligibility;
+    private final IdentityEligibilityService eligibility;
 
     public ProtectedActionExecutor(
             DependencyManifestResolver resolver,
@@ -46,7 +47,7 @@ public class ProtectedActionExecutor {
             KeycloakDecisionClient decisions,
             PolicyGraphWriter writer,
             JdbcTemplate jdbc,
-            IdentityEligibilitySynchronizer eligibility) {
+            IdentityEligibilityService eligibility) {
         this.resolver = resolver;
         this.fence = fence;
         this.decisions = decisions;
@@ -130,7 +131,7 @@ public class ProtectedActionExecutor {
                     if (!result.allAllowed()) {
                         throw new HttpProblemException(
                                 HttpStatus.FORBIDDEN,
-                                "PERMISSION_DENIED",
+                                ErrorCodes.PERMISSION_DENIED,
                                 "Không có quyền thực hiện thao tác.");
                     }
                     return action.get();
@@ -212,7 +213,7 @@ public class ProtectedActionExecutor {
     public UUID actorUserId(Authentication authentication) {
         if (authentication == null || authentication.getName() == null) {
             throw new HttpProblemException(
-                    HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Cần đăng nhập.");
+                    HttpStatus.UNAUTHORIZED, ErrorCodes.UNAUTHORIZED, "Cần đăng nhập.");
         }
         List<UUID> found =
                 jdbc.queryForList(

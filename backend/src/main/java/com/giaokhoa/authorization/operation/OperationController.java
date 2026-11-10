@@ -5,6 +5,7 @@ import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates.TargetType;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +46,7 @@ public class OperationController {
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String errorCode) {}
 
     @GetMapping("/api/me/operations/{operationId}")
-    public ResponseEntity<OperationView> status(
+    public ResponseEntity<OperationView> getStatus(
             @PathVariable UUID operationId, Authentication authentication) {
         UUID actorUserId = executor.actorUserId(authentication);
         List<Map<String, Object>> rows =
@@ -99,7 +100,7 @@ public class OperationController {
                         actorUserId);
         if (rows.isEmpty()) {
             throw new HttpProblemException(
-                    HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy tài nguyên.");
+                    HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Không tìm thấy tài nguyên.");
         }
         Map<String, Object> row = rows.getFirst();
         String requestState = String.valueOf(row.get("state"));

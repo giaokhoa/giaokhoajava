@@ -1,6 +1,8 @@
 package com.giaokhoa.identity.keycloak;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisionerFactory;
+import com.giaokhoa.authorization.keycloak.KeycloakProvisionerTokens;
+import com.giaokhoa.authorization.keycloak.KeycloakProvisioningFactory;
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import java.util.LinkedHashMap;
@@ -31,23 +33,16 @@ public class IdentityProvisioningClient {
 
     @Autowired
     public IdentityProvisioningClient(
-            @Value("${giaokhoa.keycloak.admin-base-url}") String baseUrl,
-            @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
-                    String issuerUri,
+            GiaokhoaProperties properties,
+            KeycloakProvisionerTokens tokens,
             @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
-                    String webClientId,
-            @Value("${giaokhoa.keycloak.provisioner.client-id}") String clientId,
-            @Value("${giaokhoa.keycloak.provisioner.client-secret}") String clientSecret) {
+                    String webClientId) {
         this(
                 RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
-                baseUrl,
-                KeycloakProvisionerFactory.realmOf(issuerUri),
+                properties.keycloak().adminBaseUrl(),
+                tokens.realm(),
                 webClientId,
-                KeycloakProvisionerFactory.clientManager(
-                        baseUrl.replaceAll("/+$", ""),
-                        KeycloakProvisionerFactory.realmOf(issuerUri),
-                        clientId,
-                        clientSecret));
+                tokens.manager());
     }
 
     IdentityProvisioningClient(
@@ -58,7 +53,7 @@ public class IdentityProvisioningClient {
             OAuth2AuthorizedClientManager manager) {
         this.http =
                 builder.requestInterceptor(
-                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                                KeycloakProvisioningFactory.provisionerInterceptor(manager))
                         .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;

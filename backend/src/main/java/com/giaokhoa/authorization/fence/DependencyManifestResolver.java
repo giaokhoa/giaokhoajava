@@ -1,6 +1,7 @@
 package com.giaokhoa.authorization.fence;
 
 import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.sql.Array;
 import java.sql.SQLException;
@@ -32,7 +33,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class DependencyManifestResolver {
-    static final String NOT_READY_CODE = "AUTHORIZATION_NOT_READY";
     static final String NOT_READY_DETAIL = "Quyền đang được đồng bộ, thử lại sau.";
 
     private final JdbcTemplate jdbc;
@@ -138,7 +138,9 @@ public class DependencyManifestResolver {
                         ownerKey);
         if (found.isEmpty()) {
             throw new HttpProblemException(
-                    HttpStatus.SERVICE_UNAVAILABLE, NOT_READY_CODE, NOT_READY_DETAIL);
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    ErrorCodes.AUTHORIZATION_NOT_READY,
+                    NOT_READY_DETAIL);
         }
         return found.getFirst();
     }
@@ -177,7 +179,9 @@ public class DependencyManifestResolver {
         // biến thành closure rỗng vì sẽ bỏ sót nguồn cần fence.
         if (value == null) {
             throw new HttpProblemException(
-                    HttpStatus.SERVICE_UNAVAILABLE, NOT_READY_CODE, NOT_READY_DETAIL);
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    ErrorCodes.AUTHORIZATION_NOT_READY,
+                    NOT_READY_DETAIL);
         }
         Object[] raw;
         if (value instanceof Array array) {

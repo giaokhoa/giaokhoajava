@@ -12,7 +12,7 @@
 
 - Must fix #1: tách `DataIntegrityViolationException` khỏi `OptimisticLockingFailureException`; test kiểm tra cả status, code và thông báo an toàn, không echo constraint hoặc dữ liệu nhạy cảm.
 - Must fix #2: hai request PostgreSQL thật chạy ở **hai transaction/threads riêng**; cả hai đã `findExisting == empty` trước khi cùng bắt đầu, gửi hai partition cùng tập nhưng thứ tự ngược nhau; chỉ một callback nâng `desired_revision` từ 0 lên 1, cả hai lấy đúng một `operationId`, đúng một operation trong DB. Test thứ hai chứng minh exception trong callback rollback cả operation và state. Test duplicate cùng payload/khác payload và actor độc lập vẫn đạt.
-- Unit tests (24): `IdempotencyServiceTest` (3), `ProblemDetailsAdviceTest` (8), `IntegrationEnvironmentTest` (1), `JdbcOidcSessionRegistryTest` (2), `AuthorizationModelTest` (4), `KeycloakProvisioningClientTest` (6).
+- Unit tests (24): `IdempotencyServiceTest` (3), `ProblemDetailsAdviceTest` (8), `IntegrationEnvironmentTest` (1), `JdbcOidcSessionRegistryTest` (2), `AuthorizationModelTest` (4), `AuthorizationProvisioningClientTest` (6).
 - Integration tests (72): `AuditEventSchemaIT` (5), `IdempotencyServiceIT` (5), `DirectorySchemaIT` (25), `AuthorizationControlSchemaIT` (30), `OidcSessionPersistenceIT` (6), `IntegrationEnvironmentIT` (1).
 - **Tổng 96 ca (24 unit + 72 integration), 0 failed, 0 errors**; Spring Boot 4.1.2/Java 25/PostgreSQL 18.6, stack `giaokhoa-test`. Flyway/Hibernate pass V001 → V004.
 - Chạy integration trên schema TEST riêng `gk_issue11_t009_v003` (Flyway/Hibernate/Hikari search_path), không sửa checksum/schema `public` hoặc DEV; dữ kiện concurrency đã commit ở schema TEST này.

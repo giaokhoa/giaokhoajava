@@ -15,7 +15,8 @@
             <property name="extraAssertMethodNames" value="andExpect"/>
         </properties>
     </rule>
-    <!-- Giữ SQL và giá trị fixture tại nơi dùng để test dễ đọc; không ép tạo hằng số cho mọi literal. -->
+    <!-- AvoidDuplicateLiterals chỉ loại cho test: giữ SQL và giá trị fixture tại nơi dùng để test
+         dễ đọc, không ép tạo hằng số cho mọi literal. Code chính chịu rule này qua pmd-main.xml. -->
     <rule ref="category/java/errorprone.xml">
         <exclude name="AvoidDuplicateLiterals"/>
     </rule>

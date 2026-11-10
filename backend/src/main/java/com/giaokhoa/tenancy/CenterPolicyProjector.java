@@ -1,9 +1,10 @@
 package com.giaokhoa.tenancy;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.subscriptions.SubscriptionPeriodRow;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -81,9 +82,9 @@ public class CenterPolicyProjector {
     }
 
     private final JdbcTemplate jdbc;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
 
-    public CenterPolicyProjector(JdbcTemplate jdbc, KeycloakProvisioningClient directory) {
+    public CenterPolicyProjector(JdbcTemplate jdbc, AuthorizationProvisioningClient directory) {
         this.jdbc = jdbc;
         this.directory = directory;
     }
@@ -247,8 +248,6 @@ public class CenterPolicyProjector {
                                 + " LIMIT 1";
         return !jdbc.queryForList(sql, UUID.class, workspaceId).isEmpty();
     }
-
-    private record SubscriptionPeriodRow(UUID id, Instant validFrom, Instant expiresAt) {}
 
     private List<SubscriptionPeriodRow> subscriptionPeriods(UUID workspaceId) {
         return jdbc.query(

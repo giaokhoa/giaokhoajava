@@ -5,12 +5,13 @@ import { ApiError, requestAllPages, requestWorkspaces } from "@/lib/api-client";
 import { SessionGate } from "@/features/identity/session-gate";
 import { useSession } from "@/features/identity/session-provider";
 import { submitMutation } from "@/features/operations/operation-attempts";
-import { OperationPanel, useOperationCheck } from "@/features/operations/operation-panel";
+import { OperationPanel } from "@/features/operations/operation-panel";
+import { useOperationCheck } from "@/lib/use-operation-check";
 import {
   operationStatus,
   parseTrackedOperation,
   type TrackedOperation,
-} from "@/features/operations/operation-status";
+} from "@/lib/operation-status";
 import {
   canManagePersonalClasses,
   parsePersonalWorkspace,

@@ -3,14 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   centerCreateBody,
   invitationBody,
-  memberPermissions,
   membershipRolesBody,
   parseCenters,
-  parseMemberships,
   parseStudentIssue,
   studentIssueBody,
   subscriptionConfirmBody,
 } from "@/features/tenancy/center-administration";
+import {
+  memberPermissions,
+  parseMemberships,
+} from "@/lib/memberships";
 
 describe("danh sách trung tâm và thành viên theo hợp đồng", () => {
   it("chấp nhận dạng {items} và danh sách trần, bỏ bản ghi thiếu trường", () => {

@@ -1,10 +1,11 @@
 package com.giaokhoa.teaching;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.subscriptions.SubscriptionPeriodRow;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -58,12 +59,12 @@ public class TeachingPolicyProjector {
     private static final String BUNDLE_SCOPE = PermissionCatalog.ClassScope.READ.scopeName();
 
     private final JdbcTemplate jdbc;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
     private final TransactionTemplate transactions;
 
     public TeachingPolicyProjector(
             JdbcTemplate jdbc,
-            KeycloakProvisioningClient directory,
+            AuthorizationProvisioningClient directory,
             PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.directory = directory;
@@ -126,7 +127,7 @@ public class TeachingPolicyProjector {
     public List<String> sourcesFor(String targetKey, String scope) {
         List<String> bundle = bundleDescriptors(targetKey);
         return bundle.stream()
-                .filter(descriptor -> descriptor.endsWith("|scope=" + scope))
+                .filter(descriptor -> descriptor.endsWith(PolicyGraph.SCOPE_MARKER + scope))
                 .toList();
     }
 
@@ -281,30 +282,96 @@ public class TeachingPolicyProjector {
                                 + " AND class_id = ? AND state IN ('PENDING', 'ACTIVE')",
                         workspaceId,
                         classId);
-        sources.add("read", owners, ownersActive, false);
-        sources.add("read", managers, managersActive, false);
-        sources.add("read", homeroom, homeroomPresent, false);
-        sources.add("update", owners, ownersActive, true);
-        sources.add("update", managers, managersActive, true);
-        sources.add("course.list", owners, ownersActive, false);
-        sources.add("course.list", managers, managersActive, false);
-        sources.add("course.list", homeroom, homeroomPresent, false);
-        sources.add("course.create", owners, ownersActive, true);
-        sources.add("course.create", managers, managersActive, true);
-        sources.add("roster.read", owners, ownersActive, false);
-        sources.add("roster.read", managers, managersActive, false);
-        sources.add("roster.read", homeroom, homeroomPresent, false);
-        sources.add("roster.add", owners, ownersActive, true);
-        sources.add("roster.add", managers, managersActive, true);
-        sources.add("roster.revoke", owners, ownersActive, false);
-        sources.add("roster.revoke", managers, managersActive, false);
-        sources.add("homeroom.assign", owners, ownersActive, true);
-        sources.add("homeroom.assign", managers, managersActive, true);
-        sources.add("homeroom.revoke", owners, ownersActive, false);
-        sources.add("homeroom.revoke", managers, managersActive, false);
-        sources.add("completion.read", owners, ownersActive, false);
-        sources.add("completion.read", managers, managersActive, false);
-        sources.add("completion.read", homeroom, homeroomPresent, false);
+        sources.add(PermissionCatalog.ClassScope.READ.scopeName(), owners, ownersActive, false);
+        sources.add(PermissionCatalog.ClassScope.READ.scopeName(), managers, managersActive, false);
+        sources.add(
+                PermissionCatalog.ClassScope.READ.scopeName(), homeroom, homeroomPresent, false);
+        sources.add(PermissionCatalog.ClassScope.UPDATE.scopeName(), owners, ownersActive, true);
+        sources.add(
+                PermissionCatalog.ClassScope.UPDATE.scopeName(), managers, managersActive, true);
+        sources.add(
+                PermissionCatalog.ClassScope.COURSE_LIST.scopeName(), owners, ownersActive, false);
+        sources.add(
+                PermissionCatalog.ClassScope.COURSE_LIST.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.COURSE_LIST.scopeName(),
+                homeroom,
+                homeroomPresent,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.COURSE_CREATE.scopeName(), owners, ownersActive, true);
+        sources.add(
+                PermissionCatalog.ClassScope.COURSE_CREATE.scopeName(),
+                managers,
+                managersActive,
+                true);
+        sources.add(
+                PermissionCatalog.ClassScope.ROSTER_READ.scopeName(), owners, ownersActive, false);
+        sources.add(
+                PermissionCatalog.ClassScope.ROSTER_READ.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.ROSTER_READ.scopeName(),
+                homeroom,
+                homeroomPresent,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.ROSTER_ADD.scopeName(), owners, ownersActive, true);
+        sources.add(
+                PermissionCatalog.ClassScope.ROSTER_ADD.scopeName(),
+                managers,
+                managersActive,
+                true);
+        sources.add(
+                PermissionCatalog.ClassScope.ROSTER_REVOKE.scopeName(),
+                owners,
+                ownersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.ROSTER_REVOKE.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.HOMEROOM_ASSIGN.scopeName(),
+                owners,
+                ownersActive,
+                true);
+        sources.add(
+                PermissionCatalog.ClassScope.HOMEROOM_ASSIGN.scopeName(),
+                managers,
+                managersActive,
+                true);
+        sources.add(
+                PermissionCatalog.ClassScope.HOMEROOM_REVOKE.scopeName(),
+                owners,
+                ownersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.HOMEROOM_REVOKE.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.COMPLETION_READ.scopeName(),
+                owners,
+                ownersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.COMPLETION_READ.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.ClassScope.COMPLETION_READ.scopeName(),
+                homeroom,
+                homeroomPresent,
+                false);
         return sources.byScope();
     }
 
@@ -332,13 +399,21 @@ public class TeachingPolicyProjector {
                                 + " AND class_id = ? AND state IN ('PENDING', 'ACTIVE')",
                         workspaceId,
                         classId);
-        sources.add("read", owners, ownersActive, false);
-        sources.add("read", managers, managersActive, false);
-        sources.add("read", homeroom, homeroomPresent, false);
-        sources.add("update", owners, ownersActive, false);
-        sources.add("update", managers, managersActive, false);
-        sources.add("subject.add", owners, ownersActive, true);
-        sources.add("subject.add", managers, managersActive, true);
+        sources.add(PermissionCatalog.CourseScope.READ.scopeName(), owners, ownersActive, false);
+        sources.add(
+                PermissionCatalog.CourseScope.READ.scopeName(), managers, managersActive, false);
+        sources.add(
+                PermissionCatalog.CourseScope.READ.scopeName(), homeroom, homeroomPresent, false);
+        sources.add(PermissionCatalog.CourseScope.UPDATE.scopeName(), owners, ownersActive, false);
+        sources.add(
+                PermissionCatalog.CourseScope.UPDATE.scopeName(), managers, managersActive, false);
+        sources.add(
+                PermissionCatalog.CourseScope.SUBJECT_ADD.scopeName(), owners, ownersActive, true);
+        sources.add(
+                PermissionCatalog.CourseScope.SUBJECT_ADD.scopeName(),
+                managers,
+                managersActive,
+                true);
         return sources.byScope();
     }
 
@@ -381,30 +456,123 @@ public class TeachingPolicyProjector {
                                 + " AND course_subject_id = ? AND state IN ('PENDING', 'ACTIVE')",
                         workspaceId,
                         courseSubjectId);
-        sources.add("read", owners, ownersActive, false);
-        sources.add("read", managers, managersActive, false);
-        sources.add("read", teachers, teachersPresent, false);
-        sources.add("read", students, studentsPresent, false);
-        sources.add("roster.read", owners, ownersActive, false);
-        sources.add("roster.read", managers, managersActive, false);
-        sources.add("roster.read", teachers, teachersPresent, false);
-        sources.add("enrollment.add", owners, ownersActive, true);
-        sources.add("enrollment.add", managers, managersActive, true);
-        sources.add("enrollment.revoke", owners, ownersActive, false);
-        sources.add("enrollment.revoke", managers, managersActive, false);
-        sources.add("teacher.assign", owners, ownersActive, true);
-        sources.add("teacher.assign", managers, managersActive, true);
-        sources.add("teacher.revoke", owners, ownersActive, false);
-        sources.add("teacher.revoke", managers, managersActive, false);
-        sources.add("resource.create", teachers, teachersPresent, true);
-        sources.add("activity.assign", owners, ownersActive, true);
-        sources.add("activity.assign", managers, managersActive, true);
-        sources.add("activity.assign", teachers, teachersPresent, true);
-        sources.add("activity.assign", homeroom, homeroomPresent, true);
-        sources.add("completion.read", owners, ownersActive, false);
-        sources.add("completion.read", managers, managersActive, false);
-        sources.add("completion.read", teachers, teachersPresent, false);
-        sources.add("completion.read", homeroom, homeroomPresent, false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.READ.scopeName(), owners, ownersActive, false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.READ.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.READ.scopeName(),
+                teachers,
+                teachersPresent,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.READ.scopeName(),
+                students,
+                studentsPresent,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ROSTER_READ.scopeName(),
+                owners,
+                ownersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ROSTER_READ.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ROSTER_READ.scopeName(),
+                teachers,
+                teachersPresent,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ENROLLMENT_ADD.scopeName(),
+                owners,
+                ownersActive,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ENROLLMENT_ADD.scopeName(),
+                managers,
+                managersActive,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ENROLLMENT_REVOKE.scopeName(),
+                owners,
+                ownersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ENROLLMENT_REVOKE.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.TEACHER_ASSIGN.scopeName(),
+                owners,
+                ownersActive,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.TEACHER_ASSIGN.scopeName(),
+                managers,
+                managersActive,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.TEACHER_REVOKE.scopeName(),
+                owners,
+                ownersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.TEACHER_REVOKE.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.RESOURCE_CREATE.scopeName(),
+                teachers,
+                teachersPresent,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ACTIVITY_ASSIGN.scopeName(),
+                owners,
+                ownersActive,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ACTIVITY_ASSIGN.scopeName(),
+                managers,
+                managersActive,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ACTIVITY_ASSIGN.scopeName(),
+                teachers,
+                teachersPresent,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.ACTIVITY_ASSIGN.scopeName(),
+                homeroom,
+                homeroomPresent,
+                true);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.COMPLETION_READ.scopeName(),
+                owners,
+                ownersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.COMPLETION_READ.scopeName(),
+                managers,
+                managersActive,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.COMPLETION_READ.scopeName(),
+                teachers,
+                teachersPresent,
+                false);
+        sources.add(
+                PermissionCatalog.CourseSubjectScope.COMPLETION_READ.scopeName(),
+                homeroom,
+                homeroomPresent,
+                false);
         return sources.byScope();
     }
 
@@ -560,8 +728,6 @@ public class TeachingPolicyProjector {
         }
     }
 
-    private record SubscriptionPeriodRow(UUID id, Instant validFrom, Instant expiresAt) {}
-
     private static String groupDescriptor(
             UUID workspaceId, String groupPath, String targetKey, String scope) {
         return GROUP_DESCRIPTOR
@@ -571,7 +737,7 @@ public class TeachingPolicyProjector {
                 + groupPath
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -594,7 +760,7 @@ public class TeachingPolicyProjector {
                 + period.expiresAt()
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 

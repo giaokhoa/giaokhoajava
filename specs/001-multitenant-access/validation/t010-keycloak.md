@@ -40,7 +40,7 @@ Hai nhận xét Should fix trên commit `86b4ea4` được xác nhận trong mã
 - Kiểm tra role provisioner mới xét direct grant, chưa chứng minh hành vi bị Keycloak từ chối.
 
 Đã bổ sung và **chạy thành công** trong `bash infra/keycloak/verify-native.sh`:
-- Maven chạy riêng `-Dtest=KeycloakProvisioningClientNativeIT`: **1 test, 0 failure/error**. Dùng public constructor thật và Spring OAuth2 client credentials để tạo Organization lặp lại ổn định, tạo realm group lặp lại ổn định, thêm và thu hồi user membership; GET lại Keycloak xác nhận có/không có membership sau mỗi thao tác.
+- Maven chạy riêng `-Dtest=AuthorizationProvisioningClientNativeIT`: **1 test, 0 failure/error**. Dùng public constructor thật và Spring OAuth2 client credentials để tạo Organization lặp lại ổn định, tạo realm group lặp lại ổn định, thêm và thu hồi user membership; GET lại Keycloak xác nhận có/không có membership sau mỗi thao tác.
 - Đọc **effective** realm-management composite role mappings và xác nhận không có `realm-admin`, `manage-clients` hoặc `manage-realm`.
 - Dùng service-account token thử `PUT /admin/realms/giaokhoa/clients/{web-client-id}`: **HTTP 403** (kiểm thử phủ định).
 - Log `NATIVE_T010_ACCEPTANCE_PASSED`, exit code 0 sau 28.51 giây; mặc định Maven verify vẫn đạt 7/7 test. Test native chỉ chạy khi gọi script vì phụ thuộc Docker/realm scratch.

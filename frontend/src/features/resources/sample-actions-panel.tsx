@@ -11,7 +11,7 @@ import {
   operationStatus,
   pollOperationUntilSettled,
   type OperationView,
-} from "@/features/operations/operation-status";
+} from "@/lib/operation-status";
 import {
   CorrectionNoticeView,
   parseCorrectionNotice,

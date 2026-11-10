@@ -12,7 +12,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.doAnswer;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
@@ -69,7 +69,7 @@ class PublishedResultServiceIT extends GuardianFixture {
     @Autowired private PublishedResultService results;
     @Autowired private ResultPolicyProjector resultProjector;
     @Autowired private SubscriptionService subscriptions;
-    @Autowired private KeycloakProvisioningClient directory;
+    @Autowired private AuthorizationProvisioningClient directory;
     @Autowired private IdempotencyService idempotency;
     @Autowired private GuardianLinkService links;
     @MockitoSpyBean private JdbcTemplate guardedJdbc;

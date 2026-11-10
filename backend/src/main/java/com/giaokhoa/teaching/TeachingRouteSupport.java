@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
@@ -234,7 +235,7 @@ public class TeachingRouteSupport {
         if (!repository.subscriptionCurrent(workspaceId)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
+                    ErrorCodes.SUBSCRIPTION_INACTIVE,
                     "Gói sử dụng của trung tâm đã hết hiệu lực.");
         }
     }
@@ -256,13 +257,15 @@ public class TeachingRouteSupport {
     private static HttpProblemException teachingWorkspaceNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "WORKSPACE_NOT_FOUND",
+                ErrorCodes.WORKSPACE_NOT_FOUND,
                 "Không tìm thấy workspace giảng dạy hợp lệ.");
     }
 
     public static HttpProblemException denied() {
         return new HttpProblemException(
-                HttpStatus.FORBIDDEN, "PERMISSION_DENIED", "Không có quyền thực hiện thao tác.");
+                HttpStatus.FORBIDDEN,
+                ErrorCodes.PERMISSION_DENIED,
+                "Không có quyền thực hiện thao tác.");
     }
 
     /** Khóa target của một lớp theo template cố định của projector. */

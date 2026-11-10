@@ -157,13 +157,14 @@ class OperationStatusIT extends IntegrationEnvironment {
     void anonymousGetsNoOperationStatus() throws Exception {
         MockMvc mvc = mockMvc();
         MockHttpServletResponse response =
-                mvc.perform(get("/api/me/operations/" + UUID.randomUUID()))
+                mvc.perform(
+                                get("/api/me/operations/" + UUID.randomUUID())
+                                        .accept(MediaType.APPLICATION_JSON))
                         .andReturn()
                         .getResponse();
-        assertEquals(302, response.getStatus());
-        assertTrue(
-                Objects.requireNonNull(response.getHeader(HttpHeaders.LOCATION), "Location")
-                        .contains("/oauth2/authorization/keycloak"));
+        assertEquals(401, response.getStatus());
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals("UNAUTHORIZED", body.get("code").stringValue());
     }
 
     @Test
