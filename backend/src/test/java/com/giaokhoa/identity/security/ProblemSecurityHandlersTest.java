@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Objects;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -31,9 +32,8 @@ class ProblemSecurityHandlersTest {
 
         assertEquals(401, response.getStatus());
         assertTrue(
-                response.getContentType() != null
-                        && response.getContentType()
-                                .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
+                Objects.requireNonNull(response.getContentType())
+                        .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
         JsonNode body = JSON.readTree(response.getContentAsString());
         assertEquals(401, body.get("status").intValue());
         assertEquals("UNAUTHORIZED", body.get("code").stringValue());
@@ -52,9 +52,8 @@ class ProblemSecurityHandlersTest {
 
         assertEquals(403, response.getStatus());
         assertTrue(
-                response.getContentType() != null
-                        && response.getContentType()
-                                .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
+                Objects.requireNonNull(response.getContentType())
+                        .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
         JsonNode body = JSON.readTree(response.getContentAsString());
         assertEquals(403, body.get("status").intValue());
         assertEquals("FORBIDDEN", body.get("code").stringValue());
