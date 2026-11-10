@@ -54,6 +54,9 @@ public class SchoolClass {
 
     public void rename(String name) {
         this.name = name;
+        // Chạm updated_at để Hibernate phát UPDATE và tăng @Version kể cả khi tên mới trùng tên
+        // cũ: tầng JDBC cũ tăng version vô điều kiện ở mọi lần đổi tên thành công.
+        this.updatedAt = Instant.now();
     }
 
     public void revoke() {

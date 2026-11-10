@@ -19,11 +19,14 @@ import com.giaokhoa.tenancy.model.MembershipRole;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -358,6 +361,39 @@ class TeachingServiceIT extends IntegrationEnvironment {
                 List.of(),
                 enrollments.listEnrollments(workspace, addedCourseSubject),
                 "Môn thêm sau không tự ghi danh học sinh đã có");
+    }
+
+    @Test
+    @DisplayName(
+            "Hai khóa cùng lớp giữ môn tách riêng theo từng khóa ở cả đường list và page;"
+                    + " khóa bị gỡ hết môn trả danh sách môn rỗng, lớp chưa có khóa trả danh sách rỗng")
+    void courseSubjectsStayGroupedPerCourse() {
+        UUID workspace = seedCenter(seedAccount());
+        ClassView clazz = classes.createClass(workspace, "Lớp hai khóa");
+        List<UUID> subjects = courses.listSubjects().stream().map(s -> s.id()).toList();
+        CourseView first =
+                courses.createCourse(workspace, clazz.id(), "Khóa một", subjects.subList(0, 2));
+        CourseView second =
+                courses.createCourse(workspace, clazz.id(), "Khóa hai", List.of(subjects.get(2)));
+        courses.revokeCourseSubject(workspace, second.id(), second.subjects().getFirst().id());
+
+        Map<UUID, List<UUID>> expected =
+                Map.of(first.id(), subjects.subList(0, 2), second.id(), List.of());
+        assertEquals(expected, subjectIdsByCourse(courses.listCourses(workspace, clazz.id())));
+        assertEquals(
+                expected,
+                subjectIdsByCourse(courses.pageCourses(workspace, clazz.id(), null, null).items()));
+
+        ClassView emptyClass = classes.createClass(workspace, "Lớp chưa có khóa");
+        assertEquals(List.of(), courses.listCourses(workspace, emptyClass.id()));
+    }
+
+    private static Map<UUID, List<UUID>> subjectIdsByCourse(List<CourseView> rows) {
+        return rows.stream()
+                .collect(
+                        Collectors.toMap(
+                                CourseView::id,
+                                row -> row.subjects().stream().map(e -> e.subjectId()).toList()));
     }
 
     @Test
