@@ -157,7 +157,9 @@ class OperationStatusIT extends IntegrationEnvironment {
     void anonymousGetsNoOperationStatus() throws Exception {
         MockMvc mvc = mockMvc();
         MockHttpServletResponse response =
-                mvc.perform(get("/api/me/operations/" + UUID.randomUUID()))
+                mvc.perform(
+                                get("/api/me/operations/" + UUID.randomUUID())
+                                        .accept(MediaType.APPLICATION_JSON))
                         .andReturn()
                         .getResponse();
         assertEquals(401, response.getStatus());

@@ -336,7 +336,10 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     @Test
     void anonymousCallerReceivesProblemUnauthorized() throws Exception {
         MockHttpServletResponse response =
-                mockMvc().perform(get("/api/me/workspaces")).andReturn().getResponse();
+                mockMvc()
+                        .perform(get("/api/me/workspaces").accept(MediaType.APPLICATION_JSON))
+                        .andReturn()
+                        .getResponse();
 
         assertEquals(401, response.getStatus());
         assertTrue(
@@ -355,6 +358,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                 mockMvc()
                         .perform(
                                 get("/api/me/workspaces")
+                                        .accept(MediaType.APPLICATION_JSON)
                                         .cookie(
                                                 new Cookie(
                                                         "SESSION", "forged-" + UUID.randomUUID())))

@@ -471,13 +471,14 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
         }
     }
 
-    @DisplayName("Yêu cầu khôi phục ẩn danh bị chuyển hướng tới trang đăng nhập")
+    @DisplayName("Yêu cầu khôi phục ẩn danh của khách API JSON bị từ chối bằng 401 ProblemDetail")
     @Test
-    void anonymousRequestRedirectsToLogin() throws Exception {
+    void anonymousRequestReceivesProblemUnauthorized() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
                         .perform(
                                 post("/api/me/recovery-requests")
+                                        .accept(MediaType.APPLICATION_JSON)
                                         .with(csrf())
                                         .header(
                                                 "Idempotency-Key",
@@ -504,6 +505,7 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
                 mockMvc()
                         .perform(
                                 post("/api/me/recovery-requests")
+                                        .accept(MediaType.APPLICATION_JSON)
                                         .cookie(
                                                 new Cookie(
                                                         "SESSION", "forged-" + UUID.randomUUID()))

@@ -1023,7 +1023,9 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
     void anonymousMembershipListReceivesProblemUnauthorized() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
-                        .perform(get("/api/workspaces/" + UUID.randomUUID() + "/memberships"))
+                        .perform(
+                                get("/api/workspaces/" + UUID.randomUUID() + "/memberships")
+                                        .accept(MediaType.APPLICATION_JSON))
                         .andReturn()
                         .getResponse();
 

@@ -11,8 +11,8 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
 /**
- * Điểm vào xác thực cho {@code /api/**}: request chưa đăng nhập nhận 401 {@code
- * application/problem+json} cùng hình dạng như {@link
+ * Điểm vào xác thực cho khách API trên {@code /api/**} (request khai báo {@code Accept} JSON):
+ * request chưa đăng nhập nhận 401 {@code application/problem+json} cùng hình dạng như {@link
  * com.giaokhoa.shared.http.ProblemDetailsAdvice} thay vì redirect 302 về trang đăng nhập của luồng
  * trình duyệt. {@code ExceptionTranslationFilter} gọi entry point này trước khi request tới
  * DispatcherServlet nên advice không bao giờ thấy được lỗi này.

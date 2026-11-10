@@ -550,7 +550,9 @@ class TeachingStructureIT extends TeachingFixture {
     void anonymousClassListReceivesProblemUnauthorized() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
-                        .perform(get("/api/workspaces/" + UUID.randomUUID() + "/classes"))
+                        .perform(
+                                get("/api/workspaces/" + UUID.randomUUID() + "/classes")
+                                        .accept(MediaType.APPLICATION_JSON))
                         .andReturn()
                         .getResponse();
         assertEquals(401, response.getStatus());

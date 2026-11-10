@@ -17,11 +17,13 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
@@ -122,6 +124,29 @@ class SecurityConfigurationIT extends IntegrationEnvironment {
                                 + "/protocol/openid-connect/logout?"));
         assertTrue(redirect.contains("id_token_hint="));
         assertTrue(redirect.contains("post_logout_redirect_uri="));
+    }
+
+    @DisplayName(
+            "Chưa đăng nhập: ngữ cảnh trình duyệt nhận 302 tới đăng nhập OIDC, khách API JSON"
+                    + " nhận 401 ProblemDetail")
+    @Test
+    void anonymousEntryPointDependsOnClientKind() throws Exception {
+        var browser =
+                mvc.perform(get("/api/me/workspaces").accept(MediaType.ALL))
+                        .andReturn()
+                        .getResponse();
+        assertEquals(302, browser.getStatus());
+        String location = browser.getHeader("Location");
+        assertTrue(location != null && location.contains("/oauth2/authorization/keycloak"));
+
+        var api =
+                mvc.perform(get("/api/me/workspaces").accept(MediaType.APPLICATION_JSON))
+                        .andReturn()
+                        .getResponse();
+        assertEquals(401, api.getStatus());
+        assertTrue(
+                Objects.requireNonNull(api.getContentType())
+                        .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
     }
 
     @DisplayName("API chưa xác thực không truy cập được bằng Bearer hay Basic")
