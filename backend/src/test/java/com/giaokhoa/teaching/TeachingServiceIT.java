@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.support.IntegrationEnvironment;
@@ -15,7 +16,6 @@ import com.giaokhoa.teaching.ClassService.RosterEntryView;
 import com.giaokhoa.teaching.CourseService.CourseView;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.tenancy.MembershipService;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
