@@ -6,7 +6,6 @@ import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
@@ -16,6 +15,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.OptimisticLock;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.jspecify.annotations.Nullable;
 
@@ -55,7 +55,12 @@ public class CenterMembership {
     @Column(name = "revoked_at")
     private @Nullable Instant revokedAt;
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    // Đổi role không tự tăng version của membership: mặc định Hibernate tính thay đổi của
+    // collection thuộc sở hữu vào version của entity, nên loại trừ tường minh để lần tăng duy
+    // nhất là lần tăng của tầng service theo giao thức If-Match. Nạp LAZY vì mọi đường đọc
+    // role đều nằm trong transaction của service hoặc của projector bao ngoài.
+    @OptimisticLock(excluded = true)
+    @ElementCollection
     @CollectionTable(name = "membership_role", joinColumns = @JoinColumn(name = "membership_id"))
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 16)

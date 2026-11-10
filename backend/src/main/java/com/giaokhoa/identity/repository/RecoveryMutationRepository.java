@@ -7,7 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface RecoveryMutationRepository
-        extends JpaRepository<RecoveryMutation, RecoveryMutation.Key> {
+        extends JpaRepository<RecoveryMutation, RecoveryMutation.Key>, RecoveryMutationClaim {
     @Query(
             "SELECT m FROM RecoveryMutation m"
                     + " WHERE m.id.actorUserId = :actorUserId"

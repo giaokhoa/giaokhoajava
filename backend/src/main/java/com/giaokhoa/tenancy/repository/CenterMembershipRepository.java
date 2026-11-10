@@ -47,8 +47,8 @@ public interface CenterMembershipRepository extends JpaRepository<CenterMembersh
             Pageable pageable);
 
     /**
-     * Một trang roster theo keyset (joined_at, id); mốc null là trang đầu. Hàng đã thu hồi vẫn
-     * được tính ở bước tra mốc nên bộ lọc trạng thái không áp ở truy vấn này.
+     * Một trang roster theo keyset (joined_at, id); mốc null là trang đầu. Hàng đã thu hồi vẫn được
+     * tính ở bước tra mốc nên bộ lọc trạng thái không áp ở truy vấn này.
      */
     @Query(
             "SELECT m FROM CenterMembership m"
@@ -63,7 +63,9 @@ public interface CenterMembershipRepository extends JpaRepository<CenterMembersh
             @Nullable UUID cursorId,
             Pageable pageable);
 
-    /** Đọc khóa ghi cho các đường đổi role/thu hồi: version được kiểm If-Match trên hàng đã khóa. */
+    /**
+     * Đọc khóa ghi cho các đường đổi role/thu hồi: version được kiểm If-Match trên hàng đã khóa.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT m FROM CenterMembership m WHERE m.id = :id")
     Optional<CenterMembership> findForUpdateById(UUID id);
@@ -86,6 +88,5 @@ public interface CenterMembershipRepository extends JpaRepository<CenterMembersh
     @Query(
             "UPDATE CenterMembership m SET m.state = :active"
                     + " WHERE m.id = :id AND m.state = :pending")
-    int activateIfPending(
-            UUID id, CenterMembership.State active, CenterMembership.State pending);
+    int activateIfPending(UUID id, CenterMembership.State active, CenterMembership.State pending);
 }

@@ -303,23 +303,31 @@ public class RecoveryService {
     private Optional<UUID> replay(
             UUID actor, String key, String hash, UUID requestId, String kind) {
         idempotency.requireKey(key);
-        Optional<RecoveryMutation> previous =
-                mutations.findByActorUserIdAndIdempotencyKey(actor, key);
-        if (previous.isEmpty()) {
-            // Hàng mutation ghi trước khi request tồn tại; khóa ngoại của request_id là
-            // deferred nên thứ tự ghi này hợp lệ tới cuối transaction.
-            mutations.saveAndFlush(
-                    new RecoveryMutation(
-                            actor, key, hash, requestId, RecoveryMutation.Kind.valueOf(kind)));
+        // Claim bằng insert-or-ignore native qua fragment của repository: hai lượt đồng thời
+        // cùng (actor, khóa) thì một lượt chèn được, lượt còn lại nhận 0 và đọc lại biên nhận
+        // đã thắng ở dưới — find-then-save sẽ biến lượt thua thành vi phạm khóa chính. Hàng
+        // mutation ghi trước khi request tồn tại; khóa ngoại của request_id là deferred nên
+        // thứ tự ghi này hợp lệ tới cuối transaction.
+        int inserted =
+                mutations.insertIfAbsent(
+                        new RecoveryMutation(
+                                actor, key, hash, requestId, RecoveryMutation.Kind.valueOf(kind)));
+        if (inserted != 0) {
             return Optional.empty();
         }
-        if (!hash.equals(previous.get().getPayloadHash())) {
+        RecoveryMutation previous =
+                mutations
+                        .findByActorUserIdAndIdempotencyKey(actor, key)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Biên nhận khôi phục vừa bị chặn claim nhưng không đọc lại được."));
+        if (!hash.equals(previous.getPayloadHash())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "IDEMPOTENCY_CONFLICT",
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
-        return Optional.of(previous.get().getRequestId());
+        return Optional.of(previous.getRequestId());
     }
 
     private void requireAccount(UUID userId) {
