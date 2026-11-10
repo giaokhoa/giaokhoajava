@@ -111,8 +111,7 @@ public class WorkspaceDirectory {
         if (workspaceIds.isEmpty()) {
             return Map.of();
         }
-        String placeholders =
-                workspaceIds.stream().map(_ -> "?").collect(Collectors.joining(", "));
+        String placeholders = workspaceIds.stream().map(_ -> "?").collect(Collectors.joining(", "));
         List<Object> args = new ArrayList<>(workspaceIds.size() + 1);
         args.add(actorUserId);
         args.addAll(workspaceIds);

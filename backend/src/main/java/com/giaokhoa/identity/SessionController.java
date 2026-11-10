@@ -193,32 +193,27 @@ public class SessionController {
         Map<UUID, Instant> subscriptionExpiries = subscriptionExpiriesOf(workspaceIds);
         Map<String, String> syncStates = syncStatesOf(workspaceIds);
         return workspaces.stream()
-                .map(
-                        workspace -> {
-                            String name =
-                                    workspace.kind() == Workspace.Kind.CENTER
-                                            ? centerNames.getOrDefault(
-                                                    workspace.centerId(), "")
-                                            : username;
-                            List<String> roles =
-                                    rolesByWorkspace
-                                            .getOrDefault(workspace.id(), Set.of())
-                                            .stream()
-                                            .map(role -> role.name())
-                                            .sorted()
-                                            .toList();
-                            Instant expiry = subscriptionExpiries.get(workspace.id());
-                            return new WorkspaceView(
-                                    workspace.id(),
-                                    name,
-                                    workspace.kind().name(),
-                                    workspace.state(),
-                                    workspace.centerId(),
-                                    roles,
-                                    new SubscriptionView(expiry != null, expiry),
-                                    syncStates.getOrDefault(
-                                            "workspace:" + workspace.id(), "UNKNOWN"));
-                        })
+                .map(workspace -> {
+                    String name =
+                            workspace.kind() == Workspace.Kind.CENTER
+                                    ? centerNames.getOrDefault(workspace.centerId(), "")
+                                    : username;
+                    List<String> roles =
+                            rolesByWorkspace.getOrDefault(workspace.id(), Set.of()).stream()
+                                    .map(role -> role.name())
+                                    .sorted()
+                                    .toList();
+                    Instant expiry = subscriptionExpiries.get(workspace.id());
+                    return new WorkspaceView(
+                            workspace.id(),
+                            name,
+                            workspace.kind().name(),
+                            workspace.state(),
+                            workspace.centerId(),
+                            roles,
+                            new SubscriptionView(expiry != null, expiry),
+                            syncStates.getOrDefault("workspace:" + workspace.id(), "UNKNOWN"));
+                })
                 .toList();
     }
 
@@ -260,8 +255,7 @@ public class SessionController {
     }
 
     private Map<String, String> syncStatesOf(List<UUID> workspaceIds) {
-        List<String> targetKeys =
-                workspaceIds.stream().map(id -> "workspace:" + id).toList();
+        List<String> targetKeys = workspaceIds.stream().map(id -> "workspace:" + id).toList();
         Map<String, String> states = new HashMap<>();
         jdbc.query(
                 "SELECT target_key, state FROM authz_projection WHERE target_key IN ("
