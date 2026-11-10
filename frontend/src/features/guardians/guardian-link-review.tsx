@@ -10,17 +10,18 @@ import {
   closeAttempt,
   submitMutation,
 } from "../operations/operation-attempts";
-import { OperationPanel, useOperationCheck } from "../operations/operation-panel";
+import { OperationPanel } from "../operations/operation-panel";
+import { useOperationCheck } from "../../lib/use-operation-check";
 import {
   operationStatus,
   parseTrackedOperation,
   pollOperationUntilSettled,
   type TrackedOperation,
-} from "../operations/operation-status";
+} from "../../lib/operation-status";
 import {
   parseMemberships,
   type Membership,
-} from "../tenancy/center-administration";
+} from "../../lib/memberships";
 
 // Vòng đời liên kết theo hợp đồng HTTP: REQUESTED → APPROVED/REJECTED, APPROVED → REVOKED.
 // REJECTED là kết thúc: muốn liên kết lại phải gửi yêu cầu mới.

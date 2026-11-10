@@ -8,7 +8,7 @@ if [[ $# -gt 0 ]]; then
   [[ $# -eq 1 && "$1" == --use-build-artifact ]] || { echo 'Usage: verify-native.sh [--use-build-artifact]' >&2; exit 2; }
   # CI đã compile và kiểm tra artifact; gọi đúng native test, không chạy lại vòng đời build.
   native_test_goal=surefire:test
-  for test_class in authorization/keycloak/KeycloakProvisioningClientNativeIT authorization/NativePermissionGateIT authorization/NativeTimePolicyIT authorization/policy/PolicyGraphWriterNativeIT authorization/NativeGateAcceptanceIT; do
+  for test_class in authorization/keycloak/AuthorizationProvisioningClientNativeIT authorization/NativePermissionGateIT authorization/NativeTimePolicyIT authorization/policy/PolicyGraphWriterNativeIT authorization/NativeGateAcceptanceIT; do
     [[ -f "$REPO/backend/target/test-classes/com/giaokhoa/$test_class.class" ]] || { echo "Thiếu native test đã biên dịch: $test_class" >&2; exit 1; }
   done
 fi
@@ -165,7 +165,7 @@ PROVISIONING_TEST_KEYCLOAK_USER_ID="$(admin_get '/users?username=student-without
   jq -er '[.[] | select(.username == "student-without-email")] | if length == 1 then .[0].id else error("test user missing") end')"
 export PROVISIONING_TEST_KEYCLOAK_USER_ID
 if ! "$REPO/backend/mvnw" -B -ntp -f "$REPO/backend/pom.xml" \
-    -Dtest=KeycloakProvisioningClientNativeIT "$native_test_goal" > "$TMP/java-native.log" 2>&1; then
+    -Dtest=AuthorizationProvisioningClientNativeIT "$native_test_goal" > "$TMP/java-native.log" 2>&1; then
   tail -55 "$TMP/java-native.log" >&2
   fail "Java native provisioning integration test"
 fi

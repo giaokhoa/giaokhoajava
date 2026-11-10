@@ -40,7 +40,7 @@ import org.springframework.web.client.RestClient;
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
+class IdentityEligibilityServiceIT extends IntegrationEnvironment {
     private static final String ELIGIBLE_GROUP = "/gk/identity/eligible";
     private static final ParameterizedTypeReference<Map<String, Object>> MAP =
             new ParameterizedTypeReference<>() {};
@@ -58,7 +58,7 @@ class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
     }
 
     @Autowired JdbcTemplate jdbc;
-    @Autowired IdentityEligibilitySynchronizer synchronizer;
+    @Autowired IdentityEligibilityService synchronizer;
     @Autowired PlatformTransactionManager transactionManager;
 
     @DisplayName("Eligibility của tài khoản tự đăng ký đi theo profile hiện hành theo cả hai chiều")
@@ -244,14 +244,14 @@ class IdentityEligibilitySynchronizerIT extends IntegrationEnvironment {
 
     private static void seedEligibilityGroup() {
         RealmFoundation.ensureEligibilityTree(
-                HTTP, adminStatic(""), IdentityEligibilitySynchronizerIT::masterToken);
+                HTTP, adminStatic(""), IdentityEligibilityServiceIT::masterToken);
     }
 
     private static void ensureApiClient() {
         RealmFoundation.ensureApiClient(
                 HTTP,
                 adminStatic(""),
-                IdentityEligibilitySynchronizerIT::masterToken,
+                IdentityEligibilityServiceIT::masterToken,
                 required("TEST_KEYCLOAK_AUTHZ_AUDIENCE"));
     }
 

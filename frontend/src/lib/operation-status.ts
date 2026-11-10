@@ -1,4 +1,4 @@
-import { isRecord, requestWhenReady, waitForRetry } from "../../lib/api-client";
+import { isRecord, requestWhenReady, waitForRetry } from "./api-client";
 
 export type OperationState =
   | "PENDING"

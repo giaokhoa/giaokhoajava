@@ -139,7 +139,7 @@ public class ResultPolicyProjector {
     /** Các descriptor của riêng một scope trong bundle của target, dựng lại từ dữ kiện nguồn. */
     public List<String> sourcesFor(String targetKey, String scope) {
         return bundleDescriptors(targetKey).stream()
-                .filter(descriptor -> descriptor.endsWith("|scope=" + scope))
+                .filter(descriptor -> descriptor.endsWith(PolicyGraph.SCOPE_MARKER + scope))
                 .toList();
     }
 
@@ -259,21 +259,44 @@ public class ResultPolicyProjector {
                         workspaceId,
                         courseSubjectId);
         if (teachersPresent) {
-            descriptors.add(groupDescriptor(workspaceId, teachers, targetKey, "read"));
-            descriptors.add(groupDescriptor(workspaceId, teachers, targetKey, "grade"));
-            descriptors.add(groupDescriptor(workspaceId, teachers, targetKey, "publish"));
+            descriptors.add(
+                    groupDescriptor(
+                            workspaceId,
+                            teachers,
+                            targetKey,
+                            PermissionCatalog.ResultScope.READ.scopeName()));
+            descriptors.add(
+                    groupDescriptor(
+                            workspaceId,
+                            teachers,
+                            targetKey,
+                            PermissionCatalog.ResultScope.GRADE.scopeName()));
+            descriptors.add(
+                    groupDescriptor(
+                            workspaceId,
+                            teachers,
+                            targetKey,
+                            PermissionCatalog.ResultScope.PUBLISH.scopeName()));
         }
         if (!published) {
             return;
         }
         // Publication gate: các nguồn của read.published chỉ tồn tại khi kết quả đã PUBLISHED.
         if (teachersPresent) {
-            descriptors.add(groupDescriptor(workspaceId, teachers, targetKey, "read.published"));
+            descriptors.add(
+                    groupDescriptor(
+                            workspaceId,
+                            teachers,
+                            targetKey,
+                            PermissionCatalog.ResultScope.READ_PUBLISHED.scopeName()));
         }
         if (guardianSourcePresent(workspaceId, studentUserId)) {
             descriptors.add(
                     guardianGroupDescriptor(
-                            workspaceId, studentUserId, targetKey, "read.published"));
+                            workspaceId,
+                            studentUserId,
+                            targetKey,
+                            PermissionCatalog.ResultScope.READ_PUBLISHED.scopeName()));
         }
         studentSubject(workspaceId, studentUserId, courseSubjectId, true)
                 .ifPresent(subject ->
@@ -283,7 +306,7 @@ public class ResultPolicyProjector {
                                         studentUserId,
                                         subject,
                                         targetKey,
-                                        "read.published")));
+                                        PermissionCatalog.ResultScope.READ_PUBLISHED.scopeName())));
     }
 
     private void personalSources(
@@ -303,13 +326,35 @@ public class ResultPolicyProjector {
             Map<String, Object> owner = owners.getFirst();
             UUID ownerId = Objects.requireNonNull((UUID) owner.get("user_id"), "user_id");
             String subject = Objects.requireNonNull((String) owner.get("subject"), "keycloak_sub");
-            descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "read"));
-            descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "grade"));
-            descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, "publish"));
+            descriptors.add(
+                    actorDescriptor(
+                            workspaceId,
+                            ownerId,
+                            subject,
+                            targetKey,
+                            PermissionCatalog.ResultScope.READ.scopeName()));
+            descriptors.add(
+                    actorDescriptor(
+                            workspaceId,
+                            ownerId,
+                            subject,
+                            targetKey,
+                            PermissionCatalog.ResultScope.GRADE.scopeName()));
+            descriptors.add(
+                    actorDescriptor(
+                            workspaceId,
+                            ownerId,
+                            subject,
+                            targetKey,
+                            PermissionCatalog.ResultScope.PUBLISH.scopeName()));
             if (published) {
                 descriptors.add(
                         actorDescriptor(
-                                workspaceId, ownerId, subject, targetKey, "read.published"));
+                                workspaceId,
+                                ownerId,
+                                subject,
+                                targetKey,
+                                PermissionCatalog.ResultScope.READ_PUBLISHED.scopeName()));
             }
         }
         if (!published) {
@@ -323,7 +368,7 @@ public class ResultPolicyProjector {
                                         studentUserId,
                                         subject,
                                         targetKey,
-                                        "read.published")));
+                                        PermissionCatalog.ResultScope.READ_PUBLISHED.scopeName())));
     }
 
     /**
@@ -399,7 +444,7 @@ public class ResultPolicyProjector {
                 + groupPath
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -417,7 +462,7 @@ public class ResultPolicyProjector {
                 + NativePolicyTemplates.guardiansGroup(workspaceId, studentUserId)
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -432,7 +477,7 @@ public class ResultPolicyProjector {
                 + subject
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 

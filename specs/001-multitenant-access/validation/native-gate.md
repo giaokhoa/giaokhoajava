@@ -68,7 +68,7 @@ Các cổng của lượt chạy lại, theo đúng thứ tự:
   PolicyGraphWriterNativeIT có thêm case đa scope; chúng được chạy thật ở lượt native riêng)
 Lượt native riêng (driver tương đương verify-native.sh trên Keycloak scratch 18091,
 bootstrap chạy hai lần, fixture native gate, đăng nhập actor bằng PKCE qua Chromium thật):
-→ KeycloakProvisioningClientNativeIT 1/1
+→ AuthorizationProvisioningClientNativeIT 1/1
 → NativePermissionGateIT 3/3, NativeTimePolicyIT 1/1, PolicyGraphWriterNativeIT 2/2,
   NativeGateAcceptanceIT 6/6 — tổng 12, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
 ```
@@ -116,7 +116,7 @@ do driver tương đương `verify-native.sh` cấp):
 
 ```
 ./backend/mvnw -B -ntp -f backend/pom.xml \
-  -Dtest=KeycloakProvisioningClientNativeIT,NativePermissionGateIT,NativeTimePolicyIT,PolicyGraphWriterNativeIT,NativeGateAcceptanceIT test
+  -Dtest=AuthorizationProvisioningClientNativeIT,NativePermissionGateIT,NativeTimePolicyIT,PolicyGraphWriterNativeIT,NativeGateAcceptanceIT test
 → Tests run: 12, Failures: 0, Errors: 3, Skipped: 0
 ```
 

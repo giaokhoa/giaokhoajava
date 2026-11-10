@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="Giao Khoa Java - code chinh" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>Rule chỉ áp cho code chính: exclude-pattern loại toàn bộ cây test khỏi ruleset
+        này; pmd.xml vẫn áp cho cả code chính và test.</description>
+    <exclude-pattern>.*/src/test/.*</exclude-pattern>
+    <!-- Nhóm rule đặt tên của category codestyle; pattern mặc định của PMD khớp quy ước repo
+         đang tuân thủ (field serialVersionUID đã nằm trong exclusions mặc định của rule). -->
+    <rule ref="category/java/codestyle.xml/ClassNamingConventions"/>
+    <rule ref="category/java/codestyle.xml/MethodNamingConventions"/>
+    <rule ref="category/java/codestyle.xml/FieldNamingConventions">
+        <properties>
+            <!-- Ngoài hai tên mặc định của rule, loại trừ 4 field của InitialCredentialService:
+                 SecureRandom và các mảng char[] không bất biến sâu nên theo Google Java Style
+                 Guide §5.2.4/§5.2.5 chúng không phải hằng và viết lowerCamelCase; PMD không
+                 nhận biết được bất biến sâu (mọi static final đều bị coi là hằng) nên phải khai
+                 báo loại trừ hẹp theo tên, cùng cách rule tự loại serialVersionUID. -->
+            <property name="exclusions"
+                      value="serialVersionUID,serialPersistentFields,random,lowercase,uppercase,digits"/>
+        </properties>
+    </rule>
+    <!-- Literal trùng chỉ cấm ở code chính. Test giữ SQL và giá trị fixture tại nơi dùng nên
+         pmd.xml loại rule này; loại trừ đó nay chỉ còn tác dụng lên test. -->
+    <rule ref="category/java/errorprone.xml/AvoidDuplicateLiterals">
+        <properties>
+            <!-- Từ vựng giao thức/SQL không trích xuất được thành hằng: khoá JSON và path segment
+                 của Keycloak API, tên claim/cột, tên tham số trong requireNonNull, giá trị cột
+                 state, tên cột RowMapper và mảnh SQL nối chuỗi. exceptionList tách theo dấu phẩy
+                 và trim từng entry (đã kiểm chứng bằng PMD 7.29.0) nên 9 mảnh SQL chứa dấu phẩy
+                 và 3 mảnh bắt đầu bằng khoảng trắng nằm ở violationSuppressXPath bên dưới thay
+                 vì ở đây. -->
+            <property name="exceptionList" value="name, logic, decisionStrategy, type, scopes, _id, /permission/scope, /resource, time, notBefore, /permission/scope/, /policy/, resources, groups, sid, read, workspaceId, initiatorUserId, classId, courseId, actorUserId, REVOKED, state, workspace_id, version, class_id"/>
+            <!-- 12 mệnh đề khớp chính xác từng literal (Image gồm dấu ngoáy), giới hạn trong class
+                 sở hữu, để không che literal mới ở file khác: 9 mảnh SQL chứa dấu phẩy và 3 mảnh
+                 bắt đầu bằng khoảng trắng (đều ở TeachingRepository, trừ 2 mảnh ở
+                 GuardianRevocationContributor và TeachingPolicyProjector). -->
+            <property name="violationSuppressXPath" value="//StringLiteral[@Image = concat('&quot;', &quot; AND state IN ('PENDING', 'ACTIVE')&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot; AND cs.state IN ('PENDING', 'ACTIVE')&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot; WHERE workspace_id = ? AND state IN ('PENDING', 'ACTIVE')&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot; version = version + 1, updated_at = now()&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot; version = version + 1, updated_at = now() WHERE id = ?&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot; VALUES (?, ?, ?, ?, 'ACTIVE')&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot; ORDER BY created_at ASC, id ASC&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot;UPDATE enrollment SET state = 'REVOKED', revoked_at = now(),&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot;UPDATE teaching_assignment SET state = 'REVOKED', revoked_at = now(),&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']] | //StringLiteral[@Image = concat('&quot;', &quot; AND state = 'APPROVED'&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='GuardianRevocationContributor']] | //StringLiteral[@Image = concat('&quot;', &quot; JOIN membership_role r ON r.membership_id = m.id&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingPolicyProjector']] | //StringLiteral[@Image = concat('&quot;', &quot; AND course_subject_id IN (SELECT id FROM course_subject&quot;, '&quot;') and ancestor::ClassDeclaration[@SimpleName='TeachingRepository']]"/>
+        </properties>
+    </rule>
+</ruleset>

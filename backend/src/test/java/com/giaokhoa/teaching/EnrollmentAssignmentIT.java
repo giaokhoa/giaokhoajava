@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
@@ -111,7 +111,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
     @Autowired AssignmentService assignments;
     @Autowired CenterService centers;
     @Autowired IdempotencyService idempotency;
-    @Autowired KeycloakProvisioningClient directory;
+    @Autowired AuthorizationProvisioningClient directory;
     @Autowired EntityManagerFactory entityManagerFactory;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
@@ -693,7 +693,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             teacher.userId()));
         } finally {
             if (workspace != null && organizationId != null) {
-                cleanupWorkspaceDirectory(workspace, organizationId);
+                cleanupWorkspaceDirectoryService(workspace, organizationId);
             }
             operator.delete();
             owner.delete();
@@ -980,7 +980,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
         return Set.copyOf(groups.stream().map(group -> String.valueOf(group.get("path"))).toList());
     }
 
-    private void cleanupWorkspaceDirectory(UUID workspaceId, String organizationId) {
+    private void cleanupWorkspaceDirectoryService(UUID workspaceId, String organizationId) {
         deleteResource(admin("/organizations/" + organizationId));
         Map<String, Object> group =
                 HTTP.get()

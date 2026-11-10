@@ -1,6 +1,7 @@
 package com.giaokhoa.authorization.operation;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.persistence.EntityManager;
 import java.security.MessageDigest;
@@ -44,13 +45,13 @@ public class IdempotencyService {
         if (key == null || key.isBlank()) {
             throw new HttpProblemException(
                     HttpStatus.PRECONDITION_REQUIRED,
-                    "PRECONDITION_REQUIRED",
+                    ErrorCodes.PRECONDITION_REQUIRED,
                     "Thiếu Idempotency-Key.");
         }
         if (key.length() > 255 || !key.matches("[\\x21-\\x7E]+")) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_IDEMPOTENCY_KEY",
+                    ErrorCodes.INVALID_IDEMPOTENCY_KEY,
                     "Idempotency-Key không hợp lệ.");
         }
         return key;
@@ -59,23 +60,30 @@ public class IdempotencyService {
     public static void requireIfMatch(@Nullable String ifMatch, long currentVersion) {
         if (ifMatch == null || ifMatch.isBlank()) {
             throw new HttpProblemException(
-                    HttpStatus.PRECONDITION_REQUIRED, "PRECONDITION_REQUIRED", "Thiếu If-Match.");
+                    HttpStatus.PRECONDITION_REQUIRED,
+                    ErrorCodes.PRECONDITION_REQUIRED,
+                    "Thiếu If-Match.");
         }
         // Strong ETag của row version; dấu * và weak validator không hợp lệ cho mutation này.
         if (!ifMatch.matches("\"(0|[1-9][0-9]*)\"")) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_IF_MATCH",
+                    ErrorCodes.INVALID_IF_MATCH,
                     "If-Match phải là strong ETag của row version.");
         }
         try {
             if (Long.parseLong(ifMatch.substring(1, ifMatch.length() - 1)) != currentVersion) {
                 throw new HttpProblemException(
-                        HttpStatus.CONFLICT, "VERSION_CONFLICT", "Phiên bản dữ liệu đã thay đổi.");
+                        HttpStatus.CONFLICT,
+                        ErrorCodes.VERSION_CONFLICT,
+                        "Phiên bản dữ liệu đã thay đổi.");
             }
         } catch (NumberFormatException ex) {
             throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST, "INVALID_IF_MATCH", "If-Match không hợp lệ.", ex);
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.INVALID_IF_MATCH,
+                    "If-Match không hợp lệ.",
+                    ex);
         }
     }
 
@@ -114,7 +122,7 @@ public class IdempotencyService {
             if (!operation.getPayloadHash().equals(hash)) {
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
-                        "IDEMPOTENCY_CONFLICT",
+                        ErrorCodes.IDEMPOTENCY_CONFLICT,
                         "Idempotency-Key đã dùng với yêu cầu khác.");
             }
         });
@@ -180,7 +188,7 @@ public class IdempotencyService {
         if (operation.getState() == AuthorizationOperation.State.FAILED) {
             throw new HttpProblemException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "OPERATION_FAILED",
+                    ErrorCodes.OPERATION_FAILED,
                     "Đồng bộ quyền không thành công.");
         }
         return ResponseEntity.status(completed ? HttpStatus.OK : HttpStatus.ACCEPTED)

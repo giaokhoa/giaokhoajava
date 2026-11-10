@@ -103,10 +103,9 @@ frontend/
 ├── src/
 │   ├── app/
 │   ├── features/
-│   ├── components/
 │   └── lib/
 └── tests/
-    ├── component/
+    ├── unit/
     └── e2e/
 infra/
 ├── compose.dev.yaml

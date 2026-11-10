@@ -213,8 +213,8 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
     /**
      * Chờ operation do worker thật xử lý tới SUCCEEDED bằng Awaitility (poll 500 ms, tối đa 90
      * giây) — bản dùng chung thay hai bản sao viết tay trước đây ở IdentityFlowIT và
-     * IdentityEligibilitySynchronizerIT. FAILED dừng chờ ngay và báo kèm mã lỗi; lỗi truy vấn trạng
-     * thái được ném lại nguyên vẹn, đúng hành vi vòng poll cũ.
+     * IdentityEligibilityServiceIT. FAILED dừng chờ ngay và báo kèm mã lỗi; lỗi truy vấn trạng thái
+     * được ném lại nguyên vẹn, đúng hành vi vòng poll cũ.
      */
     protected static void awaitOperationSucceeded(JdbcTemplate jdbc, UUID operationId) {
         AtomicReference<Object> failureCode = new AtomicReference<>();

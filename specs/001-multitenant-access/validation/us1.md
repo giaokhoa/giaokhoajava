@@ -324,7 +324,7 @@ Lượt 2 là số liệu chốt:
 | RecoveryFlowIT | 10 / 0 / 1 / 0 (error duy nhất: test SMTP, thiếu Mailpit ở local) |
 | RecoveryRequestIT | 4 / 0 / 0 / 0 |
 | RecoveryWorkflowIT | 17 / 0 / 0 / 0 |
-| IdentityEligibilitySynchronizerIT | 3 / 0 / 0 / 0 |
+| IdentityEligibilityServiceIT | 3 / 0 / 0 / 0 |
 | OidcSessionPersistenceIT | 6 / 0 / 0 / 0 |
 | SecurityConfigurationIT | 4 / 0 / 0 / 0 |
 | ResourcePrimitivesSchemaIT | 7 / 0 / 0 / 0 |

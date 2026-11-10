@@ -362,7 +362,7 @@ vẫn qua pipeline với target platform và scope `account.recover`.
 Catalog và template đã sẵn cho đường PDP: scope `recovery.request` có trong `PermissionCatalog`
 cho target profile, và `NativePolicyTemplates.requiresEligibility` đã miễn eligibility gate cho
 đúng cặp profile/`recovery.request` này. Tầng projection thì chưa có nguồn nào cho cặp đó:
-desired projection của profile target chỉ do `IdentityEligibilitySynchronizer` ghi với scope
+desired projection của profile target chỉ do `IdentityEligibilityService` ghi với scope
 danh nghĩa `workspace.list`, `projectedScopes` chỉ gộp `workspace.list` + `history.read`, và
 nguồn dựng lại cho profile target chỉ tồn tại khi account đã eligible (record do backend cấp
 hoặc email đã xác minh). Đối tượng chính của khôi phục lại là đúng nhóm chưa eligible — tài

@@ -1,6 +1,7 @@
 package com.giaokhoa.authorization.keycloak;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import java.util.Arrays;
@@ -11,7 +12,6 @@ import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -21,11 +21,13 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
- * Client projection directory và realm group chỉ dùng phía server. ID của Keycloak là mờ (opaque);
- * ID workspace nghiệp vụ vẫn là UUID.
+ * Client cấp phát phía Keycloak cho authorization: organization của từng center, realm group và
+ * membership của chúng trong projection directory, chỉ dùng phía server — khác {@code
+ * IdentityProvisioningClient} ở identity vốn lo tài khoản user. ID của Keycloak là mờ (opaque); ID
+ * workspace nghiệp vụ vẫn là UUID.
  */
 @Component
-public class KeycloakProvisioningClient {
+public class AuthorizationProvisioningClient {
     private static final int GROUP_PAGE_SIZE = 100;
 
     private final RestClient http;
@@ -33,29 +35,21 @@ public class KeycloakProvisioningClient {
     private final String realm;
 
     @Autowired
-    public KeycloakProvisioningClient(
-            @Value("${giaokhoa.keycloak.admin-base-url}") String baseUrl,
-            @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
-                    String issuerUri,
-            @Value("${giaokhoa.keycloak.provisioner.client-id}") String clientId,
-            @Value("${giaokhoa.keycloak.provisioner.client-secret}") String clientSecret) {
+    public AuthorizationProvisioningClient(
+            GiaokhoaProperties properties, KeycloakProvisionerTokens tokens) {
         this(
                 RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
-                baseUrl,
-                KeycloakProvisionerFactory.realmOf(issuerUri),
-                KeycloakProvisionerFactory.clientManager(
-                        baseUrl.replaceAll("/+$", ""),
-                        KeycloakProvisionerFactory.realmOf(issuerUri),
-                        clientId,
-                        clientSecret));
+                properties.keycloak().adminBaseUrl(),
+                tokens.realm(),
+                tokens.manager());
     }
 
-    public KeycloakProvisioningClient(
+    public AuthorizationProvisioningClient(
             RestClient.Builder builder, String baseUrl, String clientId, String clientSecret) {
         this(builder, baseUrl, "giaokhoa", clientId, clientSecret);
     }
 
-    public KeycloakProvisioningClient(
+    public AuthorizationProvisioningClient(
             RestClient.Builder builder,
             String baseUrl,
             String realm,
@@ -65,23 +59,23 @@ public class KeycloakProvisioningClient {
                 builder,
                 baseUrl,
                 realm,
-                KeycloakProvisionerFactory.clientManager(
+                KeycloakProvisioningFactory.clientManager(
                         baseUrl.replaceAll("/+$", ""), realm, clientId, clientSecret));
     }
 
-    KeycloakProvisioningClient(
+    AuthorizationProvisioningClient(
             RestClient.Builder builder, String baseUrl, OAuth2AuthorizedClientManager manager) {
         this(builder, baseUrl, "giaokhoa", manager);
     }
 
-    KeycloakProvisioningClient(
+    AuthorizationProvisioningClient(
             RestClient.Builder builder,
             String baseUrl,
             String realm,
             OAuth2AuthorizedClientManager manager) {
         this.http =
                 builder.requestInterceptor(
-                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                                KeycloakProvisioningFactory.provisionerInterceptor(manager))
                         .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;

@@ -2,6 +2,7 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import com.giaokhoa.teaching.data.TeachingRepository.ClassRow;
@@ -126,7 +127,9 @@ public class ClassService {
         boolean alreadyRevoked = "REVOKED".equals(row.state());
         if (alreadyRevoked) {
             throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "CLASS_ALREADY_REVOKED", "Lớp đã bị thu hồi trước đó.");
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CLASS_ALREADY_REVOKED,
+                    "Lớp đã bị thu hồi trước đó.");
         }
         IdempotencyService.requireIfMatch(ifMatch, row.version());
         TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
@@ -150,7 +153,9 @@ public class ClassService {
         boolean alreadyRevoked = "REVOKED".equals(row.state());
         if (alreadyRevoked) {
             throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "CLASS_ALREADY_REVOKED", "Lớp đã bị thu hồi trước đó.");
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CLASS_ALREADY_REVOKED,
+                    "Lớp đã bị thu hồi trước đó.");
         }
         repository.revokeClass(classId);
         revocationContributor.revokeDependentsOfClass(workspaceId, classId);
@@ -175,7 +180,7 @@ public class ClassService {
         if (students.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "ROSTER_STUDENTS_REQUIRED",
+                    ErrorCodes.ROSTER_STUDENTS_REQUIRED,
                     "Danh sách học sinh thêm vào roster không được rỗng.");
         }
         ClassRow clazz =
@@ -184,7 +189,7 @@ public class ClassService {
         if (classRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "CLASS_NOT_ACTIVE",
+                    ErrorCodes.CLASS_NOT_ACTIVE,
                     "Lớp đã bị thu hồi, không thêm học sinh được nữa.");
         }
         TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
@@ -251,13 +256,13 @@ public class ClassService {
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
-                                        "ROSTER_ENTRY_NOT_FOUND",
+                                        ErrorCodes.ROSTER_ENTRY_NOT_FOUND,
                                         "Không tìm thấy học sinh trong roster của lớp" + " này."));
         boolean alreadyRevoked = "REVOKED".equals(row.state());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "ROSTER_ENTRY_ALREADY_REVOKED",
+                    ErrorCodes.ROSTER_ENTRY_ALREADY_REVOKED,
                     "Dòng roster đã bị thu hồi trước đó.");
         }
         repository.revokeRosterEntry(classStudentId);
@@ -273,7 +278,7 @@ public class ClassService {
                     workspace.id(), studentUserId, "STUDENT")) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
-                        "STUDENT_NOT_CENTER_MEMBER",
+                        ErrorCodes.STUDENT_NOT_CENTER_MEMBER,
                         "Học sinh phải là thành viên đang hoạt động của trung tâm mới vào được"
                                 + " roster.");
             }
@@ -281,8 +286,8 @@ public class ClassService {
         }
         if (!repository.accountExists(studentUserId)) {
             throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST,
-                    "STUDENT_ACCOUNT_NOT_FOUND",
+                    HttpStatus.NOT_FOUND,
+                    ErrorCodes.STUDENT_ACCOUNT_NOT_FOUND,
                     "Không tìm thấy tài khoản của học sinh.");
         }
     }
@@ -291,7 +296,7 @@ public class ClassService {
         if (name == null || name.isBlank() || name.trim().length() > 255) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_CLASS_NAME",
+                    ErrorCodes.INVALID_CLASS_NAME,
                     "Tên lớp phải có từ 1 đến 255 ký tự.");
         }
         return name.trim();
@@ -299,7 +304,9 @@ public class ClassService {
 
     private static HttpProblemException classNotFound() {
         return new HttpProblemException(
-                HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", "Không tìm thấy lớp trong workspace này.");
+                HttpStatus.NOT_FOUND,
+                ErrorCodes.CLASS_NOT_FOUND,
+                "Không tìm thấy lớp trong workspace này.");
     }
 
     private static ClassView toView(ClassRow row) {

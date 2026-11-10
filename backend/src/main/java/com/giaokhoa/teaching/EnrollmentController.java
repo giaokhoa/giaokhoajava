@@ -1,9 +1,12 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.data.TeachingRepository;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -73,7 +76,7 @@ public class EnrollmentController {
                             .orElseThrow(() ->
                                     new HttpProblemException(
                                             HttpStatus.NOT_FOUND,
-                                            "ENROLLMENT_TARGET_NOT_FOUND",
+                                            ErrorCodes.ENROLLMENT_TARGET_NOT_FOUND,
                                             "Không tìm thấy môn–khóa trong workspace" + " này."));
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
                         throw TeachingRouteSupport.denied();
@@ -87,13 +90,13 @@ public class EnrollmentController {
     @PostMapping("/enrollments")
     public ResponseEntity<IdempotencyService.OperationReceipt> enrollBatch(
             @PathVariable UUID workspaceId,
-            @RequestBody @Nullable EnrollmentBatchRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable EnrollmentBatchRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         EnrollmentBatchRequest request =
                 body == null ? new EnrollmentBatchRequest(List.of(), List.of()) : body;
-        String path = "/api/workspaces/" + workspaceId + "/enrollments";
+        String path = HttpConstants.WORKSPACE_API_PREFIX + workspaceId + "/enrollments";
         String hash = support.payloadHash("POST", path, request);
         return support.withEligibleActor(
                 authentication,
@@ -118,10 +121,11 @@ public class EnrollmentController {
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeEnrollment(
             @PathVariable UUID workspaceId,
             @PathVariable UUID enrollmentId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
-        String path = "/api/workspaces/" + workspaceId + "/enrollments/" + enrollmentId;
+        String path =
+                HttpConstants.WORKSPACE_API_PREFIX + workspaceId + "/enrollments/" + enrollmentId;
         String hash = support.payloadHash("DELETE", path, null);
         return support.withEligibleActor(
                 authentication,
@@ -157,7 +161,7 @@ public class EnrollmentController {
     private static HttpProblemException batchMismatch() {
         return new HttpProblemException(
                 HttpStatus.BAD_REQUEST,
-                "ENROLLMENT_CLASS_MISMATCH",
+                ErrorCodes.ENROLLMENT_CLASS_MISMATCH,
                 "Mọi học sinh và môn–khóa trong một lô ghi danh phải thuộc cùng một workspace"
                         + " và cùng một lớp.");
     }

@@ -1,6 +1,6 @@
 package com.giaokhoa.guardians;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
@@ -42,7 +42,7 @@ public class GuardianPolicyProjector {
     private static final String GROUP_DESCRIPTOR = "GUARDIAN_GROUP";
 
     private final JdbcTemplate jdbc;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
     private final ResultPolicyProjector resultProjector;
@@ -50,7 +50,7 @@ public class GuardianPolicyProjector {
 
     public GuardianPolicyProjector(
             JdbcTemplate jdbc,
-            KeycloakProvisioningClient directory,
+            AuthorizationProvisioningClient directory,
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
             ResultPolicyProjector resultProjector,
