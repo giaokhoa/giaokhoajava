@@ -60,7 +60,7 @@ public class NotificationReceipt {
         private UUID noticeId;
         private UUID recipientWorkspaceId;
 
-        protected Key() {}
+        public Key() {}
 
         public Key(UUID noticeId, UUID recipientWorkspaceId) {
             this.noticeId = noticeId;
