@@ -18,7 +18,7 @@ class AuthzProjectionRepositoryImpl implements AuthzProjectionRepositoryCustom {
         // Toán tử chồng mảng && của PostgreSQL không có tương đương trong JPQL nên điểm này giữ
         // SQL native trong fragment của repository (Spring Data JPA Reference, Native Queries).
         return jdbc.query(
-                "SELECT id, partition_id FROM authz_projection"
+                "SELECT id, partition_id, dependency_partition_ids FROM authz_projection"
                         + " WHERE state = 'READY' AND dependency_partition_ids && ?",
                 ps ->
                         ps.setArray(
@@ -27,6 +27,10 @@ class AuthzProjectionRepositoryImpl implements AuthzProjectionRepositoryCustom {
                 (rs, rowNum) ->
                         new DependentProjection(
                                 rs.getObject("id", UUID.class),
-                                rs.getObject("partition_id", UUID.class)));
+                                rs.getObject("partition_id", UUID.class),
+                                List.of(
+                                        (UUID[])
+                                                rs.getArray("dependency_partition_ids")
+                                                        .getArray())));
     }
 }

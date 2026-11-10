@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.DesiredProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
@@ -98,13 +99,29 @@ class AuthorizationOperationServiceTest {
                                     AuthorizationPartition.State.PENDING));
                 });
         AtomicInteger closureQueries = new AtomicInteger();
+        UUID dependentProjection = UUID.randomUUID();
         when(projections.findReadyDependentsOfAny(any()))
                 .thenAnswer(invocation -> {
                     if (closureQueries.getAndIncrement() > 0) {
                         return List.of();
                     }
-                    return List.of(new DependentProjection(UUID.randomUUID(), orderedPartition));
+                    return List.of(
+                            new DependentProjection(
+                                    dependentProjection, orderedPartition, List.of()));
                 });
+        when(projections.findAllById(any()))
+                .thenReturn(
+                        List.of(
+                                new AuthorizationProjection(
+                                        dependentProjection,
+                                        orderedPartition,
+                                        "workspace:" + orderedPartition,
+                                        null,
+                                        List.of(),
+                                        List.of(),
+                                        "a".repeat(64),
+                                        "a".repeat(64),
+                                        AuthorizationProjection.State.READY)));
         when(idempotency.executeOnce(any(AuthorizationOperation.class), any(Runnable.class)))
                 .thenAnswer(invocation -> {
                     invocation.getArgument(1, Runnable.class).run();

@@ -8,7 +8,12 @@ import java.util.UUID;
 public interface AuthzProjectionRepositoryCustom {
 
     /** Một projection READY phụ thuộc ít nhất một partition trong tập cho trước. */
-    record DependentProjection(UUID projectionId, UUID partitionId) {}
+    record DependentProjection(
+            UUID projectionId, UUID partitionId, List<UUID> dependencyPartitionIds) {
+        public DependentProjection {
+            dependencyPartitionIds = List.copyOf(dependencyPartitionIds);
+        }
+    }
 
     /**
      * Mọi projection READY phụ thuộc ít nhất một partition trong tập cho trước: bước mở rộng bao

@@ -35,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AuthorizationOperationService {
+    private static final String FENCE_STEP_PRESENT = "fence step";
+
     private final AuthzPartitionRepository partitions;
     private final AuthzProjectionRepository projections;
     private final IdempotencyService idempotency;
@@ -152,32 +154,7 @@ public class AuthorizationOperationService {
             fenced.add(change.partitionId());
         }
         fenced.addAll(closure.partitionIds());
-        // Fence state của mọi projection liên quan TRƯỚC khi đụng vào partition: đổi state
-        // không bị trigger desired chặn (nó chỉ giữ các trường desired), còn trigger kiểm
-        // partition — vốn deferred nhưng có thể bị ép chạy ngay tại câu lệnh — luôn phải thấy
-        // mọi projection phụ thuộc đã fenced trước khi một partition đổi trạng thái/revision.
-        for (PartitionChange change : changes) {
-            projections.fenceReadyByPartitionId(
-                    change.partitionId(),
-                    AuthorizationProjection.State.PENDING,
-                    AuthorizationProjection.State.READY);
-        }
-        for (AuthorizationProjection projection :
-                projections.findAllById(closure.projectionIds())) {
-            projection.setState(AuthorizationProjection.State.PENDING);
-        }
-        projections.flush();
-        // Sau đó mới fence partition và đổi revision: cơ sở dữ liệu chỉ chấp nhận sửa desired
-        // dưới một fence. Flush tường minh để fence xuống cơ sở dữ liệu trước mọi thay đổi
-        // desired phía dưới, vì trigger desired kiểm tra trạng thái partition tại từng câu lệnh.
-        for (UUID partitionId : fenced) {
-            // Mọi partition bị fence đều đã khóa ở applyDesiredState (lockOrder là hợp của
-            // primaries và closure) nên entity quản lý luôn có mặt.
-            AuthorizationPartition partition =
-                    Objects.requireNonNull(lockedPartitions.get(partitionId), "locked partition");
-            partition.setState(AuthorizationPartition.State.PENDING);
-        }
-        partitions.flush();
+        fenceInDependencyOrder(closure, fenced, lockedPartitions);
         for (PartitionChange change : changes) {
             AuthorizationPartition partition =
                     Objects.requireNonNull(
@@ -205,6 +182,156 @@ public class AuthorizationOperationService {
             for (DesiredProjection desired : change.projections()) {
                 upsertDesired(change.partitionId(), desired, existingByTarget);
             }
+        }
+    }
+
+    /** Một bước fence: đổi trạng thái một partition, hoặc fence các projection của nó. */
+    private sealed interface FenceStep {
+        /** Fence chính partition: tiền đề để các projection của nó được fence ngay sau. */
+        record PartitionStep(UUID partitionId) implements FenceStep {}
+
+        /** Fence một projection phụ thuộc cụ thể của bao đóng. */
+        record ProjectionStep(UUID projectionId) implements FenceStep {}
+
+        /** Fence mọi projection READY còn lại của một partition bằng một cập nhật theo lô. */
+        record RemainingProjectionsStep(UUID partitionId) implements FenceStep {}
+    }
+
+    /**
+     * Fence mọi partition và projection liên quan theo thứ tự tôn trọng cả hai trigger kiểm fence
+     * của cơ sở dữ liệu tại từng câu lệnh (chúng vốn deferred, nhưng giao thức phải đúng cả khi bị
+     * ép chạy ngay): một partition chỉ được đổi trạng thái sau khi mọi projection phụ thuộc vào nó
+     * đã fenced, và một projection chỉ được fence sau khi partition sở hữu nó đã fenced. Hai ràng
+     * buộc này tạo thành một đồ thị trên các bước fence; sắp xếp topo cho thứ tự thỏa cả hai. Đồ
+     * thị phụ thuộc theo thiết kế không có chu trình; nếu gặp chu trình, phần còn lại fence
+     * projection trước partition.
+     */
+    private void fenceInDependencyOrder(
+            Closure closure, Set<UUID> fenced, Map<UUID, AuthorizationPartition> lockedPartitions) {
+        Map<UUID, AuthorizationProjection> dependentsById = new HashMap<>();
+        for (AuthorizationProjection projection :
+                projections.findAllById(closure.projectionIds())) {
+            dependentsById.put(projection.getId(), projection);
+        }
+        Map<UUID, List<DependentProjection>> dependentsByOwner = new HashMap<>();
+        for (DependentProjection dependent : closure.dependents()) {
+            dependentsByOwner
+                    .computeIfAbsent(dependent.partitionId(), _ -> new ArrayList<>())
+                    .add(dependent);
+        }
+
+        List<FenceStep> steps = new ArrayList<>();
+        Map<FenceStep, Set<FenceStep>> successors = new HashMap<>();
+        Map<UUID, FenceStep.PartitionStep> partitionSteps = new HashMap<>();
+        for (UUID partitionId : fenced) {
+            FenceStep.PartitionStep step = new FenceStep.PartitionStep(partitionId);
+            partitionSteps.put(partitionId, step);
+            steps.add(step);
+            steps.add(new FenceStep.RemainingProjectionsStep(partitionId));
+        }
+        Map<UUID, FenceStep.ProjectionStep> projectionSteps = new HashMap<>();
+        for (DependentProjection dependent : closure.dependents()) {
+            FenceStep.ProjectionStep step = new FenceStep.ProjectionStep(dependent.projectionId());
+            projectionSteps.put(dependent.projectionId(), step);
+            steps.add(step);
+        }
+        for (FenceStep step : steps) {
+            successors.put(step, new HashSet<>());
+        }
+        // Partition sở hữu phải fenced trước mọi projection của nó.
+        for (UUID partitionId : fenced) {
+            FenceStep.PartitionStep owner = partitionSteps.get(partitionId);
+            Objects.requireNonNull(successors.get(owner), FENCE_STEP_PRESENT)
+                    .add(new FenceStep.RemainingProjectionsStep(partitionId));
+            for (DependentProjection dependent :
+                    dependentsByOwner.getOrDefault(partitionId, List.of())) {
+                Objects.requireNonNull(successors.get(owner), FENCE_STEP_PRESENT)
+                        .add(projectionSteps.get(dependent.projectionId()));
+            }
+        }
+        // Mọi projection phụ thuộc phải fenced trước partition nguồn mà nó phụ thuộc; bước
+        // theo lô của partition sở hữu cũng fence các projection đó nên cùng mang ràng buộc.
+        for (DependentProjection dependent : closure.dependents()) {
+            FenceStep.ProjectionStep step = projectionSteps.get(dependent.projectionId());
+            FenceStep.RemainingProjectionsStep bulk =
+                    new FenceStep.RemainingProjectionsStep(dependent.partitionId());
+            for (UUID dependencyId : dependent.dependencyPartitionIds()) {
+                FenceStep.PartitionStep target = partitionSteps.get(dependencyId);
+                if (target != null) {
+                    Objects.requireNonNull(successors.get(step), FENCE_STEP_PRESENT).add(target);
+                    Objects.requireNonNull(successors.get(bulk), FENCE_STEP_PRESENT).add(target);
+                }
+            }
+        }
+
+        Map<FenceStep, Integer> indegree = new HashMap<>();
+        for (FenceStep step : steps) {
+            indegree.put(step, 0);
+        }
+        for (Set<FenceStep> targets : successors.values()) {
+            for (FenceStep target : targets) {
+                indegree.merge(target, 1, Integer::sum);
+            }
+        }
+        Set<FenceStep> done = new HashSet<>();
+        List<FenceStep> ordered = new ArrayList<>();
+        boolean progressed = true;
+        while (ordered.size() < steps.size() && progressed) {
+            progressed = false;
+            for (FenceStep step : steps) {
+                if (!done.contains(step)
+                        && Objects.requireNonNull(indegree.get(step), "indegree") == 0) {
+                    done.add(step);
+                    ordered.add(step);
+                    progressed = true;
+                    for (FenceStep target :
+                            Objects.requireNonNull(successors.get(step), FENCE_STEP_PRESENT)) {
+                        indegree.merge(target, -1, Integer::sum);
+                    }
+                }
+            }
+        }
+        // Phần còn lại chỉ tồn tại khi đồ thị có chu trình: fence projection trước partition.
+        for (FenceStep step : steps) {
+            if (!done.contains(step) && !(step instanceof FenceStep.PartitionStep)) {
+                ordered.add(step);
+            }
+        }
+        for (FenceStep step : steps) {
+            if (!done.contains(step) && step instanceof FenceStep.PartitionStep) {
+                ordered.add(step);
+            }
+        }
+        for (FenceStep step : ordered) {
+            applyFenceStep(step, lockedPartitions, dependentsById);
+        }
+    }
+
+    private void applyFenceStep(
+            FenceStep step,
+            Map<UUID, AuthorizationPartition> lockedPartitions,
+            Map<UUID, AuthorizationProjection> dependentsById) {
+        if (step instanceof FenceStep.PartitionStep partitionStep) {
+            // Mọi partition bị fence đều đã khóa ở applyDesiredState (lockOrder là hợp của
+            // primaries và closure) nên entity quản lý luôn có mặt. Flush ngay để thứ tự
+            // fence xuống cơ sở dữ liệu đúng thứ tự đã sắp, vì trigger kiểm tại từng câu lệnh.
+            AuthorizationPartition partition =
+                    Objects.requireNonNull(
+                            lockedPartitions.get(partitionStep.partitionId()), "locked partition");
+            partition.setState(AuthorizationPartition.State.PENDING);
+            partitions.flush();
+        } else if (step instanceof FenceStep.ProjectionStep projectionStep) {
+            AuthorizationProjection projection =
+                    Objects.requireNonNull(
+                            dependentsById.get(projectionStep.projectionId()),
+                            "dependent projection");
+            projection.setState(AuthorizationProjection.State.PENDING);
+            projections.flush();
+        } else if (step instanceof FenceStep.RemainingProjectionsStep remaining) {
+            projections.fenceReadyByPartitionId(
+                    remaining.partitionId(),
+                    AuthorizationProjection.State.PENDING,
+                    AuthorizationProjection.State.READY);
         }
     }
 
@@ -242,7 +369,10 @@ public class AuthorizationOperationService {
         existingByTarget.put(desired.targetKey(), projections.save(created));
     }
 
-    private record Closure(Set<UUID> partitionIds, List<UUID> projectionIds) {}
+    private record Closure(
+            Set<UUID> partitionIds,
+            List<UUID> projectionIds,
+            List<DependentProjection> dependents) {}
 
     /**
      * Các READY projection phụ thuộc vào các partition đã thay đổi, và đệ quy lên owner của chúng.
@@ -250,15 +380,17 @@ public class AuthorizationOperationService {
     private Closure dependentClosure(List<UUID> primaries) {
         Set<UUID> owners = new HashSet<>();
         List<UUID> projectionIds = new ArrayList<>();
+        List<DependentProjection> dependents = new ArrayList<>();
         Set<UUID> seenProjections = new HashSet<>();
         List<UUID> frontier = primaries;
         while (!frontier.isEmpty()) {
             List<UUID> level = frontier;
-            List<DependentProjection> dependents = projections.findReadyDependentsOfAny(level);
+            List<DependentProjection> levelDependents = projections.findReadyDependentsOfAny(level);
             List<UUID> next = new ArrayList<>();
-            for (DependentProjection dependent : dependents) {
+            for (DependentProjection dependent : levelDependents) {
                 if (seenProjections.add(dependent.projectionId())) {
                     projectionIds.add(dependent.projectionId());
+                    dependents.add(dependent);
                 }
                 if (!primaries.contains(dependent.partitionId())
                         && owners.add(dependent.partitionId())) {
@@ -267,7 +399,7 @@ public class AuthorizationOperationService {
             }
             frontier = next;
         }
-        return new Closure(owners, projectionIds);
+        return new Closure(owners, projectionIds, dependents);
     }
 
     private AuthorizationPartition lockPartition(UUID partitionId) {
