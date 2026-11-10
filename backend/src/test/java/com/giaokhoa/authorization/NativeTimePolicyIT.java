@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -29,8 +30,9 @@ class NativeTimePolicyIT {
     private final NativeGateClient gate = new NativeGateClient();
     private final RestClient http = RestClient.create();
 
+    @DisplayName("Native time policy bao gồm thời điểm bắt đầu (inclusive) và loại trừ đúng thời điểm kết thúc (exclusive)")
     @Test
-    void nativeTimePolicyIsInclusiveAtStartAndExclusiveExactlyAtEnd() {
+    void timePolicyStartInclusiveEndExclusive() {
         String actor = gate.token("native-gate-assigned");
         String resource = gate.required("NATIVE_GATE_ACTIVITY_ID");
         String startId = gate.required("NATIVE_GATE_START_POLICY_ID");

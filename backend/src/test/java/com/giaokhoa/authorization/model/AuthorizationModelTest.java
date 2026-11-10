@@ -5,13 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.UUID;
 import org.jspecify.annotations.NullMarked;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 // Entity JPA dùng @NullUnmarked; vẫn kiểm tra hợp đồng null của test bằng @NullMarked.
 @NullMarked
 class AuthorizationModelTest {
+    @DisplayName("Các mảng của operation không thể bị thay đổi qua tham số constructor hay getter")
     @Test
-    void operationArraysCannotBeChangedThroughConstructorArgumentsOrGetters() {
+    void operationArraysAreDefensiveCopies() {
         UUID partition = UUID.randomUUID();
         UUID[] partitions = {partition};
         Long[] revisions = {1L};
@@ -35,8 +37,9 @@ class AuthorizationModelTest {
         assertArrayEquals(new Long[] {1L}, operation.getAffectedRevisions());
     }
 
+    @DisplayName("Các mảng của projection không thể bị thay đổi qua tham số constructor hay getter")
     @Test
-    void projectionArraysCannotBeChangedThroughConstructorArgumentsOrGetters() {
+    void projectionArraysAreDefensiveCopies() {
         UUID dependency = UUID.randomUUID();
         String[] policies = {"scope.permission"};
         UUID[] dependencies = {dependency};

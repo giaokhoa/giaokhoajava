@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
@@ -51,8 +52,9 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
         ensureApiClient();
     }
 
+    @DisplayName("Tạo resource trong personal workspace khi không có gói bị từ chối")
     @Test
-    void createResourceInPersonalWorkspaceWithoutPlanIsDenied() throws Exception {
+    void personalCreateWithoutPlanDenied() throws Exception {
         KeycloakLogin user = createVerifiedUser("entitlement-no-plan");
         try {
             UUID userId = seedAccount(user.subject(), "SELF_REGISTERED", user.email(), true);
@@ -72,8 +74,9 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Lịch sử luyện tập vẫn truy cập được khi không có gói")
     @Test
-    void practiceHistoryRemainsAvailableWithoutPlan() throws Exception {
+    void practiceHistoryAvailableNoPlan() throws Exception {
         KeycloakLogin user = createVerifiedUser("entitlement-practice");
         try {
             UUID userId = seedAccount(user.subject(), "SELF_REGISTERED", user.email(), true);
@@ -103,8 +106,9 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Operator kích hoạt gói giúp tạo được resource trong personal workspace")
     @Test
-    void operatorActivationEnablesPersonalResourceCreation() throws Exception {
+    void operatorActivationEnablesCreate() throws Exception {
         KeycloakLogin user = createVerifiedUser("entitlement-activated");
         KeycloakLogin operator = createOperator();
         try {
@@ -161,8 +165,9 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Membership ở center không mở quyền soạn thảo (authoring) ở personal workspace")
     @Test
-    void centerMembershipDoesNotOpenPersonalAuthoring() throws Exception {
+    void centerMembershipOpensNoAuthoring() throws Exception {
         KeycloakLogin ownerLogin = createVerifiedUser("entitlement-center-owner");
         KeycloakLogin teacherLogin = createVerifiedUser("entitlement-center-teacher");
         try {
@@ -201,8 +206,9 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
         }
     }
 
+    @DisplayName("Gói personal không mở quyền tạo lớp ở center")
     @Test
-    void personalPlanDoesNotOpenCenterClassCreation() throws Exception {
+    void personalPlanOpensNoCenterClass() throws Exception {
         KeycloakLogin ownerLogin = createVerifiedUser("entitlement-plan-owner");
         KeycloakLogin userLogin = createVerifiedUser("entitlement-plan-user");
         try {

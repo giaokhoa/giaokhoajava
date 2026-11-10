@@ -7,6 +7,7 @@ import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.util.Objects;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -46,9 +47,10 @@ class ProjectionFenceGateIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired IdempotencyService idempotency;
 
+    @DisplayName("Dependency còn PENDING chặn operation hoàn tất ngay cả khi các scope khác đã READY")
     @ParameterizedTest
     @EnumSource(Scope.class)
-    void pendingDependencyCannotCompleteAnOperationEvenIfOtherScopesAreReady(Scope pending) {
+    void pendingDependencyBlocksCompletion(Scope pending) {
         Fixture fixture = fixture();
         ready(fixture.account());
         ready(fixture.workspacePartition());
@@ -67,8 +69,9 @@ class ProjectionFenceGateIT extends IntegrationEnvironment {
                 DataAccessException.class, () -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Thất bại và retry giữ operation chưa hoàn tất và revision vẫn bị fence")
     @Test
-    void failureAndRetryKeepOperationIncompleteAndLeaveRevisionFenced() {
+    void failureAndRetryKeepRevisionFenced() {
         Fixture fixture = fixture();
         ready(fixture.account());
         ready(fixture.grant());
@@ -115,8 +118,9 @@ class ProjectionFenceGateIT extends IntegrationEnvironment {
                 DataAccessException.class, () -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Cùng một actor vẫn giữ workspace độc lập khi một workspace khác của họ bị revoke")
     @Test
-    void sameActorRetainsIndependentWorkspaceWhenOneWorkspaceIsRevoked() {
+    void actorKeepsIndependentWorkspace() {
         Fixture a = fixture();
         UUID workspaceB = centerWorkspace(a.actor());
         UUID partitionB =
@@ -152,8 +156,9 @@ class ProjectionFenceGateIT extends IntegrationEnvironment {
                         a.account()));
     }
 
+    @DisplayName("Cùng một access token thấy hiệu lực native revoke mà không mất grant độc lập khác")
     @Test
-    void sameAccessTokenSeesNativeRevokeWithoutLosingIndependentGrant() {
+    void tokenSeesRevokeKeepsOtherGrant() {
         try (var nativeGate = new NativeRevocationFixture()) {
             String token = nativeGate.userToken();
             assertFalse(nativeGate.containsGroupClaim(token));

@@ -17,6 +17,7 @@ import com.giaokhoa.authorization.permission.PermissionCatalog.WorkspaceScope;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import java.util.HashSet;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -178,8 +179,9 @@ class PermissionCatalogTest {
         }
     }
 
+    @DisplayName("Native template phơi bày đúng chính xác các scope trong catalog")
     @Test
-    void nativeTemplatesExposeExactlyTheCatalogScopes() {
+    void nativeTemplatesMatchCatalogScopes() {
         assertEquals(
                 PermissionCatalog.names(PlatformScope.values()),
                 NativePolicyTemplates.TargetType.PLATFORM.scopes());

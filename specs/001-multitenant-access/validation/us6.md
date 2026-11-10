@@ -67,11 +67,11 @@ Kết quả IT trong §2 lấy từ log job `backend (it-pure)` của run CI
 
 | Scenario | Test method | Kết quả |
 | --- | --- | --- |
-| US6.1 chưa gói: tạo học liệu personal bị từ chối | `createResourceInPersonalWorkspaceWithoutPlanIsDenied` | 5/5 xanh (CI §3.1) |
-| US6.1 lịch sử practice hệ thống vẫn giữ khi chưa gói | `practiceHistoryRemainsAvailableWithoutPlan` | 5/5 xanh |
-| US6.2 operator kích hoạt gói → tạo học liệu được phép | `operatorActivationEnablesPersonalResourceCreation` | 5/5 xanh |
-| US6.3 membership center không mở author personal | `centerMembershipDoesNotOpenPersonalAuthoring` | 5/5 xanh |
-| US6.4 gói personal không mở tạo lớp center | `personalPlanDoesNotOpenCenterClassCreation` | 5/5 xanh |
+| US6.1 chưa gói: tạo học liệu personal bị từ chối | `personalCreateWithoutPlanDenied` | 5/5 xanh (CI §3.1) |
+| US6.1 lịch sử practice hệ thống vẫn giữ khi chưa gói | `practiceHistoryAvailableNoPlan` | 5/5 xanh |
+| US6.2 operator kích hoạt gói → tạo học liệu được phép | `operatorActivationEnablesCreate` | 5/5 xanh |
+| US6.3 membership center không mở author personal | `centerMembershipOpensNoAuthoring` | 5/5 xanh |
+| US6.4 gói personal không mở tạo lớp center | `personalPlanOpensNoCenterClass` | 5/5 xanh |
 
 ### Integration — `PersonalClassAuthorizationIT` (8 test: 7 của #71 + 1 của #74)
 
@@ -195,12 +195,12 @@ nháp:
   xanh trong run CI `42740172845` (SubscriptionServiceIT 9/9, §3.1).
 - Bằng chứng trực tiếp ở tầng projector dùng chung (đọc thân test
   trên main `d7adfb4f` ngày 2026-11-10):
-  `SubscriptionServiceIT.confirmForCenterDoesNotRestoreGroupsWhoseOnlyMemberIsRevoked`
+  `SubscriptionServiceIT.confirmSkipsRevokedOnlyGroups`
   khóa đúng hợp đồng “confirm gói không khôi phục nguồn đã thu hồi” —
   sau khi confirm, bundle không chứa group mà thành viên duy nhất đã
   bị revoked (managers, parents), trong khi group owners còn ACTIVE
   vẫn có nguồn. Phía personal, cùng cơ chế confirm được khóa bởi
-  `confirmPersonalWorkspaceRecordsPeriodAndEntitlementBundle` (kỳ +
+  `confirmPersonalRecordsBundle` (kỳ +
   bundle entitlement từ nguồn hiện hành). Đây là bằng chứng ở tầng
   cơ chế dùng chung; kiểm chứng hành vi đầu-cuối phía personal ở mục
   tiếp theo.
@@ -233,13 +233,13 @@ nháp:
 - Hai không gian không rò quyền qua lại: US6.3 + US6.4 có test ở cả
   hai tầng IT và E2E (§2); kịch bản T3 của quickstart (teacher có
   personal package vẫn bị từ chối tạo lớp center) trùng test
-  `personalPlanDoesNotOpenCenterClassCreation` và
+  `personalPlanOpensNoCenterClass` và
   `centerTeacherWithoutPersonalPlanAuthorsAtCenterButNotPersonal`.
 - Kích hoạt gói do operator thực hiện qua
   `POST /api/platform/subscriptions` trả operation 202; kỳ gói chỉ
   ghi khi operation SUCCEEDED (khẳng định đếm
   `subscription_period` trong
-  `operatorActivationEnablesPersonalResourceCreation`).
+  `operatorActivationEnablesCreate`).
 
 ## 5. Rà Sổ B74–B77
 

@@ -40,7 +40,7 @@ US2.1–US2.7 trong specs; 7 scenario dưới đây suy từ FR-007–FR-012
 | Kiểm tra tĩnh (Spotless/PMD/SpotBugs) | xanh (chạy riêng sau lượt 4, exit 0) |
 | E2E Playwright | chưa chạy ở local; chờ CI trên PR #158 |
 
-Error duy nhất là test SMTP `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail`
+Error duy nhất là test SMTP `RecoveryFlowIT.verifiedUserGetsPasswordEmail`
 (local không có Mailpit; xanh ở CI). 9 skipped: 6 của `NativeGateAcceptanceIT`
 (skip theo thiết kế, chạy qua `verify-native.sh`), 2 của
 `PolicyGraphWriterNativeIT` (skip theo thiết kế), 1 của `IdentityFlowIT`.
@@ -70,7 +70,7 @@ Kết quả local: `CenterAdministrationIT` 21/21, `CenterServiceIT` 8/8.
   end ≤ start bị từ chối.
 - `CenterAdministrationIT.ordinaryUserCannotConfirmSubscription` — user thường
   không xác nhận được kỳ gói.
-- `SubscriptionServiceIT.confirmCenterRecordsPeriodAuditAndDesiredBundle` —
+- `SubscriptionServiceIT.confirmCenterRecordsBundle` —
   xác nhận ghi đúng kỳ, audit và bundle mong muốn.
 - `SubscriptionServiceIT.confirmRejectsPeriodWithoutPositiveRange` — kỳ không
   có khoảng dương bị từ chối.
@@ -148,10 +148,10 @@ Bằng chứng **cấu trúc** (không phải một test phủ định HTTP duy 
   170/0/0/0) — khoá `managedScopes()` đúng 5 scope platform
   (`center.create`, `center.list`, `subscription.confirm`, `account.recover`,
   `fixture.manage`); không scope academic nào vào được bundle platform.
-- `PlatformProjectionIT.publishGrantsOperatorsByCurrentGroupMembership` —
+- `PlatformProjectionIT.publishGrantsCurrentOperators` —
   publish grant theo đúng membership hiện tại của group
   `/gk/platform/operators`.
-- `PlatformProjectionIT.leavingTheOperatorGroupDeniesTheSameTokenOnTheNextDecision`
+- `PlatformProjectionIT.leavingOperatorGroupDeniesToken`
   — rời group operator thì quyết định tiếp theo bị từ chối.
 
 Kết quả local: `PlatformProjectionIT` 5/5.
@@ -188,7 +188,7 @@ gate/review để chạy spec quản trị center”).
   Chi tiết ở `hidden_files/platform-grant/design.md` của goal pipeline.
 - Review M1 hai vòng: vòng 1 REQUEST CHANGES (0 Must, 1 Should, 2 Note), sửa
   Should bằng test HTTP `account.recover` trọn đường
-  (`RecoveryFlowIT.platformOperatorListsAndResolvesRecoveryRequestOverHttp`,
+  (`RecoveryFlowIT.operatorResolvesRequestOverHttp`,
   commit `8a4b8f8`); vòng 2 APPROVE.
 - Cổng M1: toàn suite 263/0/1/9; ở cây gate sau rebase + sửa worker của
   `RecoveryFlowIT`, lượt chốt là 264/0/1/9 (xem Phụ lục).
@@ -233,7 +233,7 @@ gate/review để chạy spec quản trị center”).
 - US2.7: chưa có test phủ định trực tiếp “operator gọi endpoint academic thì
   403” vì endpoint giảng dạy chưa tồn tại (US3/T043). Mức đã chứng minh: bundle
   platform chỉ chứa đúng 5 scope + thu hồi grant khi rời group.
-- `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail` cần Mailpit: đỏ
+- `RecoveryFlowIT.verifiedUserGetsPasswordEmail` cần Mailpit: đỏ
   ở local, xanh ở CI (error duy nhất được phép trong phân rã cổng local).
 - A2 (phân trang platform) vẫn mở — xem mục Note N1–N5 ở trên.
 - B7 (ba hành vi biên của lời mời) vẫn mở, đã ghi Sổ.
@@ -261,7 +261,7 @@ Việc đóng story do bước review/merge quyết định trên cơ sở tài 
 ## Phụ lục — Số liệu lượt integration chốt ở local (lượt 4, sau khi sửa flake)
 
 Lượt 1 (264 run / 1 failure / 1 error / 9 skipped) đỏ 1 test
-`RecoveryFlowIT.platformOperatorListsAndResolvesRecoveryRequestOverHttp` — 503
+`RecoveryFlowIT.operatorResolvesRequestOverHttp` — 503
 `AUTHORIZATION_NOT_READY` vì rebase mang `@MockitoBean ProjectionWorker` của
 PR #163 vào `RecoveryFlowIT`, worker không chạy nên eligibility của operator
 không được đồng bộ. Đã sửa trong cây (commit `6634c40`): gỡ mock worker, dùng
@@ -272,7 +272,7 @@ skipped — test platform operator đã xanh; nhưng `-Dit.test` chỉ lọc đ�
 đó nên không thay được lượt toàn suite.
 
 Lượt 3 toàn suite (264 / 1 / 1 / 9) đỏ 1 test
-`ConcurrentRevocationIT.productionWorkerMustReconcilePartiallyProvisionedAppGraphAfterRetry`
+`ConcurrentRevocationIT.workerReconcilesPartialGraph`
 ở khẳng định `policyCount() > policiesBefore` (dòng 838) — flake partial-graph
 đã biết (Sổ B2/B13), khuếch đại bởi client dùng chung nay tồn tại bền trong
 realm. Đã sửa trong cây (commit `a78277b`, chỉ chạm code test): giữ retry ở

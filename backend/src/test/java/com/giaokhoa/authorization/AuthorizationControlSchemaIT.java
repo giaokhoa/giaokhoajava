@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -37,8 +38,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired EntityManager entities;
 
+    @DisplayName("Scope của account và workspace được tự động tạo và bị fence")
     @Test
-    void accountAndWorkspaceScopesAreAutomaticallyCreatedAndFenced() {
+    void accountAndWorkspaceScopesAreFenced() {
         UUID user = user();
         UUID personal = personal(user);
         assertScope("ACCOUNT", "account:" + user);
@@ -52,8 +54,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 "account:" + user));
     }
 
+    @DisplayName("Partition không thể claim READY khi còn revision chưa được áp dụng")
     @Test
-    void partitionsCannotClaimReadyWithUnappliedRevision() {
+    void claimReadyFailsWithUnappliedRevision() {
         UUID partition = partition();
         assertThrows(
                 DataAccessException.class,
@@ -63,8 +66,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 partition));
     }
 
+    @DisplayName("Partition không thể claim READY trong khi projection còn ở trạng thái PENDING")
     @Test
-    void partitionsCannotClaimReadyWhileProjectionIsPending() {
+    void claimReadyFailsWhileProjectionPending() {
         UUID partition = partition();
         projection(partition, "grant:" + UUID.randomUUID(), new UUID[0], false);
         jdbc.update("UPDATE authz_partition SET state = 'READY' WHERE id = ?", partition);
@@ -103,8 +107,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 HASH_A));
     }
 
+    @DisplayName("Projection bắt buộc có Keycloak locator trước khi được READY")
     @Test
-    void projectionRequiresKeycloakLocatorBeforeReady() {
+    void projectionNeedsLocatorBeforeReady() {
         UUID partition = partition();
         assertThrows(
                 DataAccessException.class,
@@ -119,8 +124,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 HASH_A));
     }
 
+    @DisplayName("Projection không thể READY khi dependency còn đang PENDING")
     @Test
-    void projectionCannotBeReadyWhileDependencyPending() {
+    void projectionWaitsForPendingDependency() {
         UUID parent = partition();
         UUID dependency = partition();
         projection(parent, "grant:" + UUID.randomUUID(), new UUID[] {dependency}, true);
@@ -128,8 +134,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                 DataAccessException.class, () -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Projection và partition đã đồng bộ với nhau thì có thể cùng trở thành READY")
     @Test
-    void synchronizedProjectionAndPartitionCanBecomeReady() {
+    void synchronizedPairCanBecomeReady() {
         UUID partition = partition();
         UUID id = projection(partition, "grant:" + UUID.randomUUID(), new UUID[0], true);
         jdbc.update("UPDATE authz_partition SET state = 'READY' WHERE id = ?", partition);
@@ -143,8 +150,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
         assertArrayEquals(new UUID[0], projected.getDependencyPartitionIds());
     }
 
+    @DisplayName("Thay đổi nguồn (source) bắt buộc fence các projection phụ thuộc")
     @Test
-    void changingSourceRequiresFencingDependentProjection() {
+    void changingSourceFencesDependents() {
         UUID source = partition();
         UUID owner = partition();
         jdbc.update("UPDATE authz_partition SET state = 'READY' WHERE id = ?", source);
@@ -160,8 +168,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 source));
     }
 
+    @DisplayName("Revision của nguồn được tăng tiếp khi các projection phụ thuộc đã bị fence")
     @Test
-    void sourceRevisionCanAdvanceWhenDependentsAreFenced() {
+    void sourceRevisionAdvancesWhenFenced() {
         UUID source = partition();
         UUID owner = partition();
         jdbc.update("UPDATE authz_partition SET state = 'READY' WHERE id = ?", source);
@@ -181,8 +190,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
         assertDoesNotThrow(() -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Desired projection không thể thay đổi sau lưng fence của partition đã READY")
     @Test
-    void desiredProjectionCannotChangeBehindReadyFence() {
+    void desiredStateLockedBehindReadyFence() {
         UUID partition = partition();
         UUID id = projection(partition, "grant:" + UUID.randomUUID(), new UUID[0], true);
         jdbc.update("UPDATE authz_partition SET state = 'READY' WHERE id = ?", partition);
@@ -196,8 +206,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 id));
     }
 
+    @DisplayName("Operation là hàng đợi bền (durable queue) và JPA đọc được các mảng UUID")
     @Test
-    void operationIsDurableQueueAndJpaCanReadUuidArrays() {
+    void operationQueueReadsUuidArrays() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -227,8 +238,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
         assertEquals(1, entity.getAttemptCount());
     }
 
+    @DisplayName("Idempotency key trùng lặp bị từ chối đối với cùng một actor")
     @Test
-    void duplicateIdempotencyKeyIsRejectedForTheSameActor() {
+    void duplicateKeyRejectedForSameActor() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -238,8 +250,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                 () -> operation(initiator, workspace, "same-key", HASH_B, partition));
     }
 
+    @DisplayName("Operation từ chối danh sách affected partitions chứa partition không tồn tại")
     @Test
-    void operationRejectsUnknownAffectedPartitions() {
+    void operationRejectsUnknownPartitions() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -255,8 +268,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 UUID.randomUUID()));
     }
 
+    @DisplayName("Operation từ chối danh sách affected partitions bị trùng lặp")
     @Test
-    void operationRejectsDuplicateAffectedPartitions() {
+    void operationRejectsDuplicatePartitions() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -285,8 +299,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 false));
     }
 
+    @DisplayName("Revision không thể quay lui (roll back) về trạng thái đã áp dụng cũ hơn")
     @Test
-    void revisionsCannotRollBackToAnOlderAppliedState() {
+    void revisionsCannotRollBack() {
         UUID partition = partition();
         jdbc.update(
                 "UPDATE authz_partition SET desired_revision = 2, applied_revision = 1 WHERE id = ?",
@@ -300,8 +315,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 partition));
     }
 
+    @DisplayName("Payload của idempotency là bất biến trong suốt các lần retry")
     @Test
-    void idempotencyPayloadIsImmutableDuringRetries() {
+    void idempotencyPayloadIsImmutable() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -315,8 +331,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 id));
     }
 
+    @DisplayName("Operation không thể SUCCEEDED trước khi revision của partition đã READY")
     @Test
-    void operationCannotSucceedBeforePartitionRevisionIsReady() {
+    void operationWaitsForPartitionReady() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -326,8 +343,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                 DataAccessException.class, () -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Operation thành công sau khi đúng revision đó được áp dụng")
     @Test
-    void operationSucceedsAfterSameRevisionIsApplied() {
+    void operationSucceedsAfterApply() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -349,8 +367,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                         id));
     }
 
+    @DisplayName("Projection đã READY không thể đổi Keycloak locator mà không fence")
     @Test
-    void readyProjectionCannotChangeKeycloakLocatorWithoutFence() {
+    void readyProjectionLocatorNeedsFence() {
         UUID owner = partition();
         UUID projection = projection(owner, "grant:" + UUID.randomUUID(), new UUID[0], true);
         jdbc.update("UPDATE authz_partition SET state = 'READY' WHERE id = ?", owner);
@@ -363,8 +382,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 projection));
     }
 
+    @DisplayName("Operation có thể thành công với các revision độc lập của từng partition")
     @Test
-    void operationCanSucceedWithIndependentPartitionRevisions() {
+    void operationSucceedsAcrossPartitions() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID first = partition();
@@ -421,8 +441,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 operation));
     }
 
+    @DisplayName("Keycloak locator có thể thay đổi trong khi partition đang bị fence")
     @Test
-    void keycloakLocatorCanChangeWhilePartitionIsFenced() {
+    void locatorChangesWhileFenced() {
         UUID owner = partition();
         UUID projection = projection(owner, "grant:" + UUID.randomUUID(), new UUID[0], true);
         jdbc.update("UPDATE authz_partition SET state = 'READY' WHERE id = ?", owner);
@@ -438,8 +459,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
         assertDoesNotThrow(() -> jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE"));
     }
 
+    @DisplayName("Operation không thể thành công khi có một affected partition bị stale")
     @Test
-    void operationCannotSucceedWithOneStaleAffectedPartition() {
+    void operationFailsWithStalePartition() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID first = partition();
@@ -482,8 +504,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 operation));
     }
 
+    @DisplayName("Operation từ chối revision vector có độ dài không đúng")
     @Test
-    void operationRejectsRevisionVectorWithWrongLength() {
+    void operationRejectsBadVectorLength() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID first = partition();
@@ -500,8 +523,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 1L));
     }
 
+    @DisplayName("Snapshot revision của operation không thể bị ghi lại (rewritten)")
     @Test
-    void operationRevisionSnapshotCannotBeRewritten() {
+    void revisionSnapshotCannotBeRewritten() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID partition = scope("WORKSPACE", "workspace:" + workspace);
@@ -515,8 +539,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                                 operation));
     }
 
+    @DisplayName("Operation từ chối mảng revision đánh số từ 0 ngay cả khi mọi partition đã READY")
     @Test
-    void operationRejectsZeroBasedRevisionArrayEvenWhenPartitionsAreReady() {
+    void operationRejectsZeroBasedVector() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID owner = scope("WORKSPACE", "workspace:" + workspace);
@@ -542,8 +567,9 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                 () -> insertRawOperation(initiator, workspace, "[0:0]={" + owner + "}", "{1}", 1));
     }
 
+    @DisplayName("Operation từ chối mảng revision đa chiều")
     @Test
-    void operationRejectsMultidimensionalRevisionArray() {
+    void operationRejectsNestedRevisionArray() {
         UUID initiator = user();
         UUID workspace = personal(initiator);
         UUID owner = scope("WORKSPACE", "workspace:" + workspace);

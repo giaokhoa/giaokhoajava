@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -238,8 +239,9 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
                 .hasMessageContaining("published version");
     }
 
+    @DisplayName("Từ chối attempt vào personal workspace của người dùng khác")
     @Test
-    void rejectsAttemptIntoAnotherUsersPersonalWorkspace() {
+    void rejectsAttemptIntoForeignPersonal() {
         UUID userId = userWithPersonalWorkspace();
         UUID otherUser = userWithPersonalWorkspace();
         UUID otherWorkspace = personalWorkspaceOf(otherUser);

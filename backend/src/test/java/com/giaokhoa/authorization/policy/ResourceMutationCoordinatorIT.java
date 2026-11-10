@@ -8,6 +8,7 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,8 +32,9 @@ class ResourceMutationCoordinatorIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactions;
 
+    @DisplayName("Hai worker instance tuần tự hóa các mutation trên cùng một resource")
     @Test
-    void twoWorkerInstancesSerializeMutationsForTheSameResource() throws Exception {
+    void twoWorkersSerializeMutations() throws Exception {
         // Các đối tượng coordinator độc lập mô phỏng các application worker riêng biệt.
         ResourceMutationCoordinator firstWorker =
                 new ResourceMutationCoordinator(jdbc, transactions);

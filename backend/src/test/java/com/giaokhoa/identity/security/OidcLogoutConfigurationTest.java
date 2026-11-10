@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -19,8 +20,9 @@ import org.springframework.session.web.http.CookieSerializer;
 
 class OidcLogoutConfigurationTest {
 
+    @DisplayName("Session cookie cho HTTPS là host-only, HttpOnly, Secure, SameSite=Lax và dùng raw session id")
     @Test
-    void httpsSessionCookieIsHostOnlyHttpOnlySecureLaxAndUsesRawSessionId() {
+    void sessionCookieSecurityAttributes() {
         CookieSerializer serializer =
                 new OidcLogoutConfiguration().sessionCookieSerializer("https://app.example.test");
         var request = new MockHttpServletRequest();
@@ -40,8 +42,9 @@ class OidcLogoutConfigurationTest {
         assertEquals(List.of("id-123"), serializer.readCookieValues(inbound));
     }
 
+    @DisplayName("Claims back-channel sai định dạng không thể tới được handler native của Spring")
     @Test
-    void malformedBackChannelClaimsCannotReachSpringNativeHandler() throws Exception {
+    void malformedClaimsBlockedEarly() throws Exception {
         var guard =
                 java.util.Objects.requireNonNull(
                         new OidcLogoutConfiguration()
@@ -56,8 +59,9 @@ class OidcLogoutConfigurationTest {
         assertNull(downstream.getRequest());
     }
 
+    @DisplayName("Claims back-channel hợp lệ tới được handler native của Spring")
     @Test
-    void validBackChannelClaimsReachSpringNativeHandler() throws Exception {
+    void validClaimsReachNativeHandler() throws Exception {
         var guard =
                 java.util.Objects.requireNonNull(
                         new OidcLogoutConfiguration()

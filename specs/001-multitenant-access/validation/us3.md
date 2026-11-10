@@ -42,8 +42,8 @@ công và phạm vi quyền tương ứng, được đối chiếu riêng ở t�
 - `TeachingServiceIT.createClassReadsBackScopedToWorkspace`,
   `courseRequiresAtLeastOneSubjectAtCreate`.
 - Thuộc một lớp duy nhất ở tầng DB: FK composite của `course` —
-  `TeachingRawConstraintsIT.rawCompositeForeignKeysRejectCrossWorkspaceReferences`
-  và `rawEnrollmentAcrossClassesInSameWorkspaceViolatesSameClassTrigger` (mới).
+  `TeachingRawConstraintsIT.rawCompositeKeysRejectCrossRefs`
+  và `rawCrossClassEnrollmentBlocked` (mới).
 
 ### US3.2 — Ghi danh X chỉ vào môn thứ nhất; X chỉ trong phạm vi môn đã ghi danh
 
@@ -62,7 +62,7 @@ công và phạm vi quyền tương ứng, được đối chiếu riêng ở t�
   (mục tiêu không tồn tại → 404 `ENROLLMENT_TARGET_NOT_FOUND`; lô trộn lớp →
   400 `ENROLLMENT_CLASS_MISMATCH`, không ghi một phần).
 - Tầng DB: trigger membership —
-  `TeachingRawConstraintsIT.rawRosterAndHomeroomInsertsRequireActiveCenterMembership`
+  `TeachingRawConstraintsIT.rawRosterInsertsNeedMembership`
   (mới).
 
 ### US3.4 — Giáo viên được phân công môn M trong khóa K thì đúng phạm vi đó

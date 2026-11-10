@@ -19,6 +19,7 @@
 - Test SQL phải chứng minh dữ kiện trả về và các ràng buộc trên PostgreSQL thật; kiểm tra chuỗi SQL không thay thế kiểm chứng phân trang, scope hoặc RLS.
 - Gộp test trùng theo yêu cầu và lỗi mà test bắt được, cập nhật bảng nghiệm thu; giữ những assertion riêng của transaction, giao thức, session và browser. Số test hay coverage không thay thế bằng chứng hành vi.
 - Fixture chỉ dựng tiền đề cần cho ca kiểm thử. Tái dùng danh tính phải giữ cô lập dữ kiện và phiên; thao tác đang được kiểm thử luôn đi qua đường chạy thật của tầng đó.
+- Đặt tên test theo cơ chế của JUnit 5: tên phương thức là định danh ngắn gọn chỉ nêu hành vi chính; câu mô tả đầy đủ (kịch bản + kết quả kỳ vọng) viết ở `@DisplayName` bằng tiếng Việt để báo cáo test đọc như đặc tả, không nhồi toàn bộ mô tả vào tên phương thức. Khi một nhóm test trong cùng class dùng chung một tiền tố ngữ cảnh dài, gom nhóm bằng `@Nested` (class con mang `@DisplayName` riêng cho ngữ cảnh đó) thay vì lặp tiền tố trong từng tên phương thức.
 
 ## Điều phối triển khai
 

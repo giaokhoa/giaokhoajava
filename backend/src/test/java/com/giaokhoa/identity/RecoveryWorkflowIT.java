@@ -23,6 +23,7 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -117,8 +118,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertNotNull(view.createdAt());
     }
 
+    @DisplayName("Submit kèm lý do giữ lý do đó cho hàng đợi của operator")
     @Test
-    void submitWithReasonKeepsReasonForOperatorQueue() {
+    void submitKeepsReasonForOperator() {
         UUID actor = seedAccount("SELF_REGISTERED");
 
         RequestView created = recoveryService.submit(actor, actor, null, "  Quên mật khẩu  ");
@@ -146,8 +148,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertEquals("RECOVERY_TARGET_NOT_FOUND", ex.getCode());
     }
 
+    @DisplayName("Submit hộ người dùng khác mà không có workspace trả NOT_FOUND")
     @Test
-    void submitForAnotherUserWithoutWorkspaceReturnsNotFound() {
+    void submitForOtherWithoutWorkspace404() {
         UUID actor = seedAccount("SELF_REGISTERED");
         UUID other = seedAccount("CENTER_ISSUED");
 
@@ -173,8 +176,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertEquals(student, view.targetUserId());
     }
 
+    @DisplayName("Thành viên là học sinh không thể submit hộ thành viên khác")
     @Test
-    void studentMemberCannotSubmitForAnotherMember() {
+    void studentCannotSubmitForAnother() {
         UUID owner = seedAccount("SELF_REGISTERED");
         UUID center = seedCenter(owner);
         UUID student = seedAccount("CENTER_ISSUED");
@@ -189,8 +193,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
     }
 
+    @DisplayName("Manager của center khác không thể submit cho center này")
     @Test
-    void managerOfAnotherCenterCannotSubmitForThisCenter() {
+    void foreignManagerCannotSubmitHere() {
         UUID ownerA = seedAccount("SELF_REGISTERED");
         UUID centerA = seedCenter(ownerA);
         UUID student = seedAccount("CENTER_ISSUED");
@@ -207,8 +212,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
 
     // ---------- RecoveryService: operator xác minh và resolve ----------
 
+    @DisplayName("Verify chuyển REQUESTED sang VERIFIED và từ chối verify lặp lại")
     @Test
-    void verifyMovesRequestedToVerifiedAndRejectsRepeat() {
+    void verifyTransitionsAndRejectsRepeat() {
         UUID actor = seedAccount("SELF_REGISTERED");
         UUID operator = seedAccount("SELF_REGISTERED");
         RequestView submitted = recoveryService.submit(actor, actor, null);
@@ -235,8 +241,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertEquals(HttpStatus.BAD_REQUEST, blankNote.getStatus());
     }
 
+    @DisplayName("Hoàn tất request đã VERIFIED sau khi operator xác nhận khôi phục và bàn giao")
     @Test
-    void completeVerifiedRequestAfterOperatorConfirmsRecoveryAndDelivery() {
+    void completeAfterOperatorConfirms() {
         UUID owner = seedAccount("SELF_REGISTERED");
         UUID center = seedCenter(owner);
         UUID manager = seedAccount("CENTER_ISSUED");
@@ -279,8 +286,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertNotNull(resolved.resolvedAt());
     }
 
+    @DisplayName("Approve chỉ xác minh (verify) và giữ quá trình khôi phục ở trạng thái pending")
     @Test
-    void approveOnlyVerifiesAndKeepsRecoveryPending() {
+    void approveOnlyVerifies() {
         UUID actor = seedAccount("CENTER_ISSUED");
         UUID operator = seedAccount("SELF_REGISTERED");
         RequestView submitted = recoveryService.submit(actor, actor, null);
@@ -315,8 +323,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertEquals("RECOVERY_INVALID_STATE", ex.getCode());
     }
 
+    @DisplayName("Danh sách request trả các request đã submit theo thứ tự cũ nhất trước")
     @Test
-    void listRequestsReturnsSubmittedRequestsOldestFirst() throws Exception {
+    void listRequestsOldestFirst() throws Exception {
         UUID actor = seedAccount("SELF_REGISTERED");
         RequestView first = recoveryService.submit(actor, actor, null);
         // Sleep ngắn có chủ đích để hai request có mốc thời gian tạo khác nhau cho khẳng định
@@ -334,8 +343,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
 
     // ---------- InitialCredentialHandoff ----------
 
+    @DisplayName("Cấp phát học sinh mới bàn giao credential tạm thời đúng một lần")
     @Test
-    void issueNewStudentHandsOffTemporaryCredentialOnce() {
+    void issueHandsOffCredentialOnce() {
         UUID owner = seedAccount("SELF_REGISTERED");
         UUID center = seedCenter(owner);
         String username = "issued-student-" + UUID.randomUUID();
@@ -372,8 +382,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertEquals(List.of("STUDENT"), roles);
     }
 
+    @DisplayName("Cấp phát thất bại sau khi đã tạo identity thì xóa user Keycloak mồ côi")
     @Test
-    void issueFailureAfterIdentityCreateDeletesOrphanKeycloakUser() {
+    void issueFailureDeletesOrphanUser() {
         UUID outsider = seedAccount("SELF_REGISTERED");
         UUID owner = seedAccount("SELF_REGISTERED");
         UUID center = seedCenter(owner);
@@ -396,8 +407,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertTrue(accounts.isEmpty());
     }
 
+    @DisplayName("Cấp phát với username trong app DB đã bị chiếm thì bồi hoàn (compensate) user vừa tạo")
     @Test
-    void issueWithAppDbUsernameSquattedCompensatesCreatedUser() {
+    void issueWithSquattedNameCompensates() {
         UUID owner = seedAccount("SELF_REGISTERED");
         UUID center = seedCenter(owner);
         String username = "squatted-" + UUID.randomUUID();
@@ -420,8 +432,9 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertEquals("SELF_REGISTERED", untouched.get("origin"));
     }
 
+    @DisplayName("Cấp phát với identity Keycloak đã tồn tại gây conflict và giữ nguyên mật khẩu")
     @Test
-    void issueWithExistingKeycloakIdentityConflictsAndKeepsPassword() {
+    void issueWithExistingIdentityConflicts() {
         ensureDirectGrantClient();
         UUID owner = seedAccount("SELF_REGISTERED");
         UUID center = seedCenter(owner);

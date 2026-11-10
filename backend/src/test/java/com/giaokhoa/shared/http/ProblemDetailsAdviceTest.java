@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -75,8 +76,9 @@ class ProblemDetailsAdviceTest {
         }
     }
 
+    @DisplayName("Thiếu If-Match trả 428 kèm no-cache và trace")
     @Test
-    void missingIfMatchReturns428WithNoCacheAndTrace() throws Exception {
+    void missingIfMatchReturns428() throws Exception {
         mvc.perform(
                         post("/probe")
                                 .contentType(MediaType.APPLICATION_JSON)
@@ -90,8 +92,9 @@ class ProblemDetailsAdviceTest {
                 .andExpect(jsonPath("$.traceId").isNotEmpty());
     }
 
+    @DisplayName("Field không hợp lệ sinh các violation an toàn mà không lộ dữ liệu bị từ chối")
     @Test
-    void invalidFieldProducesSafeViolationsWithoutRejectedData() throws Exception {
+    void invalidFieldYieldsSafeViolations() throws Exception {
         mvc.perform(
                         post("/probe")
                                 .header("If-Match", "\"0\"")
@@ -104,8 +107,9 @@ class ProblemDetailsAdviceTest {
                 .andExpect(jsonPath("$.violations[0].message").value("Giá trị không hợp lệ."));
     }
 
+    @DisplayName("Projection đang pending trả 503 mà không lộ bí mật")
     @Test
-    void projectionPendingReturns503WithoutSecrets() throws Exception {
+    void projectionPendingReturns503() throws Exception {
         mvc.perform(post("/pending"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("PROJECTION_PENDING"));
@@ -130,8 +134,9 @@ class ProblemDetailsAdviceTest {
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
+    @DisplayName("Integrity violation mang mã data conflict mà không lộ chi tiết constraint")
     @Test
-    void integrityViolationHasDataConflictCodeWithoutConstraintDetails() throws Exception {
+    void integrityViolationHidesConstraint() throws Exception {
         mvc.perform(post("/duplicate"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DATA_CONFLICT"))

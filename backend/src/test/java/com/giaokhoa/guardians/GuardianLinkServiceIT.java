@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,8 +63,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
 
+    @DisplayName("Vòng đời liên kết đồng bộ tư cách thành viên guardian group thông qua các operation")
     @Test
-    void lifecycleSyncsGuardianGroupMembershipThroughOperations() {
+    void lifecycleSyncsGroupMembership() {
         GuardianCenter center = seedGuardianCenter();
         String group =
                 NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
@@ -137,8 +139,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 "Mỗi mutation vòng đời ghi một audit event gắn operation của nó");
     }
 
+    @DisplayName("Yêu cầu liên kết kiểm tra vai trò phụ huynh, scope học sinh và trùng lặp")
     @Test
-    void requestValidatesParentRoleStudentScopeAndDuplicates() {
+    void requestValidatesRoleScopeDuplicates() {
         GuardianCenter center = seedGuardianCenter();
         KeycloakLogin outsider = createVerifiedUser("guardian-service-outsider");
         UUID outsiderId = seedAccount(outsider);
@@ -199,8 +202,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Quyết định kiểm tra version và state, và việc từ chối (rejection) là terminal")
     @Test
-    void decisionChecksVersionStateAndRejectionIsTerminal() {
+    void decisionChecksVersionAndState() {
         GuardianCenter center = seedGuardianCenter();
         links.requestLink(
                 center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
@@ -300,8 +304,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
         assertEquals(renewed.id(), review.getFirst().id());
     }
 
+    @DisplayName("Giáo viên không thể quyết định hay revoke liên kết trực tiếp qua service")
     @Test
-    void teacherCannotDecideOrRevokeLinkThroughServiceDirectly() {
+    void teacherCannotDecideOrRevoke() {
         GuardianCenter center = seedGuardianCenter();
         links.requestLink(
                 center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
@@ -336,8 +341,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
         assertEquals("PERMISSION_DENIED", revoke.getCode());
     }
 
+    @DisplayName("Gỡ vai trò phụ huynh đóng liên kết đã APPROVED trong cùng một operation")
     @Test
-    void removingParentRoleClosesApprovedLinkInSameOperation() {
+    void removingParentRoleClosesLink() {
         GuardianCenter center = seedGuardianCenter();
         String group =
                 NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
@@ -378,8 +384,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 "Guardian group rời parent ngay khi operation gỡ role SUCCEEDED");
     }
 
+    @DisplayName("Revoke membership của học sinh đóng liên kết đã APPROVED trong cùng một operation")
     @Test
-    void revokingStudentMembershipClosesApprovedLinkInSameOperation() {
+    void revokingMembershipClosesLink() {
         GuardianCenter center = seedGuardianCenter();
         String group =
                 NativePolicyTemplates.guardiansGroup(center.workspaceId(), center.studentX());
@@ -415,8 +422,9 @@ class GuardianLinkServiceIT extends GuardianFixture {
         assertFalse(directory.isRealmGroupMember(center.parent().subject(), group));
     }
 
+    @DisplayName("Việc phê duyệt kiểm tra lại các tiền đề ngay tại thời điểm ra quyết định")
     @Test
-    void approvalRechecksPrerequisitesAtDecisionTime() {
+    void approvalRechecksPrerequisites() {
         GuardianCenter center = seedGuardianCenter();
         links.requestLink(
                 center.parentId(), center.workspaceId(), center.studentX(), key(), hash());

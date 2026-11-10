@@ -13,6 +13,7 @@ import org.flywaydb.core.Flyway;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.dao.DataAccessException;
@@ -119,8 +120,9 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Insert thô dưới context workspace sai vi phạm kiểm tra RLS")
     @Test
-    void rawInsertUnderWrongWorkspaceContextViolatesRlsCheck() {
+    void rawInsertWrongContextViolatesRls() {
         RawGraph graph = seedRawGraph();
         JdbcTemplate runtime = openRuntime();
         try {
@@ -308,8 +310,9 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Các guard về uniqueness hiện hành, vòng đời và lịch sử ở tầng raw đều đứng vững")
     @Test
-    void rawCurrentUniquenessLifecycleAndHistoryGuardsHold() {
+    void rawUniquenessAndHistoryGuardsHold() {
         RawGraph graph = seedRawGraph();
         // Cặp parent–học sinh riêng cho test này để không đụng cặp đã seed ở đồ thị chung.
         UUID parent = seedRawAccount();

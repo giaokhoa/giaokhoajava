@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -152,8 +153,9 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
 
     // ---------- US5.1: gỡ phân công giáo viên ----------
 
+    @DisplayName("Giáo viên bị revoke mất quyền đọc roster ngay trong cùng session")
     @Test
-    void revokedTeacherLosesRosterReadInSameSession() throws Exception {
+    void revokedTeacherLosesRosterRead() throws Exception {
         CenterSetup center = seedCenter(true);
         try (var owner = openSession(identities.owner());
                 var teacherA = openSession(identities.teacherA());
@@ -229,8 +231,9 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
 
     // ---------- US5.2: gỡ membership tại một center ----------
 
+    @DisplayName("Thành viên bị gỡ mất cả workspace và roster ngay trong cùng session")
     @Test
-    void removedMemberLosesWorkspaceAndRosterInSameSession() throws Exception {
+    void removedMemberLosesWorkspaceAccess() throws Exception {
         CenterSetup centerA = seedCenter(true);
         CenterSetup centerB = seedCenter(true);
         try (var owner = openSession(identities.owner());
@@ -306,8 +309,9 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
 
     // ---------- US5.3: gỡ ghi danh ----------
 
+    @DisplayName("Học sinh bị hủy ghi danh mất quyền đọc kết quả và biến mất khỏi roster")
     @Test
-    void unenrolledStudentLosesResultReadAndDisappearsFromRoster() throws Exception {
+    void unenrolledStudentLosesResultRead() throws Exception {
         CenterSetup center = seedCenter(true);
         try (var owner = openSession(identities.owner());
                 var teacherA = openSession(identities.teacherA());
@@ -367,8 +371,9 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
 
     // ---------- US5.4: tenant giả và id ngoài phạm vi ----------
 
+    @DisplayName("Tenant header giả mạo và subject của tenant khác đều bị từ chối")
     @Test
-    void forgedTenantHeaderAndForeignSubjectAreRejected() throws Exception {
+    void forgedTenantIdentityIsRejected() throws Exception {
         CenterSetup centerA = seedCenter(false);
         CenterSetup centerB = seedCenter(true);
         try (var owner = openSession(identities.owner());
@@ -470,8 +475,9 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
 
     // ---------- US5.6: 202 và fail-closed trước khi hoàn tất ----------
 
+    @DisplayName("Revoke trả 202 và request tiếp theo không bao giờ thành công trước khi việc thu hồi hoàn tất")
     @Test
-    void revokeReturns202AndNextRequestNeverSucceedsBeforeCompletion() throws Exception {
+    void revokeReturns202UntilCompletion() throws Exception {
         CenterSetup center = seedCenter(true);
         try (var owner = openSession(identities.owner());
                 var teacherA = openSession(identities.teacherA())) {

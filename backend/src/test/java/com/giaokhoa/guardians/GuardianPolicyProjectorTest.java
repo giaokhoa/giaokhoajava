@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -32,8 +33,9 @@ class GuardianPolicyProjectorTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final KeycloakProvisioningClient directory = mock(KeycloakProvisioningClient.class);
 
+    @DisplayName("Liên kết lịch sử đọc một live snapshot cho mỗi phụ huynh thay vì cho từng cặp phụ huynh–học sinh")
     @Test
-    void historicalLinksReadOneLiveSnapshotPerParentInsteadOfEachParentStudentPair() {
+    void historyReadsOneSnapshotPerParent() {
         List<UUID> students = IntStream.range(0, 100).mapToObj(_ -> UUID.randomUUID()).toList();
         List<Map<String, Object>> parents =
                 IntStream.range(0, 100)
@@ -60,8 +62,9 @@ class GuardianPolicyProjectorTest {
         verify(directory, never()).setRealmGroupMembership(anyString(), anyString(), anyBoolean());
     }
 
+    @DisplayName("Sync chỉ cập nhật các khác biệt theo workspace và đọc membership mới ở lần sync tiếp theo")
     @Test
-    void updatesOnlyWorkspaceDifferencesAndReadsFreshMembershipOnNextSync() {
+    void syncUpdatesOnlyWorkspaceDiffs() {
         UUID parent = UUID.randomUUID();
         UUID first = UUID.randomUUID();
         UUID second = UUID.randomUUID();

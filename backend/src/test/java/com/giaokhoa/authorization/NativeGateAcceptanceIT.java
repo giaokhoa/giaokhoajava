@@ -41,6 +41,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.core.ParameterizedTypeReference;
@@ -457,8 +458,9 @@ class NativeGateAcceptanceIT {
      * homeroom giao bài và track mọi môn của lớp, phụ huynh chỉ đọc bản published của đúng con
      * mình.
      */
+    @DisplayName("Ngữ nghĩa roster của lớp nhất quán giữa các môn học, giáo viên chủ nhiệm và phụ huynh")
     @Test
-    void classRosterSemanticsAcrossSubjectsHomeroomAndParent() {
+    void rosterSemanticsAcrossRoles() {
         UUID workspace = UUID.randomUUID();
         UUID classId = UUID.randomUUID();
         UUID subjectOne = UUID.randomUUID();
@@ -664,8 +666,9 @@ class NativeGateAcceptanceIT {
      * Grant dài hạn còn sống sau khi grantor rời workspace; thu hồi grant có thể thu hồi thì chặn
      * cả bản nhận lẫn bản chỉnh sửa trên fork, trong khi nguồn độc lập dài hạn vẫn còn nguyên.
      */
+    @DisplayName("Grant LONG_TERM sống sót khi grantor rời khỏi, và việc revoke grant REVOCABLE chặn fork")
     @Test
-    void longTermGrantSurvivesGrantorExitAndRevocableRevokeBlocksFork() {
+    void longTermGrantSurvivesGrantorExit() {
         UUID workspace = UUID.randomUUID();
         UUID resource = UUID.randomUUID();
         UUID version = UUID.randomUUID();
@@ -742,8 +745,9 @@ class NativeGateAcceptanceIT {
     /**
      * Cùng access token: gỡ membership thì lần gọi ngay sau bị từ chối, actor còn lại không đổi.
      */
+    @DisplayName("Cùng một token bị từ chối sau khi membership bị gỡ, trong khi peer không bị ảnh hưởng")
     @Test
-    void sameTokenDeniedAfterMembershipRemovalPeerUnaffected() {
+    void tokenDeniedAfterMembershipRemoval() {
         UUID workspace = UUID.randomUUID();
         UUID subject = UUID.randomUUID();
         Actor teacherA = newActor("revoked-teacher", true, true);
@@ -772,8 +776,9 @@ class NativeGateAcceptanceIT {
      * được nhưng quyết định vẫn bị từ chối cho tới khi eligibility được chiếu; cùng token sau khi
      * chiếu thì được phép.
      */
+    @DisplayName("Người dùng chưa xác minh và không có eligibility thì không có quyền truy cập nghiệp vụ")
     @Test
-    void unverifiedUserWithoutEligibilityHasNoBusinessAccess() {
+    void unverifiedUserHasNoBusinessAccess() {
         UUID workspace = UUID.randomUUID();
         UUID subject = UUID.randomUUID();
         CreatedUser selfRegistered =
@@ -827,8 +832,9 @@ class NativeGateAcceptanceIT {
      * cấp, không bị ép bổ sung email bởi required action hay profile nào, và có quyền nghiệp vụ đã
      * được provision.
      */
+    @DisplayName("Người dùng không có email đăng nhập mà không bị ép thực hiện profile action")
     @Test
-    void userWithoutEmailLogsInWithoutForcedProfileActions() {
+    void userWithoutEmailLogsInCleanly() {
         UUID workspace = UUID.randomUUID();
         UUID subject = UUID.randomUUID();
         CreatedUser issued =

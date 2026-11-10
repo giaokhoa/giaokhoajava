@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -138,8 +139,9 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
                 runtimeTransaction.inWorkspace(other, () -> countVisible(runtimeJdbc, workspace)));
     }
 
+    @DisplayName("Context không rò rỉ ra ngoài sau khi transaction kết thúc")
     @Test
-    void contextDoesNotLeakAfterTheTransactionEnds() {
+    void contextDoesNotLeakAfterTx() {
         UUID workspace = seedWorkspace();
         assertEquals(
                 2,
@@ -189,8 +191,9 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
                         workspace, () -> countVisible(runtimeJdbc, workspace)));
     }
 
+    @DisplayName("Exception rollback các ghi đã thực hiện bên trong context")
     @Test
-    void exceptionRollsBackWritesMadeInsideTheContext() {
+    void exceptionRollsBackContextWrites() {
         UUID workspace = seedWorkspace();
         assertThrows(
                 IllegalStateException.class,
@@ -218,8 +221,9 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
                 () -> runtimeTransaction.applyContext(UUID.randomUUID()));
     }
 
+    @DisplayName("Spring bean chỉ đặt context bên trong transaction của nó")
     @Test
-    void springBeanSetsTheContextOnlyInsideItsTransaction() {
+    void beanSetsContextInsideTxOnly() {
         UUID workspace = UUID.randomUUID();
         String inside =
                 Objects.requireNonNull(

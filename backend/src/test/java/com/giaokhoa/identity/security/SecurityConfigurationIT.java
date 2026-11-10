@@ -17,6 +17,7 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,8 +62,9 @@ class SecurityConfigurationIT extends IntegrationEnvironment {
         assertTrue(location.startsWith(client.getProviderDetails().getIssuerUri() + "/"));
     }
 
+    @DisplayName("Các mutation và logout của user cần CSRF, còn back-channel thì không")
     @Test
-    void mutationsAndUserLogoutNeedCsrfButBackChannelDoesNot() throws Exception {
+    void csrfRequiredExceptBackChannel() throws Exception {
         assertEquals(403, mvc.perform(post("/api/logout")).andReturn().getResponse().getStatus());
         assertEquals(
                 403,
@@ -89,8 +91,9 @@ class SecurityConfigurationIT extends IntegrationEnvironment {
                         .getStatus());
     }
 
+    @DisplayName("Post-logout với OIDC principal chuyển hướng tới end-session của provider")
     @Test
-    void postLogoutWithOidcPrincipalRedirectsToProviderEndSession() throws Exception {
+    void postLogoutRedirectsToEndSession() throws Exception {
         var client =
                 java.util.Objects.requireNonNull(registrations.findByRegistrationId("keycloak"));
         var token =
@@ -121,8 +124,9 @@ class SecurityConfigurationIT extends IntegrationEnvironment {
         assertTrue(redirect.contains("post_logout_redirect_uri="));
     }
 
+    @DisplayName("API chưa xác thực không truy cập được bằng Bearer hay Basic")
     @Test
-    void unauthenticatedApisAreNotAccessibleViaBearerOrBasic() throws Exception {
+    void apisRejectBearerAndBasicWhenAnon() throws Exception {
         var bearer =
                 mvc.perform(get("/api/me/workspaces").header("Authorization", "Bearer fake"))
                         .andReturn()

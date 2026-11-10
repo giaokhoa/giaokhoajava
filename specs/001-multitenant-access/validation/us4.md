@@ -35,21 +35,21 @@ và mọi issue của US4 (#56–#63) đã land vào `main`.
 
 ### US4.1 — Phụ huynh chưa được duyệt: xem kết quả bị từ chối dù đã gửi yêu cầu
 
-- `PublishedResultContractIT.parentWithPendingLinkCannotReadChildResults`
+- `PublishedResultContractIT.pendingLinkParentCannotRead`
   (link REQUESTED → 403 ở đường đọc kết quả).
-- `GuardianAccessIT.parentRequestsLinkAndSeesItPendingInOwnList` (request
+- `GuardianAccessIT.parentRequestsLinkSeesPending` (request
   tạo được, trạng thái REQUESTED, không mở quyền đọc).
 - Tầng giao diện: scenario 1 của E2E `guardian-results.spec.ts` phủ luồng
   parent thật gửi request và chỉ đọc được sau khi được duyệt.
 
 ### US4.2 — Đã duyệt tại A: chỉ xem kết quả đã công bố của đúng con tại A
 
-- `PublishedResultContractIT.approvedParentReadsOnlyPublishedResultsOfOwnChild`,
-  `approvedParentCannotReadOtherChildResults`,
+- `PublishedResultContractIT.approvedParentReadsOwnChildOnly`,
+  `approvedParentCannotReadOthers`,
   `parentWithoutLinkCannotReadChildResults`,
   `studentReadsOnlyOwnPublishedResults`.
-- `PublishedResultServiceIT.approvedParentReadsOnlyPublishedResultsOfOwnChild`,
-  `studentAndSubjectTeacherReadButManagerAndHomeroomDoNot` (scope
+- `PublishedResultServiceIT.approvedParentReadsOwnChildOnly`,
+  `onlyStudentAndSubjectTeacherRead` (scope
   read/grade tách nhau; quản lý/chủ nhiệm không đọc qua đường này).
 - Hình dạng DTO: chỉ `PublishedResultView` cho parent (không answer/
   submission); quy tắc đọc rỗng/403 chốt ở Sổ B56, quyết quyền route
@@ -60,8 +60,8 @@ và mọi issue của US4 (#56–#63) đã land vào `main`.
 
 ### US4.3 — Liên kết tại A không tự cấp quyền tại B
 
-- `PublishedResultContractIT.approvedLinkInOneCenterDoesNotGrantAnotherCenter`.
-- `GuardianAccessIT.parentCannotRequestLinkForStudentOutsideCenter`.
+- `PublishedResultContractIT.linkInOneCenterGrantsNoOther`.
+- `GuardianAccessIT.parentCannotLinkForeignStudent`.
 - Tầng giao diện: E2E scenario 2 (đổi `wid` sang center B bị chặn).
 
 ### US4.4 — Chủ nhiệm không có vai trò quản lý/chủ sở hữu: duyệt liên kết bị từ chối
@@ -70,7 +70,7 @@ và mọi issue của US4 (#56–#63) đã land vào `main`.
   `subjectTeacherCannotDecideLink`.
 - Sau sửa Should fix S1 của review #62 (commit `0fd0b2e`, review lại
   APPROVE), tầng service tự kiểm tra lại OWNER/MANAGER ở decide/revoke:
-  `GuardianLinkServiceIT.teacherCannotDecideOrRevokeLinkThroughServiceDirectly`.
+  `GuardianLinkServiceIT.teacherCannotDecideOrRevoke`.
 - Tầng giao diện: E2E scenario 3 (chủ nhiệm không có vai trò quản lý bị
   từ chối khi duyệt liên kết).
 
@@ -82,9 +82,9 @@ và mọi issue của US4 (#56–#63) đã land vào `main`.
 - Kiểm chứng read side độc lập:
   `PublishedResultServiceIT.revokedLinkStopsParentFromReadingResults`.
 - Đóng nguồn cùng operation khi mất tiền đề:
-  `GuardianLinkServiceIT.removingParentRoleClosesApprovedLinkInSameOperation`,
-  `revokingStudentMembershipClosesApprovedLinkInSameOperation`,
-  `approvalRechecksPrerequisitesAtDecisionTime`.
+  `GuardianLinkServiceIT.removingParentRoleClosesLink`,
+  `revokingMembershipClosesLink`,
+  `approvalRechecksPrerequisites`.
 - Ghi kèm bundle kết quả trong cùng operation khi mutation guardian đổi
   nguồn của bundle: Sổ B58. Trạng thái REVOKED được quan sát qua danh
   sách của chính parent (danh sách của manager chỉ giữ liên kết cần xử
@@ -108,11 +108,11 @@ và mọi issue của US4 (#56–#63) đã land vào `main`.
 NOBYPASSRLS vì user của stack TEST là superuser):
 
 - `rawSelectSeesOnlyRowsOfContextWorkspace`,
-  `rawInsertUnderWrongWorkspaceContextViolatesRlsCheck` (RLS theo
+  `rawInsertWrongContextViolatesRls` (RLS theo
   workspace context).
 - `rawForeignKeyAndStateChecksRejectBadRows` (FK + CHECK hình dạng
   trạng thái), `rawMembershipGateAtInsertAndApproval` (trigger membership
-  ACTIVE), `rawCurrentUniquenessLifecycleAndHistoryGuardsHold` (unique
+  ACTIVE), `rawUniquenessAndHistoryGuardsHold` (unique
   từng phần cho cặp hiện hành, đóng băng lịch sử).
 - `GuardianLinkServiceIT.serviceRunsUnderNonBypassRlsRole` (service chạy
   đúng dưới role không bypass RLS).
@@ -133,7 +133,7 @@ trên máy chạy pipeline, ngày 2026-11-09.
 ### Integration verify toàn suite trên cây cuối (làn 1)
 
 - Tổng: **382 run / 0 failures / 1 error / 9 skipped**, 56 phút.
-- Lỗi duy nhất là `RecoveryFlowIT.verifiedEmailUserCanBeSentPasswordActionEmail`
+- Lỗi duy nhất là `RecoveryFlowIT.verifiedUserGetsPasswordEmail`
   — lỗi SMTP vì môi trường native local không có Mailpit; đây là lỗi đã
   biết và được phép ở local, không thuộc hành vi US4. Không test nào
   khác đỏ.

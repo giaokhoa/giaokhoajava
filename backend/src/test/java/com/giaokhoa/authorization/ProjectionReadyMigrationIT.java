@@ -7,6 +7,7 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import java.util.Objects;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,8 +18,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 // Chỉ kiểm chứng migration Flyway bằng JDBC thuần trên schema riêng tự tạo/dọn trong thân test;
 // không dùng bean Spring nào nên không dựng ApplicationContext.
 class ProjectionReadyMigrationIT extends IntegrationEnvironment {
+    @DisplayName("Nâng cấp fence các hash NULL legacy cùng các dependent của chúng mà không mở các dòng chưa được xác minh")
     @Test
-    void upgradeFencesLegacyNullHashesAndTheirDependentsWithoutOpeningUnverifiedRows() {
+    void upgradeFencesLegacyNullHashes() {
         String schema = "ready_hash_upgrade_" + UUID.randomUUID().toString().replace("-", "");
         String url = testDatabaseUrl() + "?currentSchema=" + schema;
         var source =

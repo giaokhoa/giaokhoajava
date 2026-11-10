@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,9 +46,10 @@ class ResultSourceMutationIT extends GuardianFixture {
     @Autowired private ResultPolicyProjector resultProjector;
     @Autowired private IdempotencyService idempotency;
 
+    @DisplayName("Mutation ở nguồn reconcile các kết quả đã publish và giữ nguyên quyền đọc độc lập")
     @ParameterizedTest
     @EnumSource(SourceMutation.class)
-    void sourceMutationReconcilesPublishedResultsAndPreservesIndependentRead(
+    void sourceMutationReconcilesResults(
             SourceMutation mutation) throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (RealSession owner = openSession(center.owner());

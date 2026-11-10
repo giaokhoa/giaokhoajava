@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -311,8 +312,9 @@ class PublishedResultServiceIT extends GuardianFixture {
                 "Actor không có hàng nào được phép thì bị 403, không phải danh sách rỗng");
     }
 
+    @DisplayName("Phụ huynh đã được duyệt chỉ đọc kết quả đã publish của đúng con mình")
     @Test
-    void approvedParentReadsOnlyPublishedResultsOfOwnChild() throws Exception {
+    void approvedParentReadsOwnChildOnly() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var owner = openSession(center.owner());
                 var parent = openSession(center.parent())) {
@@ -440,8 +442,9 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Phụ huynh không có liên kết đã duyệt không đọc được kết quả của con")
     @Test
-    void parentWithoutApprovedLinkCannotReadChildResults() throws Exception {
+    void unapprovedParentCannotRead() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var owner = openSession(center.owner());
                 var parent = openSession(center.parent());
@@ -472,8 +475,9 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Học sinh và giáo viên bộ môn đọc được, còn manager và giáo viên chủ nhiệm thì không")
     @Test
-    void studentAndSubjectTeacherReadButManagerAndHomeroomDoNot() throws Exception {
+    void onlyStudentAndSubjectTeacherRead() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var owner = openSession(center.owner());
                 var student = openSession(center.students().get(0));
@@ -579,8 +583,9 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Khi chưa có gì được publish: phụ huynh và giáo viên đã duyệt nhận 403, học sinh nhận danh sách rỗng")
     @Test
-    void approvedParentTeacherGet403AndStudentGetsEmptyListWhenNothingPublished() throws Exception {
+    void nothingPublishedGives403OrEmpty() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var owner = openSession(center.owner());
                 var parent = openSession(center.parent());
@@ -620,8 +625,9 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Chủ sở hữu personal đọc được kết quả đã publish, người ngoài thì không")
     @Test
-    void personalOwnerReadsPublishedResultButOutsiderCannot() throws Exception {
+    void personalOwnerReadsOutsiderCannot() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         UUID personalWid = personalWorkspaceOf(center.ownerId());
         // Kỳ gói personal phải đi qua đường xác nhận thật của SubscriptionService, không seed
@@ -687,8 +693,9 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Result DTO giữ fence cho tới khi revocation đồng thời có thể commit")
     @Test
-    void resultDtoKeepsTheFenceUntilTheConcurrentRevocationCanCommit() throws Exception {
+    void resultDtoKeepsFenceUntilCommit() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         CountDownLatch atDtoRead = new CountDownLatch(1);
         CountDownLatch releaseDto = new CountDownLatch(1);
@@ -793,8 +800,9 @@ class PublishedResultServiceIT extends GuardianFixture {
         }
     }
 
+    @DisplayName("Đọc kết quả của chính mình dù rỗng vẫn đòi hỏi partition account và workspace đã READY")
     @Test
-    void emptySelfReadStillRequiresReadyAccountAndWorkspacePartitions() throws Exception {
+    void emptySelfReadRequiresReadyPartitions() throws Exception {
         GuardianCenter center = seedGuardianCenter();
         try (var student = openSession(center.students().getFirst())) {
             UUID personalWid = personalWorkspaceOf(center.studentX());

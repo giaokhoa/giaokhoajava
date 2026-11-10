@@ -11,6 +11,7 @@ import com.giaokhoa.support.NativeGateFixture;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,8 +60,9 @@ class OperationStatusIT extends IntegrationEnvironment {
     @Autowired ClientRegistrationRepository clientRegistrations;
     @Autowired SessionRepository<?> sessions;
 
+    @DisplayName("Initiator đọc được operation PENDING của chính mình mà không lộ payload nội bộ")
     @Test
-    void initiatorReadsOwnPendingOperationWithoutInternalPayload() throws Exception {
+    void initiatorReadsOwnOperation() throws Exception {
         try (var nativeGate = new NativeRevocationFixture();
                 var session = nativeSession(nativeGate)) {
             var gate = new NativeGateFixture(jdbc);
@@ -94,8 +96,9 @@ class OperationStatusIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Operation SUCCEEDED báo COMPLETED, còn failure có thể retry chỉ lộ mã lỗi")
     @Test
-    void succeededOperationReportsCompletedAndRetryableFailureExposesOnlyErrorCode()
+    void statusReportsCompletedAndErrorCode()
             throws Exception {
         try (var nativeGate = new NativeRevocationFixture();
                 var session = nativeSession(nativeGate)) {
@@ -125,8 +128,9 @@ class OperationStatusIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Operation của initiator khác bị ẩn dưới dạng NOT_FOUND")
     @Test
-    void operationOfAnotherInitiatorIsHiddenAsNotFound() throws Exception {
+    void foreignOperationHiddenAsNotFound() throws Exception {
         try (var nativeGate = new NativeRevocationFixture();
                 var session = nativeSession(nativeGate)) {
             var gate = new NativeGateFixture(jdbc);
@@ -149,8 +153,9 @@ class OperationStatusIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName("Request ẩn danh không bao giờ nhận được trạng thái operation")
     @Test
-    void anonymousRequestNeverReceivesOperationStatus() throws Exception {
+    void anonymousGetsNoOperationStatus() throws Exception {
         MockMvc mvc = mockMvc();
         MockHttpServletResponse response =
                 mvc.perform(get("/api/me/operations/" + UUID.randomUUID()))

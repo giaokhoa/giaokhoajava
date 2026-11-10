@@ -9,20 +9,23 @@ import com.giaokhoa.authorization.policy.PolicyGraph;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class PlatformPolicyProjectorTest {
 
+    @DisplayName("Descriptor của operator khớp định dạng hợp đồng")
     @Test
-    void operatorDescriptorMatchesTheContractFormat() {
+    void operatorDescriptorMatchesContract() {
         assertEquals(
                 "PLATFORM_OPERATOR|group=/gk/platform/operators|target=platform"
                         + "|scope=center.create",
                 PlatformPolicyProjector.operatorDescriptor("center.create"));
     }
 
+    @DisplayName("gatesFor round-trip về đúng một group gate duy nhất của operator")
     @Test
-    void gatesForRoundTripsToTheSingleOperatorGroupGate() {
+    void gatesForRoundTripsToGroupGate() {
         for (String scope : PlatformPolicyProjector.managedScopes()) {
             assertEquals(
                     List.of(
@@ -40,8 +43,9 @@ class PlatformPolicyProjectorTest {
                 () -> PlatformPolicyProjector.gatesFor("PLATFORM_OPERATOR|target=platform"));
     }
 
+    @DisplayName("Bundle có đúng một descriptor cho mỗi managed scope")
     @Test
-    void bundleHasExactlyOneDescriptorPerManagedScope() {
+    void oneDescriptorPerManagedScope() {
         List<String> bundle = PlatformPolicyProjector.bundleDescriptors();
         assertEquals(PlatformPolicyProjector.managedScopes().size(), bundle.size());
         assertEquals(bundle.size(), bundle.stream().distinct().count());

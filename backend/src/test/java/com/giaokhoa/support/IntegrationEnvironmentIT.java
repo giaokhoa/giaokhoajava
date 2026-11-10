@@ -8,6 +8,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.Map;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,8 +22,9 @@ class IntegrationEnvironmentIT extends IntegrationEnvironment {
 
     @Autowired Environment environment;
 
+    @DisplayName("Profile integration của Spring dùng các service thật được cô lập")
     @Test
-    void springIntegrationProfileUsesRealIsolatedServices() throws Exception {
+    void profileUsesRealIsolatedServices() throws Exception {
         assertTrue(Arrays.asList(environment.getActiveProfiles()).contains("integration"));
         String database = environment.getRequiredProperty("spring.datasource.url");
         String issuer =

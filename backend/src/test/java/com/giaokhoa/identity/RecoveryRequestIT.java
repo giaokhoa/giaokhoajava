@@ -13,6 +13,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -190,8 +191,9 @@ class RecoveryRequestIT extends IntegrationEnvironment {
                                 null));
     }
 
+    @DisplayName("Lịch sử không thể bị xóa hay re-identify, nhưng các chuyển trạng thái vẫn hoạt động")
     @Test
-    void historyCannotBeDeletedOrReidentifiedButTransitionsStillWork() {
+    void historyImmutableTransitionsWork() {
         UUID requester = seedAccount();
         UUID target = seedAccount();
         UUID other = seedAccount();

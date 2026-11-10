@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -75,8 +76,9 @@ class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
         assertThat(reloadedVersion.getLockedAt()).isNull();
     }
 
+    @DisplayName("Từ chối số version trùng lặp trong cùng một resource")
     @Test
-    void rejectsDuplicateVersionNumberWithinOneResource() {
+    void rejectsDuplicateVersionNumber() {
         UUID resourceId = resource();
         version(resourceId, 1, "DRAFT", null);
         jdbc.update("SAVEPOINT duplicate_version");
