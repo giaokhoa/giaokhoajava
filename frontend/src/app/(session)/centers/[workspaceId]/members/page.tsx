@@ -1,4 +1,4 @@
-import { CenterMembersContent } from "../../../../../features/tenancy/center-administration";
+import { CenterMembersContent } from "@/features/tenancy/center-administration";
 
 // Next 16: params của dynamic route là Promise, trang server phải await trước khi dùng.
 export default async function CenterMembersPage({

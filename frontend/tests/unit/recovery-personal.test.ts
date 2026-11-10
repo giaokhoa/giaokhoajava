@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { parsePracticeHistory } from "../../src/app/(session)/personal/personal-content";
+import { parsePracticeHistory } from "@/app/(session)/personal/personal-content";
 import {
   parsePlatformRecoveryRequests,
   resolveRequestBody,
-} from "../../src/app/(session)/platform/recovery-requests/platform-recovery-content";
+} from "@/app/(session)/platform/recovery-requests/platform-recovery-content";
 import {
   recoveryRequestBody,
-} from "../../src/features/identity/recovery-request-form";
+} from "@/features/identity/recovery-request-form";
 import {
   parseTrackedOperation,
-} from "../../src/features/operations/operation-status";
+} from "@/features/operations/operation-status";
 
 describe("form khôi phục chỉ gửi target của chính actor", () => {
   it("gửi đúng targetUserId của actor và lý do đã cắt khoảng trắng", () => {

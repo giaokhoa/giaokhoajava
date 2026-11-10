@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "../../src/lib/api-client";
+import { ApiError } from "@/lib/api-client";
 import {
   ifMatchValue,
   nameBody,
@@ -11,18 +11,18 @@ import {
   parseSubjects,
   teachingErrorMessage,
   toggleSelection,
-} from "../../src/features/teaching/class-management";
+} from "@/features/teaching/class-management";
 import {
   courseCreateBody,
   parseCourses,
   parseTeacherAssignments,
   subjectAddBody,
   teacherAssignBody,
-} from "../../src/features/teaching/course-subject-editor";
+} from "@/features/teaching/course-subject-editor";
 import {
   enrollmentBatchBody,
   parseEnrollments,
-} from "../../src/features/teaching/enrollment-editor";
+} from "@/features/teaching/enrollment-editor";
 
 describe("parse dữ liệu giảng dạy theo DTO của backend", () => {
   it("chỉ giữ lớp đúng ClassView và đọc nextCursor của trang", () => {

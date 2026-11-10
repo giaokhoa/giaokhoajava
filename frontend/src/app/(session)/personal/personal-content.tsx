@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiRequest, isRecord, listItems } from "../../../lib/api-client";
-import { SessionGate } from "../../../features/identity/session-gate";
-import { RecoveryRequestForm } from "../../../features/identity/recovery-request-form";
-import { useSession } from "../../../features/identity/session-provider";
-import { WorkspaceSwitcher } from "../../../features/identity/workspace-switcher";
-import { PersonalEntitlements } from "../../../features/subscriptions/personal-entitlements";
+import { apiRequest, isRecord, listItems } from "@/lib/api-client";
+import { SessionGate } from "@/features/identity/session-gate";
+import { RecoveryRequestForm } from "@/features/identity/recovery-request-form";
+import { useSession } from "@/features/identity/session-provider";
+import { WorkspaceSwitcher } from "@/features/identity/workspace-switcher";
+import { PersonalEntitlements } from "@/features/subscriptions/personal-entitlements";
 
 export type PracticeAttempt = {
   id: string;

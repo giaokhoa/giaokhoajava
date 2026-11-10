@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { isRecord, requestAllPages, requestWhenReady } from "../../lib/api-client";
-import type { Membership } from "../tenancy/center-administration";
+import { isRecord, requestAllPages, requestWhenReady } from "@/lib/api-client";
+import type { Membership } from "@/features/tenancy/center-administration";
 import {
   ifMatchValue,
   nameBody,

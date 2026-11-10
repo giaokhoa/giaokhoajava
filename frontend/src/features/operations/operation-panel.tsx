@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { apiRequest, requestWhenReady } from "../../lib/api-client";
+import { apiRequest, requestWhenReady } from "@/lib/api-client";
 import {
   operationStatus,
   parseTrackedOperation,

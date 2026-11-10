@@ -1,4 +1,4 @@
-import { CenterClassesContent } from "../../../../../features/teaching/class-management";
+import { CenterClassesContent } from "@/features/teaching/class-management";
 
 // Next 16: params của dynamic route là Promise, trang server phải await trước khi dùng.
 export default async function CenterClassesPage({

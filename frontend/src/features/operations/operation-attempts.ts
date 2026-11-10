@@ -1,4 +1,4 @@
-import { requestWhenReady } from "../../lib/api-client";
+import { requestWhenReady } from "@/lib/api-client";
 import type { OperationView } from "./operation-status";
 
 // Gửi mutation kèm Idempotency-Key cho trước và trả dữ liệu của phản hồi.

@@ -1,4 +1,4 @@
-import { SessionProvider } from "../../features/identity/session-provider";
+import { SessionProvider } from "@/features/identity/session-provider";
 
 // Mọi route trong nhóm đều làm việc theo phiên đăng nhập nên provider nằm ở
 // layout này; trang chủ công khai ngoài nhóm không hydrate provider và khách

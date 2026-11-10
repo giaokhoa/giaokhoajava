@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canManagePersonalClasses,
   parsePersonalWorkspace,
-} from "../../src/features/subscriptions/personal-entitlements";
+} from "@/features/subscriptions/personal-entitlements";
 
 const personalCoGoi = {
   id: "w-personal",

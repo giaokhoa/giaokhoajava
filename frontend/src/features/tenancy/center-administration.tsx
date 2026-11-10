@@ -8,18 +8,18 @@ import {
   requestAllPages,
   requestWhenReady,
   requestWorkspaces,
-} from "../../lib/api-client";
-import { SessionGate } from "../identity/session-gate";
-import { useSession } from "../identity/session-provider";
-import { attemptKey, submitMutation } from "../operations/operation-attempts";
-import { OperationPanel, useOperationCheck } from "../operations/operation-panel";
+} from "@/lib/api-client";
+import { SessionGate } from "@/features/identity/session-gate";
+import { useSession } from "@/features/identity/session-provider";
+import { attemptKey, submitMutation } from "@/features/operations/operation-attempts";
+import { OperationPanel, useOperationCheck } from "@/features/operations/operation-panel";
 import {
   operationStatus,
   parseTrackedOperation,
   pollOperationUntilSettled,
   type TrackedOperation,
-} from "../operations/operation-status";
-import { parseWorkspaces, type WorkspaceView } from "../identity/workspace-switcher";
+} from "@/features/operations/operation-status";
+import { parseWorkspaces, type WorkspaceView } from "@/features/identity/workspace-switcher";
 
 // Danh mục vai trò cố định của center; không có đường tạo vai trò tùy chỉnh.
 export const CENTER_ROLES = ["OWNER", "MANAGER", "TEACHER", "STUDENT", "PARENT"] as const;

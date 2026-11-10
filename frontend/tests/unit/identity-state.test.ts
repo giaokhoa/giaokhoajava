@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseSessionView } from "../../src/features/identity/session-provider";
-import { parseWorkspaces } from "../../src/features/identity/workspace-switcher";
+import { parseSessionView } from "@/features/identity/session-provider";
+import { parseWorkspaces } from "@/features/identity/workspace-switcher";
 
 describe("trạng thái phiên và không gian", () => {
   it("phân biệt phiên ẩn danh và phiên đã đăng nhập", () => {

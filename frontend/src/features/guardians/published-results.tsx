@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isRecord, listItems, requestAllPages } from "../../lib/api-client";
-import { SessionGate } from "../identity/session-gate";
-import { useSession } from "../identity/session-provider";
+import { isRecord, listItems, requestAllPages } from "@/lib/api-client";
+import { SessionGate } from "@/features/identity/session-gate";
+import { useSession } from "@/features/identity/session-provider";
 
 // Hình hiển thị duy nhất của đường đọc kết quả: đúng các trường của
 // PublishedResultView. Bài làm, đáp án và dữ liệu chấm nội bộ không có trong DTO

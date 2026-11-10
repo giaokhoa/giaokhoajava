@@ -2,25 +2,25 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { isRecord, listItems, requestAllPages, requestWhenReady } from "../../lib/api-client";
-import { SessionGate } from "../identity/session-gate";
-import { useSession } from "../identity/session-provider";
+import { isRecord, listItems, requestAllPages, requestWhenReady } from "@/lib/api-client";
+import { SessionGate } from "@/features/identity/session-gate";
+import { useSession } from "@/features/identity/session-provider";
 import {
   attemptKey,
   closeAttempt,
   submitMutation,
-} from "../operations/operation-attempts";
-import { OperationPanel, useOperationCheck } from "../operations/operation-panel";
+} from "@/features/operations/operation-attempts";
+import { OperationPanel, useOperationCheck } from "@/features/operations/operation-panel";
 import {
   operationStatus,
   parseTrackedOperation,
   pollOperationUntilSettled,
   type TrackedOperation,
-} from "../operations/operation-status";
+} from "@/features/operations/operation-status";
 import {
   parseMemberships,
   type Membership,
-} from "../tenancy/center-administration";
+} from "@/features/tenancy/center-administration";
 
 // Vòng đời liên kết theo hợp đồng HTTP: REQUESTED → APPROVED/REJECTED, APPROVED → REVOKED.
 // REJECTED là kết thúc: muốn liên kết lại phải gửi yêu cầu mới.

@@ -1,21 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, requestAllPages, requestWorkspaces } from "../../../../lib/api-client";
-import { SessionGate } from "../../../../features/identity/session-gate";
-import { useSession } from "../../../../features/identity/session-provider";
-import { submitMutation } from "../../../../features/operations/operation-attempts";
-import { OperationPanel, useOperationCheck } from "../../../../features/operations/operation-panel";
+import { ApiError, requestAllPages, requestWorkspaces } from "@/lib/api-client";
+import { SessionGate } from "@/features/identity/session-gate";
+import { useSession } from "@/features/identity/session-provider";
+import { submitMutation } from "@/features/operations/operation-attempts";
+import { OperationPanel, useOperationCheck } from "@/features/operations/operation-panel";
 import {
   operationStatus,
   parseTrackedOperation,
   type TrackedOperation,
-} from "../../../../features/operations/operation-status";
+} from "@/features/operations/operation-status";
 import {
   canManagePersonalClasses,
   parsePersonalWorkspace,
-} from "../../../../features/subscriptions/personal-entitlements";
-import type { WorkspaceView } from "../../../../features/identity/workspace-switcher";
+} from "@/features/subscriptions/personal-entitlements";
+import type { WorkspaceView } from "@/features/identity/workspace-switcher";
 import {
   nameBody,
   operationSucceeded,
@@ -28,8 +28,8 @@ import {
   type Subject,
   type TeachingClass,
   type TeachingMutate,
-} from "../../../../features/teaching/class-management";
-import { CourseSubjectEditor } from "../../../../features/teaching/course-subject-editor";
+} from "@/features/teaching/class-management";
+import { CourseSubjectEditor } from "@/features/teaching/course-subject-editor";
 
 export function PersonalClassesContent() {
   const { session, refreshSession } = useSession();

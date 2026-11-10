@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isRecord, requestAllPages } from "../../lib/api-client";
+import { isRecord, requestAllPages } from "@/lib/api-client";
 import {
   operationSucceeded,
   parsePage,

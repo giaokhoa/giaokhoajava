@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { isRecord, requestWorkspaces } from "../../lib/api-client";
+import { isRecord, requestWorkspaces } from "@/lib/api-client";
 import { useSession } from "./session-provider";
 
 export type WorkspaceKind = "PERSONAL" | "CENTER" | "SYSTEM";

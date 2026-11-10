@@ -5,7 +5,7 @@ import {
   requestWorkspaces,
   setSessionIdentity,
   submitLogout,
-} from "../../src/lib/api-client";
+} from "@/lib/api-client";
 
 afterEach(() => vi.unstubAllGlobals());
 

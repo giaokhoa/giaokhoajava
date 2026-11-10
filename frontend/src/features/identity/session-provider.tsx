@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { apiRequest, isRecord, setSessionIdentity } from "../../lib/api-client";
+import { apiRequest, isRecord, setSessionIdentity } from "@/lib/api-client";
 
 export type SessionUser = {
   id: string;

@@ -5,14 +5,14 @@ import {
   guardianRequestBody,
   parseGuardianLinks,
   type GuardianLink,
-} from "../../src/features/guardians/guardian-link-review";
+} from "@/features/guardians/guardian-link-review";
 import {
   attemptKey,
   closeAttempt,
-} from "../../src/features/operations/operation-attempts";
-import type { TrackedOperation } from "../../src/features/operations/operation-status";
-import { parsePublishedResults } from "../../src/features/guardians/published-results";
-import type { Membership } from "../../src/features/tenancy/center-administration";
+} from "@/features/operations/operation-attempts";
+import type { TrackedOperation } from "@/features/operations/operation-status";
+import { parsePublishedResults } from "@/features/guardians/published-results";
+import type { Membership } from "@/features/tenancy/center-administration";
 
 const lienKetDung: GuardianLink = {
   id: "l-1",
