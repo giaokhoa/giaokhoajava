@@ -102,6 +102,7 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
                         + schema.replace("\"", "\"\"")
                         + "\" FROM "
                         + RUNTIME_ROLE);
+        jdbc.execute("REVOKE SELECT ON workspace FROM " + RUNTIME_ROLE);
         jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
     }
 

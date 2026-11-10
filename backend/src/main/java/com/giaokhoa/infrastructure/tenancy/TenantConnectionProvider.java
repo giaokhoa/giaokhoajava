@@ -14,10 +14,14 @@ import org.springframework.stereotype.Component;
 
 /**
  * Connection provider cho chiến lược separate schema (Hibernate User Guide §24.2.2, §24.3.2): một
- * pool dùng chung, mỗi connection được đặt {@code search_path} = schema tenant + schema hệ thống
- * trước khi dùng. Khi trả connection về pool, {@code search_path} bị reset bắt buộc — connection
- * mang schema của tenant trước rò sang request sau là lỗi cách ly nghiêm trọng nhất của mô hình
- * này. Connection "any" (khởi động/metadata) luôn trỏ về schema hệ thống.
+ * pool dùng chung, mỗi connection được đặt {@code search_path} = schema tenant + phần search_path
+ * pool đã cấu hình (schema hệ thống của deployment) trước khi dùng. Khi trả connection về pool,
+ * {@code search_path} bị reset bắt buộc — connection mang schema của tenant trước rò sang request
+ * sau là lỗi cách ly nghiêm trọng nhất của mô hình này. Connection cho tenant hệ thống và
+ * connection "any" (khởi động/metadata) giữ nguyên search_path của pool: schema hệ thống vật lý do
+ * cấu hình datasource quyết định (là {@code public} ở deployment chuẩn, là schema riêng ở các môi
+ * trường kiểm thử cô lập chạy toàn bộ ứng dụng trong một schema khác), không ép về một tên cố định
+ * ở đây.
  */
 @Component
 public class TenantConnectionProvider implements MultiTenantConnectionProvider<String> {
@@ -37,10 +41,20 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
     public Connection getConnection(String tenantIdentifier) throws SQLException {
         String schema = requireSchemaName(tenantIdentifier);
         Connection connection = dataSource.getConnection();
-        try (PreparedStatement statement =
-                connection.prepareStatement("SELECT set_config('search_path', ?, false)")) {
-            statement.setString(
-                    1, TenantContext.SYSTEM_SCHEMA.equals(schema) ? schema : schema + ", public");
+        if (TenantContext.SYSTEM_SCHEMA.equals(schema)) {
+            return connection;
+        }
+        try (Statement read = connection.createStatement();
+                PreparedStatement statement =
+                        connection.prepareStatement("SELECT set_config('search_path', ?, false)")) {
+            String currentPath;
+            try (var result = read.executeQuery("SELECT current_setting('search_path')")) {
+                if (!result.next()) {
+                    throw new SQLException("Không đọc được search_path hiện tại của connection");
+                }
+                currentPath = result.getString(1);
+            }
+            statement.setString(1, schema + ", " + currentPath);
             statement.execute();
         } catch (SQLException e) {
             connection.close();

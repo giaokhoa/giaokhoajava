@@ -436,7 +436,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     /**
      * Entity probe ánh xạ bảng subscription_period có thật ở cả schema hệ thống và schema tenant.
      */
-    @Entity
+    @Entity(name = "ProbeSubscriptionPeriod")
     @Table(name = "subscription_period")
     public static class ProbeSubscriptionPeriod {
 

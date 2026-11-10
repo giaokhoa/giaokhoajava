@@ -1,6 +1,7 @@
 package com.giaokhoa.infrastructure.tenancy;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -70,10 +71,18 @@ public class WorkspaceTransaction {
                 WORKSPACE_SETTING,
                 workspaceId.toString());
         if (schemaName != null) {
+            // Đuôi search_path lấy nguyên từ connection hiện tại (schema hệ thống do cấu hình
+            // pool quyết định — public ở deployment chuẩn, schema riêng ở môi trường kiểm thử
+            // cô lập) thay vì ép tên schema hệ thống cố định.
+            String currentPath =
+                    Objects.requireNonNull(
+                            jdbc.queryForObject(
+                                    "SELECT current_setting('search_path')", String.class),
+                            "search_path hiện tại không được null");
             jdbc.queryForObject(
                     "SELECT set_config('search_path', ?, true)",
                     String.class,
-                    schemaName + ", " + TenantContext.SYSTEM_SCHEMA);
+                    schemaName + ", " + currentPath);
         }
     }
 
