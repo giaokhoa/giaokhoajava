@@ -32,11 +32,11 @@ import org.springframework.transaction.annotation.Transactional;
  * xuyên hai mặt phẳng như trước.
  */
 @Service
-public class WorkspaceDirectory {
+public class WorkspaceDirectoryService {
     private final WorkspaceRepository workspaces;
     private final CenterMembershipRepository memberships;
 
-    public WorkspaceDirectory(
+    public WorkspaceDirectoryService(
             WorkspaceRepository workspaces, CenterMembershipRepository memberships) {
         this.workspaces = workspaces;
         this.memberships = memberships;

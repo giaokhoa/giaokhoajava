@@ -1,6 +1,6 @@
 package com.giaokhoa.teaching;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
@@ -76,7 +76,7 @@ public class TeachingPolicyProjector {
     private final TeachingAssignmentRepository teachingAssignments;
     private final EnrollmentRepository enrollments;
     private final TeachingScopePreconditions preconditions;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
     private final WorkspaceTransaction workspaceTransaction;
     private final TransactionTemplate transactions;
 
@@ -88,7 +88,7 @@ public class TeachingPolicyProjector {
             TeachingAssignmentRepository teachingAssignments,
             EnrollmentRepository enrollments,
             TeachingScopePreconditions preconditions,
-            KeycloakProvisioningClient directory,
+            AuthorizationProvisioningClient directory,
             WorkspaceTransaction workspaceTransaction,
             PlatformTransactionManager transactionManager) {
         this.schoolClasses = schoolClasses;
@@ -159,7 +159,7 @@ public class TeachingPolicyProjector {
     public List<String> sourcesFor(String targetKey, String scope) {
         List<String> bundle = bundleDescriptors(targetKey);
         return bundle.stream()
-                .filter(descriptor -> descriptor.endsWith("|scope=" + scope))
+                .filter(descriptor -> descriptor.endsWith(PolicyGraph.SCOPE_MARKER + scope))
                 .toList();
     }
 
@@ -505,7 +505,7 @@ public class TeachingPolicyProjector {
                 + groupPath
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -528,7 +528,7 @@ public class TeachingPolicyProjector {
                 + period.expiresAt()
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 

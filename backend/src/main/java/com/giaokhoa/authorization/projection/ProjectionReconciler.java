@@ -1,6 +1,6 @@
 package com.giaokhoa.authorization.projection;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
@@ -56,6 +56,9 @@ import org.springframework.web.client.RestClientException;
 public class ProjectionReconciler {
     private static final Logger LOG = LoggerFactory.getLogger(ProjectionReconciler.class);
 
+    private static final String NO_FIXED_TEMPLATE_MESSAGE =
+            "Target key matches no fixed template: ";
+
     public static final String ERROR_NO_RECORDED_PROJECTION = "NO_RECORDED_PROJECTION";
     public static final String ERROR_DESIRED_SOURCE_MISMATCH = "DESIRED_SOURCE_MISMATCH";
     public static final String ERROR_DEPENDENCY_NOT_READY = "DEPENDENCY_NOT_READY";
@@ -64,7 +67,7 @@ public class ProjectionReconciler {
     private final AuthzPartitionRepository partitions;
     private final AuthzProjectionRepository projections;
     private final PolicyGraphWriter writer;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
     private final GuardianPolicyProjector guardianProjector;
@@ -80,7 +83,7 @@ public class ProjectionReconciler {
             AuthzPartitionRepository partitions,
             AuthzProjectionRepository projections,
             PolicyGraphWriter writer,
-            KeycloakProvisioningClient directory,
+            AuthorizationProvisioningClient directory,
             CenterPolicyProjector centerProjector,
             TeachingPolicyProjector teachingProjector,
             GuardianPolicyProjector guardianProjector,
@@ -575,8 +578,7 @@ public class ProjectionReconciler {
                         .orElseThrow(() ->
                                 new ReconciliationException(
                                         ERROR_DESIRED_SOURCE_MISMATCH,
-                                        "Target key matches no fixed template: "
-                                                + projection.targetKey()));
+                                        NO_FIXED_TEMPLATE_MESSAGE + projection.targetKey()));
         if (type == NativePolicyTemplates.TargetType.WORKSPACE
                 && isCenterWorkspace(projection.targetKey())) {
             return resolveCenterBundle(projection);
@@ -636,7 +638,11 @@ public class ProjectionReconciler {
      * cùng scope mà đường ghi bundle dùng khi lưu projection.
      */
     private Resolved resolveCenterBundle(ProjectionRow projection) {
-        UUID workspaceId = UUID.fromString(projection.targetKey().substring("workspace:".length()));
+        UUID workspaceId =
+                UUID.fromString(
+                        projection
+                                .targetKey()
+                                .substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         List<String> bundle = centerProjector.bundleDescriptors(workspaceId);
         if (bundle.isEmpty()) {
             return new Resolved.RetractBundle(CenterPolicyProjector.managedScopes());
@@ -686,7 +692,7 @@ public class ProjectionReconciler {
     }
 
     private boolean isCenterWorkspace(String targetKey) {
-        UUID workspaceId = UUID.fromString(targetKey.substring("workspace:".length()));
+        UUID workspaceId = UUID.fromString(targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         return partitions
                 .findWorkspaceById(workspaceId)
                 .map(workspace -> workspace.getKind() == Workspace.Kind.CENTER)
@@ -694,7 +700,7 @@ public class ProjectionReconciler {
     }
 
     private boolean isPersonalWorkspace(String targetKey) {
-        UUID workspaceId = UUID.fromString(targetKey.substring("workspace:".length()));
+        UUID workspaceId = UUID.fromString(targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         return partitions
                 .findWorkspaceById(workspaceId)
                 .map(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
@@ -707,7 +713,11 @@ public class ProjectionReconciler {
      * nguồn hiện hành cho mọi scope, với scope danh nghĩa ENTER của projector.
      */
     private Resolved resolvePersonalBundle(ProjectionRow projection) {
-        UUID workspaceId = UUID.fromString(projection.targetKey().substring("workspace:".length()));
+        UUID workspaceId =
+                UUID.fromString(
+                        projection
+                                .targetKey()
+                                .substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         String bundleScope = PersonalEntitlementProjector.bundleScope();
         // Nguồn owner của personal không bao giờ tự rỗng khi workspace còn tồn tại, nên desired
         // đã ghi là tập rỗng chỉ đến từ một lần ghi thu hồi toàn bộ: rút cả bundle, cùng hình
@@ -749,8 +759,7 @@ public class ProjectionReconciler {
                         .orElseThrow(() ->
                                 new ReconciliationException(
                                         ERROR_DESIRED_SOURCE_MISMATCH,
-                                        "Target key matches no fixed template: "
-                                                + projection.targetKey()));
+                                        NO_FIXED_TEMPLATE_MESSAGE + projection.targetKey()));
         List<String> bundle = personalTeachingProjector.bundleDescriptors(projection.targetKey());
         List<String> managedScopes = PersonalTeachingPolicyProjector.managedScopes(type);
         if (bundle.isEmpty()) {
@@ -778,7 +787,7 @@ public class ProjectionReconciler {
 
     /** Target key của workspace chứa một target con (lớp/khóa/môn–khóa) của cùng workspace đó. */
     private static String workspaceKeyOf(String targetKey) {
-        return targetKey.substring(0, "workspace:".length() + 36);
+        return targetKey.substring(0, NativePolicyTemplates.WORKSPACE_PREFIX.length() + 36);
     }
 
     /**
@@ -793,8 +802,7 @@ public class ProjectionReconciler {
                         .orElseThrow(() ->
                                 new ReconciliationException(
                                         ERROR_DESIRED_SOURCE_MISMATCH,
-                                        "Target key matches no fixed template: "
-                                                + projection.targetKey()));
+                                        NO_FIXED_TEMPLATE_MESSAGE + projection.targetKey()));
         List<String> bundle = teachingProjector.bundleDescriptors(projection.targetKey());
         List<String> managedScopes = TeachingPolicyProjector.managedScopes(type);
         if (bundle.isEmpty()) {
@@ -925,7 +933,7 @@ public class ProjectionReconciler {
         if (type != NativePolicyTemplates.TargetType.WORKSPACE) {
             return List.of();
         }
-        UUID workspaceId = UUID.fromString(targetKey.substring("workspace:".length()));
+        UUID workspaceId = UUID.fromString(targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         Optional<Workspace> workspace = partitions.findWorkspaceById(workspaceId);
         if (workspace.isEmpty() || workspace.get().getKind() != Workspace.Kind.PERSONAL) {
             return List.of();
@@ -1022,7 +1030,7 @@ public class ProjectionReconciler {
                 NativePolicyTemplates.targetTypeOf(targetKey)
                         .orElseThrow(() ->
                                 new IllegalArgumentException(
-                                        "Target key matches no fixed template: " + targetKey));
+                                        NO_FIXED_TEMPLATE_MESSAGE + targetKey));
         // Các scope hợp đồng miễn trừ eligibility (như account.recover) không được gắn gate đó:
         // constructor tiện ích luôn gắn sẽ thu hẹp quyền so với hợp đồng dù hash vẫn tự nhất quán.
         if (!NativePolicyTemplates.requiresEligibility(type, scope)) {

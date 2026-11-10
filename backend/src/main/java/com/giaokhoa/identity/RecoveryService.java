@@ -8,6 +8,7 @@ import com.giaokhoa.identity.repository.RecoveryRequestRepository;
 import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
@@ -255,7 +256,7 @@ public class RecoveryService {
         if (decision != Decision.REJECT && note == null) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_VERIFICATION_NOTE",
+                    ErrorCodes.INVALID_VERIFICATION_NOTE,
                     "Cần ghi nhận việc xác minh hoặc việc khôi phục và bàn giao đã hoàn tất.");
         }
         RecoveryRequest.State current = currentState(requestId);
@@ -324,7 +325,7 @@ public class RecoveryService {
         if (!hash.equals(previous.getPayloadHash())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "IDEMPOTENCY_CONFLICT",
+                    ErrorCodes.IDEMPOTENCY_CONFLICT,
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
         return Optional.of(previous.getRequestId());
@@ -334,7 +335,7 @@ public class RecoveryService {
         if (!accounts.existsById(userId)) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "ACCOUNT_NOT_FOUND",
+                    ErrorCodes.ACCOUNT_NOT_FOUND,
                     "Chưa có tài khoản cho danh tính này.");
         }
     }
@@ -377,21 +378,21 @@ public class RecoveryService {
     private static HttpProblemException targetNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "RECOVERY_TARGET_NOT_FOUND",
+                ErrorCodes.RECOVERY_TARGET_NOT_FOUND,
                 "Không tìm thấy tài khoản đích trong phạm vi yêu cầu hỗ trợ.");
     }
 
     private static HttpProblemException requestNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "RECOVERY_REQUEST_NOT_FOUND",
+                ErrorCodes.RECOVERY_REQUEST_NOT_FOUND,
                 "Không tìm thấy yêu cầu hỗ trợ.");
     }
 
     private static HttpProblemException invalidState(UUID requestId) {
         return new HttpProblemException(
                 HttpStatus.CONFLICT,
-                "RECOVERY_INVALID_STATE",
+                ErrorCodes.RECOVERY_INVALID_STATE,
                 "Yêu cầu hỗ trợ " + requestId + " không còn ở trạng thái cho phép thao tác này.");
     }
 
@@ -403,7 +404,7 @@ public class RecoveryService {
         if (trimmed.isEmpty() || trimmed.length() > MAX_NOTE_LENGTH) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_VERIFICATION_NOTE",
+                    ErrorCodes.INVALID_VERIFICATION_NOTE,
                     "Ghi chú xác minh phải có từ 1 đến 1000 ký tự.");
         }
         return trimmed;
@@ -420,7 +421,7 @@ public class RecoveryService {
         if (trimmed.length() > MAX_NOTE_LENGTH) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_REASON",
+                    ErrorCodes.INVALID_REASON,
                     "Lý do cần hỗ trợ phải có từ 1 đến 1000 ký tự.");
         }
         return trimmed;

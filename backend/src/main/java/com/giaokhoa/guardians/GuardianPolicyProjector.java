@@ -1,6 +1,6 @@
 package com.giaokhoa.guardians;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
@@ -52,7 +52,7 @@ public class GuardianPolicyProjector {
     private final GuardianAuthorizationPartitionRepository partitions;
     private final MembershipService memberships;
     private final WorkspaceTransaction workspaceTransaction;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
     private final ResultPolicyProjector resultProjector;
@@ -64,7 +64,7 @@ public class GuardianPolicyProjector {
             GuardianAuthorizationPartitionRepository partitions,
             MembershipService memberships,
             WorkspaceTransaction workspaceTransaction,
-            KeycloakProvisioningClient directory,
+            AuthorizationProvisioningClient directory,
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
             ResultPolicyProjector resultProjector,

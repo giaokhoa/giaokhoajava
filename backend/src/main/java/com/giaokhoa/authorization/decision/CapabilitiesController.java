@@ -1,8 +1,11 @@
 package com.giaokhoa.authorization.decision;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -29,13 +32,16 @@ public class CapabilitiesController {
     }
 
     public record TargetInput(
-            String type, @Nullable UUID id, @Nullable UUID versionId, List<String> scopes) {
+            @NotBlank String type,
+            @Nullable UUID id,
+            @Nullable UUID versionId,
+            List<String> scopes) {
         public TargetInput {
             scopes = scopes == null ? List.of() : List.copyOf(scopes);
         }
     }
 
-    public record CapabilitiesRequest(List<TargetInput> targets) {
+    public record CapabilitiesRequest(List<@Valid TargetInput> targets) {
         public CapabilitiesRequest {
             targets = targets == null ? List.of() : List.copyOf(targets);
         }
@@ -57,9 +63,9 @@ public class CapabilitiesController {
     }
 
     @PostMapping("/api/workspaces/{workspaceId}/capabilities")
-    public ResponseEntity<CapabilitiesView> capabilities(
+    public ResponseEntity<CapabilitiesView> evaluateCapabilities(
             @PathVariable UUID workspaceId,
-            @RequestBody CapabilitiesRequest request,
+            @RequestBody @Valid CapabilitiesRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
         if (request == null || request.targets() == null || request.targets().isEmpty()) {
@@ -164,6 +170,9 @@ public class CapabilitiesController {
 
     private static HttpProblemException invalidTarget(@Nullable Throwable cause) {
         return new HttpProblemException(
-                HttpStatus.BAD_REQUEST, "INVALID_TARGET", "Đối tượng đích không hợp lệ.", cause);
+                HttpStatus.BAD_REQUEST,
+                ErrorCodes.INVALID_TARGET,
+                "Đối tượng đích không hợp lệ.",
+                cause);
     }
 }

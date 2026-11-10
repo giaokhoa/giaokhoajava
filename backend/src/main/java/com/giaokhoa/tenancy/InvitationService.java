@@ -9,6 +9,7 @@ import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.Sha256;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.Invitation;
@@ -137,19 +138,19 @@ public class InvitationService {
         if ((targetEmail == null) == (targetUserId == null)) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_INVITATION_TARGET",
+                    ErrorCodes.INVALID_INVITATION_TARGET,
                     "Lời mời phải có đúng một đích: email hoặc người dùng đã có.");
         }
         if (roles.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_INVITATION_ROLES",
+                    ErrorCodes.INVALID_INVITATION_ROLES,
                     "Lời mời phải có ít nhất một role đích.");
         }
         if (roles.contains(MembershipRole.Role.OWNER)) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "OWNER_NOT_INVITABLE",
+                    ErrorCodes.OWNER_NOT_INVITABLE,
                     "Lời mời không được cấp role OWNER.");
         }
         requireCenter(workspaceId);
@@ -158,14 +159,14 @@ public class InvitationService {
                 && !initiatorRoles.contains(MembershipRole.Role.MANAGER)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "INVITER_NOT_AUTHORIZED",
+                    ErrorCodes.INVITER_NOT_AUTHORIZED,
                     "Chỉ chủ sở hữu hoặc quản lý của trung tâm mới được mời thành viên.");
         }
         if (roles.contains(MembershipRole.Role.MANAGER)
                 && !initiatorRoles.contains(MembershipRole.Role.OWNER)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "MANAGER_REQUIRES_OWNER",
+                    ErrorCodes.MANAGER_REQUIRES_OWNER,
                     "Chỉ chủ sở hữu trung tâm mới được mời quản lý.");
         }
         String email;
@@ -222,19 +223,19 @@ public class InvitationService {
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
-                                        "INVITATION_NOT_FOUND",
+                                        ErrorCodes.INVITATION_NOT_FOUND,
                                         "Không tìm thấy lời mời."));
         // Token lạ và token không tồn tại trả cùng một 404: không lộ lời mời nào.
         coordinator.lockWorkspace(invitation.getWorkspaceId());
         if (invitation.getState() != Invitation.State.PENDING) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "INVITATION_NOT_PENDING",
+                    ErrorCodes.INVITATION_NOT_PENDING,
                     "Lời mời không còn chờ chấp nhận.");
         }
         if (!invitation.getExpiresAt().isAfter(Instant.now())) {
             throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "INVITATION_EXPIRED", "Lời mời đã hết hạn.");
+                    HttpStatus.CONFLICT, ErrorCodes.INVITATION_EXPIRED, "Lời mời đã hết hạn.");
         }
         requireTargetMatch(invitation, acceptorUserId);
 
@@ -337,7 +338,7 @@ public class InvitationService {
             // Không phân biệt thiếu/không phải center/không ACTIVE: không lộ sự tồn tại.
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "WORKSPACE_NOT_FOUND",
+                    ErrorCodes.WORKSPACE_NOT_FOUND,
                     "Không tìm thấy trung tâm hợp lệ.");
         }
     }
@@ -346,7 +347,7 @@ public class InvitationService {
         if (!accounts.existsById(userId)) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "ACCOUNT_NOT_FOUND",
+                    ErrorCodes.ACCOUNT_NOT_FOUND,
                     "Chưa có tài khoản cho danh tính này.");
         }
     }
@@ -362,7 +363,7 @@ public class InvitationService {
     private static HttpProblemException targetMismatch() {
         return new HttpProblemException(
                 HttpStatus.FORBIDDEN,
-                "INVITATION_TARGET_MISMATCH",
+                ErrorCodes.INVITATION_TARGET_MISMATCH,
                 "Lời mời này không dành cho tài khoản hiện hành.");
     }
 
@@ -371,7 +372,7 @@ public class InvitationService {
         if (trimmed.isEmpty() || trimmed.length() > 320 || !trimmed.contains("@")) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_TARGET_EMAIL",
+                    ErrorCodes.INVALID_TARGET_EMAIL,
                     "Email đích của lời mời không hợp lệ.");
         }
         return trimmed;

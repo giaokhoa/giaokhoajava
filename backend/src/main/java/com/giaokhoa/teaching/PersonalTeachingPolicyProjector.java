@@ -4,13 +4,14 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.subscriptions.SubscriptionPeriodRow;
 import com.giaokhoa.teaching.TeachingScopePreconditions.SubscriptionPeriod;
 import com.giaokhoa.teaching.TeachingScopePreconditions.UserAccountRef;
 import com.giaokhoa.teaching.repository.CourseRepository;
 import com.giaokhoa.teaching.repository.CourseSubjectRepository;
 import com.giaokhoa.teaching.repository.EnrollmentRepository;
 import com.giaokhoa.teaching.repository.SchoolClassRepository;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -140,7 +141,7 @@ public class PersonalTeachingPolicyProjector {
     public List<String> sourcesFor(String targetKey, String scope) {
         List<String> bundle = bundleDescriptors(targetKey);
         return bundle.stream()
-                .filter(descriptor -> descriptor.endsWith("|scope=" + scope))
+                .filter(descriptor -> descriptor.endsWith(PolicyGraph.SCOPE_MARKER + scope))
                 .toList();
     }
 
@@ -239,14 +240,14 @@ public class PersonalTeachingPolicyProjector {
         if (sources.owner == null) {
             return Map.of();
         }
-        sources.addOwner("read", false);
-        sources.addOwner("update", true);
-        sources.addOwner("course.list", false);
-        sources.addOwner("course.create", true);
-        sources.addOwner("roster.read", false);
-        sources.addOwner("roster.add", true);
-        sources.addOwner("roster.revoke", false);
-        sources.addOwner("completion.read", false);
+        sources.addOwner(PermissionCatalog.ClassScope.READ.scopeName(), false);
+        sources.addOwner(PermissionCatalog.ClassScope.UPDATE.scopeName(), true);
+        sources.addOwner(PermissionCatalog.ClassScope.COURSE_LIST.scopeName(), false);
+        sources.addOwner(PermissionCatalog.ClassScope.COURSE_CREATE.scopeName(), true);
+        sources.addOwner(PermissionCatalog.ClassScope.ROSTER_READ.scopeName(), false);
+        sources.addOwner(PermissionCatalog.ClassScope.ROSTER_ADD.scopeName(), true);
+        sources.addOwner(PermissionCatalog.ClassScope.ROSTER_REVOKE.scopeName(), false);
+        sources.addOwner(PermissionCatalog.ClassScope.COMPLETION_READ.scopeName(), false);
         return sources.byScope();
     }
 
@@ -259,9 +260,9 @@ public class PersonalTeachingPolicyProjector {
         if (sources.owner == null) {
             return Map.of();
         }
-        sources.addOwner("read", false);
-        sources.addOwner("update", false);
-        sources.addOwner("subject.add", true);
+        sources.addOwner(PermissionCatalog.CourseScope.READ.scopeName(), false);
+        sources.addOwner(PermissionCatalog.CourseScope.UPDATE.scopeName(), false);
+        sources.addOwner(PermissionCatalog.CourseScope.SUBJECT_ADD.scopeName(), true);
         return sources.byScope();
     }
 
@@ -274,15 +275,15 @@ public class PersonalTeachingPolicyProjector {
         if (sources.owner == null) {
             return Map.of();
         }
-        sources.addOwner("read", false);
-        sources.addOwner("roster.read", false);
-        sources.addOwner("enrollment.add", true);
-        sources.addOwner("enrollment.revoke", false);
-        sources.addOwner("resource.create", true);
-        sources.addOwner("activity.assign", true);
-        sources.addOwner("completion.read", false);
+        sources.addOwner(PermissionCatalog.CourseSubjectScope.READ.scopeName(), false);
+        sources.addOwner(PermissionCatalog.CourseSubjectScope.ROSTER_READ.scopeName(), false);
+        sources.addOwner(PermissionCatalog.CourseSubjectScope.ENROLLMENT_ADD.scopeName(), true);
+        sources.addOwner(PermissionCatalog.CourseSubjectScope.ENROLLMENT_REVOKE.scopeName(), false);
+        sources.addOwner(PermissionCatalog.CourseSubjectScope.RESOURCE_CREATE.scopeName(), true);
+        sources.addOwner(PermissionCatalog.CourseSubjectScope.ACTIVITY_ASSIGN.scopeName(), true);
+        sources.addOwner(PermissionCatalog.CourseSubjectScope.COMPLETION_READ.scopeName(), false);
         for (ActorRow student : enrolledStudents(workspaceId, courseSubjectId)) {
-            sources.addEnrollment("read", student);
+            sources.addEnrollment(PermissionCatalog.CourseSubjectScope.READ.scopeName(), student);
         }
         return sources.byScope();
     }
@@ -377,7 +378,7 @@ public class PersonalTeachingPolicyProjector {
                 + owner.keycloakSub()
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -402,7 +403,7 @@ public class PersonalTeachingPolicyProjector {
                 + period.expiresAt()
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -417,7 +418,7 @@ public class PersonalTeachingPolicyProjector {
                 + student.keycloakSub()
                 + "|target="
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 

@@ -4,11 +4,12 @@ import { useRef, useState, type FormEvent } from "react";
 import { SessionGate } from "../../features/identity/session-gate";
 import { WorkspaceSwitcher } from "../../features/identity/workspace-switcher";
 import { useSession } from "../../features/identity/session-provider";
-import { OperationPanel, useOperationCheck } from "../../features/operations/operation-panel";
+import { OperationPanel } from "../../features/operations/operation-panel";
+import { useOperationCheck } from "../../lib/use-operation-check";
 import {
   parseTrackedOperation,
   type TrackedOperation,
-} from "../../features/operations/operation-status";
+} from "../../lib/operation-status";
 import { apiRequest, submitLogout } from "../../lib/api-client";
 
 type PendingAction = "verification" | "recovery" | "operation" | "logout" | null;

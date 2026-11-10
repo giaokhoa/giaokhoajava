@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
 import com.giaokhoa.teaching.repository.ClassStudentRepository;
@@ -295,7 +296,9 @@ public class TeachingRouteSupport {
 
     public static HttpProblemException denied() {
         return new HttpProblemException(
-                HttpStatus.FORBIDDEN, "PERMISSION_DENIED", "Không có quyền thực hiện thao tác.");
+                HttpStatus.FORBIDDEN,
+                ErrorCodes.PERMISSION_DENIED,
+                "Không có quyền thực hiện thao tác.");
     }
 
     /** Khóa target của một lớp theo template cố định của projector. */

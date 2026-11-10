@@ -1,8 +1,13 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +40,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/classes")
 public class ClassController {
+    private static final String CLASSES_SEGMENT = "/classes/";
+
     private final ClassService classes;
     private final TeachingRouteSupport support;
 
@@ -43,7 +50,7 @@ public class ClassController {
         this.support = support;
     }
 
-    public record NameRequest(String name) {
+    public record NameRequest(@NotBlank @Size(max = 255) String name) {
         public NameRequest {
             // Tên vắng mặt trong body được đưa về chuỗi rỗng để service trả đúng 400 tên rỗng.
             name = name == null ? "" : name;
@@ -81,13 +88,16 @@ public class ClassController {
     @PostMapping
     public ResponseEntity<IdempotencyService.OperationReceipt> createClass(
             @PathVariable UUID workspaceId,
-            @RequestBody @Nullable NameRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable NameRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         NameRequest request = body == null ? new NameRequest("") : body;
         String hash =
-                support.payloadHash("POST", "/api/workspaces/" + workspaceId + "/classes", request);
+                support.payloadHash(
+                        "POST",
+                        HttpConstants.WORKSPACE_API_PREFIX + workspaceId + "/classes",
+                        request);
         return support.withEligibleActor(
                 authentication,
                 servletRequest,
@@ -134,13 +144,13 @@ public class ClassController {
     public ResponseEntity<IdempotencyService.OperationReceipt> renameClass(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
-            @RequestBody @Nullable NameRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable NameRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             @RequestHeader(value = "If-Match", required = false) @Nullable String ifMatch,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         NameRequest request = body == null ? new NameRequest("") : body;
-        String path = "/api/workspaces/" + workspaceId + "/classes/" + classId;
+        String path = HttpConstants.WORKSPACE_API_PREFIX + workspaceId + CLASSES_SEGMENT + classId;
         String hash = support.payloadHash("PATCH", path, request);
         return support.withEligibleActor(
                 authentication,
@@ -169,10 +179,10 @@ public class ClassController {
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeClass(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
-        String path = "/api/workspaces/" + workspaceId + "/classes/" + classId;
+        String path = HttpConstants.WORKSPACE_API_PREFIX + workspaceId + CLASSES_SEGMENT + classId;
         String hash = support.payloadHash("DELETE", path, null);
         return support.withEligibleActor(
                 authentication,
@@ -230,12 +240,17 @@ public class ClassController {
     public ResponseEntity<IdempotencyService.OperationReceipt> addStudents(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
-            @RequestBody @Nullable RosterAddRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable RosterAddRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         RosterAddRequest request = body == null ? new RosterAddRequest(List.of()) : body;
-        String path = "/api/workspaces/" + workspaceId + "/classes/" + classId + "/students";
+        String path =
+                HttpConstants.WORKSPACE_API_PREFIX
+                        + workspaceId
+                        + CLASSES_SEGMENT
+                        + classId
+                        + "/students";
         String hash = support.payloadHash("POST", path, request);
         return support.withEligibleActor(
                 authentication,
@@ -265,13 +280,13 @@ public class ClassController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
             @PathVariable UUID classStudentId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         String path =
-                "/api/workspaces/"
+                HttpConstants.WORKSPACE_API_PREFIX
                         + workspaceId
-                        + "/classes/"
+                        + CLASSES_SEGMENT
                         + classId
                         + "/students/"
                         + classStudentId;
@@ -303,6 +318,8 @@ public class ClassController {
 
     private static HttpProblemException classNotFound() {
         return new HttpProblemException(
-                HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", "Không tìm thấy lớp trong workspace này.");
+                HttpStatus.NOT_FOUND,
+                ErrorCodes.CLASS_NOT_FOUND,
+                "Không tìm thấy lớp trong workspace này.");
     }
 }

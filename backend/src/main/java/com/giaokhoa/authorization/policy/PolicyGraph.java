@@ -22,6 +22,9 @@ import org.jspecify.annotations.Nullable;
 public record PolicyGraph(
         String targetKey, String scope, List<Gate> commonGates, List<Source> sources) {
 
+    /** Đoạn phân cách scope trong canonical descriptor; mọi projector lọc bundle theo đoạn này. */
+    public static final String SCOPE_MARKER = "|scope=";
+
     public PolicyGraph {
         NativePolicyTemplates.TargetType type =
                 NativePolicyTemplates.targetTypeOf(targetKey)
@@ -74,7 +77,7 @@ public record PolicyGraph(
         StringBuilder out =
                 new StringBuilder("GRAPH|target=")
                         .append(targetKey)
-                        .append("|scope=")
+                        .append(SCOPE_MARKER)
                         .append(scope);
         if (!commonGates.isEmpty()) {
             out.append("|common=").append(joinGates(commonGates));

@@ -1,8 +1,13 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -33,6 +38,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api")
 public class CourseController {
+    private static final String COURSES_SEGMENT = "/courses/";
+
     private final CourseService courses;
     private final TeachingRouteSupport support;
 
@@ -41,7 +48,8 @@ public class CourseController {
         this.support = support;
     }
 
-    public record CourseCreateRequest(String name, List<UUID> subjectIds) {
+    public record CourseCreateRequest(
+            @NotBlank @Size(max = 255) String name, List<UUID> subjectIds) {
         public CourseCreateRequest {
             // Tên vắng mặt trong body được đưa về chuỗi rỗng để service trả đúng 400 tên rỗng.
             name = name == null ? "" : name;
@@ -49,7 +57,7 @@ public class CourseController {
         }
     }
 
-    public record NameRequest(String name) {
+    public record NameRequest(@NotBlank @Size(max = 255) String name) {
         public NameRequest {
             name = name == null ? "" : name;
         }
@@ -96,12 +104,17 @@ public class CourseController {
     public ResponseEntity<IdempotencyService.OperationReceipt> createCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
-            @RequestBody @Nullable CourseCreateRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable CourseCreateRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         CourseCreateRequest request = body == null ? new CourseCreateRequest("", List.of()) : body;
-        String path = "/api/workspaces/" + workspaceId + "/classes/" + classId + "/courses";
+        String path =
+                HttpConstants.WORKSPACE_API_PREFIX
+                        + workspaceId
+                        + "/classes/"
+                        + classId
+                        + "/courses";
         String hash = support.payloadHash("POST", path, request);
         return support.withEligibleActor(
                 authentication,
@@ -149,13 +162,13 @@ public class CourseController {
     public ResponseEntity<IdempotencyService.OperationReceipt> renameCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
-            @RequestBody @Nullable NameRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable NameRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             @RequestHeader(value = "If-Match", required = false) @Nullable String ifMatch,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         NameRequest request = body == null ? new NameRequest("") : body;
-        String path = "/api/workspaces/" + workspaceId + "/courses/" + courseId;
+        String path = HttpConstants.WORKSPACE_API_PREFIX + workspaceId + COURSES_SEGMENT + courseId;
         String hash = support.payloadHash("PATCH", path, request);
         return support.withEligibleActor(
                 authentication,
@@ -184,10 +197,10 @@ public class CourseController {
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeCourse(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
-        String path = "/api/workspaces/" + workspaceId + "/courses/" + courseId;
+        String path = HttpConstants.WORKSPACE_API_PREFIX + workspaceId + COURSES_SEGMENT + courseId;
         String hash = support.payloadHash("DELETE", path, null);
         return support.withEligibleActor(
                 authentication,
@@ -218,12 +231,17 @@ public class CourseController {
     public ResponseEntity<IdempotencyService.OperationReceipt> addSubjects(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
-            @RequestBody @Nullable SubjectAddRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable SubjectAddRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         SubjectAddRequest request = body == null ? new SubjectAddRequest(List.of()) : body;
-        String path = "/api/workspaces/" + workspaceId + "/courses/" + courseId + "/subjects";
+        String path =
+                HttpConstants.WORKSPACE_API_PREFIX
+                        + workspaceId
+                        + COURSES_SEGMENT
+                        + courseId
+                        + "/subjects";
         String hash = support.payloadHash("POST", path, request);
         return support.withEligibleActor(
                 authentication,
@@ -252,13 +270,13 @@ public class CourseController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseId,
             @PathVariable UUID courseSubjectId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         String path =
-                "/api/workspaces/"
+                HttpConstants.WORKSPACE_API_PREFIX
                         + workspaceId
-                        + "/courses/"
+                        + COURSES_SEGMENT
                         + courseId
                         + "/subjects/"
                         + courseSubjectId;
@@ -300,13 +318,15 @@ public class CourseController {
 
     private static HttpProblemException classNotFound() {
         return new HttpProblemException(
-                HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", "Không tìm thấy lớp trong workspace này.");
+                HttpStatus.NOT_FOUND,
+                ErrorCodes.CLASS_NOT_FOUND,
+                "Không tìm thấy lớp trong workspace này.");
     }
 
     private static HttpProblemException courseNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "COURSE_NOT_FOUND",
+                ErrorCodes.COURSE_NOT_FOUND,
                 "Không tìm thấy khóa trong workspace này.");
     }
 }

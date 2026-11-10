@@ -4,6 +4,7 @@ import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -32,7 +33,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class DependencyManifestResolver {
-    static final String NOT_READY_CODE = "AUTHORIZATION_NOT_READY";
     static final String NOT_READY_DETAIL = "Quyền đang được đồng bộ, thử lại sau.";
 
     private final AuthzPartitionRepository partitions;
@@ -138,7 +138,9 @@ public class DependencyManifestResolver {
                 .map(AuthorizationPartition::getId)
                 .orElseThrow(() ->
                         new HttpProblemException(
-                                HttpStatus.SERVICE_UNAVAILABLE, NOT_READY_CODE, NOT_READY_DETAIL));
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                ErrorCodes.AUTHORIZATION_NOT_READY,
+                                NOT_READY_DETAIL));
     }
 
     private @Nullable ProjectionRow projectionByTarget(String targetKey) {

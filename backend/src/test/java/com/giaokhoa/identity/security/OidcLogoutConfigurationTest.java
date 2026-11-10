@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -25,7 +26,8 @@ class OidcLogoutConfigurationTest {
     @Test
     void sessionCookieSecurityAttributes() {
         CookieSerializer serializer =
-                new OidcLogoutConfiguration().sessionCookieSerializer("https://app.example.test");
+                new OidcLogoutConfiguration()
+                        .sessionCookieSerializer(properties("https://app.example.test"));
         var request = new MockHttpServletRequest();
         request.setServerName("app.example.test");
         var response = new MockHttpServletResponse();
@@ -79,6 +81,18 @@ class OidcLogoutConfigurationTest {
         assertSame(valid, passed.getRequest());
     }
 
+    /**
+     * Chỉ appOrigin được method đọc; phần Keycloak không được tiêu dùng nên để giá trị trung tính.
+     */
+    private static GiaokhoaProperties properties(String appOrigin) {
+        return new GiaokhoaProperties(
+                appOrigin,
+                new GiaokhoaProperties.Keycloak(
+                        "http://localhost",
+                        "test-audience",
+                        new GiaokhoaProperties.Keycloak.Provisioner("test-client", "test-secret")));
+    }
+
     private static String encodedJwt(String claims) {
         return "eyJhbGciOiJSUzI1NiJ9."
                 + Base64.getUrlEncoder()
@@ -90,7 +104,8 @@ class OidcLogoutConfigurationTest {
     @Test
     void localHttpSessionCookieDoesNotRequireTls() {
         CookieSerializer serializer =
-                new OidcLogoutConfiguration().sessionCookieSerializer("http://localhost:3000");
+                new OidcLogoutConfiguration()
+                        .sessionCookieSerializer(properties("http://localhost:3000"));
         var response = new MockHttpServletResponse();
         serializer.writeCookieValue(
                 new CookieSerializer.CookieValue(

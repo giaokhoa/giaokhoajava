@@ -10,8 +10,10 @@ import com.giaokhoa.identity.keycloak.IdentityProvisioningClient;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
-import com.giaokhoa.tenancy.WorkspaceDirectory;
-import com.giaokhoa.tenancy.WorkspaceDirectory.ListedWorkspace;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService.ListedWorkspace;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService.ListedWorkspace;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService;
 import com.giaokhoa.tenancy.model.Center;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
@@ -48,7 +50,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class SessionController {
     private final IdentityService identities;
-    private final WorkspaceDirectory directory;
+    private final WorkspaceDirectoryService directory;
     private final SystemPracticeService practice;
     private final IdentityProvisioningClient provisioning;
     private final ProtectedActionExecutor executor;
@@ -59,7 +61,7 @@ public class SessionController {
 
     public SessionController(
             IdentityService identities,
-            WorkspaceDirectory directory,
+            WorkspaceDirectoryService directory,
             SystemPracticeService practice,
             IdentityProvisioningClient provisioning,
             ProtectedActionExecutor executor,
@@ -111,7 +113,7 @@ public class SessionController {
     public record OperationReceipt(UUID id, String state, boolean completed) {}
 
     @GetMapping("/session")
-    public ResponseEntity<SessionView> session(
+    public ResponseEntity<SessionView> currentSession(
             @Nullable Authentication authentication, HttpServletRequest request) {
         CsrfView csrf = csrfOf(request);
         if (authentication == null
@@ -134,7 +136,7 @@ public class SessionController {
     }
 
     @GetMapping("/me/workspaces")
-    public ResponseEntity<List<WorkspaceView>> workspaces(
+    public ResponseEntity<List<WorkspaceView>> listWorkspaces(
             Authentication authentication, HttpServletRequest request) {
         UUID actor = executor.actorUserId(authentication);
         CurrentUser current = identities.currentUser(actor);
@@ -157,7 +159,7 @@ public class SessionController {
     }
 
     @GetMapping("/me/practice-history")
-    public ResponseEntity<List<PracticeEntry>> practiceHistory(
+    public ResponseEntity<List<PracticeEntry>> listPracticeHistory(
             Authentication authentication, HttpServletRequest request) {
         UUID actor = executor.actorUserId(authentication);
         UUID personal = identities.currentUser(actor).personalWorkspaceId();

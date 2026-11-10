@@ -88,6 +88,16 @@ public class ResourcePolicyProjector {
     private static final String FORK_ORIGIN_MARKER = "origin=FORK";
     private static final String SHARE_ORIGIN_MARKER = "origin=SHARE";
 
+    /** Đoạn phân cách workspace trong canonical descriptor. */
+    private static final String WORKSPACE_MARKER = "|workspace=";
+
+    /** Đoạn phân cách target trong canonical descriptor. */
+    private static final String TARGET_MARKER = "|target=";
+
+    /** Tên cột subject Keycloak trong dòng account/assignment đọc từ cơ sở dữ liệu. */
+
+    /** Tên cột id người dùng trong dòng assignment đọc từ cơ sở dữ liệu. */
+
     /** Giá trị cột workspace.kind cho không gian cá nhân. */
     private static final String PERSONAL_KIND = "PERSONAL";
 
@@ -260,7 +270,7 @@ public class ResourcePolicyProjector {
     /** Các descriptor của riêng một scope trong bundle của target, dựng lại từ dữ kiện nguồn. */
     public List<String> sourcesFor(String targetKey, String scope) {
         return bundleDescriptors(targetKey).stream()
-                .filter(descriptor -> descriptor.endsWith("|scope=" + scope))
+                .filter(descriptor -> descriptor.endsWith(PolicyGraph.SCOPE_MARKER + scope))
                 .toList();
     }
 
@@ -876,15 +886,15 @@ public class ResourcePolicyProjector {
     private static String actorDescriptor(
             UUID workspaceId, UUID userId, String subject, String targetKey, String scope) {
         return ACTOR_DESCRIPTOR
-                + "|workspace="
+                + WORKSPACE_MARKER
                 + workspaceId
                 + "|user="
                 + userId
                 + "|subject="
                 + subject
-                + "|target="
+                + TARGET_MARKER
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -896,7 +906,7 @@ public class ResourcePolicyProjector {
             String targetKey,
             String scope) {
         return ACTOR_PERIOD_DESCRIPTOR
-                + "|workspace="
+                + WORKSPACE_MARKER
                 + workspaceId
                 + "|user="
                 + userId
@@ -908,22 +918,22 @@ public class ResourcePolicyProjector {
                 + period.validFrom()
                 + "|until="
                 + period.expiresAt()
-                + "|target="
+                + TARGET_MARKER
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
     private static String groupDescriptor(
             UUID workspaceId, String groupPath, String targetKey, String scope) {
         return GROUP_DESCRIPTOR
-                + "|workspace="
+                + WORKSPACE_MARKER
                 + workspaceId
                 + "|group="
                 + groupPath
-                + "|target="
+                + TARGET_MARKER
                 + targetKey
-                + "|scope="
+                + PolicyGraph.SCOPE_MARKER
                 + scope;
     }
 
@@ -942,7 +952,7 @@ public class ResourcePolicyProjector {
         // giây ngay khi dựng descriptor để giá trị được chiếu là đúng giá trị gate kiểm.
         Instant validFrom = grant.getValidFrom().truncatedTo(ChronoUnit.SECONDS);
         StringBuilder descriptor =
-                new StringBuilder(LICENSE_DESCRIPTOR).append("|workspace=").append(workspaceId);
+                new StringBuilder(LICENSE_DESCRIPTOR).append(WORKSPACE_MARKER).append(workspaceId);
         if (PERSONAL_KIND.equals(contextKind)) {
             OwnerRow owner =
                     personalOwner(workspaceId)
@@ -969,7 +979,7 @@ public class ResourcePolicyProjector {
                                 : grant.getExpiresAt().truncatedTo(ChronoUnit.SECONDS).toString())
                 .append("|target=")
                 .append(targetKey)
-                .append("|scope=")
+                .append(PolicyGraph.SCOPE_MARKER)
                 .append(scope)
                 .toString();
     }

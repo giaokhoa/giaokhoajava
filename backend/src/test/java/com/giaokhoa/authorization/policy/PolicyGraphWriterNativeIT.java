@@ -7,9 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.decision.KeycloakDecisionClient;
 import com.giaokhoa.authorization.decision.RequiredPermissions;
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.policy.PolicyGraph.Gate;
 import com.giaokhoa.authorization.policy.PolicyGraph.Source;
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -82,8 +83,8 @@ class PolicyGraphWriterNativeIT {
                 new PolicyGraphWriter(
                         RestClient.builder(), base, "giaokhoa", serviceManager, AUDIENCE, null);
 
-        KeycloakProvisioningClient directory =
-                new KeycloakProvisioningClient(RestClient.builder(), base, CLIENT_ID, secret);
+        AuthorizationProvisioningClient directory =
+                new AuthorizationProvisioningClient(RestClient.builder(), base, CLIENT_ID, secret);
         String owners = NativePolicyTemplates.ownersGroup(WORKSPACE);
         directory.ensureRealmGroup(owners);
         directory.setRealmGroupMembership(userId, owners, true);
@@ -128,7 +129,7 @@ class PolicyGraphWriterNativeIT {
                 new KeycloakDecisionClient(
                         repository,
                         new InMemoryClientRegistrationRepository(webRegistration),
-                        AUDIENCE);
+                        properties(base, secret));
 
         PolicyGraphWriter.AppliedGraph applied = writer.apply(graph);
         RequiredPermissions required =
@@ -235,8 +236,8 @@ class PolicyGraphWriterNativeIT {
                 new PolicyGraphWriter(
                         RestClient.builder(), base, "giaokhoa", serviceManager, AUDIENCE, null);
 
-        KeycloakProvisioningClient directory =
-                new KeycloakProvisioningClient(RestClient.builder(), base, CLIENT_ID, secret);
+        AuthorizationProvisioningClient directory =
+                new AuthorizationProvisioningClient(RestClient.builder(), base, CLIENT_ID, secret);
         String owners = NativePolicyTemplates.ownersGroup(WORKSPACE);
         directory.ensureRealmGroup(owners);
         directory.setRealmGroupMembership(userId, owners, true);
@@ -292,7 +293,7 @@ class PolicyGraphWriterNativeIT {
                 new KeycloakDecisionClient(
                         repository,
                         new InMemoryClientRegistrationRepository(webRegistration),
-                        AUDIENCE);
+                        properties(base, secret));
         assertTrue(
                 decision.isAllowed(
                         subject,
@@ -305,6 +306,16 @@ class PolicyGraphWriterNativeIT {
                         servletRequest,
                         RequiredPermissions.of(
                                 RequiredPermissions.require(second.resourceId(), "read"))));
+    }
+
+    /** Cấu hình đã bind dùng cho các client dựng tay trong gate native; chỉ audience được đọc. */
+    private static GiaokhoaProperties properties(String base, String secret) {
+        return new GiaokhoaProperties(
+                "http://127.0.0.1",
+                new GiaokhoaProperties.Keycloak(
+                        base,
+                        AUDIENCE,
+                        new GiaokhoaProperties.Keycloak.Provisioner(CLIENT_ID, secret)));
     }
 
     private static String serviceToken(RestClient http, String base, String secret) {

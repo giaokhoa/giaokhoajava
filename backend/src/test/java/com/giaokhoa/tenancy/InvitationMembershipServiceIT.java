@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.identity.InitialCredentialHandoff.Handoff;
+import com.giaokhoa.identity.InitialCredentialService.Handoff;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.InvitationService.InvitationIssued;

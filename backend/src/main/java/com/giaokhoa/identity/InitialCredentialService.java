@@ -1,7 +1,8 @@
 package com.giaokhoa.identity;
 
-import com.giaokhoa.identity.IssuedStudentRegistrar.IssuedStudent;
+import com.giaokhoa.identity.IssuedStudentRegistrationService.IssuedStudent;
 import com.giaokhoa.identity.keycloak.IdentityProvisioningClient;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.security.SecureRandom;
 import java.util.Objects;
@@ -27,17 +28,17 @@ import org.springframework.web.client.RestClientResponseException;
  * khi xoá (nếu có) được gắn suppressed vào lỗi gốc thay vì nuốt mất dấu vết.
  */
 @Service
-public class InitialCredentialHandoff {
-    private static final SecureRandom RANDOM = new SecureRandom();
-    private static final char[] LOWERCASE = "abcdefghijklmnopqrstuvwxyz".toCharArray();
-    private static final char[] UPPERCASE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
-    private static final char[] DIGITS = "0123456789".toCharArray();
+public class InitialCredentialService {
+    private static final SecureRandom random = new SecureRandom();
+    private static final char[] lowercase = "abcdefghijklmnopqrstuvwxyz".toCharArray();
+    private static final char[] uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
+    private static final char[] digits = "0123456789".toCharArray();
 
     private final IdentityProvisioningClient provisioning;
-    private final IssuedStudentRegistrar registrar;
+    private final IssuedStudentRegistrationService registrar;
 
-    public InitialCredentialHandoff(
-            IdentityProvisioningClient provisioning, IssuedStudentRegistrar registrar) {
+    public InitialCredentialService(
+            IdentityProvisioningClient provisioning, IssuedStudentRegistrationService registrar) {
         this.provisioning = provisioning;
         this.registrar = registrar;
     }
@@ -75,7 +76,7 @@ public class InitialCredentialHandoff {
             if (ex.getStatusCode().isSameCodeAs(HttpStatus.CONFLICT)) {
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
-                        "USERNAME_TAKEN",
+                        ErrorCodes.USERNAME_TAKEN,
                         "Tên đăng nhập đã thuộc về một danh tính khác.",
                         ex);
             }
@@ -103,14 +104,14 @@ public class InitialCredentialHandoff {
     }
 
     private static String generateTemporaryPassword() {
-        char[][] classes = {LOWERCASE, UPPERCASE, DIGITS};
+        char[][] classes = {lowercase, uppercase, digits};
         char[] password = new char[24];
         for (int i = 0; i < password.length; i++) {
             char[] alphabet = classes[i % classes.length];
-            password[i] = alphabet[RANDOM.nextInt(alphabet.length)];
+            password[i] = alphabet[random.nextInt(alphabet.length)];
         }
         for (int i = password.length - 1; i > 0; i--) {
-            int j = RANDOM.nextInt(i + 1);
+            int j = random.nextInt(i + 1);
             char swap = password[i];
             password[i] = password[j];
             password[j] = swap;
@@ -121,7 +122,7 @@ public class InitialCredentialHandoff {
     private static HttpProblemException unavailable(Throwable cause) {
         return new HttpProblemException(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                IdentityService.IDENTITY_UNAVAILABLE_CODE,
+                ErrorCodes.IDENTITY_UNAVAILABLE,
                 "Không xác minh được danh tính hiện hành, thử lại sau.",
                 cause);
     }

@@ -1,12 +1,13 @@
 package com.giaokhoa.identity;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
+import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.infrastructure.tenancy.TenantSchemaProvisioner;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
@@ -29,14 +30,13 @@ import org.springframework.web.client.RestClientException;
  */
 @Service
 public class IdentityService {
-    static final String IDENTITY_UNAVAILABLE_CODE = "IDENTITY_UNAVAILABLE";
 
     private final UserAccountRepository accounts;
     private final WorkspaceRepository workspaces;
     private final CurrentIdentityClient identities;
 
     private final ResourceMutationCoordinator coordinator;
-    private final IdentityEligibilitySynchronizer eligibility;
+    private final IdentityEligibilityService eligibility;
     private final TenantSchemaProvisioner tenantProvisioner;
 
     public IdentityService(
@@ -44,7 +44,7 @@ public class IdentityService {
             WorkspaceRepository workspaces,
             CurrentIdentityClient identities,
             ResourceMutationCoordinator coordinator,
-            IdentityEligibilitySynchronizer eligibility,
+            IdentityEligibilityService eligibility,
             TenantSchemaProvisioner tenantProvisioner) {
         this.accounts = accounts;
         this.workspaces = workspaces;
@@ -113,7 +113,7 @@ public class IdentityService {
         if (accounts.existsByUsername(current.username())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "USERNAME_TAKEN",
+                    ErrorCodes.USERNAME_TAKEN,
                     "Tên đăng nhập đã thuộc về một danh tính khác.");
         }
         UUID userId = UUID.randomUUID();
@@ -142,7 +142,7 @@ public class IdentityService {
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
-                                        "ACCOUNT_NOT_FOUND",
+                                        ErrorCodes.ACCOUNT_NOT_FOUND,
                                         "Chưa có tài khoản cho danh tính này."));
         return new CurrentUser(
                 actorUserId,
@@ -161,7 +161,7 @@ public class IdentityService {
             // Bất biến DB đáng lẽ ngăn trạng thái này; thấy nó là dữ liệu hỏng, không đoán.
             throw new HttpProblemException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    IDENTITY_UNAVAILABLE_CODE,
+                    ErrorCodes.IDENTITY_UNAVAILABLE,
                     "Không xác minh được danh tính hiện hành, thử lại sau.");
         }
         return found.getFirst().getId();
@@ -184,7 +184,7 @@ public class IdentityService {
     private static HttpProblemException unavailable(@Nullable Throwable cause) {
         return new HttpProblemException(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                IDENTITY_UNAVAILABLE_CODE,
+                ErrorCodes.IDENTITY_UNAVAILABLE,
                 "Không xác minh được danh tính hiện hành, thử lại sau.",
                 cause);
     }

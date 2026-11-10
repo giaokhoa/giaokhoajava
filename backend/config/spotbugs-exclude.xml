@@ -18,7 +18,7 @@
         <Field name="~(jdbc|idempotency)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, PolicyGraphWriter, KeycloakProvisioningClient, TeachingPolicyProjector); không sao chép khi inject vào reconciler/worker. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, PolicyGraphWriter, AuthorizationProvisioningClient, TeachingPolicyProjector); không sao chép khi inject vào reconciler/worker. -->
     <Match>
         <Class name="com.giaokhoa.authorization.projection.ProjectionReconciler"/>
         <Field name="~(jdbc|writer|directory|teachingProjector)"/>
@@ -38,7 +38,7 @@
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CurrentIdentityClient, AuthorizationOperationService); không sao chép khi inject vào synchronizer. -->
     <Match>
-        <Class name="com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer"/>
+        <Class name="com.giaokhoa.identity.eligibility.IdentityEligibilityService"/>
         <Field name="~(jdbc|identities|operations)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
@@ -50,7 +50,7 @@
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate); không sao chép khi inject vào registrar. -->
     <Match>
-        <Class name="com.giaokhoa.identity.IssuedStudentRegistrar"/>
+        <Class name="com.giaokhoa.identity.IssuedStudentRegistrationService"/>
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
@@ -60,9 +60,9 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (IdentityProvisioningClient, IssuedStudentRegistrar); không sao chép khi inject vào workflow bàn giao credential. -->
+    <!-- Dependency singleton do Spring quản lý (IdentityProvisioningClient, IssuedStudentRegistrationService); không sao chép khi inject vào workflow bàn giao credential. -->
     <Match>
-        <Class name="com.giaokhoa.identity.InitialCredentialHandoff"/>
+        <Class name="com.giaokhoa.identity.InitialCredentialService"/>
         <Field name="~(provisioning|registrar)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
@@ -125,17 +125,17 @@
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate); không sao chép khi inject vào thư mục workspace. -->
     <Match>
-        <Class name="com.giaokhoa.tenancy.WorkspaceDirectory"/>
+        <Class name="com.giaokhoa.tenancy.WorkspaceDirectoryService"/>
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient, TeachingRevocationContributor); không sao chép khi inject vào service quản trị center. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, AuthorizationProvisioningClient, TeachingRevocationContributor); không sao chép khi inject vào service quản trị center. -->
     <Match>
         <Class name="com.giaokhoa.tenancy.CenterService"/>
         <Field name="~(jdbc|directory|teachingRevocations)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient); không sao chép khi inject vào projector của center. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, AuthorizationProvisioningClient); không sao chép khi inject vào projector của center. -->
     <Match>
         <Class name="com.giaokhoa.tenancy.CenterPolicyProjector"/>
         <Field name="~(jdbc|directory)"/>
@@ -177,7 +177,7 @@
         <Field name="~(revocations)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdempotencyService, InitialCredentialHandoff, MembershipPolicyProjector, ResourceMutationCoordinator); không sao chép khi inject vào service membership. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdempotencyService, InitialCredentialService, MembershipPolicyProjector, ResourceMutationCoordinator); không sao chép khi inject vào service membership. -->
     <Match>
         <Class name="com.giaokhoa.tenancy.MembershipService"/>
         <Field name="~(jdbc|idempotency|handoff|projector|coordinator)"/>
@@ -261,7 +261,7 @@
         <Field name="~(schoolClasses|courses|courseSubjects|teachingAssignments|homeroomAssignments|pages|preconditions|workspaceTransaction|idempotency|revocations|coordinator)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (các repository Spring Data, KeycloakProvisioningClient); không sao chép khi inject vào projector giảng dạy. -->
+    <!-- Dependency singleton do Spring quản lý (các repository Spring Data, AuthorizationProvisioningClient); không sao chép khi inject vào projector giảng dạy. -->
     <Match>
         <Class name="com.giaokhoa.teaching.TeachingPolicyProjector"/>
         <Field name="~(schoolClasses|courses|courseSubjects|homeroomAssignments|teachingAssignments|enrollments|preconditions|directory|workspaceTransaction|transactions)"/>
@@ -315,7 +315,7 @@
         <Field name="~(jdbc|workspaceTransaction|idempotency|projector|coordinator)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, KeycloakProvisioningClient, AuthorizationOperationService, CenterPolicyProjector, ResultPolicyProjector); không sao chép khi inject vào projector phụ huynh. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, AuthorizationProvisioningClient, AuthorizationOperationService, CenterPolicyProjector, ResultPolicyProjector); không sao chép khi inject vào projector phụ huynh. -->
     <Match>
         <Class name="com.giaokhoa.guardians.GuardianPolicyProjector"/>
         <Field name="~(jdbc|directory|operations|centerProjector|resultProjector)"/>

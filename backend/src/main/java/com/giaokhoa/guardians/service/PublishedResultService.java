@@ -6,6 +6,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.guardians.dto.PublishedResultView;
 import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.teaching.model.Course;
@@ -287,7 +288,10 @@ public class PublishedResultService {
             return id;
         } catch (IllegalArgumentException ex) {
             throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.", ex);
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.INVALID_CURSOR,
+                    "Cursor danh sách không hợp lệ.",
+                    ex);
         }
     }
 
@@ -303,7 +307,9 @@ public class PublishedResultService {
 
     private static HttpProblemException invalidCursor() {
         return new HttpProblemException(
-                HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.");
+                HttpStatus.BAD_REQUEST,
+                ErrorCodes.INVALID_CURSOR,
+                "Cursor danh sách không hợp lệ.");
     }
 
     private static List<PublishedResultView> emptyOrDenied(UUID actorUserId, UUID studentUserId) {
@@ -312,7 +318,7 @@ public class PublishedResultService {
         }
         throw new HttpProblemException(
                 HttpStatus.FORBIDDEN,
-                "PERMISSION_DENIED",
+                ErrorCodes.PERMISSION_DENIED,
                 "Không có quyền xem kết quả đã công bố của học sinh này.");
     }
 

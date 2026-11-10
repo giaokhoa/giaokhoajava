@@ -9,6 +9,7 @@ import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.guardians.repository.GuardianWorkspaceRepository;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
@@ -112,7 +113,7 @@ public class GuardianLinkService {
         if (!hasCurrentRole(workspaceId, actorUserId, MembershipRole.Role.PARENT)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "GUARDIAN_PARENT_NOT_CURRENT",
+                    ErrorCodes.GUARDIAN_PARENT_NOT_CURRENT,
                     "Chỉ phụ huynh hiện hành của trung tâm mới gửi được yêu cầu liên kết.");
         }
         if (!hasCurrentRole(workspaceId, studentUserId, MembershipRole.Role.STUDENT)) {
@@ -127,7 +128,7 @@ public class GuardianLinkService {
         if (alreadyCurrent) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "GUARDIAN_LINK_ALREADY_CURRENT",
+                    ErrorCodes.GUARDIAN_LINK_ALREADY_CURRENT,
                     "Đã có liên kết hiện hành cho cặp phụ huynh và học sinh này.");
         }
         UUID linkId = UUID.randomUUID();
@@ -162,7 +163,7 @@ public class GuardianLinkService {
         if (!approve && !"REJECT".equals(decision)) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "GUARDIAN_DECISION_INVALID",
+                    ErrorCodes.GUARDIAN_DECISION_INVALID,
                     "Quyết định liên kết chỉ là APPROVE hoặc REJECT.");
         }
         workspaceTransaction.applyContext(workspaceId);
@@ -178,12 +179,14 @@ public class GuardianLinkService {
         if (!GuardianLink.REQUESTED.equals(link.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "GUARDIAN_LINK_ALREADY_DECIDED",
+                    ErrorCodes.GUARDIAN_LINK_ALREADY_DECIDED,
                     "Liên kết đã có quyết định hoặc đã đóng, không quyết định lại được.");
         }
         if (expectedVersion != link.getVersion()) {
             throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "VERSION_CONFLICT", "Phiên bản dữ liệu đã thay đổi.");
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.VERSION_CONFLICT,
+                    "Phiên bản dữ liệu đã thay đổi.");
         }
         if (approve) {
             requirePrerequisitesCurrent(workspaceId, link);
@@ -234,17 +237,17 @@ public class GuardianLinkService {
             case GuardianLink.REQUESTED ->
                     throw new HttpProblemException(
                             HttpStatus.CONFLICT,
-                            "GUARDIAN_LINK_NOT_APPROVED",
+                            ErrorCodes.GUARDIAN_LINK_NOT_APPROVED,
                             "Liên kết chưa được duyệt thì không có nguồn nào để gỡ.");
             case GuardianLink.REJECTED ->
                     throw new HttpProblemException(
                             HttpStatus.CONFLICT,
-                            "GUARDIAN_LINK_ALREADY_CLOSED",
+                            ErrorCodes.GUARDIAN_LINK_ALREADY_CLOSED,
                             "Liên kết đã bị từ chối và đã đóng.");
             case GuardianLink.REVOKED ->
                     throw new HttpProblemException(
                             HttpStatus.CONFLICT,
-                            "GUARDIAN_LINK_ALREADY_REVOKED",
+                            ErrorCodes.GUARDIAN_LINK_ALREADY_REVOKED,
                             "Liên kết đã bị gỡ trước đó.");
             default ->
                     throw new IllegalStateException(
@@ -293,7 +296,7 @@ public class GuardianLinkService {
                 .orElseThrow(() ->
                         new HttpProblemException(
                                 HttpStatus.NOT_FOUND,
-                                "GUARDIAN_LINK_NOT_FOUND",
+                                ErrorCodes.GUARDIAN_LINK_NOT_FOUND,
                                 "Không tìm thấy liên kết phụ huynh trong trung tâm này."));
     }
 
@@ -304,7 +307,7 @@ public class GuardianLinkService {
                         workspaceId, link.getStudentUserId(), MembershipRole.Role.STUDENT)) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "GUARDIAN_PREREQUISITE_NOT_CURRENT",
+                    ErrorCodes.GUARDIAN_PREREQUISITE_NOT_CURRENT,
                     "Phụ huynh hoặc học sinh không còn là thành viên hiện hành đúng vai trò"
                             + " của trung tâm.");
         }
@@ -319,7 +322,7 @@ public class GuardianLinkService {
                 && !hasCurrentRole(workspaceId, actorUserId, MembershipRole.Role.MANAGER)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "PERMISSION_DENIED",
+                    ErrorCodes.PERMISSION_DENIED,
                     "Actor không phải owner hoặc manager của center này.");
         }
     }
@@ -335,7 +338,7 @@ public class GuardianLinkService {
                 || workspace.getKind() != Workspace.Kind.CENTER) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "WORKSPACE_NOT_FOUND",
+                    ErrorCodes.WORKSPACE_NOT_FOUND,
                     "Không tìm thấy trung tâm hợp lệ cho liên kết phụ huynh.");
         }
     }
@@ -374,7 +377,7 @@ public class GuardianLinkService {
     private static HttpProblemException linkTargetNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "GUARDIAN_STUDENT_NOT_FOUND",
+                ErrorCodes.GUARDIAN_STUDENT_NOT_FOUND,
                 "Không tìm thấy học sinh hiện hành trong trung tâm này.");
     }
 }

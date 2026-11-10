@@ -14,8 +14,8 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 
 /** Điểm dùng chung để suy realm và dựng manager cho credential provisioner của Keycloak. */
-public final class KeycloakProvisionerFactory {
-    private KeycloakProvisionerFactory() {}
+public final class KeycloakProvisioningFactory {
+    private KeycloakProvisioningFactory() {}
 
     /**
      * Realm là segment cuối của issuer URI OIDC đã cấu hình — nguồn duy nhất app tin cho cả tên

@@ -6,10 +6,11 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates.TargetType;
 import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.identity.model.RecoveryMutation;
 import com.giaokhoa.identity.repository.RecoveryMutationRepository;
 import com.giaokhoa.identity.repository.RecoveryRequestRepository;
-import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -58,7 +59,7 @@ public class OperationController {
             @JsonInclude(JsonInclude.Include.NON_NULL) @Nullable String errorCode) {}
 
     @GetMapping("/api/me/operations/{operationId}")
-    public ResponseEntity<OperationView> status(
+    public ResponseEntity<OperationView> getStatus(
             @PathVariable UUID operationId, Authentication authentication) {
         UUID actorUserId = executor.actorUserId(authentication);
         var found = operations.findByIdAndInitiatorUserId(operationId, actorUserId);
@@ -109,7 +110,7 @@ public class OperationController {
                                                                 RecoveryMutation.Kind.RESOLVE));
         if (found.isEmpty()) {
             throw new HttpProblemException(
-                    HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy tài nguyên.");
+                    HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Không tìm thấy tài nguyên.");
         }
         var request = found.get();
         String requestState = request.getState().name();

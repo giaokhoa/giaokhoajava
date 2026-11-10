@@ -1,6 +1,6 @@
 package com.giaokhoa.tenancy;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
@@ -95,14 +95,14 @@ public class CenterPolicyProjector {
     private final WorkspaceRepository workspaces;
     private final UserAccountRepository accounts;
     private final SubscriptionPeriodRepository periods;
-    private final KeycloakProvisioningClient directory;
+    private final AuthorizationProvisioningClient directory;
 
     public CenterPolicyProjector(
             CenterMembershipRepository memberships,
             WorkspaceRepository workspaces,
             UserAccountRepository accounts,
             SubscriptionPeriodRepository periods,
-            KeycloakProvisioningClient directory) {
+            AuthorizationProvisioningClient directory) {
         this.memberships = memberships;
         this.workspaces = workspaces;
         this.accounts = accounts;

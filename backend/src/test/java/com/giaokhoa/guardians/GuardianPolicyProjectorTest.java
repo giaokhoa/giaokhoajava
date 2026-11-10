@@ -10,7 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.guardians.model.GuardianLink;
@@ -43,7 +43,7 @@ class GuardianPolicyProjectorTest {
     private final GuardianUserAccountRepository userAccounts =
             mock(GuardianUserAccountRepository.class);
     private final MembershipService memberships = mock(MembershipService.class);
-    private final KeycloakProvisioningClient directory = mock(KeycloakProvisioningClient.class);
+    private final AuthorizationProvisioningClient directory = mock(AuthorizationProvisioningClient.class);
 
     @DisplayName(
             "Liên kết lịch sử đọc một live snapshot cho mỗi phụ huynh thay vì cho từng cặp phụ huynh–học sinh")

@@ -5,6 +5,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
 import com.giaokhoa.teaching.model.ClassStudent;
@@ -137,7 +138,7 @@ public class EnrollmentService {
         if (rosterIds.isEmpty() || subjectIds.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "ENROLLMENT_BATCH_REQUIRED",
+                    ErrorCodes.ENROLLMENT_BATCH_REQUIRED,
                     "Lô ghi danh cần ít nhất một học sinh và một môn–khóa.");
         }
         WorkspaceInfo workspace = preconditions.requireTeachingWorkspace(workspaceId);
@@ -150,7 +151,7 @@ public class EnrollmentService {
             if (!isCurrent(entry.getState())) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
-                        "ROSTER_ENTRY_NOT_CURRENT",
+                        ErrorCodes.ROSTER_ENTRY_NOT_CURRENT,
                         "Học sinh không còn trong roster hiện hành của lớp.");
             }
             if ("CENTER".equals(workspace.kind())
@@ -158,7 +159,7 @@ public class EnrollmentService {
                             workspaceId, entry.getStudentUserId(), "STUDENT")) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
-                        "STUDENT_NOT_CENTER_STUDENT",
+                        ErrorCodes.STUDENT_NOT_CENTER_STUDENT,
                         "Người được ghi danh phải là học sinh đang hoạt động của trung tâm.");
             }
             roster.add(entry);
@@ -172,7 +173,7 @@ public class EnrollmentService {
             if (!isCurrent(subject.getState())) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
-                        "COURSE_SUBJECT_NOT_CURRENT",
+                        ErrorCodes.COURSE_SUBJECT_NOT_CURRENT,
                         "Môn–khóa không còn hiện hành trong khóa.");
             }
             var clazz =
@@ -185,7 +186,7 @@ public class EnrollmentService {
             if (!"ACTIVE".equals(clazz.getState()) || !"ACTIVE".equals(course.getState())) {
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
-                        "TEACHING_CONTEXT_NOT_ACTIVE",
+                        ErrorCodes.TEACHING_CONTEXT_NOT_ACTIVE,
                         "Lớp hoặc khóa đã bị thu hồi, không ghi danh mới được nữa.");
             }
             subjects.add(subject);
@@ -198,7 +199,7 @@ public class EnrollmentService {
         if (!sameClass) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "ENROLLMENT_CLASS_MISMATCH",
+                    ErrorCodes.ENROLLMENT_CLASS_MISMATCH,
                     "Mọi học sinh và môn–khóa trong một lô ghi danh phải cùng một lớp.");
         }
         preconditions.requireSubscriptionCurrent(workspaceId);
@@ -258,7 +259,7 @@ public class EnrollmentService {
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "ENROLLMENT_ALREADY_REVOKED",
+                    ErrorCodes.ENROLLMENT_ALREADY_REVOKED,
                     "Ghi danh đã bị thu hồi trước đó.");
         }
         row.revoke();
@@ -320,14 +321,14 @@ public class EnrollmentService {
     private static HttpProblemException enrollmentTargetNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "ENROLLMENT_TARGET_NOT_FOUND",
+                ErrorCodes.ENROLLMENT_TARGET_NOT_FOUND,
                 "Không tìm thấy học sinh hoặc môn–khóa trong workspace này.");
     }
 
     private static HttpProblemException enrollmentNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "ENROLLMENT_NOT_FOUND",
+                ErrorCodes.ENROLLMENT_NOT_FOUND,
                 "Không tìm thấy ghi danh trong workspace này.");
     }
 

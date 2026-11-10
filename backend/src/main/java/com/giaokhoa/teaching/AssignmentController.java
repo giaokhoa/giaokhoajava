@@ -1,8 +1,13 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.Violation;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -46,7 +51,7 @@ public class AssignmentController {
         }
     }
 
-    public record HomeroomAssignRequest(@Nullable UUID teacherUserId) {}
+    public record HomeroomAssignRequest(@NotNull @Nullable UUID teacherUserId) {}
 
     @GetMapping("/course-subjects/{courseSubjectId}/teachers")
     public ResponseEntity<TeachingRouteSupport.Page<AssignmentService.TeachingAssignmentView>>
@@ -65,7 +70,7 @@ public class AssignmentController {
                     if (!support.courseSubjectExists(workspaceId, courseSubjectId)) {
                         throw new HttpProblemException(
                                 HttpStatus.NOT_FOUND,
-                                "COURSE_SUBJECT_NOT_FOUND",
+                                ErrorCodes.COURSE_SUBJECT_NOT_FOUND,
                                 "Không tìm thấy môn–khóa trong workspace" + " này.");
                     }
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
@@ -81,13 +86,13 @@ public class AssignmentController {
     public ResponseEntity<IdempotencyService.OperationReceipt> assignTeachers(
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseSubjectId,
-            @RequestBody @Nullable TeacherAssignRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable TeacherAssignRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         TeacherAssignRequest request = body == null ? new TeacherAssignRequest(List.of()) : body;
         String path =
-                "/api/workspaces/"
+                HttpConstants.WORKSPACE_API_PREFIX
                         + workspaceId
                         + "/course-subjects/"
                         + courseSubjectId
@@ -115,11 +120,11 @@ public class AssignmentController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID courseSubjectId,
             @PathVariable UUID assignmentId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         String path =
-                "/api/workspaces/"
+                HttpConstants.WORKSPACE_API_PREFIX
                         + workspaceId
                         + "/course-subjects/"
                         + courseSubjectId
@@ -157,7 +162,7 @@ public class AssignmentController {
                         if (!support.classExists(workspaceId, classId)) {
                             throw new HttpProblemException(
                                     HttpStatus.NOT_FOUND,
-                                    "CLASS_NOT_FOUND",
+                                    ErrorCodes.CLASS_NOT_FOUND,
                                     "Không tìm thấy lớp trong workspace" + " này.");
                         }
                         throw TeachingRouteSupport.denied();
@@ -172,20 +177,23 @@ public class AssignmentController {
     public ResponseEntity<IdempotencyService.OperationReceipt> assignHomeroom(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
-            @RequestBody @Nullable HomeroomAssignRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable HomeroomAssignRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         HomeroomAssignRequest request = body == null ? new HomeroomAssignRequest(null) : body;
         UUID teacherUserId = request.teacherUserId();
         if (teacherUserId == null) {
-            throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST,
-                    "VALIDATION_FAILED",
-                    "Thiếu giáo viên được phân công chủ nhiệm.");
+            throw HttpProblemException.validationFailed(
+                    "Thiếu giáo viên được phân công chủ nhiệm.",
+                    List.of(new Violation("teacherUserId", "NotNull", "Giá trị không hợp lệ.")));
         }
         String path =
-                "/api/workspaces/" + workspaceId + "/classes/" + classId + "/homeroom-assignments";
+                HttpConstants.WORKSPACE_API_PREFIX
+                        + workspaceId
+                        + "/classes/"
+                        + classId
+                        + "/homeroom-assignments";
         String hash = support.payloadHash("POST", path, request);
         return support.withEligibleActor(
                 authentication,
@@ -204,11 +212,11 @@ public class AssignmentController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
             @PathVariable UUID assignmentId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         String path =
-                "/api/workspaces/"
+                HttpConstants.WORKSPACE_API_PREFIX
                         + workspaceId
                         + "/classes/"
                         + classId

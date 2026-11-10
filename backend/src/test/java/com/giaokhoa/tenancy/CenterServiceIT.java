@@ -81,7 +81,7 @@ class CenterServiceIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired CenterService centers;
-    @Autowired WorkspaceDirectory directory;
+    @Autowired WorkspaceDirectoryService directory;
     @Autowired MembershipService memberships;
     @Autowired IdempotencyService idempotency;
     @Autowired ProjectionReconciler reconciler;
@@ -198,7 +198,7 @@ class CenterServiceIT extends IntegrationEnvironment {
             assertTrue(
                     groups.contains("/gk/workspaces/" + workspaceId + "/owners"),
                     "Owner ở trong group owners của workspace");
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -232,7 +232,7 @@ class CenterServiceIT extends IntegrationEnvironment {
             List<UUID> ownerCenterIds =
                     directory.listWorkspaces(owner.userId()).stream()
                             .filter(workspace -> workspace.kind() == Workspace.Kind.CENTER)
-                            .map(WorkspaceDirectory.ListedWorkspace::id)
+                            .map(WorkspaceDirectoryService.ListedWorkspace::id)
                             .toList();
             assertEquals(1, ownerCenterIds.size(), "Replay không tạo tenant thứ hai");
             assertEquals(
@@ -267,7 +267,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                                             + " WHERE owner_user_id = ?",
                                     String.class,
                                     owner.userId()));
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -326,7 +326,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                                             + " WHERE workspace_id = ?",
                                     String.class,
                                     workspaceId));
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -390,7 +390,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                                             + " WHERE workspace_id = ?",
                                     String.class,
                                     workspaceId));
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -450,7 +450,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                                             + " WHERE workspace_id = ?",
                                     String.class,
                                     workspaceId));
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -561,7 +561,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                                             + " WHERE workspace_id = ?",
                                     String.class,
                                     workspaceId));
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -640,7 +640,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                                             + " WHERE workspace_id = ?",
                                     String.class,
                                     workspaceId));
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -696,7 +696,7 @@ class CenterServiceIT extends IntegrationEnvironment {
                                             + " WHERE workspace_id = ?",
                                     String.class,
                                     workspaceId));
-            cleanupWorkspaceDirectory(workspaceId, organizationId);
+            cleanupWorkspaceDirectoryService(workspaceId, organizationId);
         } finally {
             operator.delete();
             owner.delete();
@@ -1112,7 +1112,7 @@ class CenterServiceIT extends IntegrationEnvironment {
         return Set.copyOf(groups.stream().map(group -> String.valueOf(group.get("path"))).toList());
     }
 
-    private void cleanupWorkspaceDirectory(UUID workspaceId, String organizationId) {
+    private void cleanupWorkspaceDirectoryService(UUID workspaceId, String organizationId) {
         deleteResource(admin("/organizations/" + organizationId));
         Map<String, Object> group =
                 HTTP.get()

@@ -3,6 +3,7 @@ package com.giaokhoa.authorization.fence;
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -134,7 +135,7 @@ public class AuthorizationFence {
     public static HttpProblemException notReady(@Nullable Throwable cause) {
         return new HttpProblemException(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                DependencyManifestResolver.NOT_READY_CODE,
+                ErrorCodes.AUTHORIZATION_NOT_READY,
                 DependencyManifestResolver.NOT_READY_DETAIL,
                 cause);
     }

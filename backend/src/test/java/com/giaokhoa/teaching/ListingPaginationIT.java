@@ -8,7 +8,7 @@ import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
@@ -113,7 +113,7 @@ class ListingPaginationIT extends IntegrationEnvironment {
                         repositories.workspaces,
                         new SubscriptionPolicy(repositories.periods),
                         mock(IdempotencyService.class),
-                        mock(InitialCredentialHandoff.class),
+                        mock(InitialCredentialService.class),
                         mock(MembershipPolicyProjector.class),
                         mock(ResourceMutationCoordinator.class),
                         mock(AuditRecorder.class));

@@ -5,14 +5,19 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.Violation;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,14 +52,16 @@ public class CenterController {
         this.idempotency = idempotency;
     }
 
-    public record CenterCreateRequest(@Nullable String name, @Nullable UUID ownerUserId) {}
+    public record CenterCreateRequest(
+            @NotBlank @Size(max = 255) @Nullable String name,
+            @NotNull @Nullable UUID ownerUserId) {}
 
     @PostMapping
     public ResponseEntity<IdempotencyService.OperationReceipt> createCenter(
             Authentication authentication,
             HttpServletRequest request,
-            @RequestBody @Nullable CenterCreateRequest body,
-            @RequestHeader("Idempotency-Key") String key) {
+            @RequestBody @Valid @Nullable CenterCreateRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key) {
         return executor.executeForActor(
                 authentication,
                 request,
@@ -66,24 +73,31 @@ public class CenterController {
                                                 .scopeName()))),
                 () -> {
                     if (body == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu chủ sở hữu của trung tâm.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu chủ sở hữu của trung tâm.",
+                                List.of(
+                                        new Violation(
+                                                "ownerUserId",
+                                                "NotNull",
+                                                "Giá trị không hợp lệ.")));
                     }
                     String name = body.name();
                     UUID ownerUserId = body.ownerUserId();
                     if (ownerUserId == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu chủ sở hữu của trung tâm.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu chủ sở hữu của trung tâm.",
+                                List.of(
+                                        new Violation(
+                                                "ownerUserId",
+                                                "NotNull",
+                                                "Giá trị không hợp lệ.")));
                     }
                     if (name == null || name.isBlank()) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu tên trung tâm.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu tên trung tâm.",
+                                List.of(
+                                        new Violation(
+                                                "name", "NotBlank", "Giá trị không hợp lệ.")));
                     }
                     UUID actor = executor.actorUserId(authentication);
                     AuthorizationOperation operation =

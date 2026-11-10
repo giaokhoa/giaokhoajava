@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.giaokhoa.authorization.fence.AuthorizationFence;
 import com.giaokhoa.authorization.fence.DependencyManifestResolver;
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
@@ -33,7 +33,7 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService.Desire
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
-import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
+import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.shared.audit.AuditRecorder;
@@ -99,11 +99,11 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
     @Autowired AuthorizationOperationRepository operationRepository;
     @Autowired AuthzPartitionRepository partitionRepository;
     @Autowired AuthzProjectionRepository projectionRepository;
-    @Autowired IdentityEligibilitySynchronizer eligibility;
+    @Autowired IdentityEligibilityService eligibility;
     @Autowired AuthorizationFence fence;
     @Autowired DependencyManifestResolver resolver;
     @MockitoBean PolicyGraphWriter writer;
-    @MockitoBean KeycloakProvisioningClient directory;
+    @MockitoBean AuthorizationProvisioningClient directory;
     @MockitoBean CurrentIdentityClient identities;
     @MockitoBean ProjectionWorker scheduledWorker;
 

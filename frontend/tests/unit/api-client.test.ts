@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
   apiRequest,
   requestAllPages,
   requestWorkspaces,
@@ -127,6 +128,48 @@ describe("browser API client", () => {
     await expect(apiRequest("/api/secure")).rejects.toMatchObject({
       status, code: "API_PROBLEM", traceId: "trace-1",
     });
+  });
+
+  it.each([403, 409, 428, 503])("hiển thị detail của server cho %i, không tự chế thông điệp", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
+      { status, code: "API_PROBLEM", detail: "Chi tiết từ server" },
+      { status, headers: { "Content-Type": "application/problem+json" } },
+    )));
+    const error = await apiRequest("/api/secure").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).message).toBe("Chi tiết từ server");
+  });
+
+  it("mang theo violations của problem+json và bỏ bản ghi lệch", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
+      {
+        status: 400,
+        code: "VALIDATION_FAILED",
+        detail: "Dữ liệu không hợp lệ",
+        violations: [
+          { field: "name", code: "NotBlank", message: "Không được để trống" },
+          { field: "email", code: "Email" },
+          "không phải object",
+        ],
+      },
+      { status: 400, headers: { "Content-Type": "application/problem+json" } },
+    )));
+    const error = await apiRequest("/api/secure").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).violations).toEqual([
+      { field: "name", code: "NotBlank", message: "Không được để trống" },
+    ]);
+  });
+
+  it("dùng thông điệp dự phòng khi problem+json không có detail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(
+      { status: 500, code: "INTERNAL" },
+      { status: 500, headers: { "Content-Type": "application/problem+json" } },
+    )));
+    const error = await apiRequest("/api/secure").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).message).toBe("Yêu cầu không thành công.");
+    expect((error as ApiError).violations).toEqual([]);
   });
 
   it("thất bại an toàn khi thiếu CSRF, không gửi mutation", async () => {

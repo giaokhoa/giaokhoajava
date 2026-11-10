@@ -5,6 +5,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
 import com.giaokhoa.teaching.model.CourseSubject;
@@ -132,7 +133,7 @@ public class AssignmentService {
         if (teachers.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "TEACHERS_REQUIRED",
+                    ErrorCodes.TEACHERS_REQUIRED,
                     "Danh sách giáo viên phân công không được rỗng.");
         }
         requireCenter(workspaceId);
@@ -190,7 +191,7 @@ public class AssignmentService {
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "TEACHING_ASSIGNMENT_ALREADY_REVOKED",
+                    ErrorCodes.TEACHING_ASSIGNMENT_ALREADY_REVOKED,
                     "Phân công giảng dạy đã bị thu hồi trước đó.");
         }
         row.revoke();
@@ -235,7 +236,7 @@ public class AssignmentService {
         if (classRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "CLASS_NOT_ACTIVE",
+                    ErrorCodes.CLASS_NOT_ACTIVE,
                     "Lớp đã bị thu hồi, không phân công chủ nhiệm được nữa.");
         }
         preconditions.requireSubscriptionCurrent(workspaceId);
@@ -284,7 +285,7 @@ public class AssignmentService {
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "HOMEROOM_ASSIGNMENT_ALREADY_REVOKED",
+                    ErrorCodes.HOMEROOM_ASSIGNMENT_ALREADY_REVOKED,
                     "Phân công chủ nhiệm đã bị thu hồi trước đó.");
         }
         row.revoke();
@@ -406,7 +407,7 @@ public class AssignmentService {
         if (!"PENDING".equals(subject.getState()) && !"ACTIVE".equals(subject.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "COURSE_SUBJECT_NOT_ACTIVE",
+                    ErrorCodes.COURSE_SUBJECT_NOT_ACTIVE,
                     "Môn–khóa đã bị gỡ khỏi khóa, không phân công được nữa.");
         }
         return subject;
@@ -422,12 +423,12 @@ public class AssignmentService {
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
-                                        "COURSE_NOT_FOUND",
+                                        ErrorCodes.COURSE_NOT_FOUND,
                                         "Không tìm thấy khóa trong workspace này."));
         if ("REVOKED".equals(clazz.getState()) || "REVOKED".equals(course.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "TEACHING_CONTEXT_NOT_ACTIVE",
+                    ErrorCodes.TEACHING_CONTEXT_NOT_ACTIVE,
                     "Lớp hoặc khóa của môn–khóa đã bị thu hồi, không phân công được nữa.");
         }
     }
@@ -437,7 +438,7 @@ public class AssignmentService {
                 workspaceId, teacherUserId, "TEACHER")) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "TEACHER_NOT_CENTER_TEACHER",
+                    ErrorCodes.TEACHER_NOT_CENTER_TEACHER,
                     "Người được phân công phải là giáo viên đang hoạt động của trung tâm này.");
         }
     }
@@ -453,27 +454,29 @@ public class AssignmentService {
 
     private static HttpProblemException classNotFound() {
         return new HttpProblemException(
-                HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", "Không tìm thấy lớp trong workspace này.");
+                HttpStatus.NOT_FOUND,
+                ErrorCodes.CLASS_NOT_FOUND,
+                "Không tìm thấy lớp trong workspace này.");
     }
 
     private static HttpProblemException courseSubjectNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "COURSE_SUBJECT_NOT_FOUND",
+                ErrorCodes.COURSE_SUBJECT_NOT_FOUND,
                 "Không tìm thấy môn–khóa trong workspace này.");
     }
 
     private static HttpProblemException assignmentNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "ASSIGNMENT_NOT_FOUND",
+                ErrorCodes.ASSIGNMENT_NOT_FOUND,
                 "Không tìm thấy phân công trong phạm vi này.");
     }
 
     private static HttpProblemException workspaceNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "WORKSPACE_NOT_FOUND",
+                ErrorCodes.WORKSPACE_NOT_FOUND,
                 "Không tìm thấy trung tâm hợp lệ cho phân công.");
     }
 

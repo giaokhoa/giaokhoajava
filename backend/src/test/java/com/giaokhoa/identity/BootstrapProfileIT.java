@@ -9,13 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.identity.IdentityService.BootstrapResult;
 import com.giaokhoa.identity.IdentityService.CurrentUser;
-import com.giaokhoa.identity.IssuedStudentRegistrar.IssuedStudent;
+import com.giaokhoa.identity.IssuedStudentRegistrationService.IssuedStudent;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.MembershipService;
-import com.giaokhoa.tenancy.WorkspaceDirectory;
-import com.giaokhoa.tenancy.WorkspaceDirectory.ListedWorkspace;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService;
+import com.giaokhoa.tenancy.WorkspaceDirectoryService.ListedWorkspace;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.net.URI;
 import java.time.OffsetDateTime;
@@ -62,8 +62,8 @@ class BootstrapProfileIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired IdentityService identityService;
-    @Autowired WorkspaceDirectory directory;
-    @Autowired IssuedStudentRegistrar registrar;
+    @Autowired WorkspaceDirectoryService directory;
+    @Autowired IssuedStudentRegistrationService registrar;
     @Autowired MembershipService memberships;
 
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua service đồng

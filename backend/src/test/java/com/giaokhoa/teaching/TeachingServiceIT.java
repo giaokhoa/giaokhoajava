@@ -247,7 +247,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         () ->
                                 classes.addStudents(
                                         personal, clazz.id(), List.of(UUID.randomUUID())));
-        assertEquals(HttpStatus.BAD_REQUEST, problem.getStatus());
+        assertEquals(HttpStatus.NOT_FOUND, problem.getStatus());
         assertEquals("STUDENT_ACCOUNT_NOT_FOUND", problem.getCode());
     }
 

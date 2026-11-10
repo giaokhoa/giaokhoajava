@@ -2,6 +2,7 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.model.Course;
 import com.giaokhoa.teaching.model.CourseSubject;
@@ -114,7 +115,7 @@ public class CourseService {
         if (classRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "CLASS_NOT_ACTIVE",
+                    ErrorCodes.CLASS_NOT_ACTIVE,
                     "Lớp đã bị thu hồi, không tạo khóa được nữa.");
         }
         preconditions.requireSubscriptionCurrent(workspaceId);
@@ -200,7 +201,9 @@ public class CourseService {
         boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "COURSE_ALREADY_REVOKED", "Khóa đã bị thu hồi trước đó.");
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.COURSE_ALREADY_REVOKED,
+                    "Khóa đã bị thu hồi trước đó.");
         }
         requireClassActive(workspaceId, row.getClassId());
         IdempotencyService.requireIfMatch(ifMatch, row.getVersion());
@@ -225,7 +228,9 @@ public class CourseService {
         boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "COURSE_ALREADY_REVOKED", "Khóa đã bị thu hồi trước đó.");
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.COURSE_ALREADY_REVOKED,
+                    "Khóa đã bị thu hồi trước đó.");
         }
         row.revoke();
         revocationContributor.revokeDependentsOfCourse(workspaceId, courseId);
@@ -251,7 +256,7 @@ public class CourseService {
         if (courseRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "COURSE_NOT_ACTIVE",
+                    ErrorCodes.COURSE_NOT_ACTIVE,
                     "Khóa đã bị thu hồi, không gắn thêm môn được nữa.");
         }
         requireClassActive(workspaceId, row.getClassId());
@@ -295,13 +300,13 @@ public class CourseService {
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
-                                        "COURSE_SUBJECT_NOT_FOUND",
+                                        ErrorCodes.COURSE_SUBJECT_NOT_FOUND,
                                         "Không tìm thấy môn trong khóa này."));
         boolean subjectRevoked = "REVOKED".equals(subject.getState());
         if (subjectRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "COURSE_SUBJECT_ALREADY_REVOKED",
+                    ErrorCodes.COURSE_SUBJECT_ALREADY_REVOKED,
                     "Môn đã được gỡ khỏi khóa trước đó.");
         }
         subject.revoke();
@@ -378,7 +383,7 @@ public class CourseService {
         if (!"ACTIVE".equals(clazz.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
-                    "CLASS_NOT_ACTIVE",
+                    ErrorCodes.CLASS_NOT_ACTIVE,
                     "Lớp đã bị thu hồi, không mở rộng hoặc sửa khóa được nữa.");
         }
     }
@@ -389,7 +394,7 @@ public class CourseService {
         if (requested.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "COURSE_REQUIRES_SUBJECTS",
+                    ErrorCodes.COURSE_REQUIRES_SUBJECTS,
                     "Khóa phải có ít nhất một môn.");
         }
         return requested;
@@ -407,7 +412,7 @@ public class CourseService {
         if (name == null || name.isBlank() || name.trim().length() > 255) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
-                    "INVALID_COURSE_NAME",
+                    ErrorCodes.INVALID_COURSE_NAME,
                     "Tên khóa phải có từ 1 đến 255 ký tự.");
         }
         return name.trim();
@@ -415,20 +420,22 @@ public class CourseService {
 
     private static HttpProblemException classNotFound() {
         return new HttpProblemException(
-                HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", "Không tìm thấy lớp trong workspace này.");
+                HttpStatus.NOT_FOUND,
+                ErrorCodes.CLASS_NOT_FOUND,
+                "Không tìm thấy lớp trong workspace này.");
     }
 
     private static HttpProblemException courseNotFound() {
         return new HttpProblemException(
                 HttpStatus.NOT_FOUND,
-                "COURSE_NOT_FOUND",
+                ErrorCodes.COURSE_NOT_FOUND,
                 "Không tìm thấy khóa trong workspace này.");
     }
 
     private static HttpProblemException subjectNotFound() {
         return new HttpProblemException(
-                HttpStatus.BAD_REQUEST,
-                "SUBJECT_NOT_FOUND",
+                HttpStatus.NOT_FOUND,
+                ErrorCodes.SUBJECT_NOT_FOUND,
                 "Môn không có trong danh mục đang hoạt động.");
     }
 
