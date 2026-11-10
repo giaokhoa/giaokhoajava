@@ -420,6 +420,114 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
     }
 
     @Test
+    void sampleActionRetryWithSameKeyReplaysAndDifferentPayloadConflicts() throws Exception {
+        KeycloakLogin ownerLogin = createVerifiedUser("personal-idem-owner");
+        KeycloakLogin studentLogin = createVerifiedUser("personal-idem-student");
+        try {
+            UUID ownerId =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            UUID studentId =
+                    seedAccount(
+                            studentLogin.subject(), "SELF_REGISTERED", studentLogin.email(), true);
+            UUID personal = personalWorkspaceOf(ownerId);
+            seedSubscription(personal, -1, 365, ownerId);
+            PersonalChain chain = seedPersonalChain(personal, studentId);
+            ResourceStub stub = seedResourceStub(personal, ownerId, chain.subjectId());
+
+            String assignJson =
+                    "{\"action\":\"ASSIGN_ACTIVITY\",\"courseSubjectId\":\""
+                            + chain.courseSubjectId()
+                            + "\",\"resourceId\":\""
+                            + stub.resourceId()
+                            + "\",\"versionId\":\""
+                            + stub.versionId()
+                            + "\",\"dueAt\":\""
+                            + OffsetDateTime.now(ZoneOffset.UTC).plusDays(7)
+                            + "\",\"attemptLimit\":1}";
+            String assignKey = "personal-class-idem-" + UUID.randomUUID();
+            UUID activityId;
+            try (var owner = openSession(ownerLogin)) {
+                JsonNode first = sampleActionWithKey(owner, personal, assignJson, assignKey, 201);
+                activityId = UUID.fromString(first.get("targetId").stringValue());
+                JsonNode replayed =
+                        sampleActionWithKey(owner, personal, assignJson, assignKey, 201);
+                assertEquals(
+                        activityId.toString(),
+                        replayed.get("targetId").stringValue(),
+                        "Retry cùng key và cùng payload phải trả lại đúng hoạt động đầu tiên");
+                sampleActionWithKey(
+                        owner,
+                        personal,
+                        assignJson.replace("\"attemptLimit\":1", "\"attemptLimit\":2"),
+                        assignKey,
+                        409);
+            }
+            assertEquals(
+                    1,
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM sample_activity WHERE workspace_id = ?",
+                            Integer.class,
+                            personal),
+                    "Retry cùng key không được ghi thêm hoạt động thứ hai, payload khác cùng key"
+                            + " phải bị 409 trước khi ghi");
+
+            String submitJson =
+                    "{\"action\":\"SUBMIT_ACTIVITY\",\"activityId\":\""
+                            + activityId
+                            + "\",\"contentStub\":\"Bài làm cá nhân\"}";
+            String submitKey = "personal-class-idem-" + UUID.randomUUID();
+            try (var student = openSession(studentLogin)) {
+                JsonNode first = sampleActionWithKey(student, personal, submitJson, submitKey, 201);
+                JsonNode replayed =
+                        sampleActionWithKey(student, personal, submitJson, submitKey, 201);
+                assertEquals(
+                        first.get("targetId").stringValue(),
+                        replayed.get("targetId").stringValue(),
+                        "Retry lượt nộp cùng key phải trả lại bài nộp đầu tiên thay vì tính thêm"
+                                + " lượt mới (trần lượt của hoạt động là 1)");
+            }
+            assertEquals(
+                    1,
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM sample_submission WHERE activity_id = ?",
+                            Integer.class,
+                            activityId),
+                    "Retry cùng key không được ghi thêm bài nộp thứ hai");
+
+            UUID resultId = seedSubmissionAndDraftResult(personal, ownerId, studentId, chain);
+            String publishJson =
+                    "{\"action\":\"PUBLISH_RESULT\",\"resultId\":\"" + resultId + "\"}";
+            String publishKey = "personal-class-idem-" + UUID.randomUUID();
+            try (var owner = openSession(ownerLogin)) {
+                sampleActionWithKey(
+                        owner,
+                        personal,
+                        "{\"action\":\"GRADE_RESULT\",\"resultId\":\""
+                                + resultId
+                                + "\",\"scoreStub\":\"8.0\",\"commentStub\":\"Đạt\"}",
+                        "personal-class-idem-" + UUID.randomUUID(),
+                        201);
+                sampleActionWithKey(owner, personal, publishJson, publishKey, 201);
+                JsonNode replayed =
+                        sampleActionWithKey(owner, personal, publishJson, publishKey, 201);
+                assertEquals(
+                        "SUCCEEDED",
+                        replayed.get("state").stringValue(),
+                        "Retry công bố cùng key phải replay kết quả đầu tiên thay vì"
+                                + " 409 RESULT_NOT_DRAFT");
+            }
+            assertEquals(
+                    "PUBLISHED",
+                    jdbc.queryForObject(
+                            "SELECT state FROM sample_result WHERE id = ?", String.class, resultId),
+                    "Kết quả vẫn ở trạng thái PUBLISHED sau retry công bố");
+        } finally {
+            deleteUser(ownerLogin.subject());
+            deleteUser(studentLogin.subject());
+        }
+    }
+
+    @Test
     void leavingCenterKeepsPersonalRights() throws Exception {
         KeycloakLogin centerOwnerLogin = createVerifiedUser("us6-leave-center-owner");
         KeycloakLogin userLogin = createVerifiedUser("us6-leave-user");
@@ -524,16 +632,44 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
 
     private MockHttpServletResponse postRaw(RealSession session, String uri, String json)
             throws Exception {
+        return postRaw(session, uri, json, "personal-class-" + UUID.randomUUID());
+    }
+
+    private MockHttpServletResponse postRaw(
+            RealSession session, String uri, String json, String idempotencyKey) throws Exception {
         return mockMvc()
                 .perform(
                         post(uri)
                                 .cookie(session.cookie())
                                 .with(csrf())
-                                .header("Idempotency-Key", "personal-class-" + UUID.randomUUID())
+                                .header("Idempotency-Key", idempotencyKey)
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(json))
                 .andReturn()
                 .getResponse();
+    }
+
+    private JsonNode sampleActionWithKey(
+            RealSession session,
+            UUID workspaceId,
+            String json,
+            String idempotencyKey,
+            int expectedStatus)
+            throws Exception {
+        MockHttpServletResponse response =
+                postRaw(
+                        session,
+                        "/api/workspaces/" + workspaceId + "/samples/actions",
+                        json,
+                        idempotencyKey);
+        assertEquals(
+                expectedStatus,
+                response.getStatus(),
+                "Sample action tại workspace "
+                        + workspaceId
+                        + ", body: "
+                        + response.getContentAsString());
+        return JSON.readTree(response.getContentAsString());
     }
 
     private MockHttpServletResponse sampleAction(

@@ -15,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -38,7 +39,10 @@ import tools.jackson.databind.json.JsonMapper;
  * thể chưa từng được chiếu khi chuỗi được seed thẳng, nên trước khi hỏi PDP mỗi action ghi lại
  * bundle hiện hành của target qua cơ chế operation dùng chung và chờ chiếu xong — chờ không xong
  * thì fail-closed 503 như mọi protected request khác. Action lạ bị từ chối, không bao giờ được lặng
- * lẽ cho qua.
+ * lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính mình trong cùng transaction với
+ * mutation (bảng sample_action_mutation, theo tiền lệ recovery_mutation): retry cùng key và cùng
+ * payload trả lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload trả 409 như quy tắc
+ * mutation chung của hợp đồng HTTP.
  */
 @RestController
 public class SampleActionController {
@@ -102,14 +106,22 @@ public class SampleActionController {
         if (request == null || request.action() == null) {
             throw unsupported();
         }
+        String payloadHash = actionPayloadHash(workspaceId, request);
         SampleActionResult result =
                 switch (request.action()) {
                     case "CREATE_RESOURCE" ->
-                            createResource(workspaceId, request, authentication, httpRequest);
+                            createResource(
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    request,
+                                    authentication,
+                                    httpRequest);
                     case "ASSIGN_ACTIVITY" ->
                             assignActivity(
                                     workspaceId,
                                     idempotencyKey,
+                                    payloadHash,
                                     request,
                                     authentication,
                                     httpRequest);
@@ -117,6 +129,7 @@ public class SampleActionController {
                             submitActivity(
                                     workspaceId,
                                     idempotencyKey,
+                                    payloadHash,
                                     request,
                                     authentication,
                                     httpRequest);
@@ -124,6 +137,7 @@ public class SampleActionController {
                             gradeResult(
                                     workspaceId,
                                     idempotencyKey,
+                                    payloadHash,
                                     request,
                                     authentication,
                                     httpRequest);
@@ -131,6 +145,7 @@ public class SampleActionController {
                             publishResult(
                                     workspaceId,
                                     idempotencyKey,
+                                    payloadHash,
                                     request,
                                     authentication,
                                     httpRequest);
@@ -145,6 +160,8 @@ public class SampleActionController {
 
     private SampleActionResult createResource(
             UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
             SampleActionRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
@@ -156,26 +173,44 @@ public class SampleActionController {
             throw invalid();
         }
         return request.courseSubjectId() != null
-                ? createForCourseSubject(workspaceId, request, authentication, httpRequest)
-                : createForPersonalOwner(workspaceId, authentication, httpRequest);
+                ? createForCourseSubject(
+                        workspaceId,
+                        idempotencyKey,
+                        payloadHash,
+                        request,
+                        authentication,
+                        httpRequest)
+                : createForPersonalOwner(
+                        workspaceId, idempotencyKey, payloadHash, authentication, httpRequest);
     }
 
     private SampleActionResult createForCourseSubject(
             UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
             SampleActionRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
+        UUID actorUserId = executor.actorUserId(authentication);
         var target =
                 new ProtectedActionExecutor.Target(
                         NativePolicyTemplates.courseSubjectKey(
                                 workspaceId, request.courseSubjectId()),
                         List.of(PermissionCatalog.CourseSubjectScope.RESOURCE_CREATE.scopeName()));
         return executor.execute(
-                authentication, httpRequest, workspaceId, List.of(target), this::stubResult);
+                authentication,
+                httpRequest,
+                workspaceId,
+                List.of(target),
+                () -> stubResult(actorUserId, workspaceId, idempotencyKey, payloadHash));
     }
 
     private SampleActionResult createForPersonalOwner(
-            UUID workspaceId, Authentication authentication, HttpServletRequest httpRequest) {
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
         UUID actorUserId = executor.actorUserId(authentication);
         List<Map<String, Object>> rows =
                 jdbc.queryForList(
@@ -217,13 +252,17 @@ public class SampleActionController {
                                 "SUBSCRIPTION_INACTIVE",
                                 "Gói sử dụng không còn hiệu lực.");
                     }
-                    return stubResult();
+                    return stubResult(actorUserId, workspaceId, idempotencyKey, payloadHash);
                 });
     }
 
-    private SampleActionResult stubResult() {
+    private SampleActionResult stubResult(
+            UUID actorUserId, UUID workspaceId, String idempotencyKey, String payloadHash) {
         UUID id = UUID.randomUUID();
-        return new SampleActionResult(id, "SUCCEEDED", true, "RESOURCE", id);
+        return claimActionReceipt(
+                        actorUserId, workspaceId, idempotencyKey, payloadHash, "RESOURCE", id)
+                .orElseGet(() ->
+                        new SampleActionResult(id, OPERATION_SUCCEEDED, true, "RESOURCE", id));
     }
 
     // ---------- ASSIGN_ACTIVITY / SUBMIT_ACTIVITY ----------
@@ -231,6 +270,7 @@ public class SampleActionController {
     private SampleActionResult assignActivity(
             UUID workspaceId,
             String idempotencyKey,
+            String payloadHash,
             SampleActionRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
@@ -259,12 +299,27 @@ public class SampleActionController {
                         Objects.requireNonNull(
                                 workspaces.inWorkspace(
                                         workspaceId,
-                                        () -> insertActivity(workspaceId, actorUserId, request)),
+                                        () -> {
+                                            UUID activityId = UUID.randomUUID();
+                                            return claimActionReceipt(
+                                                            actorUserId,
+                                                            workspaceId,
+                                                            idempotencyKey,
+                                                            payloadHash,
+                                                            "ACTIVITY",
+                                                            activityId)
+                                                    .orElseGet(() ->
+                                                            insertActivity(
+                                                                    workspaceId,
+                                                                    actorUserId,
+                                                                    request,
+                                                                    activityId));
+                                        }),
                                 "activity"));
     }
 
     private SampleActionResult insertActivity(
-            UUID workspaceId, UUID actorUserId, SampleActionRequest request) {
+            UUID workspaceId, UUID actorUserId, SampleActionRequest request, UUID activityId) {
         List<Map<String, Object>> subjects =
                 jdbc.queryForList(
                         "SELECT subject_id FROM course_subject WHERE workspace_id = ? AND id = ?",
@@ -307,7 +362,6 @@ public class SampleActionController {
                     "SUBSCRIPTION_INACTIVE",
                     "Gói sử dụng không còn hiệu lực.");
         }
-        UUID activityId = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO sample_activity(id, workspace_id, course_subject_id, resource_id,"
                         + " version_id, assigned_by, assigned_at, due_at, attempt_limit,"
@@ -322,12 +376,14 @@ public class SampleActionController {
                 request.dueAt(),
                 request.attemptLimit(),
                 periods.getFirst());
-        return new SampleActionResult(activityId, "SUCCEEDED", true, "ACTIVITY", activityId);
+        return new SampleActionResult(
+                activityId, OPERATION_SUCCEEDED, true, "ACTIVITY", activityId);
     }
 
     private SampleActionResult submitActivity(
             UUID workspaceId,
             String idempotencyKey,
+            String payloadHash,
             SampleActionRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
@@ -361,7 +417,22 @@ public class SampleActionController {
                         Objects.requireNonNull(
                                 workspaces.inWorkspace(
                                         workspaceId,
-                                        () -> insertSubmission(workspaceId, actorUserId, request)),
+                                        () -> {
+                                            UUID submissionId = UUID.randomUUID();
+                                            return claimActionReceipt(
+                                                            actorUserId,
+                                                            workspaceId,
+                                                            idempotencyKey,
+                                                            payloadHash,
+                                                            "SUBMISSION",
+                                                            submissionId)
+                                                    .orElseGet(() ->
+                                                            insertSubmission(
+                                                                    workspaceId,
+                                                                    actorUserId,
+                                                                    request,
+                                                                    submissionId));
+                                        }),
                                 "submission"));
     }
 
@@ -379,7 +450,7 @@ public class SampleActionController {
     }
 
     private SampleActionResult insertSubmission(
-            UUID workspaceId, UUID actorUserId, SampleActionRequest request) {
+            UUID workspaceId, UUID actorUserId, SampleActionRequest request, UUID submissionId) {
         Map<String, Object> activity = activityRow(workspaceId, request.activityId());
         if (!"ASSIGNED".equals(activity.get("state"))) {
             throw new HttpProblemException(
@@ -403,7 +474,6 @@ public class SampleActionController {
                     "ATTEMPT_LIMIT_EXCEEDED",
                     "Đã hết số lượt nộp của hoạt động.");
         }
-        UUID submissionId = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO sample_submission(id, workspace_id, activity_id, student_user_id,"
                         + " attempt_no, submitted_at, content_stub, state)"
@@ -414,7 +484,8 @@ public class SampleActionController {
                 actorUserId,
                 attemptNo,
                 request.contentStub());
-        return new SampleActionResult(submissionId, "SUCCEEDED", true, "SUBMISSION", submissionId);
+        return new SampleActionResult(
+                submissionId, OPERATION_SUCCEEDED, true, "SUBMISSION", submissionId);
     }
 
     // ---------- GRADE_RESULT / PUBLISH_RESULT ----------
@@ -422,6 +493,7 @@ public class SampleActionController {
     private SampleActionResult gradeResult(
             UUID workspaceId,
             String idempotencyKey,
+            String payloadHash,
             SampleActionRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
@@ -445,13 +517,26 @@ public class SampleActionController {
                         Objects.requireNonNull(
                                 workspaces.inWorkspace(
                                         workspaceId,
-                                        () -> applyGrade(workspaceId, actorUserId, request)),
+                                        () ->
+                                                claimActionReceipt(
+                                                                actorUserId,
+                                                                workspaceId,
+                                                                idempotencyKey,
+                                                                payloadHash,
+                                                                "RESULT",
+                                                                request.resultId())
+                                                        .orElseGet(() ->
+                                                                applyGrade(
+                                                                        workspaceId,
+                                                                        actorUserId,
+                                                                        request))),
                                 "grade"));
     }
 
     private SampleActionResult publishResult(
             UUID workspaceId,
             String idempotencyKey,
+            String payloadHash,
             SampleActionRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
@@ -474,7 +559,18 @@ public class SampleActionController {
                                 Objects.requireNonNull(
                                         workspaces.inWorkspace(
                                                 workspaceId,
-                                                () -> applyPublish(workspaceId, request)),
+                                                () ->
+                                                        claimActionReceipt(
+                                                                        actorUserId,
+                                                                        workspaceId,
+                                                                        idempotencyKey,
+                                                                        payloadHash,
+                                                                        "RESULT",
+                                                                        request.resultId())
+                                                                .orElseGet(() ->
+                                                                        applyPublish(
+                                                                                workspaceId,
+                                                                                request))),
                                         "publish"));
         // Nhánh đọc kết quả chỉ có hiệu lực khi graph đã chiếu trạng thái PUBLISHED:
         // ghi lại bundle kết quả và chờ chiếu xong trước khi báo thành công.
@@ -499,7 +595,7 @@ public class SampleActionController {
                 workspaceId,
                 request.resultId());
         return new SampleActionResult(
-                request.resultId(), "SUCCEEDED", true, "RESULT", request.resultId());
+                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId());
     }
 
     private SampleActionResult applyPublish(UUID workspaceId, SampleActionRequest request) {
@@ -514,7 +610,7 @@ public class SampleActionController {
                 workspaceId,
                 request.resultId());
         return new SampleActionResult(
-                request.resultId(), "SUCCEEDED", true, "RESULT", request.resultId());
+                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId());
     }
 
     private Map<String, Object> resultRow(UUID workspaceId, UUID resultId) {
@@ -527,6 +623,63 @@ public class SampleActionController {
             throw notFound();
         }
         return rows.getFirst();
+    }
+
+    // ---------- Biên nhận idempotency của chính action ----------
+
+    private String actionPayloadHash(UUID workspaceId, SampleActionRequest request) {
+        return idempotency.payloadHash(
+                "POST",
+                "/api/workspaces/" + workspaceId + "/samples/actions",
+                JSON.convertValue(request, tools.jackson.databind.JsonNode.class));
+    }
+
+    /**
+     * Chèn biên nhận của action trong cùng transaction với mutation, theo đúng mẫu {@code
+     * RecoveryService.replay}: chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp; đã có
+     * biên nhận cùng payload thì trả kết quả đầu tiên thay vì ghi lại; khác payload thì 409.
+     * Mutation ném lỗi sẽ rollback cả biên nhận nên một lần thử thất bại không đốt key.
+     */
+    private Optional<SampleActionResult> claimActionReceipt(
+            UUID actorUserId,
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            String targetType,
+            UUID targetId) {
+        int inserted =
+                jdbc.update(
+                        "INSERT INTO sample_action_mutation(actor_user_id, idempotency_key,"
+                                + " payload_hash, workspace_id, target_type, target_id)"
+                                + " VALUES (?,?,?,?,?,?)"
+                                + " ON CONFLICT (actor_user_id, idempotency_key) DO NOTHING",
+                        actorUserId,
+                        idempotencyKey,
+                        payloadHash,
+                        workspaceId,
+                        targetType,
+                        targetId);
+        if (inserted != 0) {
+            return Optional.empty();
+        }
+        Map<String, Object> previous =
+                jdbc.queryForMap(
+                        "SELECT payload_hash, target_type, target_id FROM sample_action_mutation"
+                                + " WHERE actor_user_id = ? AND idempotency_key = ?",
+                        actorUserId,
+                        idempotencyKey);
+        if (!payloadHash.equals(previous.get("payload_hash"))) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT,
+                    "IDEMPOTENCY_CONFLICT",
+                    "Idempotency-Key đã dùng với yêu cầu khác.");
+        }
+        UUID previousId = (UUID) Objects.requireNonNull(previous.get("target_id"), "target_id");
+        String previousType =
+                Objects.requireNonNull((String) previous.get("target_type"), "target_type");
+        return Optional.of(
+                new SampleActionResult(
+                        previousId, OPERATION_SUCCEEDED, true, previousType, previousId));
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------
