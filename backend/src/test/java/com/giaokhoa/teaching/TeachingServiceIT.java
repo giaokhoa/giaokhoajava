@@ -143,9 +143,16 @@ class TeachingServiceIT extends IntegrationEnvironment {
         addMembership(workspace, learner, "STUDENT");
         UUID classStudentId =
                 classes.addStudents(workspace, second.id(), List.of(learner)).getFirst().id();
-        var wrongRoster =
-                classes.pageStudents(workspace, first.id(), classStudentId.toString(), 20);
-        assertTrue(wrongRoster.items().isEmpty());
+        // Cursor thuộc roster khác: hợp đồng hiện hành trả 400 INVALID_CURSOR (mẫu của
+        // PublishedResultService), không trả trang rỗng lặng lẽ.
+        HttpProblemException problem =
+                assertThrows(
+                        HttpProblemException.class,
+                        () ->
+                                classes.pageStudents(
+                                        workspace, first.id(), classStudentId.toString(), 20));
+        assertEquals(HttpStatus.BAD_REQUEST, problem.getStatus());
+        assertEquals("INVALID_CURSOR", problem.getCode());
     }
 
     @Test
@@ -485,7 +492,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         + RUNTIME_ROLE);
         jdbc.execute(
                 "GRANT SELECT ON workspace, subscription_period, user_account, center_membership,"
-                        + " subject TO "
+                        + " membership_role, subject TO "
                         + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);

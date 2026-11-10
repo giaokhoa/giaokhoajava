@@ -100,13 +100,18 @@ class AuditRecordingIT extends IntegrationEnvironment {
         UUID target = seedAccount();
         RequestView submitted = recovery.submit(target, target, null, "Mất quyền truy cập email");
 
+        // COMPLETE chỉ hợp lệ sau khi yêu cầu đã VERIFIED: đi đúng hợp đồng hai bước
+        // (APPROVE xác minh rồi mới COMPLETE), dòng audit kết thúc là dòng SUCCEEDED.
+        recovery.resolve(operator, submitted.id(), Decision.APPROVE, "Đã xác minh danh tính");
         RequestView resolved =
                 recovery.resolve(
                         operator, submitted.id(), Decision.COMPLETE, "Đã khôi phục và bàn giao");
 
         List<Map<String, Object>> rows = auditRows("RECOVERY", target);
-        assertEquals(1, rows.size(), "Resolve khôi phục ghi đúng một dòng audit");
-        Map<String, Object> row = rows.getFirst();
+        List<Map<String, Object>> succeeded =
+                rows.stream().filter(row -> "SUCCEEDED".equals(row.get("outcome"))).toList();
+        assertEquals(1, succeeded.size(), "Resolve khôi phục ghi đúng một dòng audit kết thúc");
+        Map<String, Object> row = succeeded.getFirst();
         assertEquals(operator, row.get("actor_user_id"));
         assertNull(row.get("workspace_id"));
         assertEquals("ACCOUNT", row.get("target_type"));

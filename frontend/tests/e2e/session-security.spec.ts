@@ -212,7 +212,15 @@ test("khởi động lại trình duyệt: context mới từ storage state đã
     const restarted = await browser.newContext({ storageState: state });
     try {
       const page2 = await restarted.newPage();
-      expect((await goiOperationDauDo(page2, origin)).status()).toBe(503);
+      // Phiên đã khôi phục: đồng bộ eligibility có thể chưa xong (503) hoặc đã xong
+      // trước khi gọi (404 vì operation thăm dò không tồn tại); cả hai đều chứng tỏ
+      // phiên còn nguyên — chỉ 302 mới là mất phiên. Cửa sổ đồng bộ thu hẹp khi
+      // projection chạy nhanh hơn nên không khóa cứng một mã duy nhất.
+      const probe = await goiOperationDauDo(page2, origin);
+      expect([503, 404]).toContain(probe.status());
+      expect(["AUTHORIZATION_NOT_READY", "NOT_FOUND"]).toContain(
+        (await probe.json() as { code?: string }).code,
+      );
     } finally {
       await restarted.close();
     }
