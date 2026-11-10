@@ -2,6 +2,16 @@
 # Acceptance native tách biệt cho provisioning và authorization của Keycloak: Keycloak 26.8.1 + PostgreSQL dùng một lần.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$ROOT/../.." && pwd)"
+native_test_goal=test
+if [[ $# -gt 0 ]]; then
+  [[ $# -eq 1 && "$1" == --use-build-artifact ]] || { echo 'Usage: verify-native.sh [--use-build-artifact]' >&2; exit 2; }
+  # CI đã compile và kiểm tra artifact; gọi đúng native test, không chạy lại vòng đời build.
+  native_test_goal=surefire:test
+  for test_class in authorization/keycloak/KeycloakProvisioningClientNativeIT authorization/NativePermissionGateIT authorization/NativeTimePolicyIT authorization/policy/PolicyGraphWriterNativeIT authorization/NativeGateAcceptanceIT; do
+    [[ -f "$REPO/backend/target/test-classes/com/giaokhoa/$test_class.class" ]] || { echo "Thiếu native test đã biên dịch: $test_class" >&2; exit 1; }
+  done
+fi
 PORT=18091
 BASE=http://127.0.0.1:$PORT
 CONTAINER=gk-native-proof
@@ -154,9 +164,8 @@ export PROVISIONING_TEST_KEYCLOAK_PROVISIONER_SECRET="$KEYCLOAK_PROVISIONER_CLIE
 PROVISIONING_TEST_KEYCLOAK_USER_ID="$(admin_get '/users?username=student-without-email&exact=true' |
   jq -er '[.[] | select(.username == "student-without-email")] | if length == 1 then .[0].id else error("test user missing") end')"
 export PROVISIONING_TEST_KEYCLOAK_USER_ID
-REPO="$(cd "$ROOT/../.." && pwd)"
 if ! "$REPO/backend/mvnw" -B -ntp -f "$REPO/backend/pom.xml" \
-    -Dtest=KeycloakProvisioningClientNativeIT test > "$TMP/java-native.log" 2>&1; then
+    -Dtest=KeycloakProvisioningClientNativeIT "$native_test_goal" > "$TMP/java-native.log" 2>&1; then
   tail -55 "$TMP/java-native.log" >&2
   fail "Java native provisioning integration test"
 fi
@@ -172,7 +181,7 @@ if ! node "$ROOT/fixtures/native-pkce-login.mjs"; then
   fail "Native actor login via real Authorization Code + PKCE"
 fi
 if ! "$REPO/backend/mvnw" -B -ntp -f "$REPO/backend/pom.xml" \
-    -Dtest=NativePermissionGateIT,NativeTimePolicyIT,PolicyGraphWriterNativeIT,NativeGateAcceptanceIT test > "$TMP/native-gate-java.log" 2>&1; then
+    -Dtest=NativePermissionGateIT,NativeTimePolicyIT,PolicyGraphWriterNativeIT,NativeGateAcceptanceIT "$native_test_goal" > "$TMP/native-gate-java.log" 2>&1; then
   tail -70 "$TMP/native-gate-java.log" >&2
   docker logs "$CONTAINER" 2>&1 | tail -90 >&2 || true
   fail "Native permission/time PDP integration tests"

@@ -46,17 +46,29 @@ docker compose -p giaokhoa-test -f infra/compose.test.yaml up -d
 
 Build mặc định không cần PostgreSQL/Keycloak và không chạy integration test. CI chạy riêng profile `integration` sau khi khởi tạo stack TEST, tự tìm test mới thay vì giữ danh sách tên lớp.
 
-CI chia backend thành hai runner có stack TEST riêng: `-Pintegration,it-pure verify`
-và `-Pintegration,e2e-backend verify`. Hai profile là hai tập bù nhau theo tag
-`e2e-backend` đã có từ PR #207; ghép kết quả của cả hai mới đủ suite. Lệnh
-`-Pintegration verify` ở local vẫn chạy toàn bộ. Mỗi runner vẫn chạy `clean verify`
-bằng JDK 25 và toàn bộ quality gates; check `backend` chỉ xanh khi cả hai tập đạt.
+CI chạy `clean verify` bằng JDK 25 đúng một lần trong job `backend-build`: compile
+main/test, unit test, Spotless, PMD và SpotBugs. Job này phát hành artifact gồm JAR,
+`target/classes` và `target/test-classes` sau khi tất cả cổng đạt. Các runner sau tải
+artifact của cùng workflow run; thiếu artifact thì thất bại, không tự build lại.
+
+Hai runner backend có stack TEST riêng, chạy
+`-Pintegration,it-pure failsafe:integration-test failsafe:verify` và
+`-Pintegration,e2e-backend failsafe:integration-test failsafe:verify` trên các class
+đã biên dịch. Hai profile là hai tập bù nhau theo tag `e2e-backend`; ghép kết quả
+của cả hai mới đủ suite. Lệnh `-Pintegration verify` ở local vẫn chạy toàn bộ.
+Check `backend` chỉ xanh khi build chung và cả hai tập integration test đều đạt.
 Playwright chia hai project bù nhau trên hai runner độc lập: `chromium-teaching-guardians`
 chạy hai file giảng dạy/phụ huynh, `chromium-core` chạy mọi file còn lại (kể cả file mới).
-Mỗi runner giữ một worker và stack TEST riêng; native Keycloak và OIDC logout chạy một
-lần ở `chromium-core`. Check `integration` chỉ xanh khi cả hai project đạt. XML backend và JSON/trace E2E
+Mỗi runner giữ một worker và stack TEST riêng, dùng JAR đã kiểm tra thay vì chạy
+`package` thêm lần nữa. Native Keycloak và OIDC logout chạy một lần ở `chromium-core`;
+native dùng `verify-native.sh --use-build-artifact` để chỉ gọi các test native đã
+biên dịch qua `surefire:test`. Không truyền cờ này khi chạy script độc lập ở local
+để Maven vẫn biên dịch trước khi chạy test. Check `integration` chỉ xanh khi build
+chung và cả hai project đạt. XML backend và JSON/trace E2E
 được tải lên cả khi test đạt để đối chiếu số ca và thời gian, tối đa 7 ngày;
-lỗi quota artifact không thay đổi kết quả kiểm thử.
+lỗi quota của artifact báo cáo không thay đổi kết quả kiểm thử. Artifact
+`backend-build` là đầu vào bắt buộc, giữ 1 ngày; nếu chạy lại sau khi artifact hết
+hạn, chọn chạy lại toàn bộ workflow để tạo build mới.
 
 Test khóa kết quả nghiệp vụ và hợp đồng công khai. Test phân trang chạy PostgreSQL
 thật, kiểm tra dữ kiện/trang/cursor thay vì bắt chuỗi SQL. Mỗi yêu cầu có test chịu
