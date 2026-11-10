@@ -8,7 +8,10 @@ public class HttpProblemException extends RuntimeException {
     private static final long serialVersionUID = 1L;
     private final HttpStatus status;
     private final String code;
-    private final @Nullable List<Violation> violations;
+
+    // Chỉ được đọc trong request hiện tại để dựng ProblemDetail; exception này không có đường nào
+    // đi qua Java serialization nên violations không cần sống qua serialization.
+    private final transient @Nullable List<Violation> violations;
 
     public HttpProblemException(HttpStatus status, String code, String safeDetail) {
         this(status, code, safeDetail, null, null);
