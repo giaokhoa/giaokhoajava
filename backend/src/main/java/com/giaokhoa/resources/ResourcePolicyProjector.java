@@ -5,7 +5,6 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -58,6 +57,15 @@ public class ResourcePolicyProjector {
     private static final String BUNDLE_SCOPE =
             PermissionCatalog.ResourceVersionScope.CONTENT_READ.scopeName();
     private static final String FORK_ORIGIN_MARKER = "origin=FORK";
+
+    /** Giá trị cột workspace.kind cho không gian cá nhân. */
+    private static final String PERSONAL_KIND = "PERSONAL";
+
+    /** Giá trị cột workspace.kind cho không gian trung tâm. */
+    private static final String CENTER_KIND = "CENTER";
+
+    /** Số phần tối thiểu của một canonical descriptor (loại nguồn và ít nhất một cặp khóa). */
+    private static final int MIN_DESCRIPTOR_PARTS = 2;
 
     /** Các scope đọc mà chủ sở hữu native có không cần gate gói (hết gói vẫn xem lại được). */
     private static final List<String> OWNER_READ_SCOPES =
@@ -303,7 +311,7 @@ public class ResourcePolicyProjector {
      */
     public static List<PolicyGraph.Gate> gatesFor(String descriptor) {
         String[] parts = descriptor.split("\\|", -1);
-        if (parts.length < 2) {
+        if (parts.length < MIN_DESCRIPTOR_PARTS) {
             throw new IllegalArgumentException("Unsupported resource descriptor: " + descriptor);
         }
         List<PolicyGraph.Gate> gates = new ArrayList<>();
@@ -376,9 +384,9 @@ public class ResourcePolicyProjector {
             return descriptors.stream().sorted().distinct().toList();
         }
         if (ownerWorkspaceId.equals(workspaceId)) {
-            if ("PERSONAL".equals(contextKind)) {
+            if (PERSONAL_KIND.equals(contextKind)) {
                 personalOwnerSources(descriptors, workspaceId, targetKey);
-            } else if ("CENTER".equals(contextKind)) {
+            } else if (CENTER_KIND.equals(contextKind)) {
                 centerAuthorSources(descriptors, workspaceId, createdByUserId, targetKey);
             }
         }
@@ -519,7 +527,7 @@ public class ResourcePolicyProjector {
                         + " WHERE a.workspace_id = ? AND a.state = 'ACTIVE'"
                         + " AND ((a.resource_id = ? AND (a.subject_id IS NULL OR a.subject_id = ?))"
                         + " OR (a.resource_id IS NULL AND a.subject_id = ?))";
-        if ("CENTER".equals(contextKind)) {
+        if (CENTER_KIND.equals(contextKind)) {
             sql +=
                     " AND EXISTS (SELECT 1 FROM center_membership m"
                             + " WHERE m.workspace_id = a.workspace_id AND m.user_id = a.user_id"
@@ -561,7 +569,7 @@ public class ResourcePolicyProjector {
                         workspaceId,
                         resourceId,
                         versionId)) {
-            if ("CENTER".equals(contextKind)) {
+            if (CENTER_KIND.equals(contextKind)) {
                 descriptors.add(
                         groupDescriptor(
                                 workspaceId,
@@ -569,7 +577,7 @@ public class ResourcePolicyProjector {
                                         workspaceId, courseSubjectId),
                                 targetKey,
                                 readScope));
-            } else if ("PERSONAL".equals(contextKind)) {
+            } else if (PERSONAL_KIND.equals(contextKind)) {
                 for (Map<String, Object> student :
                         jdbc.queryForList(
                                 "SELECT DISTINCT u.id AS user_id, u.keycloak_sub"
@@ -644,7 +652,7 @@ public class ResourcePolicyProjector {
             UUID versionId,
             String targetKey) {
         String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
-        if ("PERSONAL".equals(contextKind)) {
+        if (PERSONAL_KIND.equals(contextKind)) {
             Optional<OwnerRow> owner = personalOwner(workspaceId);
             if (owner.isEmpty()) {
                 return;
@@ -659,7 +667,7 @@ public class ResourcePolicyProjector {
                                 targetKey,
                                 saveScope));
             }
-        } else if ("CENTER".equals(contextKind)) {
+        } else if (CENTER_KIND.equals(contextKind)) {
             descriptors.add(
                     groupDescriptor(
                             workspaceId,
@@ -685,7 +693,7 @@ public class ResourcePolicyProjector {
         String readScope = PermissionCatalog.ResourceVersionScope.CONTENT_READ.scopeName();
         String useScope = PermissionCatalog.ResourceVersionScope.USE.scopeName();
         String forkScope = PermissionCatalog.ResourceVersionScope.FORK.scopeName();
-        if ("PERSONAL".equals(contextKind)) {
+        if (PERSONAL_KIND.equals(contextKind)) {
             Optional<OwnerRow> owner = personalOwner(workspaceId);
             if (owner.isEmpty()) {
                 return;
@@ -887,7 +895,7 @@ public class ResourcePolicyProjector {
         Object expiresAt = grant.get("expires_at");
         StringBuilder descriptor =
                 new StringBuilder(LICENSE_DESCRIPTOR).append("|workspace=").append(workspaceId);
-        if ("PERSONAL".equals(contextKind)) {
+        if (PERSONAL_KIND.equals(contextKind)) {
             OwnerRow owner =
                     personalOwner(workspaceId)
                             .orElseThrow(() ->
@@ -921,9 +929,6 @@ public class ResourcePolicyProjector {
     private static Instant instantOf(@Nullable Object value) {
         if (value instanceof OffsetDateTime offset) {
             return offset.toInstant();
-        }
-        if (value instanceof Timestamp timestamp) {
-            return timestamp.toInstant();
         }
         if (value instanceof Instant instant) {
             return instant;
