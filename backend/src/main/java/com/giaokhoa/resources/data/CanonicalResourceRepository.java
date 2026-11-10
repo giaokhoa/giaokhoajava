@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -27,8 +28,13 @@ public class CanonicalResourceRepository {
 
     private final JdbcTemplate jdbc;
 
-    public CanonicalResourceRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    /**
+     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} dựng sẵn: template được tạo trong
+     * constructor nên repository không giữ tham chiếu tới đối tượng mutable từ bên ngoài (SpotBugs
+     * EI_EXPOSE_REP2); {@code DataSource} là singleton do Spring quản lý.
+     */
+    public CanonicalResourceRepository(DataSource dataSource) {
+        this.jdbc = new JdbcTemplate(dataSource);
     }
 
     /** Metadata tối thiểu của một version để dựng authorization key và kiểm invariant. */

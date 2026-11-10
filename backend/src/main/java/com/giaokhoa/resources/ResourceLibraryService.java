@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -60,19 +61,24 @@ public class ResourceLibraryService {
     private final WorkspaceTransaction workspaces;
     private final TransactionTemplate transactions;
 
+    /**
+     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} và repository dựng sẵn: template và
+     * repository đều được tạo trong constructor nên service không giữ tham chiếu tới đối tượng
+     * mutable từ bên ngoài (SpotBugs EI_EXPOSE_REP2); {@code DataSource} là singleton do Spring
+     * quản lý, repository không trạng thái và chỉ service này dùng.
+     */
     public ResourceLibraryService(
             ProtectedActionExecutor executor,
             ResourcePolicyProjector projector,
-            CanonicalResourceRepository repository,
             IdempotencyService idempotency,
-            JdbcTemplate jdbc,
+            DataSource dataSource,
             WorkspaceTransaction workspaces,
             PlatformTransactionManager transactionManager) {
         this.executor = executor;
         this.projector = projector;
-        this.repository = repository;
+        this.repository = new CanonicalResourceRepository(dataSource);
         this.idempotency = idempotency;
-        this.jdbc = jdbc;
+        this.jdbc = new JdbcTemplate(dataSource);
         this.workspaces = workspaces;
         this.transactions = new TransactionTemplate(transactionManager);
     }

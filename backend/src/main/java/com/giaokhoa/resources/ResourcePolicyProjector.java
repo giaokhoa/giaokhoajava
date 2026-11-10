@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -101,11 +102,16 @@ public class ResourcePolicyProjector {
     private final AuthorizationOperationService operations;
     private final TransactionTemplate transactions;
 
+    /**
+     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} dựng sẵn: template được tạo trong
+     * constructor nên projector không giữ tham chiếu tới đối tượng mutable từ bên ngoài (SpotBugs
+     * EI_EXPOSE_REP2); {@code DataSource} là singleton do Spring quản lý.
+     */
     public ResourcePolicyProjector(
-            JdbcTemplate jdbc,
+            DataSource dataSource,
             AuthorizationOperationService operations,
             PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+        this.jdbc = new JdbcTemplate(dataSource);
         this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
     }
