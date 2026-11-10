@@ -3,6 +3,7 @@ package com.giaokhoa.infrastructure.tenancy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -138,6 +139,65 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                 results.stream()
                         .filter(result -> result.workspaceId().equals(workspaceId))
                         .allMatch(TenantMigrationRunner.Result::success));
+    }
+
+    @Test
+    @DisplayName("Runner cấp được schema cho workspace chưa từng cấp (schema_name còn NULL)")
+    void runnerProvisionsWorkspaceWithoutSchema() {
+        UUID workspaceId = newWorkspace("wave0-runner-retry").workspaceId();
+        assertNull(
+                raw.queryForObject(
+                        "SELECT schema_name FROM workspace WHERE id = ?",
+                        String.class,
+                        workspaceId));
+
+        List<TenantMigrationRunner.Result> results =
+                new TenantMigrationRunner(raw, provisioner).migrateAllTenants();
+
+        TenantMigrationRunner.Result own =
+                results.stream()
+                        .filter(result -> result.workspaceId().equals(workspaceId))
+                        .findFirst()
+                        .orElseThrow();
+        assertTrue(own.success());
+        assertEquals(
+                TenantContext.schemaNameFor(workspaceId),
+                raw.queryForObject(
+                        "SELECT schema_name FROM workspace WHERE id = ?",
+                        String.class,
+                        workspaceId));
+    }
+
+    @Test
+    @DisplayName(
+            "Gọi applyContext trực tiếp thì TenantContext được khôi phục khi transaction kết thúc,"
+                    + " cả khi commit lẫn rollback")
+    void directApplyContextRestoresTenantContext() {
+        ProbeWorkspace probe = newWorkspace("wave0-context-restore");
+        try (AnnotationConfigApplicationContext context =
+                new AnnotationConfigApplicationContext(BridgeConfiguration.class)) {
+            WorkspaceTransaction workspaceTransaction = context.getBean(WorkspaceTransaction.class);
+            TransactionTemplate transactions =
+                    new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
+            TenantContext.clear();
+
+            transactions.executeWithoutResult(status -> {
+                workspaceTransaction.applyContext(probe.workspaceId());
+                TenantContext.Context inside = TenantContext.current();
+                assertNotNull(inside);
+                assertEquals(probe.workspaceId(), inside.workspaceId());
+            });
+            assertNull(TenantContext.current());
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () ->
+                            transactions.executeWithoutResult(status -> {
+                                workspaceTransaction.applyContext(probe.workspaceId());
+                                throw new IllegalStateException("rollback chủ đích");
+                            }));
+            assertNull(TenantContext.current());
+        }
     }
 
     @Test

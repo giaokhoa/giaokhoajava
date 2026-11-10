@@ -44,6 +44,10 @@ server:
 
 giaokhoa:
   app-origin: ${APP_ORIGIN}
+  tenancy:
+    # Công tắc điểm dừng của đợt di trú schema-per-tenant: false thì workspace mới không được
+    # cấp schema riêng nữa và toàn hệ thống chạy như trước đợt di trú (schema hệ thống).
+    provisioning-enabled: ${TENANCY_PROVISIONING_ENABLED:true}
   keycloak:
     authorization-audience: ${KEYCLOAK_AUTHZ_AUDIENCE}
     admin-base-url: ${KEYCLOAK_ADMIN_BASE_URL}

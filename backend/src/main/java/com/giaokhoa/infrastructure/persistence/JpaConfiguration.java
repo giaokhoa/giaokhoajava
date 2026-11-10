@@ -11,9 +11,12 @@ import org.springframework.context.annotation.Configuration;
  * Cấu hình JPA dùng chung. Điểm nối multi-tenant được đăng ký tại đây theo cách chuẩn của Spring
  * Boot ({@link HibernatePropertiesCustomizer}): Hibernate nhận instance của connection provider và
  * tenant resolver (Hibernate User Guide §24.3.2–24.3.3 cho phép đăng ký bằng instance qua hai
- * setting này). Transaction manager giữ mặc định JpaTransactionManager của Spring Boot — chính là
- * cầu nối để code JDBC qua cùng DataSource dùng chung connection/transaction với JPA trong giai
- * đoạn chuyển tiếp.
+ * setting này). Cầu nối JPA↔JDBC trong giai đoạn chuyển tiếp dựa trên DataSource chính dùng chung:
+ * Spring Boot truyền chính DataSource đó vào EntityManagerFactory (JpaBaseConfiguration gọi {@code
+ * factoryBuilder.dataSource(this.dataSource)}), và JpaTransactionManager mặc định giữ connection
+ * của transaction JPA theo DataSource đó trên thread hiện tại — nên JdbcTemplate trên cùng
+ * DataSource lấy đúng connection đang bị transaction giữ và dùng chung một transaction vật lý với
+ * JPA.
  */
 @Configuration
 public class JpaConfiguration {
