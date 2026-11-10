@@ -94,15 +94,30 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
             // của workspace, confirm còn lại chờ khóa hàng partition (câu for update do
             // Hibernate sinh khi khóa entity). Hình dạng câu khóa thay theo tầng truy cập
             // dữ liệu; điều được khóa là cả hai đều bị chặn cùng lúc.
-            org.awaitility.Awaitility.await()
-                    .atMost(java.time.Duration.ofSeconds(20))
-                    .until(() ->
-                            Objects.requireNonNull(
-                                            jdbc.queryForObject(
-                                                    "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
-                                                            + " AND (query LIKE '%from authz_partition%for update%' OR query LIKE 'SELECT pg_advisory_xact_lock%')",
-                                                    Integer.class))
-                                    >= 2);
+            try {
+                org.awaitility.Awaitility.await()
+                        .atMost(java.time.Duration.ofSeconds(20))
+                        .until(() ->
+                                Objects.requireNonNull(
+                                                jdbc.queryForObject(
+                                                        "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+                                                                + " AND (query LIKE '%from authz_partition%for update%' OR query LIKE 'SELECT pg_advisory_xact_lock%')",
+                                                        Integer.class))
+                                        >= 2);
+            } catch (org.awaitility.core.ConditionTimeoutException timeout) {
+                // Chẩn đoán tạm: liệt kê mọi phiên đang chờ khóa hoặc đang chạy câu liên
+                // quan để thấy hai confirm thật sự đang bị chặn ở đâu.
+                String waiting =
+                        jdbc.queryForList(
+                                        "SELECT pid || ' | ' || coalesce(wait_event_type, '-') || ' | '"
+                                                + " coalesce(wait_event, '-') || ' | ' || left(query, 160)"
+                                                + " FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
+                                                + " AND (wait_event_type = 'Lock' OR query LIKE '%authz_partition%'"
+                                                + " OR query LIKE '%pg_advisory%')",
+                                        String.class)
+                                .toString();
+                throw new AssertionError("Lock observation diagnostics: " + waiting, timeout);
+            }
             connection.commit();
         }
         first.get(30, java.util.concurrent.TimeUnit.SECONDS);
