@@ -7,6 +7,10 @@ const base = process.env.TEST_KEYCLOAK_BASE_URL;
 assert.ok(["http://127.0.0.1:18081", "http://127.0.0.1:18082"].includes(base));
 assert.equal(process.env.TEST_KEYCLOAK_REALM, "giaokhoa-it");
 assert.equal(process.env.TEST_OIDC_CLIENT_ID, "giaokhoa-it-web");
+assert.ok(
+  process.env.NATIVE_GATE_APP_ORIGIN,
+  "Thiếu biến môi trường NATIVE_GATE_APP_ORIGIN (gốc của backend TEST, vd http://127.0.0.1:8080)",
+);
 const credentials = new URLSearchParams({
   grant_type: "password", client_id: "admin-cli",
   username: process.env.TEST_KEYCLOAK_MASTER_USERNAME ?? "",

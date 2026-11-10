@@ -10,6 +10,7 @@ import com.giaokhoa.authorization.decision.RequiredPermissions;
 import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
 import com.giaokhoa.authorization.policy.PolicyGraph.Gate;
 import com.giaokhoa.authorization.policy.PolicyGraph.Source;
+import com.giaokhoa.support.IntegrationEnvironment;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -108,7 +109,7 @@ class PolicyGraphWriterNativeIT {
                         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                         .authorizationUri(base + "/realms/giaokhoa/protocol/openid-connect/auth")
                         .tokenUri(base + "/realms/giaokhoa/protocol/openid-connect/token")
-                        .redirectUri("http://127.0.0.1:18895/callback")
+                        .redirectUri(IntegrationEnvironment.NATIVE_REDIRECT_URI)
                         .build();
         OAuth2AccessToken webToken =
                 new OAuth2AccessToken(
@@ -272,7 +273,7 @@ class PolicyGraphWriterNativeIT {
                         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                         .authorizationUri(base + "/realms/giaokhoa/protocol/openid-connect/auth")
                         .tokenUri(base + "/realms/giaokhoa/protocol/openid-connect/token")
-                        .redirectUri("http://127.0.0.1:18895/callback")
+                        .redirectUri(IntegrationEnvironment.NATIVE_REDIRECT_URI)
                         .build();
         OAuth2AccessToken webToken =
                 new OAuth2AccessToken(
