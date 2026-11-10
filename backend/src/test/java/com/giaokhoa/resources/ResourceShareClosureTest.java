@@ -10,7 +10,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.repository.CanonicalResourceRepository;
 import com.giaokhoa.resources.repository.LibraryItemRepository;
-import com.giaokhoa.resources.repository.ResourceActionReceipts;
+import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
@@ -112,7 +112,7 @@ class ResourceShareClosureTest {
                 mock(LibraryItemRepository.class),
                 mock(ResourcesWorkspaceRepository.class),
                 mock(ResourceCopies.class),
-                mock(ResourceActionReceipts.class),
+                mock(SampleActionMutationRepository.class),
                 mock(ResourcesAuthorizationOperationRepository.class),
                 mock(ResourceScopePreconditions.class));
     }

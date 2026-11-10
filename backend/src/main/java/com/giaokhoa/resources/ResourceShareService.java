@@ -14,7 +14,8 @@ import com.giaokhoa.resources.model.ShareGrant;
 import com.giaokhoa.resources.repository.CanonicalResourceRepository;
 import com.giaokhoa.resources.repository.GrantRef;
 import com.giaokhoa.resources.repository.LibraryItemRepository;
-import com.giaokhoa.resources.repository.ResourceActionReceipts;
+import com.giaokhoa.verification.model.SampleActionMutation;
+import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
@@ -101,7 +102,7 @@ public class ResourceShareService {
     private final LibraryItemRepository libraryItems;
     private final ResourcesWorkspaceRepository workspaceDirectory;
     private final ResourceCopies copies;
-    private final ResourceActionReceipts receipts;
+    private final SampleActionMutationRepository receipts;
     private final ResourcesAuthorizationOperationRepository operationStates;
     private final ResourceScopePreconditions preconditions;
     private final IdempotencyService idempotency;
@@ -125,7 +126,7 @@ public class ResourceShareService {
             LibraryItemRepository libraryItems,
             ResourcesWorkspaceRepository workspaceDirectory,
             ResourceCopies copies,
-            ResourceActionReceipts receipts,
+            SampleActionMutationRepository receipts,
             ResourcesAuthorizationOperationRepository operationStates,
             ResourceScopePreconditions preconditions) {
         this.executor = executor;
@@ -652,18 +653,18 @@ public class ResourceShareService {
         if (inserted != 0) {
             return Optional.empty();
         }
-        ResourceActionReceipts.Receipt previous =
-                receipts.findReceipt(actorUserId, idempotencyKey)
+        SampleActionMutation previous =
+                receipts.findById(new SampleActionMutation.Id(actorUserId, idempotencyKey))
                         .orElseThrow(() ->
                                 new IllegalStateException(
                                         "Idempotency receipt is missing after a claim conflict"));
-        if (!payloadHash.equals(previous.payloadHash())) {
+        if (!payloadHash.equals(previous.getPayloadHash())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "IDEMPOTENCY_CONFLICT",
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
-        return Optional.of(previous.targetId());
+        return Optional.of(previous.getTargetId());
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------
