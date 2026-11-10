@@ -935,8 +935,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     private String recoveryRequestState(RealSession session, UUID requestId) throws Exception {
         MockHttpServletResponse response =
                 requestWhenReady(
-                        mockMvc(),
-                        get("/api/platform/recovery-requests").cookie(session.cookie()));
+                        mockMvc(), get("/api/platform/recovery-requests").cookie(session.cookie()));
         assertEquals(200, response.getStatus(), response.getContentAsString());
         for (JsonNode item : JSON.readTree(response.getContentAsString())) {
             if (requestId.toString().equals(item.get("id").stringValue())) {

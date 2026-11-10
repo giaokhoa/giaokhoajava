@@ -30,8 +30,7 @@ class SubscriptionPolicyTest {
 
     private static JdbcTemplate jdbcReturning(Boolean result) {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(WORKSPACE)))
-                .thenReturn(result);
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(WORKSPACE))).thenReturn(result);
         when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(WORKSPACE), eq(WORKSPACE)))
                 .thenReturn(result);
         return jdbc;

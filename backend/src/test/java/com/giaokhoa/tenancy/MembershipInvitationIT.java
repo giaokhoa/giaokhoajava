@@ -1153,10 +1153,7 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                             + "/memberships?limit=100"
                             + (cursor == null ? "" : "&cursor=" + cursor);
             MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get(path).cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
+                    mockMvc().perform(get(path).cookie(session.cookie())).andReturn().getResponse();
             assertEquals(200, response.getStatus());
             JsonNode body = JSON.readTree(response.getContentAsString());
             for (JsonNode item : body.get("items")) {

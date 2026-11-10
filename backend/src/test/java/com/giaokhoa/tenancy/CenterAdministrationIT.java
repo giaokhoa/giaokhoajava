@@ -1203,8 +1203,7 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
         String cursor = null;
         do {
             String url =
-                    "/api/platform/centers?limit=100"
-                            + (cursor == null ? "" : "&cursor=" + cursor);
+                    "/api/platform/centers?limit=100" + (cursor == null ? "" : "&cursor=" + cursor);
             MockHttpServletResponse response =
                     requestWhenReady(mockMvc(), get(url).cookie(session.cookie()));
             assertEquals(200, response.getStatus(), response.getContentAsString());

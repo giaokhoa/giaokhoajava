@@ -526,8 +526,7 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     homeroomOfTeacher++;
                 }
             }
-            assertEquals(
-                    1, homeroomOfTeacher, "Quản lý chỉ định được chủ nhiệm cho lớp");
+            assertEquals(1, homeroomOfTeacher, "Quản lý chỉ định được chủ nhiệm cho lớp");
         }
     }
 

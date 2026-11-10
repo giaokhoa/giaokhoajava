@@ -71,7 +71,9 @@ class BootstrapProfileIT extends IntegrationEnvironment {
     // trực tiếp của class.
     @MockitoBean ProjectionWorker scheduledWorker;
 
-    /** Membership của một user trong một workspace, đọc qua đúng service mà endpoint danh sách gọi. */
+    /**
+     * Membership của một user trong một workspace, đọc qua đúng service mà endpoint danh sách gọi.
+     */
     private List<MembershipService.MembershipView> membershipsOf(UUID workspaceId, UUID userId) {
         List<MembershipService.MembershipView> all = new ArrayList<>();
         String cursor = null;
@@ -122,8 +124,7 @@ class BootstrapProfileIT extends IntegrationEnvironment {
             assertFalse(second.created());
             assertEquals(first.userId(), second.userId());
             assertEquals(first.personalWorkspaceId(), second.personalWorkspaceId());
-            assertEquals(
-                    "after@example.test", identityService.currentUser(first.userId()).email());
+            assertEquals("after@example.test", identityService.currentUser(first.userId()).email());
             assertFalse(identityService.currentUser(first.userId()).emailVerified());
             assertEquals(
                     1,
