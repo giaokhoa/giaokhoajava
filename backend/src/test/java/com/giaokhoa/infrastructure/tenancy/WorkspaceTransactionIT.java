@@ -69,6 +69,10 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
                         + contextCheck
                         + ")");
         jdbc.execute("GRANT SELECT, INSERT ON " + PROBE_TABLE + " TO " + RUNTIME_ROLE);
+        // applyContext tra registry schema của workspace trước khi đặt context, nên role runtime
+        // phải đọc được bảng hệ thống workspace — đúng quyền đọc mà runtime role thật dùng cho
+        // các tra cứu thư mục workspace.
+        jdbc.execute("GRANT SELECT ON workspace TO " + RUNTIME_ROLE);
 
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);

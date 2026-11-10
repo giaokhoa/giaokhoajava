@@ -18,10 +18,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /**
  * Cấp schema riêng cho một workspace: tạo schema, chạy dòng migration tenant ({@code
  * db/migration-tenant}) bằng Flyway với bảng history nằm trong chính schema đó — mẫu "nhiều schema
- * giống hệt, mỗi tenant một schema" của tài liệu Flyway — cấp quyền cho runtime role, rồi ghi tên
- * schema vào registry {@code workspace.schema_name}. Workspace chỉ được coi là sẵn sàng ở mô hình
- * mới sau khi bước ghi registry này hoàn tất. Mọi bước đều idempotent: gọi lại trên workspace đã
- * cấp chỉ áp migration tenant còn thiếu.
+ * giống hệt, mỗi tenant một schema" của tài liệu Flyway — và cấp quyền cho runtime role. Hai mức
+ * hoàn tất phân biệt rõ: <b>chuẩn bị</b> ({@link #prepareSchema}) dừng ở đó; <b>kích hoạt</b>
+ * ({@link #provisionSchema}) ghi thêm tên schema vào registry {@code workspace.schema_name}, là
+ * điểm từ đó mọi context tenant trỏ vào schema riêng. Workspace chỉ được coi là sẵn sàng ở mô hình
+ * mới sau bước ghi registry này. Mọi bước đều idempotent: gọi lại trên workspace đã cấp chỉ áp
+ * migration tenant còn thiếu.
  */
 @Component
 public class TenantSchemaProvisioner {
@@ -69,17 +71,29 @@ public class TenantSchemaProvisioner {
         return dataSource;
     }
 
-    /** Cấp (hoặc bổ sung migration cho) schema của workspace; trả về tên schema. */
-    public String provisionSchema(UUID workspaceId) {
+    /**
+     * Chuẩn bị schema của workspace: tạo schema, áp dòng migration tenant và cấp quyền cho runtime
+     * role, nhưng CHƯA ghi registry {@code workspace.schema_name} — mặt phẳng dữ kiện của workspace
+     * vẫn ở schema hệ thống. Chuẩn bị tách khỏi kích hoạt vì các service hiện hành ghi dữ kiện
+     * tenant của workspace vừa tạo trên schema hệ thống (ngoài context tenant); kích hoạt ngay lúc
+     * tạo sẽ trỏ các luồng có context vào schema riêng còn rỗng trong khi dữ kiện nằm ở schema hệ
+     * thống, làm hỏng chính các luồng đó. Đợt di trú của module sở hữu dữ kiện sẽ kích hoạt bằng
+     * {@link #provisionSchema} khi chuyển dữ kiện vào schema riêng.
+     */
+    public String prepareSchema(UUID workspaceId) {
         String schema = TenantContext.schemaNameFor(workspaceId);
-        Flyway.configure()
-                .dataSource(migrationDataSource)
-                .locations(TENANT_LOCATIONS)
-                .schemas(schema)
-                .defaultSchema(schema)
-                .load()
-                .migrate();
-        grantRuntimeRole(schema);
+        migrateAndGrant(schema);
+        return schema;
+    }
+
+    /**
+     * Kích hoạt schema riêng của workspace: chuẩn bị như {@link #prepareSchema} rồi ghi tên schema
+     * vào registry {@code workspace.schema_name}. Chỉ gọi khi dữ kiện tenant của workspace được ghi
+     * vào schema riêng từ thời điểm này (workspace mới chưa có dữ kiện, hoặc dữ kiện đã được chuyển
+     * vào schema riêng); trả về tên schema.
+     */
+    public String provisionSchema(UUID workspaceId) {
+        String schema = prepareSchema(workspaceId);
         int updated =
                 migrationJdbc.update(
                         "UPDATE workspace SET schema_name = ? WHERE id = ?", schema, workspaceId);
@@ -90,10 +104,22 @@ public class TenantSchemaProvisioner {
         return schema;
     }
 
+    private void migrateAndGrant(String schema) {
+        Flyway.configure()
+                .dataSource(migrationDataSource)
+                .locations(TENANT_LOCATIONS)
+                .schemas(schema)
+                .defaultSchema(schema)
+                .load()
+                .migrate();
+        grantRuntimeRole(schema);
+    }
+
     /**
-     * Lên lịch cấp schema ngay sau khi transaction tạo workspace commit. Cấp schema chạy bằng kết
-     * nối migration riêng nên không thể nằm trong transaction nghiệp vụ; lỗi khi cấp được ghi log
-     * và workspace ở lại trạng thái chưa có schema (phân giải về schema hệ thống như cũ) để {@link
+     * Lên lịch CHUẨN BỊ schema ngay sau khi transaction tạo workspace commit (xem {@link
+     * #prepareSchema} về lý do bước này không kích hoạt). Cấp schema chạy bằng kết nối migration
+     * riêng nên không thể nằm trong transaction nghiệp vụ; lỗi khi chuẩn bị được ghi log và
+     * workspace ở lại trạng thái chưa có schema (phân giải về schema hệ thống như cũ) để {@link
      * TenantMigrationRunner} xử lý lại, thay vì làm hỏng yêu cầu tạo workspace đã commit. Công tắc
      * {@code giaokhoa.tenancy.provisioning-enabled=false} tắt hẳn bước này: workspace mới ở mô hình
      * cũ trên schema hệ thống như trước đợt di trú.
@@ -107,21 +133,21 @@ public class TenantSchemaProvisioner {
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            provisionQuietly(workspaceId);
+                            prepareQuietly(workspaceId);
                         }
                     });
         } else {
-            provisionQuietly(workspaceId);
+            prepareQuietly(workspaceId);
         }
     }
 
-    private void provisionQuietly(UUID workspaceId) {
+    private void prepareQuietly(UUID workspaceId) {
         try {
-            provisionSchema(workspaceId);
+            prepareSchema(workspaceId);
         } catch (FlywayException | DataAccessException | IllegalStateException e) {
-            // Chỉ nuốt các lỗi vận hành đã biết của đường cấp schema (migration, truy cập dữ
-            // liệu, workspace không tồn tại); lỗi lập trình khác vẫn nổi lên để lộ ngay.
-            LOG.error("Không cấp được schema tenant cho workspace {}", workspaceId, e);
+            // Chỉ nuốt các lỗi vận hành đã biết của đường chuẩn bị schema (migration, truy cập
+            // dữ liệu); lỗi lập trình khác vẫn nổi lên để lộ ngay.
+            LOG.error("Không chuẩn bị được schema tenant cho workspace {}", workspaceId, e);
         }
     }
 
