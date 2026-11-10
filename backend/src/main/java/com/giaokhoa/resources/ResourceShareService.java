@@ -307,8 +307,10 @@ public class ResourceShareService {
             }
             // Hết hạn là trạng thái suy ra từ thời gian: grant điều phối đã qua cửa sổ hiệu lực
             // thì không còn cho chia tiếp, dù state trên dòng vẫn ACCEPTED.
+            OffsetDateTime validFrom = (OffsetDateTime) grant.get("valid_from");
             OffsetDateTime expiresAt = (OffsetDateTime) grant.get("expires_at");
-            if (((OffsetDateTime) grant.get("valid_from")).isAfter(now)
+            if (validFrom == null
+                    || validFrom.isAfter(now)
                     || (expiresAt != null && !expiresAt.isAfter(now))) {
                 throw forbidden();
             }
