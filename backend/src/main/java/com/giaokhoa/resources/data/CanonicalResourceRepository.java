@@ -152,12 +152,12 @@ public class CanonicalResourceRepository {
     }
 
     public UUID insertLibraryItem(
+            UUID itemId,
             UUID workspaceId,
             UUID resourceId,
             UUID versionId,
             @Nullable UUID shareGrantId,
             String custody) {
-        UUID itemId = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO library_item(id, workspace_id, resource_id, version_id,"
                         + " share_grant_id, custody) VALUES (?,?,?,?,?,?)",
