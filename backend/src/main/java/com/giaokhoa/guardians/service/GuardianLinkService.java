@@ -6,7 +6,7 @@ import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
 import com.giaokhoa.guardians.model.GuardianLink;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
-import com.giaokhoa.guardians.repository.WorkspaceRepository;
+import com.giaokhoa.guardians.repository.GuardianWorkspaceRepository;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
@@ -50,7 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class GuardianLinkService {
     private final GuardianLinkRepository links;
-    private final WorkspaceRepository workspaces;
+    private final GuardianWorkspaceRepository workspaces;
     private final MembershipService memberships;
     private final WorkspaceTransaction workspaceTransaction;
     private final IdempotencyService idempotency;
@@ -60,7 +60,7 @@ public class GuardianLinkService {
 
     public GuardianLinkService(
             GuardianLinkRepository links,
-            WorkspaceRepository workspaces,
+            GuardianWorkspaceRepository workspaces,
             MembershipService memberships,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,

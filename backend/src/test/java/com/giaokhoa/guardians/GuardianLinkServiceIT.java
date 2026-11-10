@@ -542,16 +542,17 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 runtimeRepositories.getRepository(SampleResultRepository.class),
                                 runtimeRepositories.getRepository(
                                         com.giaokhoa.verification.repository
-                                                .AuthorizationPartitionRepository.class),
+                                                .VerificationAuthorizationPartitionRepository
+                                                .class),
                                 runtimeRepositories.getRepository(
                                         TeachingAssignmentRepository.class),
                                 runtimeRepositories.getRepository(EnrollmentRepository.class),
                                 runtimeRepositories.getRepository(
-                                        com.giaokhoa.verification.repository.WorkspaceRepository
-                                                .class),
+                                        com.giaokhoa.verification.repository
+                                                .VerificationWorkspaceRepository.class),
                                 runtimeRepositories.getRepository(
-                                        com.giaokhoa.verification.repository.UserAccountRepository
-                                                .class),
+                                        com.giaokhoa.verification.repository
+                                                .VerificationUserAccountRepository.class),
                                 runtimeRepositories.getRepository(GuardianLinkRepository.class),
                                 runtimeMemberships,
                                 runtimeWorkspaceTx,
@@ -561,11 +562,11 @@ class GuardianLinkServiceIT extends GuardianFixture {
                         new GuardianPolicyProjector(
                                 runtimeRepositories.getRepository(GuardianLinkRepository.class),
                                 runtimeRepositories.getRepository(
-                                        com.giaokhoa.guardians.repository.UserAccountRepository
-                                                .class),
+                                        com.giaokhoa.guardians.repository
+                                                .GuardianUserAccountRepository.class),
                                 runtimeRepositories.getRepository(
                                         com.giaokhoa.guardians.repository
-                                                .AuthorizationPartitionRepository.class),
+                                                .GuardianAuthorizationPartitionRepository.class),
                                 runtimeMemberships,
                                 runtimeWorkspaceTx,
                                 directory,
@@ -577,8 +578,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                         new GuardianLinkService(
                                 runtimeRepositories.getRepository(GuardianLinkRepository.class),
                                 runtimeRepositories.getRepository(
-                                        com.giaokhoa.guardians.repository.WorkspaceRepository
-                                                .class),
+                                        com.giaokhoa.guardians.repository
+                                                .GuardianWorkspaceRepository.class),
                                 runtimeMemberships,
                                 runtimeWorkspaceTx,
                                 runtimeIdempotency,

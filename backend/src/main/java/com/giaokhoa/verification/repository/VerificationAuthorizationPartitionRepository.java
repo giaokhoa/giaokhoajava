@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 /**
  * Điểm đọc partition qua entity của module authorization; repository đầy đủ thuộc authorization.
  */
-public interface AuthorizationPartitionRepository
+public interface VerificationAuthorizationPartitionRepository
         extends JpaRepository<AuthorizationPartition, UUID> {
 
     List<AuthorizationPartition> findByKindAndOwnerKey(

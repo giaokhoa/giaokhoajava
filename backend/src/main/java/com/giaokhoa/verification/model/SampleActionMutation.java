@@ -8,7 +8,6 @@ import jakarta.persistence.Table;
 import java.io.Serializable;
 import java.time.Instant;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Biên nhận idempotency của chính sample action (bảng {@code sample_action_mutation}, V022): khóa
@@ -39,7 +38,7 @@ public class SampleActionMutation {
     private UUID targetId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private @Nullable Instant createdAt;
+    private Instant createdAt;
 
     protected SampleActionMutation() {}
 
@@ -72,7 +71,7 @@ public class SampleActionMutation {
         return targetId;
     }
 
-    public @Nullable Instant getCreatedAt() {
+    public Instant getCreatedAt() {
         return createdAt;
     }
 }

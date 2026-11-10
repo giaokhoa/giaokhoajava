@@ -13,7 +13,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
-import com.giaokhoa.guardians.repository.UserAccountRepository;
+import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
 import com.giaokhoa.guardians.service.PublishedResultService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
@@ -61,7 +61,7 @@ class PublishedResultEmptyPageTest {
                         mock(CourseRepository.class),
                         mock(SchoolClassRepository.class),
                         mock(SubjectRepository.class),
-                        mock(UserAccountRepository.class)),
+                        mock(GuardianUserAccountRepository.class)),
                 executor,
                 authentication);
     }

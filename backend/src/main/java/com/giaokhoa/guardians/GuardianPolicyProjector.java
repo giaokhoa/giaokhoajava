@@ -8,9 +8,9 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.guardians.model.GuardianLink;
-import com.giaokhoa.guardians.repository.AuthorizationPartitionRepository;
+import com.giaokhoa.guardians.repository.GuardianAuthorizationPartitionRepository;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
-import com.giaokhoa.guardians.repository.UserAccountRepository;
+import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
@@ -48,8 +48,8 @@ public class GuardianPolicyProjector {
     private static final String GROUP_DESCRIPTOR = "GUARDIAN_GROUP";
 
     private final GuardianLinkRepository links;
-    private final UserAccountRepository userAccounts;
-    private final AuthorizationPartitionRepository partitions;
+    private final GuardianUserAccountRepository userAccounts;
+    private final GuardianAuthorizationPartitionRepository partitions;
     private final MembershipService memberships;
     private final WorkspaceTransaction workspaceTransaction;
     private final KeycloakProvisioningClient directory;
@@ -60,8 +60,8 @@ public class GuardianPolicyProjector {
 
     public GuardianPolicyProjector(
             GuardianLinkRepository links,
-            UserAccountRepository userAccounts,
-            AuthorizationPartitionRepository partitions,
+            GuardianUserAccountRepository userAccounts,
+            GuardianAuthorizationPartitionRepository partitions,
             MembershipService memberships,
             WorkspaceTransaction workspaceTransaction,
             KeycloakProvisioningClient directory,

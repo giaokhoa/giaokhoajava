@@ -30,7 +30,7 @@ import com.giaokhoa.verification.repository.SampleActivityRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.SampleSubmissionRepository;
 import com.giaokhoa.verification.repository.SubscriptionPeriodRepository;
-import com.giaokhoa.verification.repository.WorkspaceRepository;
+import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -78,7 +78,7 @@ public class SampleActionService {
     private final ResourceLibraryService library;
     private final ResourceShareService shareService;
     private final WorkspaceTransaction workspaces;
-    private final WorkspaceRepository workspaceDirectory;
+    private final VerificationWorkspaceRepository workspaceDirectory;
     private final SubscriptionPeriodRepository periods;
     private final CourseSubjectRepository courseSubjects;
     private final ResourceVersionRepository resourceVersions;
@@ -98,7 +98,7 @@ public class SampleActionService {
             ResourceLibraryService library,
             ResourceShareService shareService,
             WorkspaceTransaction workspaces,
-            WorkspaceRepository workspaceDirectory,
+            VerificationWorkspaceRepository workspaceDirectory,
             SubscriptionPeriodRepository periods,
             CourseSubjectRepository courseSubjects,
             ResourceVersionRepository resourceVersions,

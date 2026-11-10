@@ -4,7 +4,7 @@ import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.guardians.dto.PublishedResultView;
-import com.giaokhoa.guardians.repository.UserAccountRepository;
+import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
@@ -72,7 +72,7 @@ public class PublishedResultService {
     private final CourseRepository courses;
     private final SchoolClassRepository schoolClasses;
     private final SubjectRepository subjects;
-    private final UserAccountRepository userAccounts;
+    private final GuardianUserAccountRepository userAccounts;
     private static final SecureRandom CURSOR_RANDOM = new SecureRandom();
     private static final int SCAN_BATCH = 100;
     private static final int MAX_CURSOR_LENGTH = 256;
@@ -95,7 +95,7 @@ public class PublishedResultService {
             CourseRepository courses,
             SchoolClassRepository schoolClasses,
             SubjectRepository subjects,
-            UserAccountRepository userAccounts) {
+            GuardianUserAccountRepository userAccounts) {
         this.executor = executor;
         this.workspaces = workspaces;
         this.results = results;

@@ -14,12 +14,12 @@ import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.model.SampleResult;
-import com.giaokhoa.verification.repository.AuthorizationPartitionRepository;
+import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
 import com.giaokhoa.verification.repository.EnrollmentRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.TeachingAssignmentRepository;
-import com.giaokhoa.verification.repository.UserAccountRepository;
-import com.giaokhoa.verification.repository.WorkspaceRepository;
+import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
+import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -67,11 +67,11 @@ public class ResultPolicyProjector {
     private static final String BUNDLE_SCOPE = PermissionCatalog.ResultScope.READ.scopeName();
 
     private final SampleResultRepository results;
-    private final AuthorizationPartitionRepository partitions;
+    private final VerificationAuthorizationPartitionRepository partitions;
     private final TeachingAssignmentRepository assignments;
     private final EnrollmentRepository enrollments;
-    private final WorkspaceRepository workspaces;
-    private final UserAccountRepository userAccounts;
+    private final VerificationWorkspaceRepository workspaces;
+    private final VerificationUserAccountRepository userAccounts;
     private final GuardianLinkRepository guardianLinks;
     private final MembershipService memberships;
     private final WorkspaceTransaction workspaceTransaction;
@@ -80,11 +80,11 @@ public class ResultPolicyProjector {
 
     public ResultPolicyProjector(
             SampleResultRepository results,
-            AuthorizationPartitionRepository partitions,
+            VerificationAuthorizationPartitionRepository partitions,
             TeachingAssignmentRepository assignments,
             EnrollmentRepository enrollments,
-            WorkspaceRepository workspaces,
-            UserAccountRepository userAccounts,
+            VerificationWorkspaceRepository workspaces,
+            VerificationUserAccountRepository userAccounts,
             GuardianLinkRepository guardianLinks,
             MembershipService memberships,
             WorkspaceTransaction workspaceTransaction,

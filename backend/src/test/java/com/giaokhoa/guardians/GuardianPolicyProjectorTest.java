@@ -14,9 +14,9 @@ import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.guardians.model.GuardianLink;
-import com.giaokhoa.guardians.repository.AuthorizationPartitionRepository;
+import com.giaokhoa.guardians.repository.GuardianAuthorizationPartitionRepository;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
-import com.giaokhoa.guardians.repository.UserAccountRepository;
+import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.MembershipService;
@@ -40,7 +40,8 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 class GuardianPolicyProjectorTest {
     private static final UUID WORKSPACE = UUID.randomUUID();
     private final GuardianLinkRepository links = mock(GuardianLinkRepository.class);
-    private final UserAccountRepository userAccounts = mock(UserAccountRepository.class);
+    private final GuardianUserAccountRepository userAccounts =
+            mock(GuardianUserAccountRepository.class);
     private final MembershipService memberships = mock(MembershipService.class);
     private final KeycloakProvisioningClient directory = mock(KeycloakProvisioningClient.class);
 
@@ -126,7 +127,7 @@ class GuardianPolicyProjectorTest {
         return new GuardianPolicyProjector(
                 links,
                 userAccounts,
-                mock(AuthorizationPartitionRepository.class),
+                mock(GuardianAuthorizationPartitionRepository.class),
                 memberships,
                 mock(WorkspaceTransaction.class),
                 directory,
