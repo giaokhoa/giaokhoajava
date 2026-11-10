@@ -7,9 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Limit;
-import org.springframework.data.domain.ScrollPosition;
-import org.springframework.data.domain.Window;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -30,6 +28,15 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     /** Mảnh WHERE lọc theo workspace và tập trạng thái hiện hành, dùng chung cho đọc và thu hồi. */
     String BY_WORKSPACE_AND_STATES = " WHERE e.workspaceId = :workspaceId AND e.state IN :states";
 
+    /**
+     * Mảnh điều kiện theo môn–khóa và tập trạng thái hiện hành, dùng chung cho các truy vấn trang.
+     */
+    String BY_COURSE_SUBJECT_AND_STATES =
+            " AND e.courseSubjectId = :courseSubjectId AND e.state IN :states";
+
+    /** Tên tham số môn–khóa dùng chung cho mọi @Param của repository này. */
+    String COURSE_SUBJECT_ID = "courseSubjectId";
+
     Optional<Enrollment> findByWorkspaceIdAndClassStudentIdAndCourseSubjectIdAndStateIn(
             UUID workspaceId, UUID classStudentId, UUID courseSubjectId, Collection<String> states);
 
@@ -43,13 +50,33 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     List<EnrollmentListItem> findByWorkspaceIdAndCourseSubjectIdAndStateInOrderByCreatedAtAscIdAsc(
             UUID workspaceId, UUID courseSubjectId, Collection<String> states);
 
-    Window<EnrollmentListItem>
-            findByWorkspaceIdAndCourseSubjectIdAndStateInOrderByCreatedAtAscIdAsc(
-                    UUID workspaceId,
-                    UUID courseSubjectId,
-                    Collection<String> states,
-                    ScrollPosition position,
-                    Limit limit);
+    /** Trang ghi danh đầu tiên theo keyset (created_at, id); người gọi lấy thừa một hàng. */
+    @Query(
+            "SELECT e FROM Enrollment e WHERE e.workspaceId = :workspaceId"
+                    + BY_COURSE_SUBJECT_AND_STATES
+                    + " ORDER BY e.createdAt ASC, e.id ASC")
+    List<EnrollmentListItem> findFirstPage(
+            @Param("workspaceId") UUID workspaceId,
+            @Param(COURSE_SUBJECT_ID) UUID courseSubjectId,
+            @Param("states") Collection<String> states,
+            Pageable pageable);
+
+    /**
+     * Trang ghi danh sau mốc keyset (created_at, id); mốc được tra riêng kể cả khi hàng đã thu hồi.
+     */
+    @Query(
+            "SELECT e FROM Enrollment e WHERE e.workspaceId = :workspaceId"
+                    + BY_COURSE_SUBJECT_AND_STATES
+                    + " AND (e.createdAt > :anchorCreatedAt"
+                    + " OR (e.createdAt = :anchorCreatedAt AND e.id > :anchorId))"
+                    + " ORDER BY e.createdAt ASC, e.id ASC")
+    List<EnrollmentListItem> findPageAfter(
+            @Param("workspaceId") UUID workspaceId,
+            @Param(COURSE_SUBJECT_ID) UUID courseSubjectId,
+            @Param("states") Collection<String> states,
+            @Param("anchorCreatedAt") Instant anchorCreatedAt,
+            @Param("anchorId") UUID anchorId,
+            Pageable pageable);
 
     boolean existsByWorkspaceIdAndCourseSubjectIdAndStateIn(
             UUID workspaceId, UUID courseSubjectId, Collection<String> states);
@@ -60,7 +87,7 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
                     + " AND e.courseSubjectId = :courseSubjectId AND e.id = :id")
     Optional<Instant> findCreatedAtByWorkspaceIdAndCourseSubjectIdAndId(
             @Param("workspaceId") UUID workspaceId,
-            @Param("courseSubjectId") UUID courseSubjectId,
+            @Param(COURSE_SUBJECT_ID) UUID courseSubjectId,
             @Param("id") UUID id);
 
     /** Các môn–khóa mà một dòng roster đang có ghi danh hiện hành. */
@@ -92,11 +119,11 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     @Query(
             "SELECT DISTINCT cs.studentUserId FROM Enrollment e JOIN ClassStudent cs"
                     + " ON cs.id = e.classStudentId WHERE e.workspaceId = :workspaceId"
-                    + " AND e.courseSubjectId = :courseSubjectId AND e.state IN :states"
+                    + BY_COURSE_SUBJECT_AND_STATES
                     + " ORDER BY cs.studentUserId")
     List<UUID> findEnrolledStudentIds(
             @Param("workspaceId") UUID workspaceId,
-            @Param("courseSubjectId") UUID courseSubjectId,
+            @Param(COURSE_SUBJECT_ID) UUID courseSubjectId,
             @Param("states") Collection<String> states);
 
     /** Các cặp (học sinh, môn–khóa) của ghi danh hiện hành, cho projector dựng group mong muốn. */
@@ -156,12 +183,9 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
 
     /** Thu hồi mọi ghi danh hiện hành của một môn–khóa. */
     @Modifying
-    @Query(
-            REVOKE_SET_CLAUSE
-                    + " WHERE e.workspaceId = :workspaceId"
-                    + " AND e.courseSubjectId = :courseSubjectId AND e.state IN :states")
+    @Query(REVOKE_SET_CLAUSE + " WHERE e.workspaceId = :workspaceId" + BY_COURSE_SUBJECT_AND_STATES)
     int revokeCurrentByCourseSubjectId(
             @Param("workspaceId") UUID workspaceId,
-            @Param("courseSubjectId") UUID courseSubjectId,
+            @Param(COURSE_SUBJECT_ID) UUID courseSubjectId,
             @Param("states") Collection<String> states);
 }

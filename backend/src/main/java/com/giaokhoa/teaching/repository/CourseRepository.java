@@ -6,9 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Limit;
-import org.springframework.data.domain.ScrollPosition;
-import org.springframework.data.domain.Window;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -54,6 +52,29 @@ public interface CourseRepository extends JpaRepository<Course, UUID> {
             @Param("classId") UUID classId,
             @Param("id") UUID id);
 
-    Window<CourseListItem> findByWorkspaceIdAndClassIdAndStateOrderByCreatedAtAscIdAsc(
-            UUID workspaceId, UUID classId, String state, ScrollPosition position, Limit limit);
+    /** Trang khóa đầu tiên theo keyset (created_at, id); người gọi lấy thừa một hàng. */
+    @Query(
+            "SELECT c FROM Course c WHERE c.workspaceId = :workspaceId"
+                    + " AND c.classId = :classId AND c.state = :state"
+                    + " ORDER BY c.createdAt ASC, c.id ASC")
+    List<CourseListItem> findFirstPage(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("classId") UUID classId,
+            @Param("state") String state,
+            Pageable pageable);
+
+    /** Trang khóa sau mốc keyset (created_at, id); mốc được tra riêng kể cả khi hàng đã thu hồi. */
+    @Query(
+            "SELECT c FROM Course c WHERE c.workspaceId = :workspaceId"
+                    + " AND c.classId = :classId AND c.state = :state"
+                    + " AND (c.createdAt > :anchorCreatedAt"
+                    + " OR (c.createdAt = :anchorCreatedAt AND c.id > :anchorId))"
+                    + " ORDER BY c.createdAt ASC, c.id ASC")
+    List<CourseListItem> findPageAfter(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("classId") UUID classId,
+            @Param("state") String state,
+            @Param("anchorCreatedAt") Instant anchorCreatedAt,
+            @Param("anchorId") UUID anchorId,
+            Pageable pageable);
 }

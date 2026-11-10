@@ -7,9 +7,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.domain.Limit;
-import org.springframework.data.domain.ScrollPosition;
-import org.springframework.data.domain.Window;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -50,12 +48,33 @@ public interface ClassStudentRepository extends JpaRepository<ClassStudent, UUID
             @Param("classId") UUID classId,
             @Param("id") UUID id);
 
-    Window<RosterListItem> findByWorkspaceIdAndClassIdAndStateInOrderByCreatedAtAscIdAsc(
-            UUID workspaceId,
-            UUID classId,
-            Collection<String> states,
-            ScrollPosition position,
-            Limit limit);
+    /** Trang roster đầu tiên theo keyset (created_at, id); người gọi lấy thừa một hàng. */
+    @Query(
+            "SELECT cs FROM ClassStudent cs WHERE cs.workspaceId = :workspaceId"
+                    + " AND cs.classId = :classId AND cs.state IN :states"
+                    + " ORDER BY cs.createdAt ASC, cs.id ASC")
+    List<RosterListItem> findFirstPage(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("classId") UUID classId,
+            @Param("states") Collection<String> states,
+            Pageable pageable);
+
+    /**
+     * Trang roster sau mốc keyset (created_at, id); mốc được tra riêng kể cả khi hàng đã thu hồi.
+     */
+    @Query(
+            "SELECT cs FROM ClassStudent cs WHERE cs.workspaceId = :workspaceId"
+                    + " AND cs.classId = :classId AND cs.state IN :states"
+                    + " AND (cs.createdAt > :anchorCreatedAt"
+                    + " OR (cs.createdAt = :anchorCreatedAt AND cs.id > :anchorId))"
+                    + " ORDER BY cs.createdAt ASC, cs.id ASC")
+    List<RosterListItem> findPageAfter(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("classId") UUID classId,
+            @Param("states") Collection<String> states,
+            @Param("anchorCreatedAt") Instant anchorCreatedAt,
+            @Param("anchorId") UUID anchorId,
+            Pageable pageable);
 
     /** Thu hồi mọi dòng roster hiện hành của một người trong workspace, giữ nguyên lịch sử. */
     @Modifying

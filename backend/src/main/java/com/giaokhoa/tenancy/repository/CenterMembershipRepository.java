@@ -9,12 +9,19 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 public interface CenterMembershipRepository extends JpaRepository<CenterMembership, UUID> {
+    /**
+     * Roles được nạp cùng membership: mọi điểm đọc qua truy vấn này (projector, kiểm tra scope) đều
+     * dùng tới roles và nhiều điểm nằm ngoài transaction của repository, nên để LAZY sẽ lỗi khi
+     * collection bị chạm sau khi session đã đóng.
+     */
+    @EntityGraph(attributePaths = "roles")
     Optional<CenterMembership> findByWorkspaceIdAndUserIdAndState(
             UUID workspaceId, UUID userId, CenterMembership.State state);
 

@@ -313,14 +313,16 @@ public class InvitationService {
             }
             return new MembershipActivation(membership, true);
         }
+        // save() trên entity đã có id là merge: bản được quản lý là giá trị trả về, nên giữ
+        // đúng tham chiếu đó — sửa roles trên đối tượng gốc sẽ không bao giờ được flush.
         CenterMembership membership =
-                new CenterMembership(
-                        UUID.randomUUID(),
-                        workspaceId,
-                        userId,
-                        CenterMembership.State.ACTIVE,
-                        Instant.now());
-        memberships.save(membership);
+                memberships.save(
+                        new CenterMembership(
+                                UUID.randomUUID(),
+                                workspaceId,
+                                userId,
+                                CenterMembership.State.ACTIVE,
+                                Instant.now()));
         membershipIndex.sync(userId, workspaceId, CenterMembership.State.ACTIVE);
         return new MembershipActivation(membership, false);
     }

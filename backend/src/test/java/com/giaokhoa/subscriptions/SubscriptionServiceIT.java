@@ -90,13 +90,17 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                                     "review-ref-b-" + workspace,
                                     "review-key-b-" + workspace,
                                     HASH_B));
+            // Quan sát việc serialize thật trên PostgreSQL: một confirm chờ advisory lock
+            // của workspace, confirm còn lại chờ khóa hàng partition (câu for update do
+            // Hibernate sinh khi khóa entity). Hình dạng câu khóa thay theo tầng truy cập
+            // dữ liệu; điều được khóa là cả hai đều bị chặn cùng lúc.
             org.awaitility.Awaitility.await()
                     .atMost(java.time.Duration.ofSeconds(20))
                     .until(() ->
                             Objects.requireNonNull(
                                             jdbc.queryForObject(
                                                     "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
-                                                            + " AND (query LIKE 'SELECT desired_revision FROM authz_partition WHERE id = % FOR UPDATE' OR query LIKE 'SELECT pg_advisory_xact_lock%')",
+                                                            + " AND (query LIKE '%from authz_partition%for update%' OR query LIKE 'SELECT pg_advisory_xact_lock%')",
                                                     Integer.class))
                                     >= 2);
             connection.commit();

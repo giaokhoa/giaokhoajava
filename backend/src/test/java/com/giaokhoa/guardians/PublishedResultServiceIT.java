@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.doAnswer;
 
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
@@ -22,6 +21,7 @@ import com.giaokhoa.guardians.service.PublishedResultService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionService;
 import com.giaokhoa.verification.ResultPolicyProjector;
+import com.giaokhoa.verification.repository.SampleResultRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,12 +39,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContext;
@@ -75,7 +72,7 @@ class PublishedResultServiceIT extends GuardianFixture {
     @Autowired private AuthorizationProvisioningClient directory;
     @Autowired private IdempotencyService idempotency;
     @Autowired private GuardianLinkService links;
-    @MockitoSpyBean private JdbcTemplate guardedJdbc;
+    @MockitoSpyBean private SampleResultRepository guardedResults;
 
     private record Scenario(UUID classId, UUID courseSubjectId, SubjectRef subject) {}
 
@@ -729,6 +726,8 @@ class PublishedResultServiceIT extends GuardianFixture {
                             "9.5",
                             "Kết quả được bảo vệ");
             recordResults(center, resultId);
+            // Điểm dừng tương đương câu SQL DTO của tầng JDBC cũ: lần đọc các hàng kết quả
+            // để dựng view, vẫn nằm trong fence chốt của evaluateAndRead.
             doAnswer(
                             invocation -> {
                                 readerPid.set(backendPid());
@@ -736,11 +735,8 @@ class PublishedResultServiceIT extends GuardianFixture {
                                 awaitLatch(releaseDto);
                                 return invocation.callRealMethod();
                             })
-                    .when(guardedJdbc)
-                    .query(
-                            contains("FROM sample_result r"),
-                            ArgumentMatchers.<RowMapper<PublishedResultView>>any(),
-                            any(Object[].class));
+                    .when(guardedResults)
+                    .findPublishedByIds(any(), any(), any());
 
             try (var pool = Executors.newFixedThreadPool(2)) {
                 try {

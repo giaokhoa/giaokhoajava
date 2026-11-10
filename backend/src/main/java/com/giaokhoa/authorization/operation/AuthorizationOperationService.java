@@ -152,10 +152,24 @@ public class AuthorizationOperationService {
             fenced.add(change.partitionId());
         }
         fenced.addAll(closure.partitionIds());
-        // Fence mọi partition liên quan trước khi bất kỳ trường desired nào thay đổi: cơ sở dữ
-        // liệu chỉ chấp nhận sửa desired dưới một fence. Flush tường minh để fence xuống cơ sở
-        // dữ liệu trước mọi thay đổi desired phía dưới, vì trigger desired kiểm tra trạng thái
-        // partition ngay tại từng câu lệnh.
+        // Fence state của mọi projection liên quan TRƯỚC khi đụng vào partition: đổi state
+        // không bị trigger desired chặn (nó chỉ giữ các trường desired), còn trigger kiểm
+        // partition — vốn deferred nhưng có thể bị ép chạy ngay tại câu lệnh — luôn phải thấy
+        // mọi projection phụ thuộc đã fenced trước khi một partition đổi trạng thái/revision.
+        for (PartitionChange change : changes) {
+            projections.fenceReadyByPartitionId(
+                    change.partitionId(),
+                    AuthorizationProjection.State.PENDING,
+                    AuthorizationProjection.State.READY);
+        }
+        for (AuthorizationProjection projection :
+                projections.findAllById(closure.projectionIds())) {
+            projection.setState(AuthorizationProjection.State.PENDING);
+        }
+        projections.flush();
+        // Sau đó mới fence partition và đổi revision: cơ sở dữ liệu chỉ chấp nhận sửa desired
+        // dưới một fence. Flush tường minh để fence xuống cơ sở dữ liệu trước mọi thay đổi
+        // desired phía dưới, vì trigger desired kiểm tra trạng thái partition tại từng câu lệnh.
         for (UUID partitionId : fenced) {
             // Mọi partition bị fence đều đã khóa ở applyDesiredState (lockOrder là hợp của
             // primaries và closure) nên entity quản lý luôn có mặt.
@@ -165,19 +179,11 @@ public class AuthorizationOperationService {
         }
         partitions.flush();
         for (PartitionChange change : changes) {
-            projections.fenceReadyByPartitionId(
-                    change.partitionId(),
-                    AuthorizationProjection.State.PENDING,
-                    AuthorizationProjection.State.READY);
             AuthorizationPartition partition =
                     Objects.requireNonNull(
                             lockedPartitions.get(change.partitionId()), "locked partition");
             partition.setDesiredRevision(
                     Objects.requireNonNull(newRevisions.get(change.partitionId()), "new revision"));
-        }
-        for (AuthorizationProjection projection :
-                projections.findAllById(closure.projectionIds())) {
-            projection.setState(AuthorizationProjection.State.PENDING);
         }
         // Nạp mọi projection hiện có của cả operation bằng một truy vấn thay vì tra từng
         // target: bản đồ được cập nhật tại chỗ khi chèn mới nên một target xuất hiện hai lần
@@ -231,8 +237,9 @@ public class AuthorizationOperationService {
                         desiredHash,
                         null,
                         AuthorizationProjection.State.PENDING);
-        projections.save(created);
-        existingByTarget.put(desired.targetKey(), created);
+        // save() trên entity đã có id là merge: chỉ giá trị trả về mới được quản lý, và bản
+        // đồ phải giữ đúng bản đó để một desired thứ hai cùng target sửa trên bản được flush.
+        existingByTarget.put(desired.targetKey(), projections.save(created));
     }
 
     private record Closure(Set<UUID> partitionIds, List<UUID> projectionIds) {}

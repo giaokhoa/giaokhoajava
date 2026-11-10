@@ -3,25 +3,23 @@ package com.giaokhoa.teaching.repository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
-import org.springframework.data.domain.Limit;
-import org.springframework.data.domain.ScrollPosition;
-import org.springframework.data.domain.Window;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Repository;
 
 /**
  * Truy vấn phân trang keyset của giảng dạy trên các repository aggregate: cursor là UUID của hàng
  * trước (kể cả khi hàng đó đã thu hồi — mốc của nó được tra riêng, bất kể trạng thái, và phải thuộc
- * đúng workspace cùng parent của danh sách đang đọc, lệch thì 400 như tầng JDBC cũ); trang được đọc
- * bằng {@link Window}/{@link ScrollPosition} theo khóa (created_at, id) và chỉ trả closed
- * projection, không trả entity ra ngoài. Mọi closed projection ở đây đều mang {@code createdAt}:
- * tài liệu Scrolling của Spring Data JPA yêu cầu thuộc tính dùng để sắp xếp phải có trong kết quả
- * trả về của truy vấn keyset, nếu không vị trí tiếp tục không trích ra được.
+ * đúng workspace cùng parent của danh sách đang đọc, lệch thì 400 như tầng JDBC cũ). Mốc keyset
+ * (created_at, id) được áp bằng điều kiện tường minh trong truy vấn và người đọc lấy thừa một hàng
+ * để biết còn trang sau, cùng cách tầng membership vẫn dùng: ScrollPosition của Spring Data không
+ * được áp cho truy vấn trả interface projection — vị trí bị bỏ qua lặng lẽ nên trang sau lặp lại
+ * trang đầu (đã kiểm chứng trên spring-data-jpa 4.1.2/Hibernate 7.4 với cả hai dạng trả về: entity
+ * thì đúng, projection thì sai).
  */
 @Repository
 public class TeachingPageRepository {
@@ -75,54 +73,84 @@ public class TeachingPageRepository {
             @Nullable String cursor,
             @Nullable Integer limit,
             @Nullable UUID homeroomTeacherId) {
-        ScrollPosition position =
-                position(
+        int size = pageSize(limit);
+        Anchor anchor =
+                anchor(
                         cursor,
                         id -> schoolClasses.findCreatedAtByWorkspaceIdAndId(workspaceId, id));
-        Window<ClassListItem> window;
+        PageRequest request = PageRequest.of(0, size + 1);
+        List<ClassListItem> fetched;
         if (homeroomTeacherId == null) {
-            window =
-                    schoolClasses.findByWorkspaceIdAndStateOrderByCreatedAtAscIdAsc(
-                            workspaceId, ACTIVE, position, Limit.of(pageSize(limit)));
+            fetched =
+                    anchor == null
+                            ? schoolClasses.findFirstPage(workspaceId, ACTIVE, request)
+                            : schoolClasses.findPageAfter(
+                                    workspaceId, ACTIVE, anchor.createdAt(), anchor.id(), request);
         } else {
             // Lọc theo chủ nhiệm được phân giải trong cùng mặt phẳng trước khi chọn trang,
             // thay EXISTS lồng của tầng JDBC cũ.
             List<UUID> classIds =
                     homeroomAssignments.findClassIdByWorkspaceIdAndTeacherUserIdAndStateIn(
                             workspaceId, homeroomTeacherId, CURRENT_STATES);
-            window =
-                    schoolClasses.findByWorkspaceIdAndStateAndIdInOrderByCreatedAtAscIdAsc(
-                            workspaceId, ACTIVE, classIds, position, Limit.of(pageSize(limit)));
+            fetched =
+                    anchor == null
+                            ? schoolClasses.findFirstPageByIds(
+                                    workspaceId, ACTIVE, classIds, request)
+                            : schoolClasses.findPageAfterByIds(
+                                    workspaceId,
+                                    ACTIVE,
+                                    classIds,
+                                    anchor.createdAt(),
+                                    anchor.id(),
+                                    request);
         }
-        return toPage(window, ClassListItem::getId);
+        return toPage(fetched, size, ClassListItem::getId);
     }
 
     public Page<RosterListItem> pageRoster(
             UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
-        ScrollPosition position =
-                position(
+        int size = pageSize(limit);
+        Anchor anchor =
+                anchor(
                         cursor,
                         id ->
                                 classStudents.findCreatedAtByWorkspaceIdAndClassIdAndId(
                                         workspaceId, classId, id));
-        Window<RosterListItem> window =
-                classStudents.findByWorkspaceIdAndClassIdAndStateInOrderByCreatedAtAscIdAsc(
-                        workspaceId, classId, CURRENT_STATES, position, Limit.of(pageSize(limit)));
-        return toPage(window, RosterListItem::getId);
+        PageRequest request = PageRequest.of(0, size + 1);
+        List<RosterListItem> fetched =
+                anchor == null
+                        ? classStudents.findFirstPage(workspaceId, classId, CURRENT_STATES, request)
+                        : classStudents.findPageAfter(
+                                workspaceId,
+                                classId,
+                                CURRENT_STATES,
+                                anchor.createdAt(),
+                                anchor.id(),
+                                request);
+        return toPage(fetched, size, RosterListItem::getId);
     }
 
     public Page<CourseListItem> pageCourses(
             UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
-        ScrollPosition position =
-                position(
+        int size = pageSize(limit);
+        Anchor anchor =
+                anchor(
                         cursor,
                         id ->
                                 courses.findCreatedAtByWorkspaceIdAndClassIdAndId(
                                         workspaceId, classId, id));
-        Window<CourseListItem> window =
-                courses.findByWorkspaceIdAndClassIdAndStateOrderByCreatedAtAscIdAsc(
-                        workspaceId, classId, ACTIVE, position, Limit.of(pageSize(limit)));
-        return toPage(window, CourseListItem::getId);
+        PageRequest request = PageRequest.of(0, size + 1);
+        List<CourseListItem> fetched =
+                anchor == null
+                        ? courses.findFirstPage(workspaceId, classId, ACTIVE, request)
+                        : courses.findPageAfter(
+                                workspaceId,
+                                classId,
+                                ACTIVE,
+                                anchor.createdAt(),
+                                anchor.id(),
+                                request);
+        return toPage(fetched, size, CourseListItem::getId);
     }
 
     public Page<EnrollmentListItem> pageEnrollments(
@@ -130,20 +158,26 @@ public class TeachingPageRepository {
             UUID courseSubjectId,
             @Nullable String cursor,
             @Nullable Integer limit) {
-        ScrollPosition position =
-                position(
+        int size = pageSize(limit);
+        Anchor anchor =
+                anchor(
                         cursor,
                         id ->
                                 enrollments.findCreatedAtByWorkspaceIdAndCourseSubjectIdAndId(
                                         workspaceId, courseSubjectId, id));
-        Window<EnrollmentListItem> window =
-                enrollments.findByWorkspaceIdAndCourseSubjectIdAndStateInOrderByCreatedAtAscIdAsc(
-                        workspaceId,
-                        courseSubjectId,
-                        CURRENT_STATES,
-                        position,
-                        Limit.of(pageSize(limit)));
-        return toPage(window, EnrollmentListItem::getId);
+        PageRequest request = PageRequest.of(0, size + 1);
+        List<EnrollmentListItem> fetched =
+                anchor == null
+                        ? enrollments.findFirstPage(
+                                workspaceId, courseSubjectId, CURRENT_STATES, request)
+                        : enrollments.findPageAfter(
+                                workspaceId,
+                                courseSubjectId,
+                                CURRENT_STATES,
+                                anchor.createdAt(),
+                                anchor.id(),
+                                request);
+        return toPage(fetched, size, EnrollmentListItem::getId);
     }
 
     public Page<TeachingAssignmentListItem> pageTeachingAssignments(
@@ -151,55 +185,72 @@ public class TeachingPageRepository {
             UUID courseSubjectId,
             @Nullable String cursor,
             @Nullable Integer limit) {
-        ScrollPosition position =
-                position(
+        int size = pageSize(limit);
+        Anchor anchor =
+                anchor(
                         cursor,
                         id ->
                                 teachingAssignments
                                         .findCreatedAtByWorkspaceIdAndCourseSubjectIdAndId(
                                                 workspaceId, courseSubjectId, id));
-        Window<TeachingAssignmentListItem> window =
-                teachingAssignments
-                        .findByWorkspaceIdAndCourseSubjectIdAndStateInOrderByCreatedAtAscIdAsc(
+        PageRequest request = PageRequest.of(0, size + 1);
+        List<TeachingAssignmentListItem> fetched =
+                anchor == null
+                        ? teachingAssignments.findFirstPage(
+                                workspaceId, courseSubjectId, CURRENT_STATES, request)
+                        : teachingAssignments.findPageAfter(
                                 workspaceId,
                                 courseSubjectId,
                                 CURRENT_STATES,
-                                position,
-                                Limit.of(pageSize(limit)));
-        return toPage(window, TeachingAssignmentListItem::getId);
+                                anchor.createdAt(),
+                                anchor.id(),
+                                request);
+        return toPage(fetched, size, TeachingAssignmentListItem::getId);
     }
 
     public Page<HomeroomAssignmentListItem> pageHomeroomAssignments(
             UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
-        ScrollPosition position =
-                position(
+        int size = pageSize(limit);
+        Anchor anchor =
+                anchor(
                         cursor,
                         id ->
                                 homeroomAssignments.findCreatedAtByWorkspaceIdAndClassIdAndId(
                                         workspaceId, classId, id));
-        Window<HomeroomAssignmentListItem> window =
-                homeroomAssignments.findByWorkspaceIdAndClassIdAndStateInOrderByCreatedAtAscIdAsc(
-                        workspaceId, classId, CURRENT_STATES, position, Limit.of(pageSize(limit)));
-        return toPage(window, HomeroomAssignmentListItem::getId);
+        PageRequest request = PageRequest.of(0, size + 1);
+        List<HomeroomAssignmentListItem> fetched =
+                anchor == null
+                        ? homeroomAssignments.findFirstPage(
+                                workspaceId, classId, CURRENT_STATES, request)
+                        : homeroomAssignments.findPageAfter(
+                                workspaceId,
+                                classId,
+                                CURRENT_STATES,
+                                anchor.createdAt(),
+                                anchor.id(),
+                                request);
+        return toPage(fetched, size, HomeroomAssignmentListItem::getId);
     }
 
-    private static <T> Page<T> toPage(Window<T> window, Function<T, UUID> idOf) {
-        List<T> items = window.getContent();
-        return new Page<>(
-                items,
-                window.hasNext() && !items.isEmpty()
-                        ? idOf.apply(items.getLast()).toString()
-                        : null);
-    }
+    /** Mốc keyset của hàng cursor: thời điểm tạo của nó cùng chính id của nó. */
+    private record Anchor(Instant createdAt, UUID id) {}
 
-    private static ScrollPosition position(
+    private static @Nullable Anchor anchor(
             @Nullable String cursor, Function<UUID, Optional<Instant>> anchorLookup) {
         if (cursor == null) {
-            return ScrollPosition.offset();
+            return null;
         }
         UUID cursorId = parseCursorId(cursor);
         Instant createdAt = anchorLookup.apply(cursorId).orElseThrow(() -> invalidCursor());
-        return ScrollPosition.forward(Map.of("createdAt", createdAt, "id", cursorId));
+        return new Anchor(createdAt, cursorId);
+    }
+
+    private static <T> Page<T> toPage(List<T> fetched, int pageSize, Function<T, UUID> idOf) {
+        if (fetched.size() > pageSize) {
+            List<T> items = fetched.subList(0, pageSize);
+            return new Page<>(items, idOf.apply(items.getLast()).toString());
+        }
+        return new Page<>(fetched, null);
     }
 
     private static UUID parseCursorId(String cursor) {

@@ -15,6 +15,10 @@ public interface AuthzProjectionRepository
 
     List<AuthorizationProjection> findByPartitionIdOrderByTargetKeyAsc(UUID partitionId);
 
+    /** Desired hash hiện hành tại cơ sở dữ liệu, đọc thẳng cột nên không qua entity đã nạp. */
+    @Query("select p.desiredHash from AuthorizationProjection p where p.id = :id")
+    Optional<String> findDesiredHashById(@Param("id") UUID id);
+
     Optional<AuthorizationProjection> findByTargetKey(String targetKey);
 
     /** Mọi projection hiện có của một tập target key, nạp một lần cho đường upsert theo lô. */

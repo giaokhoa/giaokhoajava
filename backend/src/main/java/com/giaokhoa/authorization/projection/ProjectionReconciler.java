@@ -576,7 +576,15 @@ public class ProjectionReconciler {
                     partitions
                             .lockById(snapshot.id())
                             .orElseThrow(() -> new EmptyResultDataAccessException(1));
-            if (current.getDesiredRevision() != snapshot.desiredRevision()) {
+            // Kiểm tra bằng revision hiện hành tại cơ sở dữ liệu, không phải entity đã nạp:
+            // vòng reconcile chạy trong một session dài nên entity partition có thể cũ hơn
+            // DB, và flush entity cũ đó sẽ ghi revision đi lùi (trigger identity chặn lại
+            // thành lỗi dữ liệu thay vì lỗi superseded đúng giao thức).
+            long currentDesiredRevision =
+                    partitions
+                            .findDesiredRevisionById(snapshot.id())
+                            .orElseThrow(() -> new EmptyResultDataAccessException(1));
+            if (currentDesiredRevision != snapshot.desiredRevision()) {
                 throw new ReconciliationException(
                         ERROR_REVISION_SUPERSEDED,
                         "Desired revision changed during reconciliation");
@@ -592,7 +600,12 @@ public class ProjectionReconciler {
                             projections
                                     .findById(projection.id())
                                     .orElseThrow(() -> new EmptyResultDataAccessException(1));
-                    entity.setAppliedHash(entity.getDesiredHash());
+                    // applied_hash lấy theo desired_hash hiện hành tại DB như câu UPDATE của
+                    // tầng JDBC cũ, không theo bản entity có thể đã cũ trong session.
+                    entity.setAppliedHash(
+                            projections
+                                    .findDesiredHashById(projection.id())
+                                    .orElseThrow(() -> new EmptyResultDataAccessException(1)));
                     entity.setKeycloakResourceId(applied.resourceId());
                     entity.setPolicyNames(applied.policyNames());
                     entity.setState(AuthorizationProjection.State.READY);
