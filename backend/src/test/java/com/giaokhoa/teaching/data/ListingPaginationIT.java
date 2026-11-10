@@ -25,11 +25,11 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -231,14 +231,10 @@ class ListingPaginationIT extends IntegrationEnvironment {
                 cursor -> repository.pageHomeroomAssignments(workspace, classId, cursor, 1),
                 TeachingRepository.HomeroomAssignmentRow::id,
                 homerooms);
-        assertInvalidCursor(
-                () ->
-                        repository.pageCourses(
-                                workspace, otherClass, courses.getFirst().toString(), 1));
-        assertInvalidCursor(
-                () ->
-                        repository.pageRoster(
-                                workspace, otherClass, roster.getFirst().toString(), 1));
+        assertInvalidCursor(() ->
+                repository.pageCourses(workspace, otherClass, courses.getFirst().toString(), 1));
+        assertInvalidCursor(() ->
+                repository.pageRoster(workspace, otherClass, roster.getFirst().toString(), 1));
     }
 
     private static void assertInvalidCursor(Supplier<?> read) {
