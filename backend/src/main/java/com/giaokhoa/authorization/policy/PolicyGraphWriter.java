@@ -1,5 +1,6 @@
 package com.giaokhoa.authorization.policy;
 
+import com.giaokhoa.authorization.keycloak.KeycloakProvisioningFactory;
 import com.giaokhoa.authorization.keycloak.KeycloakProvisionerTokens;
 import com.giaokhoa.shared.config.GiaokhoaProperties;
 import com.giaokhoa.shared.http.KeycloakRequestFactory;
@@ -95,7 +96,7 @@ public class PolicyGraphWriter {
             @Nullable ResourceMutationCoordinator mutationCoordinator) {
         this.http =
                 builder.requestInterceptor(
-                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                                KeycloakProvisioningFactory.provisionerInterceptor(manager))
                         .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;

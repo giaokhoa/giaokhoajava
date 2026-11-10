@@ -7,10 +7,10 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.stereotype.Component;
 
 /**
- * Thành phần dùng chung duy nhất giữ credential provisioner: mọi client Keycloak (directory,
- * policy graph, danh tính) lấy manager và realm tại đây thay vì mỗi client giữ một bản chép của
- * cùng đoạn code. Manager do {@link KeycloakProvisioningFactory} dựng một lần từ cấu hình đã bind;
- * Bearer gắn vào request qua interceptor của framework (xem {@link
+ * Thành phần dùng chung duy nhất giữ credential provisioner: mọi client Keycloak (directory, policy
+ * graph, danh tính) lấy manager và realm tại đây thay vì mỗi client giữ một bản chép của cùng đoạn
+ * code. Manager do {@link KeycloakProvisioningFactory} dựng một lần từ cấu hình đã bind; Bearer gắn
+ * vào request qua interceptor của framework (xem {@link
  * KeycloakProvisioningFactory#provisionerInterceptor}), không gắn tay ở từng điểm gọi.
  */
 @Component

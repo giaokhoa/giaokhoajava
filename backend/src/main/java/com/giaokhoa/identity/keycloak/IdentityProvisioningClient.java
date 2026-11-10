@@ -1,5 +1,6 @@
 package com.giaokhoa.identity.keycloak;
 
+import com.giaokhoa.authorization.keycloak.KeycloakProvisioningFactory;
 import com.giaokhoa.authorization.keycloak.KeycloakProvisionerTokens;
 import com.giaokhoa.shared.config.GiaokhoaProperties;
 import com.giaokhoa.shared.http.KeycloakRequestFactory;
@@ -52,7 +53,7 @@ public class IdentityProvisioningClient {
             OAuth2AuthorizedClientManager manager) {
         this.http =
                 builder.requestInterceptor(
-                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                                KeycloakProvisioningFactory.provisionerInterceptor(manager))
                         .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;

@@ -75,7 +75,7 @@ public class AuthorizationProvisioningClient {
             OAuth2AuthorizedClientManager manager) {
         this.http =
                 builder.requestInterceptor(
-                                KeycloakProvisionerFactory.provisionerInterceptor(manager))
+                                KeycloakProvisioningFactory.provisionerInterceptor(manager))
                         .build();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.realm = realm;
