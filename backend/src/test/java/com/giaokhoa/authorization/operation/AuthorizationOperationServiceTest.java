@@ -20,11 +20,14 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowMapper;
 
+@ExtendWith(MockitoExtension.class)
 class AuthorizationOperationServiceTest {
     private static final UUID PARTITION = RandomIds.randomId();
     private static final String TARGET = "workspace:" + RandomIds.randomId();

@@ -10,10 +10,13 @@ import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
+@ExtendWith(MockitoExtension.class)
 class IdempotencyServiceTest {
     private final IdempotencyService service =
             new IdempotencyService(mock(JdbcTemplate.class), mock(EntityManager.class));

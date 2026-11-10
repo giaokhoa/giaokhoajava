@@ -7,10 +7,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.shared.http.HttpProblemException;
@@ -19,12 +19,15 @@ import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
 /** Không có hàng PUBLISHED cũng phải qua eligibility/PDP/ACCOUNT và WORKSPACE fence. */
+@ExtendWith(MockitoExtension.class)
 class PublishedResultEmptyPageTest {
     private static final UUID ACTOR = RandomIds.randomId();
     private static final UUID OTHER = RandomIds.randomId();
@@ -40,11 +43,15 @@ class PublishedResultEmptyPageTest {
         WorkspaceTransaction workspaces = mock(WorkspaceTransaction.class);
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         Authentication authentication = mock(Authentication.class);
-        when(executor.actorUserId(authentication)).thenReturn(ACTOR);
-        doAnswer(call -> ((Supplier<?>) call.getArgument(1)).get())
+        // Stub setup dùng chung cho mọi test của Fixture: từng test chỉ chạm một
+        // phần, nên lenient theo đúng chỉ định của Mockito cho stubbing dùng chung.
+        lenient().when(executor.actorUserId(authentication)).thenReturn(ACTOR);
+        lenient()
+                .doAnswer(call -> ((Supplier<?>) call.getArgument(1)).get())
                 .when(workspaces)
                 .inWorkspace(eq(WORKSPACE), any());
-        doAnswer(call -> ((Supplier<?>) call.getArgument(4)).get())
+        lenient()
+                .doAnswer(call -> ((Supplier<?>) call.getArgument(4)).get())
                 .when(executor)
                 .execute(eq(authentication), any(), any(), anyList(), any());
         return new Fixture(

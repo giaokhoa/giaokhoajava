@@ -5,11 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
@@ -30,8 +30,10 @@ import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
 import org.mockito.invocation.Invocation;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -39,6 +41,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
+@ExtendWith(MockitoExtension.class)
 class ProjectionWorkerTest {
     private static final UUID OPERATION = RandomIds.randomId();
     private static final UUID PARTITION = RandomIds.randomId();
@@ -57,11 +60,8 @@ class ProjectionWorkerTest {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         ProjectionReconciler reconciler = mock(ProjectionReconciler.class);
         stubQueue(jdbc);
-        when(reconciler.partition(PARTITION))
-                .thenReturn(
-                        new ProjectionReconciler.PartitionRow(
-                                PARTITION, 1L, 0L, AuthorizationPartition.State.PENDING));
-        // Một instance khác thắng claim: update có điều kiện không khớp dòng nào.
+        // Một instance khác thắng claim: update có điều kiện không khớp dòng nào,
+        // nên reconciler.partition không bao giờ được gọi (xem verify bên dưới).
         when(jdbc.update(contains("SET state = 'APPLYING'"), any(UUID.class))).thenReturn(0);
 
         new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc)).poll();
@@ -128,8 +128,8 @@ class ProjectionWorkerTest {
     void aFailingOrphanedPartitionIsNotRetriedOnEveryPoll() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         ProjectionReconciler reconciler = mock(ProjectionReconciler.class);
-        when(jdbc.queryForList(anyString(), eq(UUID.class), anyInt()))
-                .thenReturn(List.of(PARTITION));
+        // Quét orphan chỉ dùng queryForList(sql, UUID.class): stub overload 3 đối
+        // số ở trên là thừa (strict stubbing đã bắt được).
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of(PARTITION));
         when(reconciler.tryReconcilePartition(PARTITION)).thenReturn(false);
         ProjectionWorker worker =
@@ -151,6 +151,9 @@ class ProjectionWorkerTest {
         UUID c = uuid(1);
         when(reconciler.projectionsOf(b)).thenReturn(List.of(projection(b, a)));
         when(reconciler.projectionsOf(c)).thenReturn(List.of(projection(c, b)));
+        // Partition gốc không phụ thuộc partition nào: worker vẫn tra projections
+        // của nó khi dựng đồ thị, và đáp án là rỗng.
+        when(reconciler.projectionsOf(a)).thenReturn(List.of());
         for (UUID id : List.of(a, b, c)) {
             when(reconciler.partition(id))
                     .thenReturn(
@@ -194,7 +197,10 @@ class ProjectionWorkerTest {
         ProjectionReconciler reconciler = mock(ProjectionReconciler.class);
         List<UUID> ids = List.of(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6));
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(ids);
-        when(reconciler.tryReconcilePartition(uuid(6))).thenReturn(true);
+        // Chỉ dòng phục hồi được mới thành công; các dòng còn lại dùng đáp án mặc
+        // định (false) nên stub này cố ý được gọi với đối số khác — lenient theo
+        // đúng chỉ định của Mockito cho trường hợp đó.
+        lenient().when(reconciler.tryReconcilePartition(uuid(6))).thenReturn(true);
         var worker =
                 new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
         worker.reconcileOrphanedPartitions();
@@ -262,7 +268,6 @@ class ProjectionWorkerTest {
                     when(rs.getBoolean("due")).thenReturn(true);
                     return List.of(mapper.mapRow(rs, 0));
                 });
-        when(jdbc.queryForList(anyString(), eq(UUID.class), anyInt())).thenReturn(List.of());
         // Tập claimable khóa FOR UPDATE SKIP LOCKED chứa operation đang xếp hàng.
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of(OPERATION));
     }

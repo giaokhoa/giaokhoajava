@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -21,11 +22,14 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 
+@ExtendWith(MockitoExtension.class)
 class OperationControllerTest {
     private static final UUID ACTOR = RandomIds.randomId();
     private static final UUID OPERATION = RandomIds.randomId();
@@ -39,7 +43,9 @@ class OperationControllerTest {
 
     @BeforeEach
     void actorResolvedFromSession() {
-        when(executor.actorUserId(authentication)).thenReturn(ACTOR);
+        // Stub setup dùng chung: không phải test nào cũng chạm tới, nên lenient theo
+        // đúng chỉ định của Mockito cho stubbing trong @BeforeEach.
+        lenient().when(executor.actorUserId(authentication)).thenReturn(ACTOR);
     }
 
     @Test

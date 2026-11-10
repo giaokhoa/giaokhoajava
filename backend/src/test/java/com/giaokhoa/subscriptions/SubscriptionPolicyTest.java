@@ -9,8 +9,11 @@ import static org.mockito.Mockito.when;
 import com.giaokhoa.support.RandomIds;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+@ExtendWith(MockitoExtension.class)
 class SubscriptionPolicyTest {
     private static final UUID WORKSPACE = RandomIds.randomId();
 

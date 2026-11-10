@@ -23,11 +23,14 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
+@ExtendWith(MockitoExtension.class)
 class GuardianPolicyProjectorTest {
     private static final UUID WORKSPACE = UUID.randomUUID();
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);

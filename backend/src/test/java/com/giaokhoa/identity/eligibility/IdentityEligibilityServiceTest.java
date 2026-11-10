@@ -28,11 +28,14 @@ import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.HttpServerErrorException;
 
+@ExtendWith(MockitoExtension.class)
 class IdentityEligibilityServiceTest {
     private static final UUID ACTOR = RandomIds.randomId();
     private static final UUID ACCOUNT_PARTITION = RandomIds.randomId();

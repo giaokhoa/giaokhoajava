@@ -21,10 +21,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
+@ExtendWith(MockitoExtension.class)
 class CapabilitiesControllerTest {
     private static final UUID ACTOR = RandomIds.randomId();
     private static final UUID OTHER = RandomIds.randomId();

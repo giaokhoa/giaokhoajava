@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -34,14 +35,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
+@ExtendWith(MockitoExtension.class)
 class ProtectedActionExecutorTest {
     private static final UUID ACTOR = RandomIds.randomId();
     private static final UUID WORKSPACE = RandomIds.randomId();
@@ -428,10 +432,14 @@ class ProtectedActionExecutorTest {
         Fixture(Map<String, String> recordedResourceIds) {
             Manifest manifest =
                     new Manifest(ACTOR, WORKSPACE, List.of(KEY), recordedResourceIds, List.of());
-            when(resolver.resolve(eq(ACTOR), eq(WORKSPACE), any())).thenReturn(manifest);
-            when(fence.acquire(manifest))
+            // Stub setup dùng chung cho mọi test của Fixture: từng test chỉ chạm một
+            // phần, nên lenient theo đúng chỉ định của Mockito cho stubbing dùng chung.
+            lenient().when(resolver.resolve(eq(ACTOR), eq(WORKSPACE), any())).thenReturn(manifest);
+            lenient()
+                    .when(fence.acquire(manifest))
                     .thenReturn(new AuthorizationFence.Snapshot(manifest, Map.of()));
-            when(fence.atSnapshot(any(), any()))
+            lenient()
+                    .when(fence.atSnapshot(any(), any()))
                     .thenAnswer(invocation -> {
                         if (confirmationsToSkip.getAndDecrement() > 0) {
                             throw new AuthorizationFence.ClosureChangedException();
@@ -443,10 +451,14 @@ class ProtectedActionExecutorTest {
                             snapshotActive.set(false);
                         }
                     });
-            when(jdbc.queryForList(
-                            contains("FROM user_account"), eq(UUID.class), any(String.class)))
+            lenient()
+                    .when(
+                            jdbc.queryForList(
+                                    contains("FROM user_account"),
+                                    eq(UUID.class),
+                                    any(String.class)))
                     .thenReturn(List.of(ACTOR));
-            when(authentication.getName()).thenReturn("keycloak-subject");
+            lenient().when(authentication.getName()).thenReturn("keycloak-subject");
             executor =
                     new ProtectedActionExecutor(
                             resolver, fence, decisions, writer, jdbc, eligibility);

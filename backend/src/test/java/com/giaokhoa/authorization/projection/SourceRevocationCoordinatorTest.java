@@ -20,9 +20,12 @@ import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+@ExtendWith(MockitoExtension.class)
 class SourceRevocationCoordinatorTest {
     private static final UUID ACTOR = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID WORKSPACE = UUID.fromString("22222222-2222-2222-2222-222222222222");
@@ -42,6 +45,9 @@ class SourceRevocationCoordinatorTest {
                 new AuthorizationOperationService.DesiredProjection(
                         resultKey, "read", List.of("result|scope=read.published"), List.of());
         when(fixture.results.allBundleProjections(WORKSPACE)).thenReturn(List.of(resultProjection));
+        // recordTeachingRevocation luôn kiểm tra personal workspace trước khi tra partition.
+        when(fixture.jdbc.queryForList(contains("FROM workspace"), eq(UUID.class), eq(WORKSPACE)))
+                .thenReturn(List.of());
 
         fixture.coordinator.recordTeachingRevocation(
                 ACTOR, WORKSPACE, "key", "hash", List.of(subjectKey));
@@ -94,6 +100,8 @@ class SourceRevocationCoordinatorTest {
     @Test
     void missingWorkspacePartitionFailsBeforeRecordingAnything() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(contains("FROM workspace"), eq(UUID.class), eq(WORKSPACE)))
+                .thenReturn(List.of());
         when(jdbc.queryForList(contains("authz_partition"), eq(UUID.class), anyString()))
                 .thenReturn(List.of());
         AuthorizationOperationService operations = mock(AuthorizationOperationService.class);
