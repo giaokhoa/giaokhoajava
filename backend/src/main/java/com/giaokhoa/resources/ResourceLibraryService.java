@@ -56,6 +56,7 @@ public class ResourceLibraryService {
     private final ProtectedActionExecutor executor;
     private final ResourcePolicyProjector projector;
     private final CanonicalResourceRepository repository;
+    private final CorrectionNotificationService notifications;
     private final IdempotencyService idempotency;
     private final JdbcTemplate jdbc;
     private final WorkspaceTransaction workspaces;
@@ -70,12 +71,14 @@ public class ResourceLibraryService {
     public ResourceLibraryService(
             ProtectedActionExecutor executor,
             ResourcePolicyProjector projector,
+            CorrectionNotificationService notifications,
             IdempotencyService idempotency,
             DataSource dataSource,
             WorkspaceTransaction workspaces,
             PlatformTransactionManager transactionManager) {
         this.executor = executor;
         this.projector = projector;
+        this.notifications = notifications;
         this.repository = new CanonicalResourceRepository(dataSource);
         this.idempotency = idempotency;
         this.jdbc = new JdbcTemplate(dataSource);
@@ -378,7 +381,9 @@ public class ResourceLibraryService {
      * Nhận cập nhật cho một mục đã lưu: mục phải thuộc đúng workspace của route (mục của workspace
      * khác thì 403), version thay thế phải thuộc cùng resource với version của mục, và quyết định
      * {@code library.save} trên target của version thay thế phải cho phép. Trả định danh mục thư
-     * viện mới trỏ version thay thế, giữ custody và grant của mục gốc.
+     * viện mới trỏ version thay thế, giữ custody và grant của mục gốc. Nếu version thay thế là bản
+     * đính chính của một notice, việc nhận này cũng ghi mốc xác nhận đã biết đính chính cho
+     * workspace trên receipt của notice đó, trong cùng transaction.
      */
     public UUID receiveUpdate(
             Authentication authentication,
@@ -427,40 +432,46 @@ public class ResourceLibraryService {
                                                                             item.resourceId(),
                                                                             replacementVersionId)
                                                                     .orElseGet(UUID::randomUUID);
-                                                    return claimReceipt(
-                                                                    actorUserId,
-                                                                    workspaceId,
-                                                                    idempotencyKey,
-                                                                    payloadHash,
-                                                                    "LIBRARY_ITEM",
-                                                                    targetItemId)
-                                                            .orElseGet(() -> {
-                                                                UUID savedId =
-                                                                        repository
-                                                                                .findLibraryItem(
-                                                                                        workspaceId,
-                                                                                        item
-                                                                                                .resourceId(),
-                                                                                        replacementVersionId)
-                                                                                .orElseGet(() ->
-                                                                                        repository
-                                                                                                .insertLibraryItem(
-                                                                                                        targetItemId,
-                                                                                                        workspaceId,
-                                                                                                        item
-                                                                                                                .resourceId(),
-                                                                                                        replacementVersionId,
-                                                                                                        item
-                                                                                                                .shareGrantId(),
-                                                                                                        item
-                                                                                                                .custody()));
-                                                                reconcileReceiptTarget(
-                                                                        actorUserId,
-                                                                        idempotencyKey,
-                                                                        targetItemId,
-                                                                        savedId);
-                                                                return savedId;
-                                                            });
+                                                    UUID receivedItemId =
+                                                            claimReceipt(
+                                                                            actorUserId,
+                                                                            workspaceId,
+                                                                            idempotencyKey,
+                                                                            payloadHash,
+                                                                            "LIBRARY_ITEM",
+                                                                            targetItemId)
+                                                                    .orElseGet(() -> {
+                                                                        UUID savedId =
+                                                                                repository
+                                                                                        .findLibraryItem(
+                                                                                                workspaceId,
+                                                                                                item
+                                                                                                        .resourceId(),
+                                                                                                        replacementVersionId)
+                                                                                        .orElseGet(() ->
+                                                                                                repository
+                                                                                                        .insertLibraryItem(
+                                                                                                                targetItemId,
+                                                                                                                workspaceId,
+                                                                                                                item
+                                                                                                                        .resourceId(),
+                                                                                                                        replacementVersionId,
+                                                                                                                        item
+                                                                                                                        .shareGrantId(),
+                                                                                                                        item
+                                                                                                                        .custody()));
+                                                                        reconcileReceiptTarget(
+                                                                                actorUserId,
+                                                                                idempotencyKey,
+                                                                                targetItemId,
+                                                                                savedId);
+                                                                        return savedId;
+                                                                    });
+                                                    notifications.acknowledgeReceivedUpdate(
+                                                            workspaceId,
+                                                            item.resourceId(),
+                                                            replacementVersionId);
+                                                    return receivedItemId;
                                                 }),
                                         "library item"));
         ensureProjection(actorUserId, workspaceId, idempotencyKey + "#update-sync", targetKey);
