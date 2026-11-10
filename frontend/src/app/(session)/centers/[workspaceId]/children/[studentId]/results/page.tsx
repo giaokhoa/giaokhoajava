@@ -1,6 +1,4 @@
-import { ChildResultsContent } from "../../../../../../features/guardians/published-results";
-
-export const dynamic = "force-dynamic";
+import { ChildResultsContent } from "../../../../../../../features/guardians/published-results";
 
 // Next 16: params của dynamic route là Promise, trang server phải await trước khi dùng.
 export default async function CenterChildResultsPage({

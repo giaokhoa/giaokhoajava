@@ -1,6 +1,4 @@
-import { CenterMembersContent } from "../../../../features/tenancy/center-administration";
-
-export const dynamic = "force-dynamic";
+import { CenterMembersContent } from "../../../../../features/tenancy/center-administration";
 
 // Next 16: params của dynamic route là Promise, trang server phải await trước khi dùng.
 export default async function CenterMembersPage({

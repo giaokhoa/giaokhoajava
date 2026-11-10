@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parsePracticeHistory } from "../../src/app/personal/personal-content";
+import { parsePracticeHistory } from "../../src/app/(session)/personal/personal-content";
 import {
   parsePlatformRecoveryRequests,
   resolveRequestBody,
-} from "../../src/app/platform/recovery-requests/platform-recovery-content";
+} from "../../src/app/(session)/platform/recovery-requests/platform-recovery-content";
 import {
   recoveryRequestBody,
 } from "../../src/features/identity/recovery-request-form";
