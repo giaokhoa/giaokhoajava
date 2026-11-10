@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -59,7 +60,7 @@ final class NativeSpringSessionFixture implements AutoCloseable {
                         issued.plusSeconds(300),
                         Map.of(
                                 "iss",
-                                "http://127.0.0.1:18081/realms/giaokhoa-it",
+                                IntegrationEnvironment.testIssuerUri(),
                                 "sub",
                                 nativeGate.userSubject(),
                                 "aud",

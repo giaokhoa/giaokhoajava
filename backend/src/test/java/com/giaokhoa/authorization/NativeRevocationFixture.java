@@ -3,6 +3,7 @@ package com.giaokhoa.authorization;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.support.OidcFormLogin;
 import com.giaokhoa.support.RealmFoundation;
 import java.net.URI;
@@ -29,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 final class NativeRevocationFixture implements AutoCloseable {
     private static final JsonMapper JSON = new JsonMapper();
-    private static final String REDIRECT_URI = "http://127.0.0.1:18888/callback";
+    private static final String REDIRECT_URI = IntegrationEnvironment.TEST_REDIRECT_URI;
     private static final int SINGLE_CLIENT = 1;
     private static final int PAGE_SIZE = 1000;
     private static final String DEFAULT_PERMISSION = "Default Permission";
@@ -55,13 +56,10 @@ final class NativeRevocationFixture implements AutoCloseable {
 
     NativeRevocationFixture() {
         base = required("TEST_KEYCLOAK_BASE_URL");
-        // Hai làn stack TEST chuyên dụng đã kiểm chứng (cùng realm, chỉ khác cổng): làn 1
-        // dùng 18081, làn 2 dùng 18082.
-        if (!("http://127.0.0.1:18081".equals(base) || "http://127.0.0.1:18082".equals(base))
-                || !"giaokhoa-it".equals(required("TEST_KEYCLOAK_REALM"))) {
-            throw new IllegalArgumentException(
-                    "Revocation native fixture is limited to TEST Keycloak");
-        }
+        // Allowlist cặp làn TEST khai báo duy nhất ở IntegrationEnvironment: DB và issuer
+        // phải cùng một làn; issuer dựng từ chính base và realm nên realm lệch cũng bị từ chối.
+        IntegrationEnvironment.validateTargets(
+                required("TEST_DATABASE_URL"), base + "/realms/" + required("TEST_KEYCLOAK_REALM"));
         clientName = "revocation-" + UUID.randomUUID();
         clientSecret = "test-secret-" + UUID.randomUUID();
         boolean provisioned = false;

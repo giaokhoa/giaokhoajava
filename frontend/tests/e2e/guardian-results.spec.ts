@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
 import {
   TestEnvironment, loginViaKeycloakForm,
-  luuPhienHienTai, khoiPhucPhienDaLuu, layPhienDaLuu,
+  luuPhienHienTai, khoiPhucPhienDaLuu, layPhienDaLuu, DEFAULT_FRONTEND_ORIGIN,
 } from "./support/test-environment";
 import { seedGuardianResult } from "./support/guardian-results-fixture";
 
@@ -30,7 +30,7 @@ import { seedGuardianResult } from "./support/guardian-results-fixture";
 // - Trạng thái liên kết theo vòng đời của hợp đồng: REQUESTED → APPROVED/REJECTED,
 //   APPROVED → REVOKED; quyết định duyệt mang expectedVersion lấy từ bản đọc hiện tại.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
-const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? "http://localhost:3001";
+const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? DEFAULT_FRONTEND_ORIGIN;
 
 // Nhóm nguồn cố định theo NativePolicyTemplates của backend.
 const NHOM_ELIGIBLE = "/gk/identity/eligible";

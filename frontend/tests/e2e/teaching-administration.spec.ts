@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test, type APIResponse, type Browser, type Page } from "@playwright/test";
 import {
   TestEnvironment, loginViaKeycloakForm, appRequestWhenReady,
-  luuPhienHienTai, khoiPhucPhienDaLuu,
+  luuPhienHienTai, khoiPhucPhienDaLuu, DEFAULT_FRONTEND_ORIGIN,
 } from "./support/test-environment";
 
 // E2E quản trị giảng dạy ở biên trình duyệt: tạo lớp/khóa nhiều môn, chọn môn ghi danh,
@@ -22,7 +22,7 @@ import {
 // - Mã lỗi vi phạm invariant chéo lớp/workspace ở test 7 lấy theo quy tắc lỗi chung của
 //   hợp đồng HTTP (field violations → 400); xem Sổ điểm chưa chắc chắn.
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
-const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? "http://localhost:3001";
+const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? DEFAULT_FRONTEND_ORIGIN;
 
 // Nhóm nguồn cố định theo NativePolicyTemplates của backend.
 const NHOM_ELIGIBLE = "/gk/identity/eligible";

@@ -2,7 +2,8 @@
 # Acceptance native tách biệt cho provisioning và authorization của Keycloak: Keycloak 26.8.1 + PostgreSQL dùng một lần.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE=http://127.0.0.1:18091
+PORT=18091
+BASE=http://127.0.0.1:$PORT
 CONTAINER=gk-native-proof
 DATABASE=gk-native-postgres
 NETWORK=gk-native-network
@@ -55,7 +56,7 @@ for i in $(seq 1 45); do
   sleep 1
 done
 [[ "$db_ready" == true ]] || fail "Scratch PostgreSQL not ready"
-docker run --rm -d --name "$CONTAINER" --network "$NETWORK" -p 127.0.0.1:18091:8080 \
+docker run --rm -d --name "$CONTAINER" --network "$NETWORK" -p 127.0.0.1:$PORT:8080 \
   -e KC_DB=postgres -e KC_DB_URL="jdbc:postgresql://$DATABASE:5432/keycloak_native" \
   -e KC_DB_USERNAME=keycloak_native -e KC_DB_PASSWORD=native-disposable-only-password \
   -e TZ=UTC \

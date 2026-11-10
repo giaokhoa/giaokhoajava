@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_FRONTEND_ORIGIN } from "./tests/e2e/support/test-environment";
 
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
-const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? "http://localhost:3001";
+const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? DEFAULT_FRONTEND_ORIGIN;
 const teachingAndGuardians = /(?:guardian-results|teaching-administration)\.spec\.ts$/;
 if (process.env.CI && !appOrigin) {
   throw new Error("CI phải đặt NATIVE_GATE_APP_ORIGIN để chạy E2E thật, không được bỏ qua gate.");

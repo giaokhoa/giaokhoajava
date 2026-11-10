@@ -93,7 +93,6 @@ Sau `clean verify` bằng JDK 25 và `npm --prefix frontend ci`, nạp `TEST_*` 
 ```sh
 export NATIVE_GATE_APP_ORIGIN=http://127.0.0.1:8080
 export TEST_FRONTEND_ORIGIN=http://127.0.0.1:8080
-export BACKEND_INTERNAL_URL=http://127.0.0.1:18080
 npm --prefix frontend run test:e2e
 ```
 

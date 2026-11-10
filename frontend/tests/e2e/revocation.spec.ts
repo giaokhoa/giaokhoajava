@@ -34,10 +34,12 @@ import {
   dongBoEligibility,
   moBoiCanhDangNhap,
   appRequestWhenReady,
+  DEFAULT_FRONTEND_ORIGIN,
+  parseTestDatabaseUrl,
 } from "./support/test-environment";
 
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
-const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? "http://localhost:3001";
+const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? DEFAULT_FRONTEND_ORIGIN;
 
 // Nhóm nguồn cố định theo NativePolicyTemplates của backend.
 const NHOM_ELIGIBLE = "/gk/identity/eligible";
@@ -669,13 +671,13 @@ function seedKetQuaMau(
   if (!schema || !databaseUrl || !username || !password) {
     throw new Error("Seed kết quả mẫu cần TEST_E2E_SCHEMA và TEST_DATABASE_URL/USERNAME/PASSWORD");
   }
-  const match = databaseUrl.match(/^jdbc:postgresql:\/\/([^:/]+)(?::(\d+))?\/([^?]+)/);
-  const host = match?.[1];
-  const database = match?.[3];
-  if (!host || !database) {
+  const parsed = parseTestDatabaseUrl(databaseUrl);
+  if (!parsed) {
     throw new Error(`TEST_DATABASE_URL không đúng dạng jdbc:postgresql://host:port/db: ${databaseUrl}`);
   }
-  const port = match[2] ?? "5432";
+  const host = parsed.host;
+  const database = parsed.database;
+  const port = parsed.port;
   const sql = `
 SET search_path TO :schema;
 SET app.workspace_id = :'wid';

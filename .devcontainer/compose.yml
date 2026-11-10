@@ -32,7 +32,7 @@ services:
       KC_DB_PASSWORD: keycloak
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME: http://auth.giaokhoa.localhost:8081
     ports:
       - "8081:8080"
     depends_on:

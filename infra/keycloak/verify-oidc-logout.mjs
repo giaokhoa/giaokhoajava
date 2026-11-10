@@ -1,14 +1,18 @@
 // Acceptance OIDC logout native: đăng nhập Keycloak Code+PKCE thật, back-channel logout có ký,
-// khởi động lại session và vô hiệu hóa JDBC. Chỉ chạy trên Compose TEST stack chuyên dụng.
+// khởi động lại session và vô hiệu hóa JDBC. Chỉ chạy trên Compose TEST stack chuyên dụng,
+// làn 1 duy nhất; cặp làn ở đây là bản chép của khai báo trung tâm ở
+// backend/src/test/java/com/giaokhoa/support/IntegrationEnvironment.java — sửa cùng nhau.
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 
-const issuer = "http://127.0.0.1:18081/realms/giaokhoa-it";
+// Cặp làn 1 khai báo một lần; các assert ngay dưới là vế kiểm allowlist, không phải vế cấp.
+const keycloakBase = "http://127.0.0.1:18081";
+const issuer = keycloakBase + "/realms/giaokhoa-it";
 const database = "jdbc:postgresql://127.0.0.1:15432/giaokhoa_test";
-assert.equal(process.env.TEST_KEYCLOAK_BASE_URL, "http://127.0.0.1:18081");
+assert.equal(process.env.TEST_KEYCLOAK_BASE_URL, keycloakBase);
 assert.equal(process.env.TEST_KEYCLOAK_REALM, "giaokhoa-it");
 assert.equal(process.env.TEST_DATABASE_URL, database);
 const schema = "gk_oidc_logout_" + randomUUID().replaceAll("-", "").slice(0, 12);
@@ -17,7 +21,6 @@ const clientSecret = randomBytes(24).toString("base64url");
 const password = randomBytes(24).toString("base64url") + "Aa1!";
 const username = "oidc-logout-" + randomUUID();
 const appJar = resolve("backend/target/giaokhoa-backend-0.0.1-SNAPSHOT.jar");
-const keycloakBase = "http://127.0.0.1:18081";
 const logoutEvent = "http://schemas.openid.net/event/backchannel-logout";
 let app;
 let clientUuid;
