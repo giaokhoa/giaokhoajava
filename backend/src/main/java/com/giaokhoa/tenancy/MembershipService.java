@@ -191,13 +191,19 @@ public class MembershipService {
             }
             joinedAt = anchor.get().getJoinedAt();
         }
+        List<CenterMembership.State> pageStates =
+                List.of(CenterMembership.State.PENDING, CenterMembership.State.ACTIVE);
+        PageRequest pageRequest = PageRequest.of(0, pageSize + 1);
         List<CenterMembership> page =
-                memberships.findPageAfter(
-                        workspaceId,
-                        List.of(CenterMembership.State.PENDING, CenterMembership.State.ACTIVE),
-                        joinedAt,
-                        cursorId,
-                        PageRequest.of(0, pageSize + 1));
+                joinedAt == null
+                        ? memberships.findFirstPage(workspaceId, pageStates, pageRequest)
+                        : memberships.findPageAfter(
+                                workspaceId,
+                                pageStates,
+                                joinedAt,
+                                // Hai mốc luôn được gán cùng nhau từ cùng một cursor.
+                                Objects.requireNonNull(cursorId, "cursorId"),
+                                pageRequest);
         boolean hasMore = page.size() > pageSize;
         List<CenterMembership> rows = page.subList(0, Math.min(pageSize, page.size()));
         Map<UUID, String> usernames =

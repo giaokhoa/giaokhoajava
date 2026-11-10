@@ -1,5 +1,6 @@
 package com.giaokhoa.teaching.repository;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -8,6 +9,8 @@ import java.util.UUID;
  */
 public interface RosterListItem {
     UUID getId();
+
+    Instant getCreatedAt();
 
     UUID getWorkspaceId();
 

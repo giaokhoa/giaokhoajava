@@ -57,11 +57,19 @@ public interface HomeroomAssignmentRepository extends JpaRepository<HomeroomAssi
             @Param("id") UUID id);
 
     /** Các lớp mà một giáo viên đang có phân công chủ nhiệm hiện hành trong workspace. */
+    @Query(
+            "SELECT h.classId FROM HomeroomAssignment h WHERE h.workspaceId = :workspaceId"
+                    + " AND h.teacherUserId = :teacherUserId AND h.state IN :states")
     List<UUID> findClassIdByWorkspaceIdAndTeacherUserIdAndStateIn(
-            UUID workspaceId, UUID teacherUserId, Collection<String> states);
+            @Param("workspaceId") UUID workspaceId,
+            @Param("teacherUserId") UUID teacherUserId,
+            @Param("states") Collection<String> states);
 
     /** Mọi giáo viên từng có phân công chủ nhiệm trong workspace, bất kể trạng thái. */
-    List<UUID> findTeacherUserIdByWorkspaceId(UUID workspaceId);
+    @Query(
+            "SELECT h.teacherUserId FROM HomeroomAssignment h"
+                    + " WHERE h.workspaceId = :workspaceId")
+    List<UUID> findTeacherUserIdByWorkspaceId(@Param("workspaceId") UUID workspaceId);
 
     /** Các cặp (giáo viên, lớp) hiện hành, cho projector dựng group mong muốn. */
     @Query(

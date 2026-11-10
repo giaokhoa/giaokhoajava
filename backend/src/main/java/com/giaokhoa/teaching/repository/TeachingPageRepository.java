@@ -19,7 +19,9 @@ import org.springframework.stereotype.Repository;
  * trước (kể cả khi hàng đó đã thu hồi — mốc của nó được tra riêng, bất kể trạng thái, và phải thuộc
  * đúng workspace cùng parent của danh sách đang đọc, lệch thì 400 như tầng JDBC cũ); trang được đọc
  * bằng {@link Window}/{@link ScrollPosition} theo khóa (created_at, id) và chỉ trả closed
- * projection, không trả entity ra ngoài.
+ * projection, không trả entity ra ngoài. Mọi closed projection ở đây đều mang {@code createdAt}:
+ * tài liệu Scrolling của Spring Data JPA yêu cầu thuộc tính dùng để sắp xếp phải có trong kết quả
+ * trả về của truy vấn keyset, nếu không vị trí tiếp tục không trích ra được.
  */
 @Repository
 public class TeachingPageRepository {

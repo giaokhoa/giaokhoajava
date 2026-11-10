@@ -63,11 +63,19 @@ public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssi
             @Param("id") UUID id);
 
     /** Các môn–khóa mà một giáo viên đang có phân công giảng dạy hiện hành trong workspace. */
+    @Query(
+            "SELECT t.courseSubjectId FROM TeachingAssignment t WHERE t.workspaceId = :workspaceId"
+                    + " AND t.teacherUserId = :teacherUserId AND t.state IN :states")
     List<UUID> findCourseSubjectIdByWorkspaceIdAndTeacherUserIdAndStateIn(
-            UUID workspaceId, UUID teacherUserId, Collection<String> states);
+            @Param("workspaceId") UUID workspaceId,
+            @Param("teacherUserId") UUID teacherUserId,
+            @Param("states") Collection<String> states);
 
     /** Mọi giáo viên từng có phân công giảng dạy trong workspace, bất kể trạng thái. */
-    List<UUID> findTeacherUserIdByWorkspaceId(UUID workspaceId);
+    @Query(
+            "SELECT t.teacherUserId FROM TeachingAssignment t"
+                    + " WHERE t.workspaceId = :workspaceId")
+    List<UUID> findTeacherUserIdByWorkspaceId(@Param("workspaceId") UUID workspaceId);
 
     /** Các cặp (giáo viên, môn–khóa) hiện hành, cho projector dựng group mong muốn. */
     @Query(

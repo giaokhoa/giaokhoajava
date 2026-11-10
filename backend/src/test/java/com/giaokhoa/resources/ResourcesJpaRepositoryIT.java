@@ -163,13 +163,16 @@ class ResourcesJpaRepositoryIT extends IntegrationEnvironment {
     void assignmentActionsRoundTripAsList() {
         UUID userId = user();
         UUID workspaceId = personalWorkspaceOf(userId);
+        // subject_id của assignment là FK thật tới danh mục môn (V023) nên phải dùng môn có sẵn.
+        UUID subjectId =
+                jdbc.queryForObject("SELECT id FROM subject ORDER BY code LIMIT 1", UUID.class);
         ResourceAssignment assignment =
                 new ResourceAssignment(
                         UUID.randomUUID(),
                         workspaceId,
                         userId,
                         null,
-                        UUID.randomUUID(),
+                        subjectId,
                         List.of("content.read", "use"));
         entityManager.persist(assignment);
         entityManager.flush();

@@ -8,7 +8,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -56,21 +55,31 @@ public interface CenterMembershipRepository extends JpaRepository<CenterMembersh
     List<UUID> findUserIdsByWorkspaceIdAndStateAndRole(
             UUID workspaceId, CenterMembership.State state, MembershipRole.Role role);
 
+    /** Trang roster đầu tiên theo keyset (joined_at, id), chưa có mốc cursor. */
+    @Query(
+            "SELECT m FROM CenterMembership m"
+                    + " WHERE m.workspaceId = :workspaceId AND m.state IN :states"
+                    + " ORDER BY m.joinedAt ASC, m.id ASC")
+    List<CenterMembership> findFirstPage(
+            UUID workspaceId, Collection<CenterMembership.State> states, Pageable pageable);
+
     /**
-     * Một trang roster theo keyset (joined_at, id); mốc null là trang đầu. Hàng đã thu hồi vẫn được
-     * tính ở bước tra mốc nên bộ lọc trạng thái không áp ở truy vấn này.
+     * Một trang roster theo keyset (joined_at, id) sau mốc cursor. Hàng đã thu hồi vẫn được tính ở
+     * bước tra mốc nên bộ lọc trạng thái không áp ở truy vấn này. Trang đầu dùng {@link
+     * #findFirstPage}: một tham số mốc null đứng một mình trong vế IS NULL không có ngữ cảnh kiểu
+     * để PostgreSQL suy ra kiểu tham số.
      */
     @Query(
             "SELECT m FROM CenterMembership m"
                     + " WHERE m.workspaceId = :workspaceId AND m.state IN :states"
-                    + " AND (:joinedAt IS NULL OR m.joinedAt > :joinedAt"
+                    + " AND (m.joinedAt > :joinedAt"
                     + " OR (m.joinedAt = :joinedAt AND m.id > :cursorId))"
                     + " ORDER BY m.joinedAt ASC, m.id ASC")
     List<CenterMembership> findPageAfter(
             UUID workspaceId,
             Collection<CenterMembership.State> states,
-            @Nullable Instant joinedAt,
-            @Nullable UUID cursorId,
+            Instant joinedAt,
+            UUID cursorId,
             Pageable pageable);
 
     /**
