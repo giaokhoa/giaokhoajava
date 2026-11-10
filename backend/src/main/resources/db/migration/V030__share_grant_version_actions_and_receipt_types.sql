@@ -9,9 +9,11 @@
 -- năm token cũ giữ nguyên, thêm content.read, fork và library.save.
 --
 -- 2. target_type của sample_action_mutation: V022 khóa bốn loại đích của các
--- sample action đầu tiên, nhưng service thư viện đã ghi biên nhận với đích
--- LIBRARY_ITEM và luồng chia sẻ ghi đích SHARE_GRANT; thiếu hai giá trị này
--- thì chính thao tác lưu/chia sẻ bị CHECK chặn trên cơ sở dữ liệu thật.
+-- sample action đầu tiên và V029 đã nới thêm LIBRARY_ITEM cho đường lưu thư
+-- viện, nhưng luồng chia sẻ ghi biên nhận với đích SHARE_GRANT; thiếu giá trị
+-- này thì chính thao tác chia sẻ bị CHECK chặn trên cơ sở dữ liệu thật.
+-- Migration này chỉ thêm SHARE_GRANT; LIBRARY_ITEM giữ nguyên trong danh sách
+-- vì đã có từ V029.
 ALTER TABLE share_grant
     DROP CONSTRAINT share_grant_actions_check;
 ALTER TABLE share_grant
