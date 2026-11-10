@@ -4,8 +4,8 @@ import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -125,7 +125,9 @@ public class WorkspaceDirectory {
                 rs -> {
                     UUID workspaceId = (UUID) rs.getObject("workspace_id");
                     MembershipRole.Role role = MembershipRole.Role.valueOf(rs.getString("role"));
-                    roles.computeIfAbsent(workspaceId, _ -> new HashSet<>()).add(role);
+                    roles.computeIfAbsent(
+                                    workspaceId, _ -> EnumSet.noneOf(MembershipRole.Role.class))
+                            .add(role);
                 },
                 args.toArray());
         return roles;
