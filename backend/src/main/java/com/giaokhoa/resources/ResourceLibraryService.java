@@ -193,12 +193,20 @@ public class ResourceLibraryService {
                                                                     payloadHash,
                                                                     "LIBRARY_ITEM",
                                                                     targetItemId)
-                                                            .orElseGet(() ->
-                                                                    applySave(
-                                                                            workspaceId,
-                                                                            resourceId,
-                                                                            versionId,
-                                                                            targetItemId));
+                                                            .orElseGet(() -> {
+                                                                UUID savedId =
+                                                                        applySave(
+                                                                                workspaceId,
+                                                                                resourceId,
+                                                                                versionId,
+                                                                                targetItemId);
+                                                                reconcileReceiptTarget(
+                                                                        actorUserId,
+                                                                        idempotencyKey,
+                                                                        targetItemId,
+                                                                        savedId);
+                                                                return savedId;
+                                                            });
                                                 }),
                                         "library item"));
         ensureProjection(actorUserId, workspaceId, idempotencyKey + "#save-sync", targetKey);
@@ -426,25 +434,33 @@ public class ResourceLibraryService {
                                                                     payloadHash,
                                                                     "LIBRARY_ITEM",
                                                                     targetItemId)
-                                                            .orElseGet(() ->
-                                                                    repository
-                                                                            .findLibraryItem(
-                                                                                    workspaceId,
-                                                                                    item
-                                                                                            .resourceId(),
-                                                                                    replacementVersionId)
-                                                                            .orElseGet(() ->
-                                                                                    repository
-                                                                                            .insertLibraryItem(
-                                                                                                    targetItemId,
-                                                                                                    workspaceId,
-                                                                                                    item
-                                                                                                            .resourceId(),
-                                                                                                    replacementVersionId,
-                                                                                                    item
-                                                                                                            .shareGrantId(),
-                                                                                                    item
-                                                                                                            .custody())));
+                                                            .orElseGet(() -> {
+                                                                UUID savedId =
+                                                                        repository
+                                                                                .findLibraryItem(
+                                                                                        workspaceId,
+                                                                                        item
+                                                                                                .resourceId(),
+                                                                                        replacementVersionId)
+                                                                                .orElseGet(() ->
+                                                                                        repository
+                                                                                                .insertLibraryItem(
+                                                                                                        targetItemId,
+                                                                                                        workspaceId,
+                                                                                                        item
+                                                                                                                .resourceId(),
+                                                                                                        replacementVersionId,
+                                                                                                        item
+                                                                                                                .shareGrantId(),
+                                                                                                        item
+                                                                                                                .custody()));
+                                                                reconcileReceiptTarget(
+                                                                        actorUserId,
+                                                                        idempotencyKey,
+                                                                        targetItemId,
+                                                                        savedId);
+                                                                return savedId;
+                                                            });
                                                 }),
                                         "library item"));
         ensureProjection(actorUserId, workspaceId, idempotencyKey + "#update-sync", targetKey);
@@ -493,6 +509,25 @@ public class ResourceLibraryService {
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
         return Optional.of(Objects.requireNonNull((UUID) previous.get("target_id"), "target_id"));
+    }
+
+    /**
+     * Khe đua hẹp giữa hai lần tra mục thư viện: applySave (hoặc nhánh chèn của nhận cập nhật) kiểm
+     * tra lại trước khi chèn, nên một giao dịch khác commit mục cho cùng bộ ba trong khoảng giữa
+     * thì id trả về khác định danh đã chốt trong biên nhận; sửa biên nhận về đúng id thật trong
+     * cùng transaction để replay sau này không trả định danh chưa từng được chèn. Chỉ áp cho nhánh
+     * claim mới — replay trả đúng id đã lưu trong biên nhận.
+     */
+    private void reconcileReceiptTarget(
+            UUID actorUserId, String idempotencyKey, UUID targetItemId, UUID savedId) {
+        if (!savedId.equals(targetItemId)) {
+            jdbc.update(
+                    "UPDATE sample_action_mutation SET target_id = ?"
+                            + " WHERE actor_user_id = ? AND idempotency_key = ?",
+                    savedId,
+                    actorUserId,
+                    idempotencyKey);
+        }
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------
