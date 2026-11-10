@@ -27,7 +27,9 @@ import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
+import com.giaokhoa.verification.repository.EnrollmentRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
+import com.giaokhoa.verification.repository.TeachingAssignmentRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
 import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
@@ -77,6 +79,8 @@ final class RuntimeJpaRepositories implements AutoCloseable {
     final AuthzPartitionRepository authzPartitions;
     final AuthzProjectionRepository authzProjections;
     final SampleResultRepository sampleResults;
+    final TeachingAssignmentRepository verificationTeachingAssignments;
+    final EnrollmentRepository verificationEnrollments;
     final VerificationAuthorizationPartitionRepository verificationPartitions;
     final VerificationWorkspaceRepository verificationWorkspaces;
     final VerificationUserAccountRepository verificationAccounts;
@@ -133,6 +137,9 @@ final class RuntimeJpaRepositories implements AutoCloseable {
         this.accounts = factory.getRepository(UserAccountRepository.class);
         this.periods = factory.getRepository(SubscriptionPeriodRepository.class);
         this.sampleResults = factory.getRepository(SampleResultRepository.class);
+        this.verificationTeachingAssignments =
+                factory.getRepository(TeachingAssignmentRepository.class);
+        this.verificationEnrollments = factory.getRepository(EnrollmentRepository.class);
         this.verificationPartitions =
                 factory.getRepository(VerificationAuthorizationPartitionRepository.class);
         this.verificationWorkspaces = factory.getRepository(VerificationWorkspaceRepository.class);

@@ -565,8 +565,8 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             new ResultPolicyProjector(
                                     runtime.sampleResults,
                                     runtime.verificationPartitions,
-                                    runtime.teachingAssignments,
-                                    runtime.enrollments,
+                                    runtime.verificationTeachingAssignments,
+                                    runtime.verificationEnrollments,
                                     runtime.verificationWorkspaces,
                                     runtime.verificationAccounts,
                                     runtime.guardianLinks,
