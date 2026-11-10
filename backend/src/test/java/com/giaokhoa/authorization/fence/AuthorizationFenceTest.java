@@ -8,7 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,11 +27,11 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 class AuthorizationFenceTest {
-    private static final UUID ACTOR = TestIds.randomId();
-    private static final UUID WORKSPACE = TestIds.randomId();
-    private static final UUID ACCOUNT = TestIds.randomId();
-    private static final UUID WORKSPACE_PARTITION = TestIds.randomId();
-    private static final UUID GRANT = TestIds.randomId();
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
+    private static final UUID ACCOUNT = RandomIds.randomId();
+    private static final UUID WORKSPACE_PARTITION = RandomIds.randomId();
+    private static final UUID GRANT = RandomIds.randomId();
     private static final List<String> KEYS = List.of("workspace:" + WORKSPACE);
 
     @Test

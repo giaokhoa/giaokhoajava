@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.DesiredProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,8 +26,8 @@ import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowMapper;
 
 class AuthorizationOperationServiceTest {
-    private static final UUID PARTITION = TestIds.randomId();
-    private static final String TARGET = "workspace:" + TestIds.randomId();
+    private static final UUID PARTITION = RandomIds.randomId();
+    private static final String TARGET = "workspace:" + RandomIds.randomId();
 
     private final AuthorizationOperationService service =
             new AuthorizationOperationService(
@@ -72,8 +72,8 @@ class AuthorizationOperationServiceTest {
         IdempotencyService idempotency = mock(IdempotencyService.class);
         AuthorizationOperationService lockingService =
                 new AuthorizationOperationService(jdbc, idempotency);
-        UUID closurePartition = TestIds.randomId();
-        UUID primary = TestIds.randomId();
+        UUID closurePartition = RandomIds.randomId();
+        UUID primary = RandomIds.randomId();
         // Thứ tự khóa toàn cục ở main là thứ tự chuỗi của UUID: xếp lại để partition của
         // closure đứng trước primary, đúng tiền đề test khẳng định.
         if (closurePartition.toString().compareTo(primary.toString()) > 0) {

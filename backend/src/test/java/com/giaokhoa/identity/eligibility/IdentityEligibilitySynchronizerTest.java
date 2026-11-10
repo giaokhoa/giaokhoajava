@@ -21,7 +21,7 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService.Partit
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,8 +34,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.HttpServerErrorException;
 
 class IdentityEligibilitySynchronizerTest {
-    private static final UUID ACTOR = TestIds.randomId();
-    private static final UUID ACCOUNT_PARTITION = TestIds.randomId();
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID ACCOUNT_PARTITION = RandomIds.randomId();
     private static final String SUBJECT = "keycloak-subject-1";
     private static final String EMAIL = "learner@example.test";
     private static final String TARGET = "account:" + ACTOR;

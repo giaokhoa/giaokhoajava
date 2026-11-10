@@ -13,7 +13,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.giaokhoa.authorization.policy.PolicyGraph.Gate;
 import com.giaokhoa.authorization.policy.PolicyGraph.Source;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -37,7 +37,7 @@ class PolicyGraphWriterTest {
             HOST + "/admin/realms/giaokhoa/clients/api-uuid/authz/resource-server";
     private static final String LIST = "?first=0&max=1000";
     private static final String PAGE2 = "?first=1000&max=1000";
-    private static final UUID WORKSPACE = TestIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
     private static final String TARGET = "workspace:" + WORKSPACE;
     private static final String ELIGIBLE = "/gk/identity/eligible";
     private static final String OWNERS = "/gk/workspaces/" + WORKSPACE + "/owners";

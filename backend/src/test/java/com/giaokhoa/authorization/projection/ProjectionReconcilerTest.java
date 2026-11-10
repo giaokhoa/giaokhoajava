@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
@@ -14,8 +14,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ProjectionReconcilerTest {
-    private static final UUID WORKSPACE = TestIds.randomId();
-    private static final UUID USER = TestIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
+    private static final UUID USER = RandomIds.randomId();
     private static final String TARGET = "workspace:" + WORKSPACE;
 
     @Test

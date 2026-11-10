@@ -14,7 +14,7 @@ import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -26,9 +26,9 @@ import org.springframework.security.core.Authentication;
 
 /** Không có hàng PUBLISHED cũng phải qua eligibility/PDP/ACCOUNT và WORKSPACE fence. */
 class PublishedResultEmptyPageTest {
-    private static final UUID ACTOR = TestIds.randomId();
-    private static final UUID OTHER = TestIds.randomId();
-    private static final UUID WORKSPACE = TestIds.randomId();
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID OTHER = RandomIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
 
     private record Fixture(
             PublishedResultService service,

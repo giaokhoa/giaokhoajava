@@ -1159,10 +1159,13 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             for (JsonNode item : body.get("items")) {
                 userIds.add(UUID.fromString(item.get("user").get("id").stringValue()));
             }
-            JsonNode next = body.get("nextCursor");
-            cursor = next == null || next.isNull() ? null : next.stringValue();
+            cursor = nextCursorOf(body);
         } while (cursor != null);
         return userIds;
+    }
+
+    private static String nextCursorOf(JsonNode body) {
+        return body.hasNonNull("nextCursor") ? body.get("nextCursor").stringValue() : null;
     }
 
     private Set<String> activeRoles(UUID workspaceId, UUID userId) {

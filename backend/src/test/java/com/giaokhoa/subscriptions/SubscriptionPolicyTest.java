@@ -6,13 +6,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class SubscriptionPolicyTest {
-    private static final UUID WORKSPACE = TestIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
 
     // Ngữ nghĩa thật của điều kiện gói (chưa có gói, gói hết hạn, gói còn hạn) khóa trên
     // PostgreSQL thật ở TeachingServiceIT.subscriptionPolicyMatchesRealPostgresLifecycle. Ở tầng

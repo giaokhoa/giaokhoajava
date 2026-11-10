@@ -11,7 +11,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.sql.ResultSet;
 import java.util.List;
 import java.util.Map;
@@ -24,13 +24,13 @@ import org.springframework.jdbc.core.PreparedStatementSetter;
 import org.springframework.jdbc.core.RowMapper;
 
 class DependencyManifestResolverTest {
-    private static final UUID ACTOR = TestIds.randomId();
-    private static final UUID WORKSPACE = TestIds.randomId();
-    private static final UUID ACCOUNT = TestIds.randomId();
-    private static final UUID WORKSPACE_PARTITION = TestIds.randomId();
-    private static final UUID GRANT = TestIds.randomId();
-    private static final UUID SOURCE = TestIds.randomId();
-    private static final UUID INDEPENDENT = TestIds.randomId();
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
+    private static final UUID ACCOUNT = RandomIds.randomId();
+    private static final UUID WORKSPACE_PARTITION = RandomIds.randomId();
+    private static final UUID GRANT = RandomIds.randomId();
+    private static final UUID SOURCE = RandomIds.randomId();
+    private static final UUID INDEPENDENT = RandomIds.randomId();
     private static final String VERSION_KEY =
             "workspace:"
                     + WORKSPACE

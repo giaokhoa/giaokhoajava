@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.shared.audit.AuditRecorder;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.sql.Array;
 import java.sql.ResultSet;
 import java.time.Duration;
@@ -40,8 +40,8 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 class ProjectionWorkerTest {
-    private static final UUID OPERATION = TestIds.randomId();
-    private static final UUID PARTITION = TestIds.randomId();
+    private static final UUID OPERATION = RandomIds.randomId();
+    private static final UUID PARTITION = RandomIds.randomId();
 
     @Test
     void backoffGrowsWithAttemptsAndIsCapped() {

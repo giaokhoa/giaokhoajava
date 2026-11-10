@@ -7,8 +7,8 @@ import java.util.UUID;
  * sinh ngẫu nhiên thay vì viết tay literal. Định danh nào giá trị tự mang nghĩa (ví dụ phải khớp dữ
  * liệu seed ngoài test) thì giữ literal cố định kèm lý do tại chỗ.
  */
-public final class TestIds {
-    private TestIds() {}
+public final class RandomIds {
+    private RandomIds() {}
 
     public static UUID randomId() {
         return UUID.randomUUID();

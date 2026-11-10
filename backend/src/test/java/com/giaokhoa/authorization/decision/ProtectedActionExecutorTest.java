@@ -21,7 +21,7 @@ import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,8 +43,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
 class ProtectedActionExecutorTest {
-    private static final UUID ACTOR = TestIds.randomId();
-    private static final UUID WORKSPACE = TestIds.randomId();
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
     private static final String KEY = "workspace:" + WORKSPACE;
     private static final ProtectedActionExecutor.Target TARGET =
             new ProtectedActionExecutor.Target(KEY, List.of("enter"));

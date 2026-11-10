@@ -1213,9 +1213,13 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
                     count++;
                 }
             }
-            cursor = body.hasNonNull("nextCursor") ? body.get("nextCursor").stringValue() : null;
+            cursor = nextCursorOf(body);
         } while (cursor != null);
         return count;
+    }
+
+    private static String nextCursorOf(JsonNode body) {
+        return body.hasNonNull("nextCursor") ? body.get("nextCursor").stringValue() : null;
     }
 
     private void awaitOperationSucceeded(RealSession session, UUID operationId) throws Exception {

@@ -15,7 +15,7 @@ import com.giaokhoa.authorization.decision.CapabilitiesController.TargetInput;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor.Decisions;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.support.TestIds;
+import com.giaokhoa.support.RandomIds;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,9 +26,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.Authentication;
 
 class CapabilitiesControllerTest {
-    private static final UUID ACTOR = TestIds.randomId();
-    private static final UUID OTHER = TestIds.randomId();
-    private static final UUID WORKSPACE = TestIds.randomId();
+    private static final UUID ACTOR = RandomIds.randomId();
+    private static final UUID OTHER = RandomIds.randomId();
+    private static final UUID WORKSPACE = RandomIds.randomId();
 
     @Test
     void aPlatformTargetWithoutIdIsEvaluatedAndReturnedWithoutInventingAnId() {
