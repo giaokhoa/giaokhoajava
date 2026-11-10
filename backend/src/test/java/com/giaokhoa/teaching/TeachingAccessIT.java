@@ -1,7 +1,6 @@
 package com.giaokhoa.teaching;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -47,31 +46,25 @@ class TeachingAccessIT extends TeachingFixture {
                     .body(Map.of("emailVerified", false))
                     .retrieve()
                     .toBodilessEntity();
+            // Qua fence trước: còn 503 AUTHORIZATION_NOT_READY nghĩa là eligibility đang
+            // đồng bộ lại sau khi email bị gỡ xác minh; trạng thái cuối phải là PDP từ chối
+            // dứt khoát 403 cho cả đọc lẫn ghi, không lẫn hai khả năng như khẳng định cũ.
             var read =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/" + workspace + "/classes")
-                                            .cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
+                    requestWhenReady(
+                            mockMvc(),
+                            get("/api/workspaces/" + workspace + "/classes")
+                                    .cookie(session.cookie()));
             var write =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/" + workspace + "/classes")
-                                            .cookie(session.cookie())
-                                            .with(csrf())
-                                            .header("Idempotency-Key", UUID.randomUUID().toString())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content("{\"name\":\"Forbidden\"}"))
-                            .andReturn()
-                            .getResponse();
-            assertTrue(
-                    (read.getStatus() == 403 || read.getStatus() == 503)
-                            && (write.getStatus() == 403 || write.getStatus() == 503),
-                    "Unverified actor must fail closed; actual GET="
-                            + read.getStatus()
-                            + ", POST="
-                            + write.getStatus());
+                    requestWhenReady(
+                            mockMvc(),
+                            post("/api/workspaces/" + workspace + "/classes")
+                                    .cookie(session.cookie())
+                                    .with(csrf())
+                                    .header("Idempotency-Key", UUID.randomUUID().toString())
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("{\"name\":\"Forbidden\"}"));
+            assertEquals(403, read.getStatus());
+            assertEquals(403, write.getStatus());
             assertEquals(
                     0,
                     jdbc.queryForObject(

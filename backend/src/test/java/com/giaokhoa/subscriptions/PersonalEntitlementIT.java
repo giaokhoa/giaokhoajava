@@ -2,25 +2,16 @@ package com.giaokhoa.subscriptions;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.support.OidcFormLogin;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import com.giaokhoa.support.KeycloakSessionFixture;
 import java.net.URI;
 import java.sql.Timestamp;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -32,36 +23,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.core.context.SecurityContextImpl;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
-import org.springframework.security.oauth2.core.OAuth2RefreshToken;
-import org.springframework.security.oauth2.core.oidc.OidcIdToken;
-import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.session.SessionRepository;
-import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
-import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Chiều gói của US6 ở tầng HTTP: gói personal là nguồn entitlement duy nhất cho kho/lớp cá nhân —
@@ -74,16 +43,7 @@ import tools.jackson.databind.json.JsonMapper;
  * personal thuộc về PersonalClassAuthorizationIT.
  */
 @SpringBootTest
-class PersonalEntitlementIT extends IntegrationEnvironment {
-    private static final JsonMapper JSON = new JsonMapper();
-    private static final ParameterizedTypeReference<Map<String, Object>> MAP =
-            new ParameterizedTypeReference<>() {};
-    private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST =
-            new ParameterizedTypeReference<>() {};
-    private static final RestClient HTTP = RestClient.create();
-    private static final String BASE = fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
-    private static final String REALM = fixture("TEST_KEYCLOAK_REALM");
-    private static final String REDIRECT_URI = "http://127.0.0.1:18888/callback";
+class PersonalEntitlementIT extends KeycloakSessionFixture {
     private static final String OPERATOR_GROUP = "/gk/platform/operators";
     private static final String DEFAULT_PERMISSION = "Default Permission";
     private static final String DEFAULT_RESOURCE = "Default Resource";
@@ -107,14 +67,6 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
     static void cleanup(@Autowired ApplicationContext context) {
         stopSchedulerAndDropSchema(context, SCHEMA);
     }
-
-    @Autowired JdbcTemplate jdbc;
-    @Autowired PlatformTransactionManager transactionManager;
-    @Autowired WebApplicationContext webContext;
-    @Autowired SessionRepositoryFilter<?> sessionFilter;
-    @Autowired OAuth2AuthorizedClientRepository authorizedClients;
-    @Autowired ClientRegistrationRepository clientRegistrations;
-    @Autowired SessionRepository<?> sessions;
 
     @Test
     void createResourceInPersonalWorkspaceWithoutPlanIsDenied() throws Exception {
@@ -499,118 +451,14 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
         });
     }
 
-    private <T> T tx(java.util.function.Supplier<T> action) {
-        return new TransactionTemplate(transactionManager).execute(_ -> action.get());
-    }
-
     // ---------- Phiên ----------
 
-    private MockMvc mockMvc() {
-        return MockMvcBuilders.webAppContextSetup(webContext)
-                .addFilters(sessionFilter)
-                .apply(springSecurity())
-                .build();
-    }
-
-    private RealSession openSession(KeycloakLogin login) throws Exception {
-        RealSession session =
-                RealSession.open(
-                        login.username(),
-                        login.password(),
-                        login.subject(),
-                        sessionFilter,
-                        authorizedClients,
-                        clientRegistrations,
-                        sessions);
-        // Nạp workspace trước để fence đồng bộ eligibility của actor, điều kiện để PDP
-        // cho qua các scope nghiệp vụ.
-        getWorkspacesWhenReady(session);
-        return session;
-    }
-
-    private MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(60));
-        while (true) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            boolean syncing =
-                    response.getStatus() == 503
-                            && response.getContentAsString().contains("AUTHORIZATION_NOT_READY");
-            if (!syncing || Instant.now().isAfter(deadline)) {
-                return response;
-            }
-            sleep();
-        }
-    }
-
-    private static void sleep() {
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            fail("Interrupted while waiting");
-        }
-    }
-
     // ---------- Keycloak TEST realm qua Admin API ----------
-
-    private record KeycloakLogin(String username, String password, String subject, String email) {}
-
-    private KeycloakLogin createVerifiedUser(String prefix) {
-        String username = prefix + "-" + UUID.randomUUID();
-        String password = "personal-password-" + UUID.randomUUID();
-        String email = username + "@example.test";
-        String subject = createUser(keycloakUser(username, email, true, password));
-        return new KeycloakLogin(username, password, subject, email);
-    }
 
     private KeycloakLogin createOperator() {
         KeycloakLogin login = createVerifiedUser("personal-operator");
         joinGroup(login.subject(), Objects.requireNonNull(operatorGroupId, "operatorGroupId"));
         return login;
-    }
-
-    private Map<String, Object> keycloakUser(
-            String username, @Nullable String email, boolean emailVerified, String password) {
-        var body = new HashMap<String, Object>();
-        body.put("username", username);
-        body.put("enabled", true);
-        body.put("firstName", "Synthetic");
-        body.put("lastName", "User");
-        body.put("emailVerified", emailVerified);
-        body.put("requiredActions", List.of());
-        if (email != null) {
-            body.put("email", email);
-        }
-        body.put(
-                "credentials",
-                List.of(Map.of("type", "password", "value", password, "temporary", false)));
-        return body;
-    }
-
-    private String createUser(Map<String, Object> body) {
-        var response =
-                withMasterToken(token ->
-                        HTTP.post()
-                                .uri(admin("/users"))
-                                .headers(headers -> headers.setBearerAuth(token))
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .body(body)
-                                .retrieve()
-                                .toEntity(String.class));
-        URI location = response.getHeaders().getLocation();
-        if (location == null) {
-            throw new IllegalStateException("Keycloak did not return the created user location");
-        }
-        String path = location.getPath();
-        return path.substring(path.lastIndexOf('/') + 1);
-    }
-
-    private void deleteUser(String userId) {
-        deleteWithConflictRetry(() -> deleteResource(admin("/users/" + userId)));
     }
 
     private void joinGroup(String userId, String groupId) {
@@ -624,20 +472,12 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
         });
     }
 
-    private String admin(String path) {
-        return adminStatic(path);
-    }
-
-    private static String adminStatic(String path) {
-        return BASE + "/admin/realms/" + REALM + path;
-    }
-
     // Token master được giữ trong bộ nhớ tới gần hết hạn thay vì xin mới cho mỗi lần gọi
     // Admin API; hạ hạn về EPOCH là token cũ hết được dùng.
     private static String cachedMasterToken = "";
     private static Instant masterTokenValidUntil = Instant.EPOCH;
 
-    private static String masterToken() {
+    private static String cachedMasterToken() {
         if (Instant.now().isBefore(masterTokenValidUntil)) {
             return cachedMasterToken;
         }
@@ -678,13 +518,13 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
 
     private static <T> T withMasterToken(java.util.function.Function<String, T> call) {
         try {
-            return call.apply(masterToken());
+            return call.apply(cachedMasterToken());
         } catch (RestClientResponseException ex) {
             if (!ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
                 throw ex;
             }
             invalidateMasterToken();
-            return call.apply(masterToken());
+            return call.apply(cachedMasterToken());
         }
     }
 
@@ -701,7 +541,7 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
                 Map<String, Object> group =
                         withMasterToken(token ->
                                 HTTP.get()
-                                        .uri(adminStatic("/group-by-path" + currentPath))
+                                        .uri(admin("/group-by-path" + currentPath))
                                         .headers(headers -> headers.setBearerAuth(token))
                                         .retrieve()
                                         .body(MAP));
@@ -717,7 +557,7 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
                 String endpoint =
                         parentId == null ? "/groups" : "/groups/" + parentId + "/children";
                 // Cây /gk là object nền của realm: chỉ tạo khi thiếu, không xoá ở teardown.
-                found = createResource(adminStatic(endpoint), Map.of("name", segment));
+                found = createResource(admin(endpoint), Map.of("name", segment));
             }
             parentId = found;
         }
@@ -729,7 +569,7 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
         List<Map<String, Object>> matches =
                 withMasterToken(token ->
                         HTTP.get()
-                                .uri(adminStatic("/clients?clientId=" + audience))
+                                .uri(admin("/clients?clientId=" + audience))
                                 .headers(headers -> headers.setBearerAuth(token))
                                 .retrieve()
                                 .body(LIST));
@@ -738,7 +578,7 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
         }
         String clientId =
                 createResource(
-                        adminStatic("/clients"),
+                        admin("/clients"),
                         Map.of(
                                 "clientId",
                                 audience,
@@ -771,19 +611,19 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
 
     private static void removeClientDefaults(String clientId) {
         String root = "/clients/" + clientId + "/authz/resource-server";
-        for (Map<String, Object> permission : getList(adminStatic(root + "/permission/resource"))) {
+        for (Map<String, Object> permission : getList(admin(root + "/permission/resource"))) {
             if (DEFAULT_PERMISSION.equals(permission.get("name"))) {
-                deleteResource(adminStatic(root + "/permission/resource/" + permission.get("id")));
+                deleteResource(admin(root + "/permission/resource/" + permission.get("id")));
             }
         }
-        for (Map<String, Object> resource : getList(adminStatic(root + "/resource"))) {
+        for (Map<String, Object> resource : getList(admin(root + "/resource"))) {
             if (DEFAULT_RESOURCE.equals(resource.get("name"))) {
-                deleteResource(adminStatic(root + "/resource/" + resource.get("_id")));
+                deleteResource(admin(root + "/resource/" + resource.get("_id")));
             }
         }
-        for (Map<String, Object> policy : getList(adminStatic(root + "/policy"))) {
+        for (Map<String, Object> policy : getList(admin(root + "/policy"))) {
             if (DEFAULT_POLICY.equals(policy.get("name"))) {
-                deleteResource(adminStatic(root + "/policy/" + policy.get("id")));
+                deleteResource(admin(root + "/policy/" + policy.get("id")));
             }
         }
     }
@@ -829,110 +669,5 @@ class PersonalEntitlementIT extends IntegrationEnvironment {
                     .toBodilessEntity();
             return null;
         });
-    }
-
-    static String fixture(String key) {
-        String value = System.getenv(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException("Missing TEST fixture variable " + key);
-        }
-        return value;
-    }
-
-    /**
-     * Phiên Spring thật chứa token Code+PKCE thật của một user TEST, dựng như TeachingFixture: đăng
-     * nhập qua form login của Keycloak TEST bằng helper dùng chung {@code OidcFormLogin}, không
-     * dùng Direct Access Grants cho phiên web.
-     */
-    static final class RealSession implements AutoCloseable {
-        private final SessionRepository<?> sessions;
-        private final Cookie sessionCookie;
-
-        private RealSession(SessionRepository<?> sessions, Cookie sessionCookie) {
-            this.sessions = sessions;
-            this.sessionCookie = sessionCookie;
-        }
-
-        Cookie cookie() {
-            return sessionCookie;
-        }
-
-        @Override
-        public void close() {
-            sessions.deleteById(sessionCookie.getValue());
-        }
-
-        static RealSession open(
-                String username,
-                String password,
-                String expectedSubject,
-                SessionRepositoryFilter<?> filter,
-                OAuth2AuthorizedClientRepository clients,
-                ClientRegistrationRepository registrations,
-                SessionRepository<?> sessions)
-                throws Exception {
-            var registration =
-                    Objects.requireNonNull(registrations.findByRegistrationId("keycloak"));
-            OidcFormLogin.WebTokens tokens =
-                    OidcFormLogin.webTokensViaCodePkce(
-                            HTTP, BASE, REALM, REDIRECT_URI, username, password);
-            String claims =
-                    new String(
-                            Base64.getUrlDecoder().decode(tokens.idToken().split("[.]")[1]),
-                            java.nio.charset.StandardCharsets.UTF_8);
-            if (!expectedSubject.equals(JSON.readTree(claims).get("sub").stringValue())) {
-                throw new AssertionError("Phiên đăng nhập sai subject");
-            }
-            Instant issued = Instant.now();
-            var idToken =
-                    new OidcIdToken(
-                            tokens.idToken(),
-                            issued,
-                            issued.plusSeconds(300),
-                            Map.of(
-                                    "iss",
-                                    BASE + "/realms/" + REALM,
-                                    "sub",
-                                    expectedSubject,
-                                    "aud",
-                                    List.of(registration.getClientId())));
-            var authentication =
-                    new OAuth2AuthenticationToken(
-                            new DefaultOidcUser(List.of(), idToken, "sub"), List.of(), "keycloak");
-            var authorized =
-                    new OAuth2AuthorizedClient(
-                            registration,
-                            authentication.getName(),
-                            new OAuth2AccessToken(
-                                    OAuth2AccessToken.TokenType.BEARER,
-                                    tokens.accessToken(),
-                                    issued,
-                                    issued.plusSeconds(300)),
-                            new OAuth2RefreshToken(tokens.refreshToken(), issued));
-            var request = new MockHttpServletRequest("GET", "/");
-            var response = new MockHttpServletResponse();
-            filter.doFilter(
-                    request,
-                    response,
-                    (wrapped, reply) -> {
-                        var servletRequest = (HttpServletRequest) wrapped;
-                        servletRequest
-                                .getSession(true)
-                                .setAttribute(
-                                        HttpSessionSecurityContextRepository
-                                                .SPRING_SECURITY_CONTEXT_KEY,
-                                        new SecurityContextImpl(authentication));
-                        clients.saveAuthorizedClient(
-                                authorized,
-                                authentication,
-                                servletRequest,
-                                (HttpServletResponse) reply);
-                    });
-            Cookie sessionCookie = Objects.requireNonNull(response.getCookie("SESSION"));
-            if (sessions.findById(sessionCookie.getValue()) == null) {
-                throw new AssertionError("Session must persist in JDBC");
-            }
-            return new RealSession(sessions, sessionCookie);
-        }
     }
 }

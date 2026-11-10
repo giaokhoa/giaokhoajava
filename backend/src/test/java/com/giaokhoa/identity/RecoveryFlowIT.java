@@ -1,30 +1,25 @@
 package com.giaokhoa.identity;
 
-import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.PlatformProjectionSeeder;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
-import com.giaokhoa.support.IntegrationEnvironment;
+import com.giaokhoa.support.KeycloakSessionFixture;
 import jakarta.servlet.http.Cookie;
 import java.net.URI;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
-import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -36,26 +31,14 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
-import org.springframework.session.SessionRepository;
-import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
-import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Contract US1 ở tầng khôi phục danh tính: account không email chỉ được khôi phục bằng quyền hành
@@ -66,22 +49,15 @@ import tools.jackson.databind.json.JsonMapper;
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class RecoveryFlowIT extends IntegrationEnvironment {
-    private static final JsonMapper JSON = new JsonMapper();
+class RecoveryFlowIT extends KeycloakSessionFixture {
     private static final String DIRECT_CLIENT = "recovery-flow-direct";
     private static final String WEB_CLIENT = "giaokhoa-it-web";
-    private static final ParameterizedTypeReference<Map<String, Object>> MAP =
-            new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_MAP =
             new ParameterizedTypeReference<>() {};
     private static final String DEFAULT_PERMISSION = "Default Permission";
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
 
-    private static final RestClient HTTP = RestClient.create();
-    private static final String BASE =
-            IdentityFlowIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
-    private static final String REALM = IdentityFlowIT.fixture("TEST_KEYCLOAK_REALM");
     private static @Nullable String ownedDirectClientId;
 
     @BeforeAll
@@ -95,7 +71,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     static void removeFixtures() {
         if (ownedDirectClientId != null) {
             try {
-                deleteStatic(adminStatic("/clients/" + ownedDirectClientId));
+                deleteStatic(admin("/clients/" + ownedDirectClientId));
             } catch (RestClientResponseException ex) {
                 if (!ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
                     throw ex;
@@ -104,16 +80,9 @@ class RecoveryFlowIT extends IntegrationEnvironment {
         }
     }
 
-    @Autowired JdbcTemplate jdbc;
-    @Autowired PlatformTransactionManager transactionManager;
     @Autowired RecoveryService recoveryService;
     @Autowired PlatformProjectionSeeder platformSeeder;
     @Autowired ProjectionReconciler projectionReconciler;
-    @Autowired WebApplicationContext webContext;
-    @Autowired SessionRepositoryFilter<?> sessionFilter;
-    @Autowired OAuth2AuthorizedClientRepository authorizedClients;
-    @Autowired ClientRegistrationRepository clientRegistrations;
-    @Autowired SessionRepository<?> sessions;
 
     @Test
     void operatorCredentialResetsIssuedUsersPasswordWithoutChangingIdentity() {
@@ -565,25 +534,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
         return actor;
     }
 
-    private IdentityFlowIT.RealSession openSession(String username, String password, String subject)
-            throws Exception {
-        return IdentityFlowIT.RealSession.open(
-                username,
-                password,
-                subject,
-                sessionFilter,
-                authorizedClients,
-                clientRegistrations,
-                sessions);
-    }
-
-    private MockMvc mockMvc() {
-        return MockMvcBuilders.webAppContextSetup(webContext)
-                .addFilters(sessionFilter)
-                .apply(springSecurity())
-                .build();
-    }
-
     // ---------- Graph platform và group nền trên realm dùng chung ----------
 
     private void publishPlatform() {
@@ -604,35 +554,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                         partitionId));
     }
 
-    /**
-     * Account seed trực tiếp bằng JDBC chưa từng bootstrap nên các lời gọi đầu có thể nhận 503
-     * AUTHORIZATION_NOT_READY trong lúc eligibility đang đồng bộ — hành vi fail-closed đúng của sản
-     * phẩm; thử lại có giới hạn với đúng mã lỗi đó rồi mới khẳng định.
-     */
-    private MockHttpServletResponse getWorkspacesWhenReady(IdentityFlowIT.RealSession session)
-            throws Exception {
-        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
-        try {
-            await().atMost(Duration.ofSeconds(60))
-                    .pollInterval(Duration.ofMillis(500))
-                    .until(() -> {
-                        MockHttpServletResponse response =
-                                mockMvc()
-                                        .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                                        .andReturn()
-                                        .getResponse();
-                        last.set(response);
-                        return response.getStatus() != 503
-                                || !response.getContentAsString()
-                                        .contains("AUTHORIZATION_NOT_READY");
-                    });
-        } catch (ConditionTimeoutException ignored) {
-            // Hết 60 giây mà account chưa sẵn sàng: trả phản hồi cuối như vòng poll cũ để
-            // khẳng định phía trên tự báo đúng trạng thái.
-        }
-        return Objects.requireNonNull(last.get());
-    }
-
     private void joinGroup(String subject, String groupPath) {
         HTTP.put()
                 .uri(admin("/users/" + subject + "/groups/" + groupId(groupPath)))
@@ -644,7 +565,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     private static String groupId(String path) {
         Map<String, Object> group =
                 HTTP.get()
-                        .uri(adminStatic("/group-by-path" + path))
+                        .uri(admin("/group-by-path" + path))
                         .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
                         .retrieve()
                         .body(MAP);
@@ -671,7 +592,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
             try {
                 Map<String, Object> group =
                         HTTP.get()
-                                .uri(adminStatic("/group-by-path" + currentPath))
+                                .uri(admin("/group-by-path" + currentPath))
                                 .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
                                 .retrieve()
                                 .body(MAP);
@@ -686,7 +607,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
             if (found == null) {
                 String endpoint =
                         parentId == null ? "/groups" : "/groups/" + parentId + "/children";
-                found = createResource(adminStatic(endpoint), Map.of("name", segment));
+                found = createResource(admin(endpoint), Map.of("name", segment));
             }
             parentId = found;
         }
@@ -698,10 +619,10 @@ class RecoveryFlowIT extends IntegrationEnvironment {
      * class chạy độc lập; client là object realm dùng chung nên tạo xong để lại, không xóa.
      */
     private static void ensureApiClient() {
-        String audience = IdentityFlowIT.fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
+        String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
         List<Map<String, Object>> matches =
                 HTTP.get()
-                        .uri(adminStatic("/clients?clientId=" + audience))
+                        .uri(admin("/clients?clientId=" + audience))
                         .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
                         .retrieve()
                         .body(LIST_MAP);
@@ -710,7 +631,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
         }
         String clientId =
                 createResource(
-                        adminStatic("/clients"),
+                        admin("/clients"),
                         Map.of(
                                 "clientId",
                                 audience,
@@ -743,19 +664,19 @@ class RecoveryFlowIT extends IntegrationEnvironment {
 
     private static void removeClientDefaults(String clientId) {
         String root = "/clients/" + clientId + "/authz/resource-server";
-        for (Map<String, Object> permission : getList(adminStatic(root + "/permission/resource"))) {
+        for (Map<String, Object> permission : getList(admin(root + "/permission/resource"))) {
             if (DEFAULT_PERMISSION.equals(permission.get("name"))) {
-                deleteStatic(adminStatic(root + "/permission/resource/" + permission.get("id")));
+                deleteStatic(admin(root + "/permission/resource/" + permission.get("id")));
             }
         }
-        for (Map<String, Object> resource : getList(adminStatic(root + "/resource"))) {
+        for (Map<String, Object> resource : getList(admin(root + "/resource"))) {
             if (DEFAULT_RESOURCE.equals(resource.get("name"))) {
-                deleteStatic(adminStatic(root + "/resource/" + resource.get("_id")));
+                deleteStatic(admin(root + "/resource/" + resource.get("_id")));
             }
         }
-        for (Map<String, Object> policy : getList(adminStatic(root + "/policy"))) {
+        for (Map<String, Object> policy : getList(admin(root + "/policy"))) {
             if (DEFAULT_POLICY.equals(policy.get("name"))) {
-                deleteStatic(adminStatic(root + "/policy/" + policy.get("id")));
+                deleteStatic(admin(root + "/policy/" + policy.get("id")));
             }
         }
     }
@@ -792,24 +713,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
 
     // ---------- Keycloak TEST realm qua Admin API ----------
 
-    private Map<String, Object> keycloakUser(
-            String username, @Nullable String email, boolean emailVerified, String password) {
-        var body = new HashMap<String, Object>();
-        body.put("username", username);
-        body.put("enabled", true);
-        body.put("firstName", "Synthetic");
-        body.put("lastName", "User");
-        body.put("emailVerified", emailVerified);
-        body.put("requiredActions", List.of());
-        if (email != null) {
-            body.put("email", email);
-        }
-        body.put(
-                "credentials",
-                List.of(Map.of("type", "password", "value", password, "temporary", false)));
-        return body;
-    }
-
     private Map<String, Object> issuedUser(String username, String temporaryPassword) {
         var body = new HashMap<String, Object>();
         body.put("username", username);
@@ -822,23 +725,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                 "credentials",
                 List.of(Map.of("type", "password", "value", temporaryPassword, "temporary", true)));
         return body;
-    }
-
-    private String createUser(Map<String, Object> body) {
-        ResponseEntity<String> response =
-                HTTP.post()
-                        .uri(admin("/users"))
-                        .headers(headers -> headers.setBearerAuth(masterToken()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(body)
-                        .retrieve()
-                        .toEntity(String.class);
-        URI location = response.getHeaders().getLocation();
-        if (location == null) {
-            throw new IllegalStateException("Keycloak did not return the created user location");
-        }
-        String path = location.getPath();
-        return path.substring(path.lastIndexOf('/') + 1);
     }
 
     private Map<String, Object> getUser(String userId) {
@@ -877,18 +763,6 @@ class RecoveryFlowIT extends IntegrationEnvironment {
         }
     }
 
-    private void deleteUser(String userId) {
-        deleteWithConflictRetry(() -> deleteStatic(admin("/users/" + userId)));
-    }
-
-    private String admin(String path) {
-        return adminStatic(path);
-    }
-
-    private static String adminStatic(String path) {
-        return BASE + "/admin/realms/" + REALM + path;
-    }
-
     private static void deleteStatic(String uri) {
         HTTP.delete()
                 .uri(uri)
@@ -897,35 +771,12 @@ class RecoveryFlowIT extends IntegrationEnvironment {
                 .toBodilessEntity();
     }
 
-    private String masterToken() {
-        return masterTokenStatic();
-    }
-
-    private static String masterTokenStatic() {
-        var form = new LinkedMultiValueMap<String, String>();
-        form.add("grant_type", "password");
-        form.add("client_id", "admin-cli");
-        form.add("username", IdentityFlowIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
-        form.add("password", IdentityFlowIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
-        Map<String, Object> response =
-                HTTP.post()
-                        .uri(BASE + "/realms/master/protocol/openid-connect/token")
-                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                        .body(form)
-                        .retrieve()
-                        .body(MAP);
-        if (response == null) {
-            throw new IllegalStateException("Master token not readable");
-        }
-        return Objects.requireNonNull((String) response.get("access_token"), "access_token");
-    }
-
     // ---------- Direct Access Grants cho probe mật khẩu ----------
 
     private static void ensureDirectGrantClient() {
         List<Map<String, Object>> matches =
                 HTTP.get()
-                        .uri(adminStatic("/clients?clientId=" + DIRECT_CLIENT))
+                        .uri(admin("/clients?clientId=" + DIRECT_CLIENT))
                         .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
                         .retrieve()
                         .body(new ParameterizedTypeReference<List<Map<String, Object>>>() {});
@@ -934,7 +785,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
         }
         var response =
                 HTTP.post()
-                        .uri(adminStatic("/clients"))
+                        .uri(admin("/clients"))
                         .headers(headers -> headers.setBearerAuth(masterTokenStatic()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(
