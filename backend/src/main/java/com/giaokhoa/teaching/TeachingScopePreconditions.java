@@ -197,7 +197,7 @@ public class TeachingScopePreconditions {
                 .toList();
     }
 
-    private static @Nullable MembershipRole.Role parseRole(String role) {
+    private static MembershipRole.@Nullable Role parseRole(String role) {
         try {
             return MembershipRole.Role.valueOf(role);
         } catch (IllegalArgumentException ex) {
