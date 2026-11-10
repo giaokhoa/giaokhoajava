@@ -46,6 +46,11 @@ public class SharePolicyProjector {
     /** Giá trị cột workspace.kind cho không gian cá nhân. */
     private static final String PERSONAL_KIND = "PERSONAL";
 
+    /** Trạng thái grant đang chờ phía nhận accept. */
+    private static final String OFFERED_STATE = "OFFERED";
+
+    private static final int SINGLE_ROW = 1;
+
     private final JdbcTemplate jdbc;
     private final AuthorizationOperationService operations;
     private final ResourcePolicyProjector resourceProjector;
@@ -122,7 +127,7 @@ public class SharePolicyProjector {
      */
     static List<String> descriptorsFor(GrantFacts grant, String targetKey) {
         List<String> descriptors = new ArrayList<>();
-        if ("OFFERED".equals(grant.state())) {
+        if (OFFERED_STATE.equals(grant.state())) {
             if (CENTER_KIND.equals(grant.recipientKind())) {
                 descriptors.add(
                         groupDescriptor(
@@ -229,7 +234,7 @@ public class SharePolicyProjector {
                                 + " DO NOTHING",
                         candidate,
                         ownerKey);
-        if (inserted == 1) {
+        if (inserted == SINGLE_ROW) {
             return candidate;
         }
         return jdbc

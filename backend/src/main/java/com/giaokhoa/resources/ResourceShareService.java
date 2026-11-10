@@ -64,6 +64,9 @@ public class ResourceShareService {
     private static final String RECEIPT_TARGET_TYPE = "SHARE_GRANT";
     private static final List<String> MODES = List.of("REVOCABLE", "LONG_TERM");
 
+    /** Giá trị cột workspace.kind cho không gian trung tâm. */
+    private static final String CENTER_KIND = "CENTER";
+
     private final ProtectedActionExecutor executor;
     private final ResourcePolicyProjector projector;
     private final SharePolicyProjector shareProjector;
@@ -242,7 +245,7 @@ public class ResourceShareService {
                         + " WHERE workspace_id = ? AND user_id = ? AND state = 'ACTIVE'"
                         + " AND ((resource_id = ? AND (subject_id IS NULL OR subject_id = ?))"
                         + " OR (resource_id IS NULL AND subject_id = ?))";
-        if ("CENTER".equals(workspaceKind(workspaceId))) {
+        if (CENTER_KIND.equals(workspaceKind(workspaceId))) {
             assignmentSql +=
                     " AND EXISTS (SELECT 1 FROM center_membership m"
                             + " WHERE m.workspace_id = resource_assignment.workspace_id"
