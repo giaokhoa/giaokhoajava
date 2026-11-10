@@ -5,6 +5,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
@@ -19,7 +20,6 @@ import com.giaokhoa.teaching.repository.EnrollmentRepository;
 import com.giaokhoa.teaching.repository.SchoolClassRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -60,7 +60,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class EnrollmentService {
-    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
+    private static final String ACTIVE = "ACTIVE";
+    private static final List<String> CURRENT_STATES = List.of("PENDING", ACTIVE);
 
     private final ClassStudentRepository classStudents;
     private final CourseSubjectRepository courseSubjects;
@@ -183,7 +184,7 @@ public class EnrollmentService {
             var course =
                     courses.findByWorkspaceIdAndId(workspaceId, subject.getCourseId())
                             .orElseThrow(EnrollmentService::enrollmentTargetNotFound);
-            if (!"ACTIVE".equals(clazz.getState()) || !"ACTIVE".equals(course.getState())) {
+            if (!ACTIVE.equals(clazz.getState()) || !ACTIVE.equals(course.getState())) {
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
                         ErrorCodes.TEACHING_CONTEXT_NOT_ACTIVE,
@@ -315,7 +316,7 @@ public class EnrollmentService {
     }
 
     private static boolean isCurrent(String state) {
-        return "PENDING".equals(state) || "ACTIVE".equals(state);
+        return "PENDING".equals(state) || ACTIVE.equals(state);
     }
 
     private static HttpProblemException enrollmentTargetNotFound() {

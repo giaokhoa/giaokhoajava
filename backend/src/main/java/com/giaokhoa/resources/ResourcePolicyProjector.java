@@ -947,6 +947,7 @@ public class ResourcePolicyProjector {
         // Time policy native chỉ có độ chính xác tới giây: cắt tròn cửa sổ của grant về tròn
         // giây ngay khi dựng descriptor để giá trị được chiếu là đúng giá trị gate kiểm.
         Instant validFrom = grant.getValidFrom().truncatedTo(ChronoUnit.SECONDS);
+        Instant expiresAt = grant.getExpiresAt();
         StringBuilder descriptor =
                 new StringBuilder(LICENSE_DESCRIPTOR).append(WORKSPACE_MARKER).append(workspaceId);
         if (PERSONAL_KIND.equals(contextKind)) {
@@ -970,9 +971,9 @@ public class ResourcePolicyProjector {
                 .append(validFrom)
                 .append("|until=")
                 .append(
-                        grant.getExpiresAt() == null
+                        expiresAt == null
                                 ? "-"
-                                : grant.getExpiresAt().truncatedTo(ChronoUnit.SECONDS).toString())
+                                : expiresAt.truncatedTo(ChronoUnit.SECONDS).toString())
                 .append("|target=")
                 .append(targetKey)
                 .append(PolicyGraph.SCOPE_MARKER)

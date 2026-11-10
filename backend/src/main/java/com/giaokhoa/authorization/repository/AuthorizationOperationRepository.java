@@ -90,5 +90,4 @@ public interface AuthorizationOperationRepository
             @Param("errorCode") @Nullable String errorCode,
             @Param("applying") State applying,
             @Param("attemptCount") int attemptCount);
-
 }

@@ -100,14 +100,12 @@ public class OperationController {
         var found =
                 recoveryRequests
                         .findById(operationId)
-                        .filter(
-                                request ->
-                                        request.getRequesterUserId().equals(actorUserId)
-                                                || recoveryMutations
-                                                        .existsByRequestIdAndActorAndKind(
-                                                                operationId,
-                                                                actorUserId,
-                                                                RecoveryMutation.Kind.RESOLVE));
+                        .filter(request ->
+                                request.getRequesterUserId().equals(actorUserId)
+                                        || recoveryMutations.existsByRequestIdAndActorAndKind(
+                                                operationId,
+                                                actorUserId,
+                                                RecoveryMutation.Kind.RESOLVE));
         if (found.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Không tìm thấy tài nguyên.");

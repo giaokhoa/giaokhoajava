@@ -23,7 +23,8 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class TeachingPageRepository {
-    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
+    private static final String ACTIVE = "ACTIVE";
+    private static final List<String> CURRENT_STATES = List.of("PENDING", ACTIVE);
 
     private final SchoolClassRepository schoolClasses;
     private final ClassStudentRepository classStudents;
@@ -64,8 +65,7 @@ public class TeachingPageRepository {
                 homeroomAssignments.findClassIdByWorkspaceIdAndTeacherUserIdAndStateIn(
                         workspaceId, teacherUserId, CURRENT_STATES);
         return !classIds.isEmpty()
-                && schoolClasses.existsByWorkspaceIdAndIdInAndState(
-                        workspaceId, classIds, "ACTIVE");
+                && schoolClasses.existsByWorkspaceIdAndIdInAndState(workspaceId, classIds, ACTIVE);
     }
 
     public Page<ClassListItem> pageClasses(
@@ -81,7 +81,7 @@ public class TeachingPageRepository {
         if (homeroomTeacherId == null) {
             window =
                     schoolClasses.findByWorkspaceIdAndStateOrderByCreatedAtAscIdAsc(
-                            workspaceId, "ACTIVE", position, Limit.of(pageSize(limit)));
+                            workspaceId, ACTIVE, position, Limit.of(pageSize(limit)));
         } else {
             // Lọc theo chủ nhiệm được phân giải trong cùng mặt phẳng trước khi chọn trang,
             // thay EXISTS lồng của tầng JDBC cũ.
@@ -90,7 +90,7 @@ public class TeachingPageRepository {
                             workspaceId, homeroomTeacherId, CURRENT_STATES);
             window =
                     schoolClasses.findByWorkspaceIdAndStateAndIdInOrderByCreatedAtAscIdAsc(
-                            workspaceId, "ACTIVE", classIds, position, Limit.of(pageSize(limit)));
+                            workspaceId, ACTIVE, classIds, position, Limit.of(pageSize(limit)));
         }
         return toPage(window, ClassListItem::getId);
     }
@@ -119,7 +119,7 @@ public class TeachingPageRepository {
                                         workspaceId, classId, id));
         Window<CourseListItem> window =
                 courses.findByWorkspaceIdAndClassIdAndStateOrderByCreatedAtAscIdAsc(
-                        workspaceId, classId, "ACTIVE", position, Limit.of(pageSize(limit)));
+                        workspaceId, classId, ACTIVE, position, Limit.of(pageSize(limit)));
         return toPage(window, CourseListItem::getId);
     }
 

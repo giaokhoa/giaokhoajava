@@ -45,12 +45,9 @@ public class ResourceScopePreconditions {
     /** Các kỳ gói của workspace, sắp theo mốc bắt đầu rồi định danh như đường dựng bundle cũ. */
     public List<SubscriptionPeriod> subscriptionPeriods(UUID workspaceId) {
         return periods.findByWorkspaceIdOrderByValidFromAscIdAsc(workspaceId).stream()
-                .map(
-                        period ->
-                                new SubscriptionPeriod(
-                                        period.getId(),
-                                        period.getValidFrom(),
-                                        period.getExpiresAt()))
+                .map(period ->
+                        new SubscriptionPeriod(
+                                period.getId(), period.getValidFrom(), period.getExpiresAt()))
                 .toList();
     }
 
@@ -74,8 +71,7 @@ public class ResourceScopePreconditions {
             return List.of();
         }
         Map<UUID, String> subjects = new LinkedHashMap<>();
-        accounts
-                .findByIdIn(studentIds)
+        accounts.findByIdIn(studentIds)
                 .forEach(account -> subjects.put(account.getId(), account.getKeycloakSub()));
         return studentIds.stream()
                 .filter(subjects::containsKey)

@@ -9,15 +9,15 @@ import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.guardians.model.GuardianLink;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.identity.model.UserAccount;
-import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.model.SampleResult;
-import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
 import com.giaokhoa.verification.repository.EnrollmentRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.TeachingAssignmentRepository;
+import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
 import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import java.util.ArrayList;
@@ -344,14 +344,35 @@ public class ResultPolicyProjector {
                     ownerId == null ? null : userAccounts.findById(ownerId).orElse(null);
             if (owner != null) {
                 String subject = Objects.requireNonNull(owner.getKeycloakSub(), "keycloak_sub");
-                descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, PermissionCatalog.ResultScope.READ.scopeName()));
-                descriptors.add(actorDescriptor(workspaceId, ownerId, subject, targetKey, PermissionCatalog.ResultScope.GRADE.scopeName()));
                 descriptors.add(
-                        actorDescriptor(workspaceId, ownerId, subject, targetKey, PermissionCatalog.ResultScope.PUBLISH.scopeName()));
+                        actorDescriptor(
+                                workspaceId,
+                                ownerId,
+                                subject,
+                                targetKey,
+                                PermissionCatalog.ResultScope.READ.scopeName()));
+                descriptors.add(
+                        actorDescriptor(
+                                workspaceId,
+                                ownerId,
+                                subject,
+                                targetKey,
+                                PermissionCatalog.ResultScope.GRADE.scopeName()));
+                descriptors.add(
+                        actorDescriptor(
+                                workspaceId,
+                                ownerId,
+                                subject,
+                                targetKey,
+                                PermissionCatalog.ResultScope.PUBLISH.scopeName()));
                 if (published) {
                     descriptors.add(
                             actorDescriptor(
-                                    workspaceId, ownerId, subject, targetKey, PermissionCatalog.ResultScope.READ_PUBLISHED.scopeName()));
+                                    workspaceId,
+                                    ownerId,
+                                    subject,
+                                    targetKey,
+                                    PermissionCatalog.ResultScope.READ_PUBLISHED.scopeName()));
                 }
             }
         }

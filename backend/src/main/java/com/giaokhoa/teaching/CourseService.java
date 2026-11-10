@@ -2,6 +2,7 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.model.Course;
@@ -13,7 +14,6 @@ import com.giaokhoa.teaching.repository.SchoolClassRepository;
 import com.giaokhoa.teaching.repository.SubjectRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -47,7 +47,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class CourseService {
-    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
+    private static final String ACTIVE = "ACTIVE";
+    private static final List<String> CURRENT_STATES = List.of("PENDING", ACTIVE);
 
     private final SchoolClassRepository schoolClasses;
     private final CourseRepository courses;
@@ -173,7 +174,7 @@ public class CourseService {
                 .orElseThrow(() -> classNotFound());
         List<Course> rows =
                 courses.findByWorkspaceIdAndClassIdAndStateOrderByCreatedAtAscIdAsc(
-                        workspaceId, classId, "ACTIVE");
+                        workspaceId, classId, ACTIVE);
         Map<UUID, List<SubjectEntry>> subjects =
                 subjectsByCourse(workspaceId, rows.stream().map(Course::getId).toList());
         return rows.stream()
@@ -317,7 +318,7 @@ public class CourseService {
     /** Danh mục môn tham chiếu đang ACTIVE; danh mục không chứa dữ liệu riêng của workspace nào. */
     @Transactional(readOnly = true)
     public List<SubjectView> listSubjects() {
-        return subjects.findByStateOrderByCodeAsc("ACTIVE").stream()
+        return subjects.findByStateOrderByCodeAsc(ACTIVE).stream()
                 .map(subject ->
                         new SubjectView(subject.getId(), subject.getCode(), subject.getName()))
                 .toList();
@@ -380,7 +381,7 @@ public class CourseService {
                 schoolClasses
                         .findByWorkspaceIdAndId(workspaceId, classId)
                         .orElseThrow(CourseService::classNotFound);
-        if (!"ACTIVE".equals(clazz.getState())) {
+        if (!ACTIVE.equals(clazz.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CLASS_NOT_ACTIVE,
@@ -402,7 +403,7 @@ public class CourseService {
 
     private Subject requireCatalogSubject(UUID subjectId) {
         Subject subject = subjects.findById(subjectId).orElseThrow(() -> subjectNotFound());
-        if (!"ACTIVE".equals(subject.getState())) {
+        if (!ACTIVE.equals(subject.getState())) {
             throw subjectNotFound();
         }
         return subject;

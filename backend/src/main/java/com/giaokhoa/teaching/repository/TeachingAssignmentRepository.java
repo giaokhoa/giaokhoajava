@@ -19,6 +19,12 @@ import org.springframework.data.repository.query.Param;
 /** Repository của aggregate phân công giảng dạy. */
 public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssignment, UUID> {
 
+    /** Mệnh đề SET chung của mọi phép thu hồi hiện hành: đóng trạng thái, đóng dấu thời gian. */
+    String REVOKE_SET_CLAUSE =
+            "UPDATE TeachingAssignment t SET t.state = 'REVOKED',"
+                    + " t.revokedAt = CURRENT_TIMESTAMP, t.version = t.version + 1,"
+                    + " t.updatedAt = CURRENT_TIMESTAMP WHERE t.workspaceId = :workspaceId";
+
     Optional<TeachingAssignment> findByWorkspaceIdAndCourseSubjectIdAndTeacherUserIdAndStateIn(
             UUID workspaceId, UUID courseSubjectId, UUID teacherUserId, Collection<String> states);
 
@@ -73,11 +79,7 @@ public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssi
 
     /** Thu hồi mọi phân công giảng dạy hiện hành của một giáo viên trong workspace. */
     @Modifying
-    @Query(
-            "UPDATE TeachingAssignment t SET t.state = 'REVOKED',"
-                    + " t.revokedAt = CURRENT_TIMESTAMP, t.version = t.version + 1,"
-                    + " t.updatedAt = CURRENT_TIMESTAMP WHERE t.workspaceId = :workspaceId"
-                    + " AND t.teacherUserId = :teacherUserId AND t.state IN :states")
+    @Query(REVOKE_SET_CLAUSE + " AND t.teacherUserId = :teacherUserId AND t.state IN :states")
     int revokeCurrentByTeacherUserId(
             @Param("workspaceId") UUID workspaceId,
             @Param("teacherUserId") UUID teacherUserId,
@@ -86,9 +88,7 @@ public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssi
     /** Thu hồi mọi phân công giảng dạy hiện hành thuộc các môn–khóa của một lớp. */
     @Modifying
     @Query(
-            "UPDATE TeachingAssignment t SET t.state = 'REVOKED',"
-                    + " t.revokedAt = CURRENT_TIMESTAMP, t.version = t.version + 1,"
-                    + " t.updatedAt = CURRENT_TIMESTAMP WHERE t.workspaceId = :workspaceId"
+            REVOKE_SET_CLAUSE
                     + " AND t.state IN :states AND t.courseSubjectId IN"
                     + " (SELECT cs.id FROM CourseSubject cs WHERE cs.workspaceId = :workspaceId"
                     + " AND cs.classId = :classId)")
@@ -100,9 +100,7 @@ public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssi
     /** Thu hồi mọi phân công giảng dạy hiện hành thuộc các môn–khóa của một khóa. */
     @Modifying
     @Query(
-            "UPDATE TeachingAssignment t SET t.state = 'REVOKED',"
-                    + " t.revokedAt = CURRENT_TIMESTAMP, t.version = t.version + 1,"
-                    + " t.updatedAt = CURRENT_TIMESTAMP WHERE t.workspaceId = :workspaceId"
+            REVOKE_SET_CLAUSE
                     + " AND t.state IN :states AND t.courseSubjectId IN"
                     + " (SELECT cs.id FROM CourseSubject cs WHERE cs.workspaceId = :workspaceId"
                     + " AND cs.courseId = :courseId)")
@@ -113,11 +111,7 @@ public interface TeachingAssignmentRepository extends JpaRepository<TeachingAssi
 
     /** Thu hồi mọi phân công giảng dạy hiện hành của một môn–khóa. */
     @Modifying
-    @Query(
-            "UPDATE TeachingAssignment t SET t.state = 'REVOKED',"
-                    + " t.revokedAt = CURRENT_TIMESTAMP, t.version = t.version + 1,"
-                    + " t.updatedAt = CURRENT_TIMESTAMP WHERE t.workspaceId = :workspaceId"
-                    + " AND t.courseSubjectId = :courseSubjectId AND t.state IN :states")
+    @Query(REVOKE_SET_CLAUSE + " AND t.courseSubjectId = :courseSubjectId AND t.state IN :states")
     int revokeCurrentByCourseSubjectId(
             @Param("workspaceId") UUID workspaceId,
             @Param("courseSubjectId") UUID courseSubjectId,

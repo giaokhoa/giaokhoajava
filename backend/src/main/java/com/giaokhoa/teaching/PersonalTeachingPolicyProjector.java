@@ -5,7 +5,6 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.subscriptions.SubscriptionPeriodRow;
 import com.giaokhoa.teaching.TeachingScopePreconditions.SubscriptionPeriod;
 import com.giaokhoa.teaching.TeachingScopePreconditions.UserAccountRef;
 import com.giaokhoa.teaching.repository.CourseRepository;

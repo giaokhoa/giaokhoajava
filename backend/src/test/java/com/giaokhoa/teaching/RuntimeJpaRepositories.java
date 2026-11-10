@@ -45,15 +45,15 @@ import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 
 /**
- * Bộ repository JPA gắn với một DataSource riêng của test (thường là role runtime không
- * BYPASSRLS trên SingleConnectionDataSource), thay cho việc truyền JdbcTemplate vào tầng
- * repository như trước đây. EntityManager là bản dùng chung theo transaction của thread nên các
- * repository tham gia đúng transaction mà test mở bằng {@link #transactionManager}; transaction
- * manager được gắn cùng DataSource để các đường JDBC còn lại trong cùng test (set_config của
- * WorkspaceTransaction, projector của module khác) dùng chung một connection và một transaction.
+ * Bộ repository JPA gắn với một DataSource riêng của test (thường là role runtime không BYPASSRLS
+ * trên SingleConnectionDataSource), thay cho việc truyền JdbcTemplate vào tầng repository như trước
+ * đây. EntityManager là bản dùng chung theo transaction của thread nên các repository tham gia đúng
+ * transaction mà test mở bằng {@link #transactionManager}; transaction manager được gắn cùng
+ * DataSource để các đường JDBC còn lại trong cùng test (set_config của WorkspaceTransaction,
+ * projector của module khác) dùng chung một connection và một transaction.
  *
- * <p>Repository thuần giao diện lấy thẳng từ {@link JpaRepositoryFactory}; riêng các repository
- * có fragment cài đặt riêng của module authorization phải đi qua một context tối thiểu có {@code
+ * <p>Repository thuần giao diện lấy thẳng từ {@link JpaRepositoryFactory}; riêng các repository có
+ * fragment cài đặt riêng của module authorization phải đi qua một context tối thiểu có {@code
  * EnableJpaRepositories} vì fragment chỉ được đăng ký ở tầng cấu hình đó (factory trần không tự
  * phát hiện fragment, đã kiểm chứng bằng thực nghiệm khi nối các đợt JPA).
  */
@@ -168,7 +168,9 @@ final class RuntimeJpaRepositories implements AutoCloseable {
         fragmentContext
                 .getBeanFactory()
                 .registerSingleton("jdbcTemplate", new JdbcTemplate(dataSource));
-        fragmentContext.getBeanFactory().registerSingleton("transactionManager", transactionManager);
+        fragmentContext
+                .getBeanFactory()
+                .registerSingleton("transactionManager", transactionManager);
         fragmentContext.refresh();
         this.operations = fragmentContext.getBean(AuthorizationOperationRepository.class);
         this.authzPartitions = fragmentContext.getBean(AuthzPartitionRepository.class);

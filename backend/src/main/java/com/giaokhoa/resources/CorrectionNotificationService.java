@@ -13,11 +13,10 @@ import org.springframework.stereotype.Service;
  * quyền nào và không tự cấp quyền xem version thay thế (data-model của correction). Tập nơi nhận
  * chốt tại thời điểm phát hành từ năm bề mặt đã nhận version đó: mục thư viện đã lưu đúng version,
  * lượt cấp share của đúng version còn {@code OFFERED} hoặc đã {@code ACCEPTED}, phân công tài
- * nguyên {@code ACTIVE} khớp resource hoặc môn của resource, hoạt động đã giao trên đúng
- * version, và workspace đang giữ bản sao hoặc bản phái sinh của version theo cạnh provenance;
- * workspace sở hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính tập
- * nơi nhận đọc xuyên workspace theo đúng tiền lệ {@code
- * ResourceRevocationContributor.affectedWorkspaces}.
+ * nguyên {@code ACTIVE} khớp resource hoặc môn của resource, hoạt động đã giao trên đúng version,
+ * và workspace đang giữ bản sao hoặc bản phái sinh của version theo cạnh provenance; workspace sở
+ * hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính tập nơi nhận đọc xuyên
+ * workspace theo đúng tiền lệ {@code ResourceRevocationContributor.affectedWorkspaces}.
  *
  * <p>Xác nhận đã biết đính chính không có action riêng trong danh mục: mốc {@code acknowledged_at}
  * được ghi khi nơi nhận chủ động nhận version thay thế của notice qua {@code RECEIVE_UPDATE} — đúng

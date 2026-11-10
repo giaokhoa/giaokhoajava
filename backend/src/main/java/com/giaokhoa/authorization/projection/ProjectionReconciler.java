@@ -692,7 +692,9 @@ public class ProjectionReconciler {
     }
 
     private boolean isCenterWorkspace(String targetKey) {
-        UUID workspaceId = UUID.fromString(targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
+        UUID workspaceId =
+                UUID.fromString(
+                        targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         return partitions
                 .findWorkspaceById(workspaceId)
                 .map(workspace -> workspace.getKind() == Workspace.Kind.CENTER)
@@ -700,7 +702,9 @@ public class ProjectionReconciler {
     }
 
     private boolean isPersonalWorkspace(String targetKey) {
-        UUID workspaceId = UUID.fromString(targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
+        UUID workspaceId =
+                UUID.fromString(
+                        targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         return partitions
                 .findWorkspaceById(workspaceId)
                 .map(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
@@ -933,7 +937,9 @@ public class ProjectionReconciler {
         if (type != NativePolicyTemplates.TargetType.WORKSPACE) {
             return List.of();
         }
-        UUID workspaceId = UUID.fromString(targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
+        UUID workspaceId =
+                UUID.fromString(
+                        targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
         Optional<Workspace> workspace = partitions.findWorkspaceById(workspaceId);
         if (workspace.isEmpty() || workspace.get().getKind() != Workspace.Kind.PERSONAL) {
             return List.of();

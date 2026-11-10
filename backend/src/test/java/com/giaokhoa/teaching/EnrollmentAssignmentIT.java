@@ -1,13 +1,13 @@
 package com.giaokhoa.teaching;
 
 import static org.awaitility.Awaitility.await;
-import static org.mockito.Mockito.mock;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
@@ -21,10 +21,8 @@ import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.ResourceCopies;
 import com.giaokhoa.resources.repository.ResourceScopePreconditions;
 import com.giaokhoa.shared.audit.AuditRecorder;
-import com.giaokhoa.subscriptions.SubscriptionPolicy;
-import com.giaokhoa.tenancy.MembershipPolicyProjector;
-import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.AssignmentService.HomeroomAssignmentView;
 import com.giaokhoa.teaching.AssignmentService.TeachingAssignmentView;
@@ -34,6 +32,8 @@ import com.giaokhoa.teaching.CourseService.CourseView;
 import com.giaokhoa.teaching.EnrollmentService.EnrollmentView;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
+import com.giaokhoa.tenancy.MembershipPolicyProjector;
+import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;
@@ -470,8 +470,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
         jdbc.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
-        RuntimeJpaRepositories runtime = new RuntimeJpaRepositories(runtimeDataSource);
-        try {
+        try (var runtime = new RuntimeJpaRepositories(runtimeDataSource)) {
             JdbcTemplate runtimeJdbc = new JdbcTemplate(runtimeDataSource);
             runtimeJdbc.execute("SET search_path TO " + SCHEMA + ",public");
             WorkspaceTransaction runtimeWorkspaceTx =
@@ -656,7 +655,6 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                                                     other, courseSubjectId)));
             assertEquals(HttpStatus.NOT_FOUND, cross.getStatus(), "Workspace khác vẫn vô hình");
         } finally {
-            runtime.close();
             if (runtimeDataSource != null) {
                 runtimeDataSource.destroy();
             }

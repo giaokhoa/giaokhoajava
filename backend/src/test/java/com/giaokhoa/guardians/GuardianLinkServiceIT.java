@@ -6,39 +6,36 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-
-import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
-import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import static org.mockito.Mockito.mock;
+
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
-import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
-import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
-import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.guardians.service.GuardianLinkService;
 import com.giaokhoa.guardians.service.GuardianLinkService.GuardianLinkView;
 import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.identity.repository.UserAccountRepository;
-import com.giaokhoa.subscriptions.SubscriptionPolicy;
-import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.SubscriptionPolicy;
+import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
 import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import com.giaokhoa.verification.repository.EnrollmentRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.TeachingAssignmentRepository;
-import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -50,13 +47,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
-import org.springframework.http.HttpStatus;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
@@ -89,7 +86,6 @@ class GuardianLinkServiceIT extends GuardianFixture {
     @Autowired EntityManagerFactory entityManagerFactory;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
-    private @Nullable EntityManagerFactory runtimeEmf;
 
     /** Bật đăng ký repository của module authorization cho context tối thiểu của làn runtime. */
     @Configuration(proxyBeanMethods = false)
@@ -530,179 +526,180 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 runtimeEmfBean.setPackagesToScan("com.giaokhoa");
                 runtimeEmfBean.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
                 runtimeEmfBean.afterPropertiesSet();
-                runtimeEmf = Objects.requireNonNull(runtimeEmfBean.getObject());
-                JpaTransactionManager runtimeTxManager = new JpaTransactionManager(runtimeEmf);
-                EntityManager runtimeEntityManager =
-                        SharedEntityManagerCreator.createSharedEntityManager(runtimeEmf);
-                JpaRepositoryFactory runtimeRepositories =
-                        new JpaRepositoryFactory(runtimeEntityManager);
-                WorkspaceTransaction runtimeWorkspaceTx =
-                        new WorkspaceTransaction(runtimeJdbc, runtimeTxManager);
-                // Repository có fragment của module authorization chỉ đăng ký được qua tầng
-                // cấu hình EnableJpaRepositories nên làn runtime dựng một context tối thiểu
-                // dùng lại đúng EMF, JdbcTemplate và transaction manager của role runtime.
-                var fragmentContext = new AnnotationConfigApplicationContext();
-                fragmentContext.register(RuntimeFragmentRepositories.class);
-                fragmentContext
-                        .getBeanFactory()
-                        .registerSingleton("entityManagerFactory", runtimeEmf);
-                fragmentContext.getBeanFactory().registerSingleton("jdbcTemplate", runtimeJdbc);
-                fragmentContext
-                        .getBeanFactory()
-                        .registerSingleton("transactionManager", runtimeTxManager);
-                fragmentContext.refresh();
-                IdempotencyService runtimeIdempotency =
-                        new IdempotencyService(
-                                fragmentContext.getBean(AuthorizationOperationRepository.class),
-                                fragmentContext.getBean(AuthzPartitionRepository.class));
-                AuthorizationOperationService runtimeOperations =
-                        new AuthorizationOperationService(
-                                fragmentContext.getBean(AuthzPartitionRepository.class),
-                                fragmentContext.getBean(AuthzProjectionRepository.class),
-                                runtimeIdempotency);
-                ResourceMutationCoordinator runtimeCoordinator =
-                        new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);
-                AuditRecorder runtimeAudit = new AuditRecorder(runtimeJdbc);
-                MembershipService runtimeMemberships =
-                        new MembershipService(
-                                runtimeRepositories.getRepository(CenterMembershipRepository.class),
-                                runtimeRepositories.getRepository(UserAccountRepository.class),
-                                runtimeRepositories.getRepository(WorkspaceRepository.class),
-                                new SubscriptionPolicy(
-                                        runtimeRepositories.getRepository(
-                                                SubscriptionPeriodRepository.class)),
-                                runtimeIdempotency,
-                                mock(InitialCredentialService.class),
-                                mock(MembershipPolicyProjector.class),
-                                runtimeCoordinator,
-                                runtimeAudit);
-                ResultPolicyProjector runtimeResultProjector =
-                        new ResultPolicyProjector(
-                                runtimeRepositories.getRepository(SampleResultRepository.class),
-                                runtimeRepositories.getRepository(
-                                        com.giaokhoa.verification.repository
-                                                .VerificationAuthorizationPartitionRepository
-                                                .class),
-                                runtimeRepositories.getRepository(
-                                        TeachingAssignmentRepository.class),
-                                runtimeRepositories.getRepository(EnrollmentRepository.class),
-                                runtimeRepositories.getRepository(
-                                        com.giaokhoa.verification.repository
-                                                .VerificationWorkspaceRepository.class),
-                                runtimeRepositories.getRepository(
-                                        com.giaokhoa.verification.repository
-                                                .VerificationUserAccountRepository.class),
-                                runtimeRepositories.getRepository(GuardianLinkRepository.class),
-                                runtimeMemberships,
-                                runtimeWorkspaceTx,
-                                runtimeOperations,
-                                runtimeTxManager);
-                GuardianPolicyProjector runtimeProjector =
-                        new GuardianPolicyProjector(
-                                runtimeRepositories.getRepository(GuardianLinkRepository.class),
-                                runtimeRepositories.getRepository(
-                                        com.giaokhoa.guardians.repository
-                                                .GuardianUserAccountRepository.class),
-                                runtimeRepositories.getRepository(
-                                        com.giaokhoa.guardians.repository
-                                                .GuardianAuthorizationPartitionRepository.class),
-                                runtimeMemberships,
-                                runtimeWorkspaceTx,
-                                directory,
-                                runtimeOperations,
-                                new CenterPolicyProjector(
-                                        runtimeRepositories.getRepository(
-                                                CenterMembershipRepository.class),
-                                        runtimeRepositories.getRepository(
-                                                WorkspaceRepository.class),
-                                        runtimeRepositories.getRepository(
-                                                UserAccountRepository.class),
-                                        runtimeRepositories.getRepository(
-                                                SubscriptionPeriodRepository.class),
-                                        directory),
-                                runtimeResultProjector,
-                                runtimeTxManager);
-                GuardianLinkService runtimeLinks =
-                        new GuardianLinkService(
-                                runtimeRepositories.getRepository(GuardianLinkRepository.class),
-                                runtimeRepositories.getRepository(
-                                        com.giaokhoa.guardians.repository
-                                                .GuardianWorkspaceRepository.class),
-                                runtimeMemberships,
-                                runtimeWorkspaceTx,
-                                runtimeIdempotency,
-                                runtimeProjector,
-                                runtimeCoordinator,
-                                runtimeAudit);
-                TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
+                try (EntityManagerFactory runtimeEmf =
+                                Objects.requireNonNull(runtimeEmfBean.getObject());
+                        var fragmentContext = new AnnotationConfigApplicationContext()) {
+                    JpaTransactionManager runtimeTxManager = new JpaTransactionManager(runtimeEmf);
+                    JpaRepositoryFactory runtimeRepositories =
+                            new JpaRepositoryFactory(
+                                    SharedEntityManagerCreator.createSharedEntityManager(
+                                            runtimeEmf));
+                    WorkspaceTransaction runtimeWorkspaceTx =
+                            new WorkspaceTransaction(runtimeJdbc, runtimeTxManager);
+                    // Repository có fragment của module authorization chỉ đăng ký được qua tầng
+                    // cấu hình EnableJpaRepositories nên làn runtime dựng một context tối thiểu
+                    // dùng lại đúng EMF, JdbcTemplate và transaction manager của role runtime.
+                    fragmentContext.register(RuntimeFragmentRepositories.class);
+                    fragmentContext
+                            .getBeanFactory()
+                            .registerSingleton("entityManagerFactory", runtimeEmf);
+                    fragmentContext.getBeanFactory().registerSingleton("jdbcTemplate", runtimeJdbc);
+                    fragmentContext
+                            .getBeanFactory()
+                            .registerSingleton("transactionManager", runtimeTxManager);
+                    fragmentContext.refresh();
+                    IdempotencyService runtimeIdempotency =
+                            new IdempotencyService(
+                                    fragmentContext.getBean(AuthorizationOperationRepository.class),
+                                    fragmentContext.getBean(AuthzPartitionRepository.class));
+                    AuthorizationOperationService runtimeOperations =
+                            new AuthorizationOperationService(
+                                    fragmentContext.getBean(AuthzPartitionRepository.class),
+                                    fragmentContext.getBean(AuthzProjectionRepository.class),
+                                    runtimeIdempotency);
+                    ResourceMutationCoordinator runtimeCoordinator =
+                            new ResourceMutationCoordinator(runtimeJdbc, runtimeTxManager);
+                    AuditRecorder runtimeAudit = new AuditRecorder(runtimeJdbc);
+                    MembershipService runtimeMemberships =
+                            new MembershipService(
+                                    runtimeRepositories.getRepository(
+                                            CenterMembershipRepository.class),
+                                    runtimeRepositories.getRepository(UserAccountRepository.class),
+                                    runtimeRepositories.getRepository(WorkspaceRepository.class),
+                                    new SubscriptionPolicy(
+                                            runtimeRepositories.getRepository(
+                                                    SubscriptionPeriodRepository.class)),
+                                    runtimeIdempotency,
+                                    mock(InitialCredentialService.class),
+                                    mock(MembershipPolicyProjector.class),
+                                    runtimeCoordinator,
+                                    runtimeAudit);
+                    ResultPolicyProjector runtimeResultProjector =
+                            new ResultPolicyProjector(
+                                    runtimeRepositories.getRepository(SampleResultRepository.class),
+                                    runtimeRepositories.getRepository(
+                                            com.giaokhoa.verification.repository
+                                                    .VerificationAuthorizationPartitionRepository
+                                                    .class),
+                                    runtimeRepositories.getRepository(
+                                            TeachingAssignmentRepository.class),
+                                    runtimeRepositories.getRepository(EnrollmentRepository.class),
+                                    runtimeRepositories.getRepository(
+                                            com.giaokhoa.verification.repository
+                                                    .VerificationWorkspaceRepository.class),
+                                    runtimeRepositories.getRepository(
+                                            com.giaokhoa.verification.repository
+                                                    .VerificationUserAccountRepository.class),
+                                    runtimeRepositories.getRepository(GuardianLinkRepository.class),
+                                    runtimeMemberships,
+                                    runtimeWorkspaceTx,
+                                    runtimeOperations,
+                                    runtimeTxManager);
+                    GuardianPolicyProjector runtimeProjector =
+                            new GuardianPolicyProjector(
+                                    runtimeRepositories.getRepository(GuardianLinkRepository.class),
+                                    runtimeRepositories.getRepository(
+                                            com.giaokhoa.guardians.repository
+                                                    .GuardianUserAccountRepository.class),
+                                    runtimeRepositories.getRepository(
+                                            com.giaokhoa.guardians.repository
+                                                    .GuardianAuthorizationPartitionRepository
+                                                    .class),
+                                    runtimeMemberships,
+                                    runtimeWorkspaceTx,
+                                    directory,
+                                    runtimeOperations,
+                                    new CenterPolicyProjector(
+                                            runtimeRepositories.getRepository(
+                                                    CenterMembershipRepository.class),
+                                            runtimeRepositories.getRepository(
+                                                    WorkspaceRepository.class),
+                                            runtimeRepositories.getRepository(
+                                                    UserAccountRepository.class),
+                                            runtimeRepositories.getRepository(
+                                                    SubscriptionPeriodRepository.class),
+                                            directory),
+                                    runtimeResultProjector,
+                                    runtimeTxManager);
+                    GuardianLinkService runtimeLinks =
+                            new GuardianLinkService(
+                                    runtimeRepositories.getRepository(GuardianLinkRepository.class),
+                                    runtimeRepositories.getRepository(
+                                            com.giaokhoa.guardians.repository
+                                                    .GuardianWorkspaceRepository.class),
+                                    runtimeMemberships,
+                                    runtimeWorkspaceTx,
+                                    runtimeIdempotency,
+                                    runtimeProjector,
+                                    runtimeCoordinator,
+                                    runtimeAudit);
+                    TransactionTemplate runtimeTx = new TransactionTemplate(runtimeTxManager);
 
-                assertEquals(
-                        0,
-                        runtimeJdbc.queryForObject(
-                                "SELECT count(*) FROM guardian_link", Integer.class),
-                        "Không có context thì role runtime không thấy hàng nào (fail-closed)");
-                Objects.requireNonNull(
-                        runtimeTx.execute(_ ->
-                                runtimeLinks.requestLink(
-                                        center.parentId(),
-                                        center.workspaceId(),
-                                        center.studentX(),
-                                        key(),
-                                        hash())));
-                assertEquals(
-                        0,
-                        runtimeJdbc.queryForObject(
-                                "SELECT count(*) FROM guardian_link", Integer.class),
-                        "Ngoài transaction có context, hàng vẫn vô hình với role runtime");
-                Integer visible =
-                        Objects.requireNonNull(
-                                runtimeTx.execute(_ -> {
-                                    runtimeWorkspaceTx.applyContext(center.workspaceId());
-                                    return Objects.requireNonNull(
-                                            runtimeJdbc.queryForObject(
-                                                    "SELECT count(*) FROM guardian_link",
-                                                    Integer.class));
-                                }));
-                assertEquals(1, visible, "Đúng context workspace thì thấy đúng hàng của nó");
-                assertThrows(
-                        DataAccessException.class,
-                        () ->
-                                runtimeTx.executeWithoutResult(_ -> {
-                                    runtimeWorkspaceTx.applyContext(center.workspaceId());
-                                    runtimeJdbc.update(
-                                            "INSERT INTO guardian_link (id, workspace_id,"
-                                                    + " parent_user_id, student_user_id,"
-                                                    + " state, requested_by) VALUES"
-                                                    + " (?, ?, ?, ?, 'REQUESTED', ?)",
-                                            UUID.randomUUID(),
-                                            UUID.randomUUID(),
+                    assertEquals(
+                            0,
+                            runtimeJdbc.queryForObject(
+                                    "SELECT count(*) FROM guardian_link", Integer.class),
+                            "Không có context thì role runtime không thấy hàng nào (fail-closed)");
+                    Objects.requireNonNull(
+                            runtimeTx.execute(_ ->
+                                    runtimeLinks.requestLink(
                                             center.parentId(),
+                                            center.workspaceId(),
                                             center.studentX(),
-                                            center.parentId());
-                                }),
-                        "Ghi hàng của workspace khác với context bị WITH CHECK của RLS chặn");
-                LinkSnapshot created = linkSnapshot(center.workspaceId(), center.studentX());
-                HttpProblemException crossWorkspace =
-                        assertThrows(
-                                HttpProblemException.class,
-                                () ->
-                                        runtimeTx.execute(_ ->
-                                                runtimeLinks.decideLink(
-                                                        center.managerId(),
-                                                        otherWorkspace,
-                                                        created.id(),
-                                                        "APPROVE",
-                                                        created.version(),
-                                                        key(),
-                                                        hash())));
-                assertEquals(
-                        HttpStatus.NOT_FOUND,
-                        crossWorkspace.getStatus(),
-                        "Link của workspace khác vô hình qua service dưới role runtime");
-            } finally {
-                if (runtimeEmf != null) {
-                    runtimeEmf.close();
+                                            key(),
+                                            hash())));
+                    assertEquals(
+                            0,
+                            runtimeJdbc.queryForObject(
+                                    "SELECT count(*) FROM guardian_link", Integer.class),
+                            "Ngoài transaction có context, hàng vẫn vô hình với role runtime");
+                    Integer visible =
+                            Objects.requireNonNull(
+                                    runtimeTx.execute(_ -> {
+                                        runtimeWorkspaceTx.applyContext(center.workspaceId());
+                                        return Objects.requireNonNull(
+                                                runtimeJdbc.queryForObject(
+                                                        "SELECT count(*) FROM guardian_link",
+                                                        Integer.class));
+                                    }));
+                    assertEquals(1, visible, "Đúng context workspace thì thấy đúng hàng của nó");
+                    assertThrows(
+                            DataAccessException.class,
+                            () ->
+                                    runtimeTx.executeWithoutResult(_ -> {
+                                        runtimeWorkspaceTx.applyContext(center.workspaceId());
+                                        runtimeJdbc.update(
+                                                "INSERT INTO guardian_link (id, workspace_id,"
+                                                        + " parent_user_id, student_user_id,"
+                                                        + " state, requested_by) VALUES"
+                                                        + " (?, ?, ?, ?, 'REQUESTED', ?)",
+                                                UUID.randomUUID(),
+                                                UUID.randomUUID(),
+                                                center.parentId(),
+                                                center.studentX(),
+                                                center.parentId());
+                                    }),
+                            "Ghi hàng của workspace khác với context bị WITH CHECK của RLS chặn");
+                    LinkSnapshot created = linkSnapshot(center.workspaceId(), center.studentX());
+                    HttpProblemException crossWorkspace =
+                            assertThrows(
+                                    HttpProblemException.class,
+                                    () ->
+                                            runtimeTx.execute(_ ->
+                                                    runtimeLinks.decideLink(
+                                                            center.managerId(),
+                                                            otherWorkspace,
+                                                            created.id(),
+                                                            "APPROVE",
+                                                            created.version(),
+                                                            key(),
+                                                            hash())));
+                    assertEquals(
+                            HttpStatus.NOT_FOUND,
+                            crossWorkspace.getStatus(),
+                            "Link của workspace khác vô hình qua service dưới role runtime");
                 }
+            } finally {
                 if (runtimeDataSource != null) {
                     runtimeDataSource.destroy();
                 }

@@ -67,13 +67,12 @@ public class TeachingScopePreconditions {
     public Optional<WorkspaceInfo> workspaceInfo(UUID workspaceId) {
         return workspaces
                 .findById(workspaceId)
-                .map(
-                        workspace ->
-                                new WorkspaceInfo(
-                                        workspace.getId(),
-                                        workspace.getKind().name(),
-                                        workspace.getState(),
-                                        workspace.getOwnerUserId()));
+                .map(workspace ->
+                        new WorkspaceInfo(
+                                workspace.getId(),
+                                workspace.getKind().name(),
+                                workspace.getState(),
+                                workspace.getOwnerUserId()));
     }
 
     /** Workspace giảng dạy hợp lệ: đang ACTIVE và là center hoặc personal. */
@@ -182,18 +181,16 @@ public class TeachingScopePreconditions {
                 || workspace.get().getOwnerUserId() == null) {
             return Optional.empty();
         }
-        return accounts
-                .findById(workspace.get().getOwnerUserId())
+        return accounts.findById(workspace.get().getOwnerUserId())
                 .map(account -> new UserAccountRef(account.getId(), account.getKeycloakSub()));
     }
 
     /** Mọi kỳ gói đã xác nhận của workspace, theo thứ tự hiệu lực — nguồn gate của projector. */
     public List<SubscriptionPeriod> subscriptionPeriods(UUID workspaceId) {
         return periods.findByWorkspaceIdOrderByValidFromAscIdAsc(workspaceId).stream()
-                .map(
-                        period ->
-                                new SubscriptionPeriod(
-                                        period.getId(), period.getValidFrom(), period.getExpiresAt()))
+                .map(period ->
+                        new SubscriptionPeriod(
+                                period.getId(), period.getValidFrom(), period.getExpiresAt()))
                 .toList();
     }
 

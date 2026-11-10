@@ -517,8 +517,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
                         + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
-        RuntimeJpaRepositories runtime = new RuntimeJpaRepositories(runtimeDataSource);
-        try {
+        try (var runtime = new RuntimeJpaRepositories(runtimeDataSource)) {
             JdbcTemplate runtimeJdbc = new JdbcTemplate(runtimeDataSource);
             runtimeJdbc.execute("SET search_path TO " + SCHEMA + ",public");
             WorkspaceTransaction runtimeWorkspaceTx =
@@ -614,7 +613,6 @@ class TeachingServiceIT extends IntegrationEnvironment {
                                             _ -> runtimeClasses.getClass(other, created.id())));
             assertEquals(HttpStatus.NOT_FOUND, cross.getStatus(), "Workspace khác vẫn vô hình");
         } finally {
-            runtime.close();
             if (runtimeDataSource != null) {
                 runtimeDataSource.destroy();
             }

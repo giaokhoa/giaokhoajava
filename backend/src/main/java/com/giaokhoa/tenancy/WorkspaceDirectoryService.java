@@ -33,6 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class WorkspaceDirectoryService {
+    private static final String ACTIVE = "ACTIVE";
+
     private final WorkspaceRepository workspaces;
     private final CenterMembershipRepository memberships;
 
@@ -57,7 +59,7 @@ public class WorkspaceDirectoryService {
         List<ListedWorkspace> listed = new ArrayList<>();
         for (Workspace personal :
                 workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, actorUserId)) {
-            if ("ACTIVE".equals(personal.getState())) {
+            if (ACTIVE.equals(personal.getState())) {
                 listed.add(listed(personal));
             }
         }
@@ -69,7 +71,7 @@ public class WorkspaceDirectoryService {
                         .distinct()
                         .toList();
         workspaces
-                .findByIdInAndKindAndState(centerWorkspaceIds, Workspace.Kind.CENTER, "ACTIVE")
+                .findByIdInAndKindAndState(centerWorkspaceIds, Workspace.Kind.CENTER, ACTIVE)
                 .stream()
                 // Thứ tự id theo đúng cách PostgreSQL so sánh uuid (theo byte), không theo
                 // UUID.compareTo của Java vốn so sánh long có dấu.

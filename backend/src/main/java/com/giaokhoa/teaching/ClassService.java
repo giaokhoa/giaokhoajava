@@ -2,6 +2,7 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
@@ -13,7 +14,6 @@ import com.giaokhoa.teaching.repository.RosterListItem;
 import com.giaokhoa.teaching.repository.SchoolClassRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;

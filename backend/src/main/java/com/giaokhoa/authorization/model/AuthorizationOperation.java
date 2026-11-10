@@ -75,7 +75,6 @@ public class AuthorizationOperation {
     @Column(name = "last_error_code", length = 64)
     private @Nullable String lastErrorCode;
 
-
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -179,7 +178,6 @@ public class AuthorizationOperation {
     public void setLastErrorCode(@Nullable String lastErrorCode) {
         this.lastErrorCode = lastErrorCode;
     }
-
 
     public Instant getCreatedAt() {
         return createdAt;

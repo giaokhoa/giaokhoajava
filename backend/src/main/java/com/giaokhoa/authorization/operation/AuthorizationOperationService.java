@@ -187,9 +187,7 @@ public class AuthorizationOperationService {
                         projections
                                 .findByTargetKeyIn(
                                         changes.stream()
-                                                .flatMap(
-                                                        change ->
-                                                                change.projections().stream())
+                                                .flatMap(change -> change.projections().stream())
                                                 .map(DesiredProjection::targetKey)
                                                 .toList())
                                 .stream()

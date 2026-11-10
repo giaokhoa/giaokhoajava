@@ -2,6 +2,7 @@ package com.giaokhoa.identity.eligibility;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,7 +59,7 @@ class IdentityEligibilityServiceTest {
                     operations,
                     mock(com.giaokhoa.subscriptions.PersonalEntitlementProjector.class));
 
-    private @Nullable UserAccount account;
+    private @Nullable UserAccount accountFixture;
 
     @Test
     void verifiedSelfRegisteredAccountRecordsTheEligibilitySourceThroughTheAccountFence() {
@@ -116,7 +117,7 @@ class IdentityEligibilityServiceTest {
         assertTrue(operation.isEmpty());
         verifyNoInteractions(operations);
         // Profile khớp dữ kiện đã ghi: account không bị đồng bộ đổi gì.
-        assertEquals(null, account().getEmail());
+        assertNull(account().getEmail());
         assertFalse(account().isEmailVerified());
     }
 
@@ -238,11 +239,11 @@ class IdentityEligibilityServiceTest {
     }
 
     private UserAccount account() {
-        return java.util.Objects.requireNonNull(account, "account");
+        return java.util.Objects.requireNonNull(accountFixture, "account");
     }
 
     private void account(String origin, boolean emailVerified, @Nullable String email) {
-        account =
+        accountFixture =
                 new UserAccount(
                         ACTOR,
                         SUBJECT,
@@ -251,7 +252,7 @@ class IdentityEligibilityServiceTest {
                         emailVerified,
                         UserAccount.Origin.valueOf(origin),
                         "ACTIVE");
-        when(accounts.findById(ACTOR)).thenReturn(Optional.of(account));
+        when(accounts.findById(ACTOR)).thenReturn(Optional.of(accountFixture));
         when(workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, ACTOR))
                 .thenReturn(List.of());
         boolean recordedEligible = "CENTER_ISSUED".equals(origin) || emailVerified;

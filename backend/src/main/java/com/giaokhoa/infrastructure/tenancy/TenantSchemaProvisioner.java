@@ -157,29 +157,32 @@ public class TenantSchemaProvisioner {
         migrationJdbc.execute(
                 "DO $$ BEGIN"
                         + " IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'giaokhoa_runtime') THEN"
-                        + " EXECUTE format('GRANT USAGE ON SCHEMA %I TO giaokhoa_runtime', '"
-                        + schema
-                        + "');"
-                        + " EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE"
-                        + " ON ALL TABLES IN SCHEMA %I TO giaokhoa_runtime', '"
-                        + schema
-                        + "');"
-                        + " EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES"
-                        + " IN SCHEMA %I TO giaokhoa_runtime', '"
-                        + schema
-                        + "');"
+                        + executeFormat("GRANT USAGE ON SCHEMA %I TO giaokhoa_runtime", schema)
+                        + executeFormat(
+                                "GRANT SELECT, INSERT, UPDATE, DELETE"
+                                        + " ON ALL TABLES IN SCHEMA %I TO giaokhoa_runtime",
+                                schema)
+                        + executeFormat(
+                                "GRANT USAGE, SELECT ON ALL SEQUENCES"
+                                        + " IN SCHEMA %I TO giaokhoa_runtime",
+                                schema)
                         // Default privileges gắn với role migration đang chạy Flyway của dòng
                         // tenant: bảng/sequence do các migration tenant sau này tạo trong schema
                         // (fan-out phát hành) tự được grant, không phụ thuộc grant chạy lại.
-                        + " EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I"
-                        + " GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES"
-                        + " TO giaokhoa_runtime', '"
-                        + schema
-                        + "');"
-                        + " EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I"
-                        + " GRANT USAGE, SELECT ON SEQUENCES TO giaokhoa_runtime', '"
-                        + schema
-                        + "');"
+                        + executeFormat(
+                                "ALTER DEFAULT PRIVILEGES IN SCHEMA %I"
+                                        + " GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES"
+                                        + " TO giaokhoa_runtime",
+                                schema)
+                        + executeFormat(
+                                "ALTER DEFAULT PRIVILEGES IN SCHEMA %I"
+                                        + " GRANT USAGE, SELECT ON SEQUENCES TO giaokhoa_runtime",
+                                schema)
                         + " END IF; END $$");
+    }
+
+    /** Một lệnh grant chạy qua format() của khối DO: thân lệnh chứa %I cho tên schema. */
+    private static String executeFormat(String body, String schema) {
+        return " EXECUTE format('" + body + "', '" + schema + "');";
     }
 }

@@ -539,8 +539,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             ProjectionReconciler.desiredHash(
                                     target,
                                     "enter",
-                                    entitlementProjector
-                                            .bundleDescriptors(actor.workspace())),
+                                    entitlementProjector.bundleDescriptors(actor.workspace())),
                             actor.account(),
                             actor.workspacePartition(),
                             target);
@@ -713,8 +712,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                     ProjectionReconciler.desiredHash(
                             targetKey,
                             scope,
-                            entitlementProjector
-                                    .bundleDescriptors(actor.workspace()));
+                            entitlementProjector.bundleDescriptors(actor.workspace()));
             try (var graph = nativeGate.partiallyProvisionApplicationResource(targetKey, scope)) {
                 UUID projection = UUID.randomUUID();
                 var operation =

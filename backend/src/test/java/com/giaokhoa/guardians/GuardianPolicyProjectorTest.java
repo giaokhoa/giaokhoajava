@@ -18,9 +18,9 @@ import com.giaokhoa.guardians.repository.GuardianAuthorizationPartitionRepositor
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.MembershipService;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.time.Instant;
@@ -43,7 +43,8 @@ class GuardianPolicyProjectorTest {
     private final GuardianUserAccountRepository userAccounts =
             mock(GuardianUserAccountRepository.class);
     private final MembershipService memberships = mock(MembershipService.class);
-    private final AuthorizationProvisioningClient directory = mock(AuthorizationProvisioningClient.class);
+    private final AuthorizationProvisioningClient directory =
+            mock(AuthorizationProvisioningClient.class);
 
     @DisplayName(
             "Liên kết lịch sử đọc một live snapshot cho mỗi phụ huynh thay vì cho từng cặp phụ huynh–học sinh")

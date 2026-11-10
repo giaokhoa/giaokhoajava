@@ -143,18 +143,25 @@ public class ProjectionWorker {
                             .findLiveOrderByRecordedSeq(
                                     LIVE_OPERATION_STATES, PageRequest.of(0, CLAIM_SCAN_LIMIT))
                             .stream()
-                            .map(operation ->
-                                    new QueueRow(
-                                            operation.getId(),
-                                            operation.getAffectedPartitions(),
-                                            operation.getAffectedRevisions(),
-                                            operation.getAttemptCount(),
-                                            operation.getState() == State.APPLYING
-                                                    ? !operation.getUpdatedAt().isAfter(staleBefore)
-                                                    : operation.getNextAttemptAt() == null
-                                                            || !operation
-                                                                    .getNextAttemptAt()
-                                                                    .isAfter(now)))
+                            .map(operation -> {
+                                // Mốc thời gian đọc một lần vào biến cục bộ: APPLYING
+                                // xét độ cũ theo updatedAt, các trạng thái còn lại xét
+                                // lịch thử lại; mốc vắng nghĩa là tới hạn ngay.
+                                boolean due;
+                                if (operation.getState() == State.APPLYING) {
+                                    Instant updatedAt = operation.getUpdatedAt();
+                                    due = updatedAt == null || !updatedAt.isAfter(staleBefore);
+                                } else {
+                                    Instant nextAttemptAt = operation.getNextAttemptAt();
+                                    due = nextAttemptAt == null || !nextAttemptAt.isAfter(now);
+                                }
+                                return new QueueRow(
+                                        operation.getId(),
+                                        operation.getAffectedPartitions(),
+                                        operation.getAffectedRevisions(),
+                                        operation.getAttemptCount(),
+                                        due);
+                            })
                             .toList();
             // Mẫu hàng đợi PostgreSQL: các dòng tới hạn được khóa FOR UPDATE SKIP LOCKED, nên
             // một dòng instance khác đang claim không bao giờ xuất hiện ở đây; điều kiện claim

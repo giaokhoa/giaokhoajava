@@ -11,7 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
-import java.util.HashSet;
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
@@ -64,7 +64,7 @@ public class CenterMembership {
     @CollectionTable(name = "membership_role", joinColumns = @JoinColumn(name = "membership_id"))
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 16)
-    private Set<MembershipRole.Role> roles = new HashSet<>();
+    private Set<MembershipRole.Role> roles = EnumSet.noneOf(MembershipRole.Role.class);
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)

@@ -1,9 +1,9 @@
 package com.giaokhoa.authorization;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
@@ -13,11 +13,11 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.OperationController;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.identity.model.RecoveryMutation;
 import com.giaokhoa.identity.repository.RecoveryMutationRepository;
 import com.giaokhoa.identity.repository.RecoveryRequestRepository;
-import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
-import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.persistence.EntityManager;

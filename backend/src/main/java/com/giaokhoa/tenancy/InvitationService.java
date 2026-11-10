@@ -288,9 +288,8 @@ public class InvitationService {
                                         "Chưa có tài khoản cho danh tính này."));
         // Email đích chỉ ghép được khi account hiện hành mang đúng email đó và email đã xác
         // minh: khớp tên hay email chưa xác minh đều không chứng minh được quyền sở hữu đích.
-        if (!account.isEmailVerified()
-                || account.getEmail() == null
-                || !account.getEmail().equalsIgnoreCase(targetEmail)) {
+        String email = account.getEmail();
+        if (!account.isEmailVerified() || email == null || !email.equalsIgnoreCase(targetEmail)) {
             throw targetMismatch();
         }
     }

@@ -6,6 +6,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.model.LibraryItem;
 import com.giaokhoa.resources.model.ResourceAssignment;
 import com.giaokhoa.resources.model.ResourceDependency;
@@ -14,8 +15,6 @@ import com.giaokhoa.resources.model.ShareGrant;
 import com.giaokhoa.resources.repository.CanonicalResourceRepository;
 import com.giaokhoa.resources.repository.GrantRef;
 import com.giaokhoa.resources.repository.LibraryItemRepository;
-import com.giaokhoa.verification.model.SampleActionMutation;
-import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
@@ -26,7 +25,8 @@ import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
 import com.giaokhoa.resources.repository.ShareGrantRepository;
 import com.giaokhoa.resources.repository.VersionMetadata;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.verification.model.SampleActionMutation;
+import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -312,9 +312,13 @@ public class ResourceShareService {
                 throw forbidden();
             }
             // Hết hạn là trạng thái suy ra từ thời gian: grant điều phối đã qua cửa sổ hiệu lực
-            // thì không còn cho chia tiếp, dù state trên dòng vẫn ACCEPTED.
-            if (grant.getValidFrom().isAfter(now)
-                    || (grant.getExpiresAt() != null && !grant.getExpiresAt().isAfter(now))) {
+            // thì không còn cho chia tiếp, dù state trên dòng vẫn ACCEPTED. Grant không có mốc
+            // bắt đầu hiệu lực thì không chứng minh được cửa sổ: chặn theo hướng fail-closed.
+            Instant validFrom = grant.getValidFrom();
+            Instant expiresAt = grant.getExpiresAt();
+            if (validFrom == null
+                    || validFrom.isAfter(now)
+                    || (expiresAt != null && !expiresAt.isAfter(now))) {
                 throw forbidden();
             }
             List<String> grantScopes = ResourcePolicyProjector.mapActions(grant.getActions());
@@ -494,9 +498,7 @@ public class ResourceShareService {
                 Objects.requireNonNull(
                                 workspaces.inWorkspace(
                                         row.sourceWorkspaceId(),
-                                        () ->
-                                                versions.findById(
-                                                        grant.getSourceVersionId())),
+                                        () -> versions.findById(grant.getSourceVersionId())),
                                 "source version")
                         .orElseThrow(ResourceShareService::notFound);
         String sourceBody =

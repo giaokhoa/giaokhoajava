@@ -30,8 +30,8 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * Client quyết định UMA cho user của phiên. Mỗi lần gọi hỏi Keycloak về mọi cặp resource/scope
- * bắt buộc trong đúng một request UMA (nhiều tham số {@code permission}, {@code
+ * Client quyết định UMA cho user của phiên. Mỗi lần gọi hỏi Keycloak về mọi cặp resource/scope bắt
+ * buộc trong đúng một request UMA (nhiều tham số {@code permission}, {@code
  * response_mode=decision}) bằng token của chính user; service account không bao giờ đánh giá thay
  * user, và một allow không bao giờ được cache hay dùng lại cho request sau. Authorized client
  * manager làm mới access token đã hết hạn từ refresh token của phiên thay vì từ chối nó.
@@ -125,8 +125,7 @@ public class KeycloakDecisionClient {
         return client.getAccessToken().getTokenValue();
     }
 
-    private boolean decide(
-            String accessToken, List<RequiredPermissions.Permission> permissions) {
+    private boolean decide(String accessToken, List<RequiredPermissions.Permission> permissions) {
         Map<String, Object> answer;
         try {
             answer =
@@ -151,8 +150,7 @@ public class KeycloakDecisionClient {
         return decision;
     }
 
-    private MultiValueMap<String, String> form(
-            List<RequiredPermissions.Permission> permissions) {
+    private MultiValueMap<String, String> form(List<RequiredPermissions.Permission> permissions) {
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", GRANT_TYPE);
         form.add("audience", audience);

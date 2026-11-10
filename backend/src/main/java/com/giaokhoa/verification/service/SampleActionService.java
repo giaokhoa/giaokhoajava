@@ -7,11 +7,11 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.ResourceLibraryService;
 import com.giaokhoa.resources.ResourceShareService;
 import com.giaokhoa.resources.model.ResourceVersion;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import com.giaokhoa.verification.dto.CourseSubjectStateView;
@@ -70,6 +70,7 @@ public class SampleActionService {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Duration PROJECTION_WAIT = Duration.ofSeconds(60);
     private static final String OPERATION_SUCCEEDED = "SUCCEEDED";
+    private static final String RESULT_TARGET = "RESULT";
 
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
@@ -580,7 +581,7 @@ public class SampleActionService {
                                                                 workspaceId,
                                                                 idempotencyKey,
                                                                 payloadHash,
-                                                                "RESULT",
+                                                                RESULT_TARGET,
                                                                 request.resultId())
                                                         .orElseGet(() ->
                                                                 applyGrade(
@@ -622,7 +623,7 @@ public class SampleActionService {
                                                                         workspaceId,
                                                                         idempotencyKey,
                                                                         payloadHash,
-                                                                        "RESULT",
+                                                                        RESULT_TARGET,
                                                                         request.resultId())
                                                                 .orElseGet(() ->
                                                                         applyPublish(
@@ -646,7 +647,7 @@ public class SampleActionService {
         result.grade(request.scoreStub(), request.commentStub(), actorUserId);
         results.flush();
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId());
+                request.resultId(), OPERATION_SUCCEEDED, true, RESULT_TARGET, request.resultId());
     }
 
     private SampleActionResult applyPublish(UUID workspaceId, SampleActionRequest request) {
@@ -658,7 +659,7 @@ public class SampleActionService {
         result.publish(Instant.now());
         results.flush();
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId());
+                request.resultId(), OPERATION_SUCCEEDED, true, RESULT_TARGET, request.resultId());
     }
 
     private SampleResult resultForUpdate(UUID workspaceId, UUID resultId) {

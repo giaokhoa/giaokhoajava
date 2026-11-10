@@ -22,6 +22,14 @@ import org.springframework.data.repository.query.Param;
  */
 public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
 
+    /** Mệnh đề SET chung của mọi phép thu hồi hiện hành: đóng trạng thái, đóng dấu thời gian. */
+    String REVOKE_SET_CLAUSE =
+            "UPDATE Enrollment e SET e.state = 'REVOKED', e.revokedAt = CURRENT_TIMESTAMP,"
+                    + " e.version = e.version + 1, e.updatedAt = CURRENT_TIMESTAMP";
+
+    /** Mảnh WHERE lọc theo workspace và tập trạng thái hiện hành, dùng chung cho đọc và thu hồi. */
+    String BY_WORKSPACE_AND_STATES = " WHERE e.workspaceId = :workspaceId AND e.state IN :states";
+
     Optional<Enrollment> findByWorkspaceIdAndClassStudentIdAndCourseSubjectIdAndStateIn(
             UUID workspaceId, UUID classStudentId, UUID courseSubjectId, Collection<String> states);
 
@@ -95,15 +103,14 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     @Query(
             "SELECT cs.studentUserId AS studentUserId, e.courseSubjectId AS courseSubjectId"
                     + " FROM Enrollment e JOIN ClassStudent cs ON cs.id = e.classStudentId"
-                    + " WHERE e.workspaceId = :workspaceId AND e.state IN :states")
+                    + BY_WORKSPACE_AND_STATES)
     List<EnrolledStudentPair> findEnrolledPairsByWorkspaceIdAndStateIn(
             @Param("workspaceId") UUID workspaceId, @Param("states") Collection<String> states);
 
     /** Thu hồi mọi ghi danh hiện hành phụ thuộc một dòng roster, giữ nguyên hàng lịch sử. */
     @Modifying
     @Query(
-            "UPDATE Enrollment e SET e.state = 'REVOKED', e.revokedAt = CURRENT_TIMESTAMP,"
-                    + " e.version = e.version + 1, e.updatedAt = CURRENT_TIMESTAMP"
+            REVOKE_SET_CLAUSE
                     + " WHERE e.workspaceId = :workspaceId"
                     + " AND e.classStudentId = :classStudentId AND e.state IN :states")
     int revokeCurrentByClassStudentId(
@@ -114,9 +121,8 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     /** Thu hồi mọi ghi danh hiện hành của một học sinh, qua các dòng roster của họ. */
     @Modifying
     @Query(
-            "UPDATE Enrollment e SET e.state = 'REVOKED', e.revokedAt = CURRENT_TIMESTAMP,"
-                    + " e.version = e.version + 1, e.updatedAt = CURRENT_TIMESTAMP"
-                    + " WHERE e.workspaceId = :workspaceId AND e.state IN :states"
+            REVOKE_SET_CLAUSE
+                    + BY_WORKSPACE_AND_STATES
                     + " AND e.classStudentId IN (SELECT cs.id FROM ClassStudent cs"
                     + " WHERE cs.workspaceId = :workspaceId AND cs.studentUserId = :studentUserId)")
     int revokeCurrentByStudentUserId(
@@ -127,9 +133,8 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     /** Thu hồi mọi ghi danh hiện hành thuộc các môn–khóa của một lớp. */
     @Modifying
     @Query(
-            "UPDATE Enrollment e SET e.state = 'REVOKED', e.revokedAt = CURRENT_TIMESTAMP,"
-                    + " e.version = e.version + 1, e.updatedAt = CURRENT_TIMESTAMP"
-                    + " WHERE e.workspaceId = :workspaceId AND e.state IN :states"
+            REVOKE_SET_CLAUSE
+                    + BY_WORKSPACE_AND_STATES
                     + " AND e.courseSubjectId IN (SELECT cs.id FROM CourseSubject cs"
                     + " WHERE cs.workspaceId = :workspaceId AND cs.classId = :classId)")
     int revokeCurrentByClassId(
@@ -140,9 +145,8 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     /** Thu hồi mọi ghi danh hiện hành thuộc các môn–khóa của một khóa. */
     @Modifying
     @Query(
-            "UPDATE Enrollment e SET e.state = 'REVOKED', e.revokedAt = CURRENT_TIMESTAMP,"
-                    + " e.version = e.version + 1, e.updatedAt = CURRENT_TIMESTAMP"
-                    + " WHERE e.workspaceId = :workspaceId AND e.state IN :states"
+            REVOKE_SET_CLAUSE
+                    + BY_WORKSPACE_AND_STATES
                     + " AND e.courseSubjectId IN (SELECT cs.id FROM CourseSubject cs"
                     + " WHERE cs.workspaceId = :workspaceId AND cs.courseId = :courseId)")
     int revokeCurrentByCourseId(
@@ -153,8 +157,7 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     /** Thu hồi mọi ghi danh hiện hành của một môn–khóa. */
     @Modifying
     @Query(
-            "UPDATE Enrollment e SET e.state = 'REVOKED', e.revokedAt = CURRENT_TIMESTAMP,"
-                    + " e.version = e.version + 1, e.updatedAt = CURRENT_TIMESTAMP"
+            REVOKE_SET_CLAUSE
                     + " WHERE e.workspaceId = :workspaceId"
                     + " AND e.courseSubjectId = :courseSubjectId AND e.state IN :states")
     int revokeCurrentByCourseSubjectId(

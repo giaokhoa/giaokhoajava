@@ -1,7 +1,7 @@
 package com.giaokhoa.verification.repository;
 
-import com.giaokhoa.verification.dto.CourseSubjectStateView;
 import com.giaokhoa.teaching.model.CourseSubject;
+import com.giaokhoa.verification.dto.CourseSubjectStateView;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
