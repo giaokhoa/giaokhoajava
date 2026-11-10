@@ -138,7 +138,7 @@ public class SampleActionController {
             boolean completed,
             String targetType,
             UUID targetId,
-            @Nullable CorrectionService.CorrectionNoticeView correctionNotice) {}
+            CorrectionService.@Nullable CorrectionNoticeView correctionNotice) {}
 
     /** Thân bài của một resource version: đáp án không bao giờ nằm trong đáp án của route này. */
     public record ResourceBodyView(UUID resourceId, UUID versionId, String body) {}
