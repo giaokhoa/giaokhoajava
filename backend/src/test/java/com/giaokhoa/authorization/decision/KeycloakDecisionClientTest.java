@@ -72,8 +72,8 @@ class KeycloakDecisionClientTest {
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
         KeycloakDecisionClient client = client(builder, session);
 
-        expectDecision(server, "resource-a%23enter", "resource-b").andRespond(allowed());
-        expectDecision(server, "resource-b%23read", "resource-a").andRespond(allowed());
+        expectCombinedDecision(server, "resource-a%23enter", "resource-b%23read")
+                .andRespond(allowed());
 
         assertTrue(
                 client.isAllowed(
@@ -92,8 +92,7 @@ class KeycloakDecisionClientTest {
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
         KeycloakDecisionClient client = client(builder, session);
 
-        expectDecision(server, "resource-a%23enter", "resource-b").andRespond(allowed());
-        expectDecision(server, "resource-b%23read", "resource-a")
+        expectCombinedDecision(server, "resource-a%23enter", "resource-b%23read")
                 .andRespond(withStatus(HttpStatus.FORBIDDEN));
 
         assertFalse(
@@ -345,6 +344,25 @@ class KeycloakDecisionClientTest {
     private ResponseActions expectDecision(
             MockRestServiceServer server, String encodedPair, String otherResource) {
         return expectDecision(server, USER_TOKEN, encodedPair, otherResource);
+    }
+
+    private ResponseActions expectCombinedDecision(
+            MockRestServiceServer server, String firstPair, String secondPair) {
+        return server.expect(requestTo(TOKEN_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer " + USER_TOKEN))
+                .andExpect(content().contentType(MediaType.APPLICATION_FORM_URLENCODED))
+                .andExpect(
+                        content()
+                                .string(
+                                        allOf(
+                                                containsString("grant_type="),
+                                                containsString("uma-ticket"),
+                                                containsString("audience=" + AUDIENCE),
+                                                containsString("permission=" + firstPair),
+                                                containsString("permission=" + secondPair),
+                                                containsString("response_mode=decision"),
+                                                not(containsString("claim_token")))));
     }
 
     private ResponseActions expectDecision(
