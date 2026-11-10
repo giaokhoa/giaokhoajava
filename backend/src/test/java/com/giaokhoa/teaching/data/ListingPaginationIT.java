@@ -70,17 +70,13 @@ class ListingPaginationIT extends IntegrationEnvironment {
                         mock(ResourceMutationCoordinator.class));
 
         var page = service.pageMemberships(workspace, previous.toString(), 1);
-        assertEquals(
-                List.of(first),
-                page.items().stream().map(MembershipService.MembershipView::id).toList());
+        assertEquals(List.of(first), page.items().stream().map(row -> row.id()).toList());
         assertEquals(
                 Set.of(MembershipRole.Role.MANAGER, MembershipRole.Role.TEACHER),
                 Set.copyOf(page.items().getFirst().roles()));
         assertEquals(first.toString(), page.nextCursor());
         var last = service.pageMemberships(workspace, page.nextCursor(), 1);
-        assertEquals(
-                List.of(second),
-                last.items().stream().map(MembershipService.MembershipView::id).toList());
+        assertEquals(List.of(second), last.items().stream().map(row -> row.id()).toList());
         assertNull(last.nextCursor());
         for (String cursor :
                 List.of("bad", foreignCursor.toString(), UUID.randomUUID().toString())) {
@@ -118,13 +114,11 @@ class ListingPaginationIT extends IntegrationEnvironment {
         TeachingRepository repository = new TeachingRepository(jdbc);
         assertPages(
                 cursor -> repository.pageClasses(workspace, cursor, 1, teacher),
-                TeachingRepository.ClassRow::id,
+                row -> row.id(),
                 List.of(first, second));
         jdbc.update("UPDATE school_class SET state = 'REVOKED' WHERE id = ?", first);
         var next = repository.pageClasses(workspace, first.toString(), 1, teacher);
-        assertEquals(
-                List.of(second),
-                next.items().stream().map(TeachingRepository.ClassRow::id).toList());
+        assertEquals(List.of(second), next.items().stream().map(row -> row.id()).toList());
         assertNull(next.nextCursor());
         assertTrue(
                 repository
@@ -212,23 +206,23 @@ class ListingPaginationIT extends IntegrationEnvironment {
                 otherStudent);
         assertPages(
                 cursor -> repository.pageCourses(workspace, classId, cursor, 1),
-                TeachingRepository.CourseRow::id,
+                row -> row.id(),
                 courses);
         assertPages(
                 cursor -> repository.pageRoster(workspace, classId, cursor, 1),
-                TeachingRepository.RosterRow::id,
+                row -> row.id(),
                 roster);
         assertPages(
                 cursor -> repository.pageEnrollments(workspace, courseSubject, cursor, 1),
-                TeachingRepository.EnrollmentListRow::id,
+                row -> row.id(),
                 enrollments);
         assertPages(
                 cursor -> repository.pageTeachingAssignments(workspace, courseSubject, cursor, 1),
-                TeachingRepository.TeachingAssignmentRow::id,
+                row -> row.id(),
                 teachers);
         assertPages(
                 cursor -> repository.pageHomeroomAssignments(workspace, classId, cursor, 1),
-                TeachingRepository.HomeroomAssignmentRow::id,
+                row -> row.id(),
                 homerooms);
         assertTrue(
                 repository
