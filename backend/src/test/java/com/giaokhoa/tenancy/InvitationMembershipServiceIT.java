@@ -40,7 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -469,17 +468,12 @@ class InvitationMembershipServiceIT extends IntegrationEnvironment {
     // ---------- Dọn user Keycloak do luồng cấp học sinh tạo ----------
 
     private static void deleteKeycloakUser(String subject) {
-        try {
-            HTTP.delete()
-                    .uri(BASE + "/admin/realms/" + REALM + "/users/" + subject)
-                    .headers(headers -> headers.setBearerAuth(masterToken()))
-                    .retrieve()
-                    .toBodilessEntity();
-        } catch (RestClientResponseException ex) {
-            if (!ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
-                throw ex;
-            }
-        }
+        deleteWithConflictRetry(() ->
+                HTTP.delete()
+                        .uri(BASE + "/admin/realms/" + REALM + "/users/" + subject)
+                        .headers(headers -> headers.setBearerAuth(masterToken()))
+                        .retrieve()
+                        .toBodilessEntity());
     }
 
     private static String masterToken() {

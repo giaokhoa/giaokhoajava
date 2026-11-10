@@ -306,7 +306,7 @@ class PlatformProjectionIT extends IntegrationEnvironment {
 
     private record TestUser(String subject, String username, String password) {
         void delete() {
-            deleteResource(admin("/users/" + subject));
+            deleteWithConflictRetry(() -> deleteResource(admin("/users/" + subject)));
         }
     }
 

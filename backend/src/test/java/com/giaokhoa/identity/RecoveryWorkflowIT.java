@@ -621,7 +621,7 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
     }
 
     private void deleteUser(String userId) {
-        deleteStatic(admin("/users/" + userId));
+        deleteWithConflictRetry(() -> deleteStatic(admin("/users/" + userId)));
     }
 
     private String admin(String path) {

@@ -878,13 +878,7 @@ class RecoveryFlowIT extends IntegrationEnvironment {
     }
 
     private void deleteUser(String userId) {
-        try {
-            deleteStatic(admin("/users/" + userId));
-        } catch (RestClientResponseException ex) {
-            if (!ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
-                throw ex;
-            }
-        }
+        deleteWithConflictRetry(() -> deleteStatic(admin("/users/" + userId)));
     }
 
     private String admin(String path) {

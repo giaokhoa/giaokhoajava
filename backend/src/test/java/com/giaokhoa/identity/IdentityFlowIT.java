@@ -1166,7 +1166,7 @@ class IdentityFlowIT extends IntegrationEnvironment {
     }
 
     private void deleteUser(String userId) {
-        delete(admin("/users/" + userId));
+        deleteWithConflictRetry(() -> delete(admin("/users/" + userId)));
     }
 
     private String admin(String path) {

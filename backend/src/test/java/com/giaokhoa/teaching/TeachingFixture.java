@@ -647,7 +647,7 @@ abstract class TeachingFixture extends IntegrationEnvironment {
     }
 
     protected void deleteUser(String userId) {
-        deleteResource(admin("/users/" + userId));
+        deleteWithConflictRetry(() -> deleteResource(admin("/users/" + userId)));
     }
 
     protected void deleteResource(String uri) {
