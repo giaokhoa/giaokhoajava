@@ -2,6 +2,7 @@ package com.giaokhoa.authorization.fence;
 
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.shared.http.HttpProblemException;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +11,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.ColumnMapRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -86,17 +88,35 @@ public class AuthorizationFence {
     }
 
     private Snapshot lockAndVerify(Manifest manifest, @Nullable Map<UUID, Long> expected) {
-        Map<UUID, Long> revisions = new LinkedHashMap<>();
-        for (UUID partitionId : manifest.partitionIds()) {
+        // Một query khóa mọi partition của manifest: ORDER BY id giữ thứ tự khóa ổn định
+        // (thứ tự byte của UUID trùng thứ tự chuỗi mà manifest đã sắp xếp), rồi state và
+        // revision được đối chiếu trong bộ nhớ theo đúng thứ tự manifest.
+        Map<UUID, Map<String, Object>> locked = new HashMap<>();
+        List<UUID> partitionIds = manifest.partitionIds();
+        if (!partitionIds.isEmpty()) {
             List<Map<String, Object>> rows =
-                    jdbc.queryForList(
-                            "SELECT state, desired_revision, applied_revision"
-                                    + " FROM authz_partition WHERE id = ? FOR SHARE",
-                            partitionId);
-            if (rows.isEmpty()) {
+                    jdbc.query(
+                            "SELECT id, state, desired_revision, applied_revision"
+                                    + " FROM authz_partition WHERE id = ANY(?)"
+                                    + " ORDER BY id FOR SHARE",
+                            ps ->
+                                    ps.setArray(
+                                            1,
+                                            ps.getConnection()
+                                                    .createArrayOf(
+                                                            "uuid",
+                                                            partitionIds.toArray(new UUID[0]))),
+                            new ColumnMapRowMapper());
+            for (Map<String, Object> row : rows) {
+                locked.put((UUID) row.get("id"), row);
+            }
+        }
+        Map<UUID, Long> revisions = new LinkedHashMap<>();
+        for (UUID partitionId : partitionIds) {
+            Map<String, Object> row = locked.get(partitionId);
+            if (row == null) {
                 throw notReady();
             }
-            Map<String, Object> row = rows.getFirst();
             if (!(row.get("desired_revision") instanceof Number desiredRevision)
                     || !(row.get("applied_revision") instanceof Number appliedRevision)) {
                 throw notReady();
