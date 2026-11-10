@@ -1,42 +1,70 @@
 package com.giaokhoa.resources;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.resources.model.LibraryItem;
+import com.giaokhoa.resources.model.Resource;
+import com.giaokhoa.resources.model.ResourceAssignment;
+import com.giaokhoa.resources.model.ResourceDependency;
+import com.giaokhoa.resources.model.ResourceVersion;
+import com.giaokhoa.resources.model.ShareGrant;
+import com.giaokhoa.resources.repository.LibraryItemRepository;
+import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
+import com.giaokhoa.resources.repository.ResourceDependencyRepository;
+import com.giaokhoa.resources.repository.ResourceRepository;
+import com.giaokhoa.resources.repository.ResourceScopePreconditions;
+import com.giaokhoa.resources.repository.ResourceVersionRepository;
+import com.giaokhoa.resources.repository.ResourcesAuthorizationPartitionRepository;
+import com.giaokhoa.resources.repository.ResourcesSampleActivityRepository;
+import com.giaokhoa.resources.repository.ResourcesUserAccountRepository;
+import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
+import com.giaokhoa.resources.repository.ShareGrantRepository;
+import com.giaokhoa.tenancy.model.Workspace;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
-import javax.sql.DataSource;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Projector của resource version: nguồn sự thật duy nhất về desired native graph của các target
- * {@code workspace:{wid}:resource:{rid}:version:{vid}}, dựng thuần từ các dòng bền. Các nhánh nguồn
- * tách scope theo hợp đồng authorization và thân issue: chủ sở hữu native của resource (ở personal
- * là owner của workspace kèm gate kỳ gói cho các scope mở rộng; ở center là người tạo khi còn
- * membership ACTIVE, scope mở rộng gate theo kỳ gói của center), phân công tường minh {@code
- * resource_assignment} ACTIVE của đúng workspace ngữ cảnh, license {@code share_grant} đã ACCEPTED
- * cho workspace nhận với cửa sổ hiệu lực là time policy và phạm vi workspace cho phép là invariant
- * của nhánh, và học sinh qua hoạt động đã giao trên đúng version (chỉ {@code content.read}, không
- * bao giờ {@code answer.read}). Version hệ thống đã LOCKED chỉ cho {@code library.save} trước khi
- * lưu và cho đọc/dùng/fork sau khi đã có mục thư viện không gắn grant tại workspace nhận — chưa
- * nhận cập nhật thì version mới của nguồn không có nhánh nào ở workspace nhận. Bản fork phái sinh
- * từ một grant (cạnh dependency mang dấu {@code origin=FORK} và grant) chỉ còn nhánh license phái
- * sinh giới hạn ở các scope đọc/dùng của chính grant đó: nhánh owner/tác giả bị khử trên version
- * phái sinh để quyền của grantor không bị ghi đè bởi quyền sở hữu bản sao, và khi grant bị thu hồi
- * thì bản phái sinh mất mọi nguồn.
+ * {@code workspace:{wid}:resource:{rid}:version:{vid}}, dựng thuần từ các dòng bền qua các
+ * repository JPA của module. Các nhánh nguồn tách scope theo hợp đồng authorization và thân issue:
+ * chủ sở hữu native của resource (ở personal là owner của workspace kèm gate kỳ gói cho các scope
+ * mở rộng; ở center là người tạo khi còn membership ACTIVE, scope mở rộng gate theo kỳ gói của
+ * center), phân công tường minh {@code resource_assignment} ACTIVE của đúng workspace ngữ cảnh,
+ * license {@code share_grant} đã ACCEPTED cho workspace nhận với cửa sổ hiệu lực là time policy và
+ * phạm vi workspace cho phép là invariant của nhánh, và học sinh qua hoạt động đã giao trên đúng
+ * version (chỉ {@code content.read}, không bao giờ {@code answer.read}). Version hệ thống đã LOCKED
+ * chỉ cho {@code library.save} trước khi lưu và cho đọc/dùng/fork sau khi đã có mục thư viện không
+ * gắn grant tại workspace nhận — chưa nhận cập nhật thì version mới của nguồn không có nhánh nào ở
+ * workspace nhận. Bản phái sinh từ một grant (cạnh dependency mang dấu {@code origin=FORK} do fork
+ * ghi hoặc {@code origin=SHARE} do copy-on-share ghi, kèm grant) chỉ còn nhánh license phái sinh
+ * giới hạn ở các scope đọc/dùng của chính grant đó: nhánh owner/tác giả bị khử trên version phái
+ * sinh để quyền của grantor không bị ghi đè bởi quyền sở hữu bản sao, và khi grant bị thu hồi thì
+ * bản phái sinh mất mọi nguồn. Khi một grant tenant–tenant đã được vật chất hoá thành bản sao tại
+ * workspace nhận (copy-on-share), nhánh license trên target của version nguồn chỉ còn giữ scope
+ * {@code library.save} làm tay cầm lưu trữ — các scope đọc/dùng/fork/share trên bản gốc tắt, quyền
+ * thật sống trên target của bản sao.
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
  * workspace ngữ cảnh với scope danh nghĩa {@code content.read}; projection mang dependency là GRANT
@@ -58,6 +86,7 @@ public class ResourcePolicyProjector {
     private static final String BUNDLE_SCOPE =
             PermissionCatalog.ResourceVersionScope.CONTENT_READ.scopeName();
     private static final String FORK_ORIGIN_MARKER = "origin=FORK";
+    private static final String SHARE_ORIGIN_MARKER = "origin=SHARE";
 
     /** Giá trị cột workspace.kind cho không gian cá nhân. */
     private static final String PERSONAL_KIND = "PERSONAL";
@@ -98,22 +127,52 @@ public class ResourcePolicyProjector {
                     PermissionCatalog.ResourceVersionScope.ANSWER_READ.scopeName(),
                     PermissionCatalog.ResourceVersionScope.REVIEW.scopeName());
 
-    private final JdbcTemplate jdbc;
     private final AuthorizationOperationService operations;
     private final TransactionTemplate transactions;
+    private final ResourceVersionRepository versions;
+    private final ResourceRepository resources;
+    private final LibraryItemRepository libraryItems;
+    private final ShareGrantRepository grants;
+    private final ResourceDependencyRepository dependencies;
+    private final ResourceAssignmentRepository assignments;
+    private final ResourcesWorkspaceRepository workspaces;
+    private final ResourcesUserAccountRepository userAccounts;
+    private final ResourcesSampleActivityRepository activities;
+    private final ResourcesAuthorizationPartitionRepository partitions;
+    private final ResourceCopies copies;
+    private final ResourceScopePreconditions preconditions;
 
-    /**
-     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} dựng sẵn: template được tạo trong
-     * constructor nên projector không giữ tham chiếu tới đối tượng mutable từ bên ngoài (SpotBugs
-     * EI_EXPOSE_REP2); {@code DataSource} là singleton do Spring quản lý.
-     */
+    @PersistenceContext private EntityManager entityManager;
+
     public ResourcePolicyProjector(
-            DataSource dataSource,
             AuthorizationOperationService operations,
-            PlatformTransactionManager transactionManager) {
-        this.jdbc = new JdbcTemplate(dataSource);
+            PlatformTransactionManager transactionManager,
+            ResourceVersionRepository versions,
+            ResourceRepository resources,
+            LibraryItemRepository libraryItems,
+            ShareGrantRepository grants,
+            ResourceDependencyRepository dependencies,
+            ResourceAssignmentRepository assignments,
+            ResourcesWorkspaceRepository workspaces,
+            ResourcesUserAccountRepository userAccounts,
+            ResourcesSampleActivityRepository activities,
+            ResourcesAuthorizationPartitionRepository partitions,
+            ResourceCopies copies,
+            ResourceScopePreconditions preconditions) {
         this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.versions = versions;
+        this.resources = resources;
+        this.libraryItems = libraryItems;
+        this.grants = grants;
+        this.dependencies = dependencies;
+        this.assignments = assignments;
+        this.workspaces = workspaces;
+        this.userAccounts = userAccounts;
+        this.activities = activities;
+        this.partitions = partitions;
+        this.copies = copies;
+        this.preconditions = preconditions;
     }
 
     /** Scope danh nghĩa ghi trên projection row của mọi bundle resource version. */
@@ -129,6 +188,11 @@ public class ResourcePolicyProjector {
     /** Dấu mở đầu của {@code usage_constraints} trên cạnh provenance do fork ghi. */
     public static String forkOriginMarker() {
         return FORK_ORIGIN_MARKER;
+    }
+
+    /** Dấu mở đầu của {@code usage_constraints} trên cạnh provenance do copy-on-share ghi. */
+    public static String shareOriginMarker() {
+        return SHARE_ORIGIN_MARKER;
     }
 
     /**
@@ -205,56 +269,77 @@ public class ResourcePolicyProjector {
         List<String> targets =
                 transactions.execute(_ -> {
                     applyContext(workspaceId);
-                    return jdbc
-                            .query(
-                                    "SELECT DISTINCT resource_id, version_id FROM ("
-                                            + " SELECT r.id AS resource_id, v.id AS version_id"
-                                            + " FROM resource r JOIN resource_version v"
-                                            + " ON v.resource_id = r.id"
-                                            + " WHERE r.owner_workspace_id = ?"
-                                            + " UNION SELECT resource_id, version_id"
-                                            + " FROM library_item WHERE workspace_id = ?"
-                                            + " UNION SELECT source_resource_id,"
-                                            + " source_version_id FROM share_grant"
-                                            + " WHERE recipient_workspace_id = ?"
-                                            + " UNION SELECT resource_id, version_id"
-                                            + " FROM sample_activity WHERE workspace_id = ?"
-                                            + " UNION SELECT d.derived_resource_id,"
-                                            + " d.derived_version_id FROM resource_dependency d"
-                                            + " JOIN resource r ON r.id = d.derived_resource_id"
-                                            + " WHERE r.owner_workspace_id = ?"
-                                            + " UNION SELECT a.resource_id, v.id"
-                                            + " FROM resource_assignment a"
-                                            + " JOIN resource_version v"
-                                            + " ON v.resource_id = a.resource_id"
-                                            + " WHERE a.workspace_id = ?"
-                                            + " AND a.state = 'ACTIVE'"
-                                            + " AND a.resource_id IS NOT NULL"
-                                            + " UNION SELECT r.id, v.id"
-                                            + " FROM resource_assignment a"
-                                            + " JOIN resource r ON r.subject_id = a.subject_id"
-                                            + " JOIN resource_version v"
-                                            + " ON v.resource_id = r.id"
-                                            + " WHERE a.workspace_id = ?"
-                                            + " AND a.state = 'ACTIVE'"
-                                            + " AND a.resource_id IS NULL) pairs",
-                                    (rs, _) ->
-                                            NativePolicyTemplates.resourceVersionKey(
-                                                    workspaceId,
-                                                    rs.getObject("resource_id", UUID.class),
-                                                    rs.getObject("version_id", UUID.class)),
-                                    workspaceId,
-                                    workspaceId,
-                                    workspaceId,
-                                    workspaceId,
-                                    workspaceId,
-                                    workspaceId,
-                                    workspaceId)
-                            .stream()
-                            .sorted()
-                            .toList();
+                    Set<String> keys = new TreeSet<>();
+                    List<UUID> ownedResourceIds = resources.findIdsByOwnerWorkspaceId(workspaceId);
+                    for (ResourceVersion version : versionsOf(ownedResourceIds)) {
+                        keys.add(targetKey(workspaceId, version));
+                    }
+                    for (LibraryItem item : libraryItems.findByWorkspaceId(workspaceId)) {
+                        keys.add(
+                                NativePolicyTemplates.resourceVersionKey(
+                                        workspaceId, item.getResourceId(), item.getVersionId()));
+                    }
+                    for (ShareGrant grant : grants.findByRecipientWorkspaceId(workspaceId)) {
+                        keys.add(
+                                NativePolicyTemplates.resourceVersionKey(
+                                        workspaceId,
+                                        grant.getSourceResourceId(),
+                                        grant.getSourceVersionId()));
+                    }
+                    for (ResourcesSampleActivityRepository.ActivityPair pair :
+                            activities.findDistinctByWorkspaceId(workspaceId)) {
+                        keys.add(
+                                NativePolicyTemplates.resourceVersionKey(
+                                        workspaceId, pair.getResourceId(), pair.getVersionId()));
+                    }
+                    if (!ownedResourceIds.isEmpty()) {
+                        for (ResourceDependency dependency :
+                                dependencies.findByDerivedResourceIdIn(ownedResourceIds)) {
+                            keys.add(
+                                    NativePolicyTemplates.resourceVersionKey(
+                                            workspaceId,
+                                            dependency.getDerivedResourceId(),
+                                            dependency.getDerivedVersionId()));
+                        }
+                    }
+                    Set<UUID> assignedResourceIds = new LinkedHashSet<>();
+                    for (ResourceAssignment assignment :
+                            assignments.findByWorkspaceIdAndStateAndResourceIdIsNotNull(
+                                    workspaceId, ResourceAssignment.State.ACTIVE)) {
+                        assignedResourceIds.add(
+                                Objects.requireNonNull(assignment.getResourceId(), "resource_id"));
+                    }
+                    for (ResourceVersion version : versionsOf(List.copyOf(assignedResourceIds))) {
+                        keys.add(targetKey(workspaceId, version));
+                    }
+                    Set<UUID> assignedSubjectIds = new LinkedHashSet<>();
+                    for (ResourceAssignment assignment :
+                            assignments.findByWorkspaceIdAndStateAndResourceIdIsNull(
+                                    workspaceId, ResourceAssignment.State.ACTIVE)) {
+                        assignedSubjectIds.add(
+                                Objects.requireNonNull(assignment.getSubjectId(), "subject_id"));
+                    }
+                    if (!assignedSubjectIds.isEmpty()) {
+                        for (ResourceVersion version :
+                                versionsOf(resources.findIdsBySubjectIdIn(assignedSubjectIds))) {
+                            keys.add(targetKey(workspaceId, version));
+                        }
+                    }
+                    return List.copyOf(keys);
                 });
         return Objects.requireNonNull(targets, "targets");
+    }
+
+    private List<ResourceVersion> versionsOf(List<UUID> resourceIds) {
+        if (resourceIds.isEmpty()) {
+            return List.of();
+        }
+        return versions.findByResourceIdIn(resourceIds);
+    }
+
+    private static String targetKey(UUID workspaceId, ResourceVersion version) {
+        return NativePolicyTemplates.resourceVersionKey(
+                workspaceId, version.getResourceId(), version.getId());
     }
 
     /**
@@ -284,16 +369,14 @@ public class ResourcePolicyProjector {
             String idempotencyKey,
             String payloadHash,
             List<String> targetKeys) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
+        AuthorizationPartition partition =
+                partitions
+                        .findByKindAndOwnerKey(
+                                AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Workspace authorization partition is missing: "
+                                                + workspaceId));
         List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
         for (String targetKey : targetKeys) {
             projections.add(desiredProjection(workspaceId, targetKey));
@@ -305,7 +388,7 @@ public class ResourcePolicyProjector {
                 payloadHash,
                 List.of(
                         new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(), List.copyOf(projections))));
+                                partition.getId(), List.copyOf(projections))));
     }
 
     /**
@@ -355,35 +438,26 @@ public class ResourcePolicyProjector {
 
     private List<String> buildBundle(
             UUID workspaceId, UUID resourceId, UUID versionId, String targetKey) {
-        List<Map<String, Object>> rows =
-                jdbc.queryForList(
-                        "SELECT r.owner_workspace_id, r.created_by_user_id, r.subject_id,"
-                                + " v.review_state, ow.kind AS owner_kind, cw.kind AS context_kind"
-                                + " FROM resource r"
-                                + " JOIN resource_version v ON v.resource_id = r.id AND v.id = ?"
-                                + " JOIN workspace ow ON ow.id = r.owner_workspace_id"
-                                + " JOIN workspace cw ON cw.id = ?"
-                                + " WHERE r.id = ?",
-                        versionId,
-                        workspaceId,
-                        resourceId);
-        if (rows.isEmpty()) {
+        Optional<ResourceVersion> version = versions.findByResourceIdAndId(resourceId, versionId);
+        Optional<Resource> resource = resources.findById(resourceId);
+        if (version.isEmpty() || resource.isEmpty()) {
             return List.of();
         }
-        Map<String, Object> meta = rows.getFirst();
-        UUID ownerWorkspaceId =
-                Objects.requireNonNull((UUID) meta.get("owner_workspace_id"), "owner_workspace_id");
-        UUID createdByUserId =
-                Objects.requireNonNull((UUID) meta.get("created_by_user_id"), "created_by_user_id");
-        UUID subjectId = Objects.requireNonNull((UUID) meta.get("subject_id"), "subject_id");
-        String reviewState =
-                Objects.requireNonNull((String) meta.get("review_state"), "review_state");
-        String ownerKind = Objects.requireNonNull((String) meta.get("owner_kind"), "owner_kind");
-        String contextKind =
-                Objects.requireNonNull((String) meta.get("context_kind"), "context_kind");
+        Optional<Workspace> ownerWorkspace =
+                workspaces.findById(resource.get().getOwnerWorkspaceId());
+        Optional<Workspace> contextWorkspace = workspaces.findById(workspaceId);
+        if (ownerWorkspace.isEmpty() || contextWorkspace.isEmpty()) {
+            return List.of();
+        }
+        UUID ownerWorkspaceId = resource.get().getOwnerWorkspaceId();
+        UUID createdByUserId = resource.get().getCreatedByUserId();
+        UUID subjectId = resource.get().getSubjectId();
+        String reviewState = version.get().getReviewState().name();
+        String ownerKind = ownerWorkspace.get().getKind().name();
+        String contextKind = contextWorkspace.get().getKind().name();
 
         List<String> descriptors = new ArrayList<>();
-        Optional<Map<String, Object>> derivedGrant = derivedForkGrant(resourceId, versionId);
+        Optional<ShareGrant> derivedGrant = derivedGrant(resourceId, versionId);
         if (derivedGrant.isPresent()) {
             derivedLicenseSources(
                     descriptors, workspaceId, contextKind, derivedGrant.get(), targetKey);
@@ -406,24 +480,19 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Grant làm căn cứ phái sinh của version khi version này là bản fork theo license: cạnh
-     * provenance mang grant và dấu origin do fork ghi, ở bất kỳ trạng thái nào của grant — cạnh tồn
-     * tại là đủ để version này là bản phái sinh bị giới hạn bởi grant đó. Rỗng khi version không
-     * phái sinh từ grant nào (bản gốc hoặc fork theo quyền owner/phân công).
+     * Grant làm căn cứ phái sinh của version khi version này là bản sao theo license: cạnh
+     * provenance mang grant và dấu origin do fork hoặc copy-on-share ghi, ở bất kỳ trạng thái nào
+     * của grant — cạnh tồn tại là đủ để version này là bản phái sinh bị giới hạn bởi grant đó. Rỗng
+     * khi version không phái sinh từ grant nào (bản gốc hoặc fork theo quyền owner/phân công).
      */
-    private Optional<Map<String, Object>> derivedForkGrant(UUID resourceId, UUID versionId) {
-        List<Map<String, Object>> rows =
-                jdbc.queryForList(
-                        "SELECT g.id, g.state, array_to_string(g.actions, ',') AS actions_csv,"
-                                + " array_to_string(g.allowed_workspace_ids, ',') AS allowed_csv,"
-                                + " g.valid_from, g.expires_at FROM resource_dependency d"
-                                + " JOIN share_grant g ON g.id = d.share_grant_id"
-                                + " WHERE d.derived_resource_id = ? AND d.derived_version_id = ?"
-                                + " AND d.share_grant_id IS NOT NULL"
-                                + " AND d.usage_constraints LIKE 'origin=FORK%'"
-                                + " ORDER BY d.created_at, d.id LIMIT 1",
-                        resourceId, versionId);
-        return rows.stream().findFirst();
+    private Optional<ShareGrant> derivedGrant(UUID resourceId, UUID versionId) {
+        return dependencies
+                .findGrantProvenance(resourceId, versionId, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .flatMap(edge ->
+                        grants.findById(
+                                Objects.requireNonNull(edge.getShareGrantId(), "share_grant_id")));
     }
 
     /**
@@ -436,12 +505,12 @@ public class ResourcePolicyProjector {
             List<String> descriptors,
             UUID workspaceId,
             String contextKind,
-            Map<String, Object> grant,
+            ShareGrant grant,
             String targetKey) {
-        if (!"ACCEPTED".equals(grant.get("state")) || !allowedHere(grant, workspaceId)) {
+        if (grant.getState() != ShareGrant.State.ACCEPTED || !allowedHere(grant, workspaceId)) {
             return;
         }
-        for (String scope : mapActions(csv(grant.get("actions_csv")))) {
+        for (String scope : mapActions(grant.getActions())) {
             if (DERIVED_LICENSE_SCOPES.contains(scope)) {
                 descriptors.add(
                         licenseDescriptor(workspaceId, contextKind, grant, targetKey, scope));
@@ -465,7 +534,8 @@ public class ResourcePolicyProjector {
                             targetKey,
                             scope));
         }
-        for (PeriodRow period : subscriptionPeriods(workspaceId)) {
+        for (ResourceScopePreconditions.SubscriptionPeriod period :
+                preconditions.subscriptionPeriods(workspaceId)) {
             for (String scope : OWNER_EXPANSION_SCOPES) {
                 descriptors.add(
                         actorPeriodDescriptor(
@@ -486,25 +556,16 @@ public class ResourcePolicyProjector {
      */
     private void centerAuthorSources(
             List<String> descriptors, UUID workspaceId, UUID authorUserId, String targetKey) {
-        List<Map<String, Object>> authors =
-                jdbc.queryForList(
-                        "SELECT u.keycloak_sub FROM user_account u"
-                                + " WHERE u.id = ?"
-                                + " AND EXISTS (SELECT 1 FROM center_membership m"
-                                + " WHERE m.workspace_id = ? AND m.user_id = u.id"
-                                + " AND m.state = 'ACTIVE')",
-                        authorUserId,
-                        workspaceId);
-        if (authors.isEmpty()) {
+        Optional<UserAccount> author = userAccounts.findById(authorUserId);
+        if (author.isEmpty() || !preconditions.centerMembershipActive(workspaceId, authorUserId)) {
             return;
         }
-        String subject =
-                Objects.requireNonNull(
-                        (String) authors.getFirst().get("keycloak_sub"), "keycloak_sub");
+        String subject = author.get().getKeycloakSub();
         for (String scope : AUTHOR_READ_SCOPES) {
             descriptors.add(actorDescriptor(workspaceId, authorUserId, subject, targetKey, scope));
         }
-        for (PeriodRow period : subscriptionPeriods(workspaceId)) {
+        for (ResourceScopePreconditions.SubscriptionPeriod period :
+                preconditions.subscriptionPeriods(workspaceId)) {
             for (String scope : OWNER_EXPANSION_SCOPES) {
                 descriptors.add(
                         actorPeriodDescriptor(
@@ -526,26 +587,31 @@ public class ResourcePolicyProjector {
             UUID resourceId,
             UUID subjectId,
             String targetKey) {
-        String sql =
-                "SELECT a.user_id, u.keycloak_sub,"
-                        + " array_to_string(a.actions, ',') AS actions_csv"
-                        + " FROM resource_assignment a JOIN user_account u ON u.id = a.user_id"
-                        + " WHERE a.workspace_id = ? AND a.state = 'ACTIVE'"
-                        + " AND ((a.resource_id = ? AND (a.subject_id IS NULL OR a.subject_id = ?))"
-                        + " OR (a.resource_id IS NULL AND a.subject_id = ?))";
-        if (CENTER_KIND.equals(contextKind)) {
-            sql +=
-                    " AND EXISTS (SELECT 1 FROM center_membership m"
-                            + " WHERE m.workspace_id = a.workspace_id AND m.user_id = a.user_id"
-                            + " AND m.state = 'ACTIVE')";
-        }
-        for (Map<String, Object> assignment :
-                jdbc.queryForList(sql, workspaceId, resourceId, subjectId, subjectId)) {
-            UUID userId = Objects.requireNonNull((UUID) assignment.get("user_id"), "user_id");
-            String subject =
-                    Objects.requireNonNull((String) assignment.get("keycloak_sub"), "keycloak_sub");
-            for (String scope : mapActions(csv(assignment.get("actions_csv")))) {
-                descriptors.add(actorDescriptor(workspaceId, userId, subject, targetKey, scope));
+        List<ResourceAssignment> matching =
+                assignments.findMatching(
+                        workspaceId, ResourceAssignment.State.ACTIVE, resourceId, subjectId);
+        Map<UUID, String> subjects =
+                userAccounts
+                        .findByIdIn(
+                                matching.stream()
+                                        .map(ResourceAssignment::getUserId)
+                                        .distinct()
+                                        .toList())
+                        .stream()
+                        .collect(Collectors.toMap(UserAccount::getId, UserAccount::getKeycloakSub));
+        for (ResourceAssignment assignment : matching) {
+            if (CENTER_KIND.equals(contextKind)
+                    && !preconditions.centerMembershipActive(workspaceId, assignment.getUserId())) {
+                continue;
+            }
+            String subject = subjects.get(assignment.getUserId());
+            if (subject == null) {
+                continue;
+            }
+            for (String scope : mapActions(assignment.getActions())) {
+                descriptors.add(
+                        actorDescriptor(
+                                workspaceId, assignment.getUserId(), subject, targetKey, scope));
             }
         }
     }
@@ -567,14 +633,7 @@ public class ResourcePolicyProjector {
             String targetKey) {
         String readScope = PermissionCatalog.ResourceVersionScope.CONTENT_READ.scopeName();
         for (UUID courseSubjectId :
-                jdbc.queryForList(
-                        "SELECT DISTINCT course_subject_id FROM sample_activity"
-                                + " WHERE workspace_id = ? AND resource_id = ?"
-                                + " AND version_id = ? AND state = 'ASSIGNED'",
-                        UUID.class,
-                        workspaceId,
-                        resourceId,
-                        versionId)) {
+                activities.findAssignedCourseSubjectIds(workspaceId, resourceId, versionId)) {
             if (CENTER_KIND.equals(contextKind)) {
                 descriptors.add(
                         groupDescriptor(
@@ -584,24 +643,13 @@ public class ResourcePolicyProjector {
                                 targetKey,
                                 readScope));
             } else if (PERSONAL_KIND.equals(contextKind)) {
-                for (Map<String, Object> student :
-                        jdbc.queryForList(
-                                "SELECT DISTINCT u.id AS user_id, u.keycloak_sub"
-                                        + " FROM enrollment e"
-                                        + " JOIN class_student cs ON cs.id = e.class_student_id"
-                                        + " JOIN user_account u ON u.id = cs.student_user_id"
-                                        + " WHERE e.workspace_id = ?"
-                                        + " AND e.course_subject_id = ?"
-                                        + " AND e.state IN ('PENDING', 'ACTIVE')",
-                                workspaceId,
-                                courseSubjectId)) {
+                for (ResourceScopePreconditions.EnrolledStudent student :
+                        preconditions.enrolledStudents(workspaceId, courseSubjectId)) {
                     descriptors.add(
                             actorDescriptor(
                                     workspaceId,
-                                    Objects.requireNonNull(
-                                            (UUID) student.get("user_id"), "user_id"),
-                                    Objects.requireNonNull(
-                                            (String) student.get("keycloak_sub"), "keycloak_sub"),
+                                    student.userId(),
+                                    student.keycloakSub(),
                                     targetKey,
                                     readScope));
                 }
@@ -612,7 +660,9 @@ public class ResourcePolicyProjector {
     /**
      * Nhánh license: mỗi grant ACCEPTED cho workspace nhận trên đúng version cấp các scope do
      * actions của grant quyết định, trong cửa sổ hiệu lực của grant và chỉ khi workspace nhận nằm
-     * trong phạm vi workspace cho phép (rỗng nghĩa là không giới hạn).
+     * trong phạm vi workspace cho phép (rỗng nghĩa là không giới hạn). Ngoại lệ copy-on-share:
+     * grant đã có bản sao tại workspace nhận thì chỉ còn scope {@code library.save} trên target của
+     * version nguồn — quyền đọc/dùng sống trên target của bản sao.
      */
     private void licenseSources(
             List<String> descriptors,
@@ -621,21 +671,26 @@ public class ResourcePolicyProjector {
             UUID resourceId,
             UUID versionId,
             String targetKey) {
-        for (Map<String, Object> grant :
-                jdbc.queryForList(
-                        "SELECT id, array_to_string(actions, ',') AS actions_csv,"
-                                + " array_to_string(allowed_workspace_ids, ',') AS allowed_csv,"
-                                + " valid_from, expires_at FROM share_grant"
-                                + " WHERE recipient_workspace_id = ? AND source_resource_id = ?"
-                                + " AND source_version_id = ? AND state = 'ACCEPTED'"
-                                + " ORDER BY created_at, id",
-                        workspaceId,
-                        resourceId,
-                        versionId)) {
+        String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
+        for (ShareGrant grant :
+                grants
+                        .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
+                                workspaceId, resourceId, versionId, ShareGrant.State.ACCEPTED)) {
             if (!allowedHere(grant, workspaceId)) {
                 continue;
             }
-            for (String scope : mapActions(csv(grant.get("actions_csv")))) {
+            List<String> scopes = mapActions(grant.getActions());
+            boolean copied =
+                    copies.findCopy(resourceId, versionId, grant.getId(), workspaceId).isPresent();
+            if (copied) {
+                if (scopes.contains(saveScope)) {
+                    descriptors.add(
+                            licenseDescriptor(
+                                    workspaceId, contextKind, grant, targetKey, saveScope));
+                }
+                continue;
+            }
+            for (String scope : scopes) {
                 descriptors.add(
                         licenseDescriptor(workspaceId, contextKind, grant, targetKey, scope));
             }
@@ -646,9 +701,10 @@ public class ResourcePolicyProjector {
      * Nhánh version hệ thống đã công bố: {@code library.save} cho phía nhận đủ điều kiện của giấy
      * phép nền tảng trước cả khi lưu — ở personal là owner kèm gate kỳ gói cá nhân (điều kiện nhận
      * là cá nhân có gói), ở center là group thành viên không kèm kỳ gói của center (giấy phép nội
-     * dung nền tảng không gắn gói center, theo bảng nguồn của hợp đồng authorization); đọc/dùng/
-     * fork chỉ sau khi workspace đã có mục thư viện của chính version này không gắn grant — bản lưu
-     * đứng yên ở version đã lưu, version mới của nguồn chưa được nhận thì không có nhánh đọc.
+     * dung nền tảng không gắn gói center, theo bảng nguồn của hợp đồng authorization);
+     * đọc/dùng/fork chỉ sau khi workspace đã có mục thư viện của chính version này không gắn grant
+     * — bản lưu đứng yên ở version đã lưu, version mới của nguồn chưa được nhận thì không có nhánh
+     * đọc.
      */
     private void systemSources(
             List<String> descriptors,
@@ -663,7 +719,8 @@ public class ResourcePolicyProjector {
             if (owner.isEmpty()) {
                 return;
             }
-            for (PeriodRow period : subscriptionPeriods(workspaceId)) {
+            for (ResourceScopePreconditions.SubscriptionPeriod period :
+                    preconditions.subscriptionPeriods(workspaceId)) {
                 descriptors.add(
                         actorPeriodDescriptor(
                                 workspaceId,
@@ -684,15 +741,8 @@ public class ResourcePolicyProjector {
             return;
         }
         boolean saved =
-                !jdbc.queryForList(
-                                "SELECT id FROM library_item WHERE workspace_id = ?"
-                                        + " AND resource_id = ? AND version_id = ?"
-                                        + " AND share_grant_id IS NULL LIMIT 1",
-                                UUID.class,
-                                workspaceId,
-                                resourceId,
-                                versionId)
-                        .isEmpty();
+                libraryItems.existsByWorkspaceIdAndResourceIdAndVersionIdAndShareGrantIdIsNull(
+                        workspaceId, resourceId, versionId);
         if (!saved) {
             return;
         }
@@ -711,7 +761,8 @@ public class ResourcePolicyProjector {
                             owner.get().subject(),
                             targetKey,
                             readScope));
-            for (PeriodRow period : subscriptionPeriods(workspaceId)) {
+            for (ResourceScopePreconditions.SubscriptionPeriod period :
+                    preconditions.subscriptionPeriods(workspaceId)) {
                 descriptors.add(
                         actorPeriodDescriptor(
                                 workspaceId,
@@ -756,40 +807,22 @@ public class ResourcePolicyProjector {
     private record OwnerRow(UUID userId, String subject) {}
 
     private Optional<OwnerRow> personalOwner(UUID workspaceId) {
-        List<OwnerRow> rows =
-                jdbc.query(
-                        "SELECT u.id, u.keycloak_sub FROM workspace w"
-                                + " JOIN user_account u ON u.id = w.owner_user_id"
-                                + " WHERE w.id = ? AND w.kind = 'PERSONAL'",
-                        (rs, _) ->
-                                new OwnerRow(
-                                        rs.getObject("id", UUID.class),
-                                        rs.getString("keycloak_sub")),
-                        workspaceId);
-        return rows.stream().findFirst();
+        return workspaces
+                .findById(workspaceId)
+                .filter(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
+                .flatMap(workspace ->
+                        workspace.getOwnerUserId() == null
+                                ? Optional.empty()
+                                : userAccounts
+                                        .findById(workspace.getOwnerUserId())
+                                        .map(owner ->
+                                                new OwnerRow(
+                                                        owner.getId(), owner.getKeycloakSub())));
     }
 
-    private record PeriodRow(UUID id, Instant validFrom, Instant expiresAt) {}
-
-    private List<PeriodRow> subscriptionPeriods(UUID workspaceId) {
-        return jdbc.query(
-                "SELECT id, valid_from, expires_at FROM subscription_period"
-                        + " WHERE workspace_id = ? ORDER BY valid_from, id",
-                (rs, _) ->
-                        new PeriodRow(
-                                rs.getObject("id", UUID.class),
-                                Objects.requireNonNull(
-                                                rs.getObject("valid_from", OffsetDateTime.class))
-                                        .toInstant(),
-                                Objects.requireNonNull(
-                                                rs.getObject("expires_at", OffsetDateTime.class))
-                                        .toInstant()),
-                workspaceId);
-    }
-
-    private boolean allowedHere(Map<String, Object> grant, UUID workspaceId) {
-        List<String> allowed = csv(grant.get("allowed_csv"));
-        return allowed.isEmpty() || allowed.contains(workspaceId.toString());
+    private boolean allowedHere(ShareGrant grant, UUID workspaceId) {
+        List<UUID> allowed = grant.getAllowedWorkspaceIds();
+        return allowed.isEmpty() || allowed.contains(workspaceId);
     }
 
     AuthorizationOperationService.DesiredProjection desiredProjection(
@@ -811,20 +844,27 @@ public class ResourcePolicyProjector {
      */
     private List<UUID> grantDependencyPartitions(
             UUID workspaceId, UUID resourceId, UUID versionId) {
-        return jdbc.queryForList(
-                "SELECT id FROM authz_partition WHERE kind = 'GRANT' AND owner_key IN ("
-                        + " SELECT 'grant:' || g.id FROM share_grant g"
-                        + " WHERE g.recipient_workspace_id = ? AND g.source_resource_id = ?"
-                        + " AND g.source_version_id = ?"
-                        + " UNION SELECT 'grant:' || d.share_grant_id FROM resource_dependency d"
-                        + " WHERE d.derived_resource_id = ? AND d.derived_version_id = ?"
-                        + " AND d.share_grant_id IS NOT NULL)",
-                UUID.class,
-                workspaceId,
-                resourceId,
-                versionId,
-                resourceId,
-                versionId);
+        Set<UUID> grantIds = new LinkedHashSet<>();
+        for (ShareGrant grant :
+                grants.findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionId(
+                        workspaceId, resourceId, versionId)) {
+            grantIds.add(grant.getId());
+        }
+        for (ResourceDependency dependency :
+                dependencies.findByDerivedResourceIdAndDerivedVersionId(resourceId, versionId)) {
+            if (dependency.getShareGrantId() != null) {
+                grantIds.add(dependency.getShareGrantId());
+            }
+        }
+        if (grantIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> ownerKeys = grantIds.stream().map(grantId -> "grant:" + grantId).toList();
+        return partitions
+                .findByKindAndOwnerKeyIn(AuthorizationPartition.Kind.GRANT, ownerKeys)
+                .stream()
+                .map(AuthorizationPartition::getId)
+                .toList();
     }
 
     // ---------- Tiện ích dựng descriptor ----------
@@ -848,7 +888,7 @@ public class ResourcePolicyProjector {
             UUID workspaceId,
             UUID userId,
             String subject,
-            PeriodRow period,
+            ResourceScopePreconditions.SubscriptionPeriod period,
             String targetKey,
             String scope) {
         return ACTOR_PERIOD_DESCRIPTOR
@@ -891,14 +931,12 @@ public class ResourcePolicyProjector {
     private String licenseDescriptor(
             UUID workspaceId,
             String contextKind,
-            Map<String, Object> grant,
+            ShareGrant grant,
             String targetKey,
             String scope) {
-        UUID grantId = Objects.requireNonNull((UUID) grant.get("id"), "grant id");
         // Time policy native chỉ có độ chính xác tới giây: cắt tròn cửa sổ của grant về tròn
         // giây ngay khi dựng descriptor để giá trị được chiếu là đúng giá trị gate kiểm.
-        Instant validFrom = instantOf(grant.get("valid_from")).truncatedTo(ChronoUnit.SECONDS);
-        Object expiresAt = grant.get("expires_at");
+        Instant validFrom = grant.getValidFrom().truncatedTo(ChronoUnit.SECONDS);
         StringBuilder descriptor =
                 new StringBuilder(LICENSE_DESCRIPTOR).append("|workspace=").append(workspaceId);
         if (PERSONAL_KIND.equals(contextKind)) {
@@ -917,40 +955,19 @@ public class ResourcePolicyProjector {
         }
         return descriptor
                 .append("|grant=")
-                .append(grantId)
+                .append(grant.getId())
                 .append("|from=")
                 .append(validFrom)
                 .append("|until=")
                 .append(
-                        expiresAt == null
+                        grant.getExpiresAt() == null
                                 ? "-"
-                                : instantOf(expiresAt).truncatedTo(ChronoUnit.SECONDS).toString())
+                                : grant.getExpiresAt().truncatedTo(ChronoUnit.SECONDS).toString())
                 .append("|target=")
                 .append(targetKey)
                 .append("|scope=")
                 .append(scope)
                 .toString();
-    }
-
-    private static Instant instantOf(@Nullable Object value) {
-        if (value instanceof OffsetDateTime offset) {
-            return offset.toInstant();
-        }
-        if (value instanceof Instant instant) {
-            return instant;
-        }
-        throw new IllegalArgumentException("Not a timestamp value: " + value);
-    }
-
-    private static List<String> csv(@Nullable Object value) {
-        if (value == null) {
-            return List.of();
-        }
-        String text = String.valueOf(value);
-        if (text.isBlank()) {
-            return List.of();
-        }
-        return List.of(text.split(","));
     }
 
     private static PolicyGraph.Gate.Validity validityGate(
@@ -995,10 +1012,14 @@ public class ResourcePolicyProjector {
         return null;
     }
 
+    /**
+     * Đặt context workspace cho RLS trên chính connection của transaction JPA hiện hành (điểm
+     * set_config là hạ tầng tenancy của module, giữ nguyên cho tới wave tháo RLS).
+     */
     private void applyContext(UUID workspaceId) {
-        jdbc.queryForObject(
-                "SELECT set_config('app.workspace_id', ?, true)",
-                String.class,
-                workspaceId.toString());
+        entityManager
+                .createNativeQuery("SELECT set_config('app.workspace_id', ?1, true)")
+                .setParameter(1, workspaceId.toString())
+                .getSingleResult();
     }
 }

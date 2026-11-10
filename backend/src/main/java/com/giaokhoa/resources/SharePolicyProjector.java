@@ -1,17 +1,23 @@
 package com.giaokhoa.resources;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.resources.model.ShareGrant;
+import com.giaokhoa.resources.repository.ResourceRepository;
+import com.giaokhoa.resources.repository.ResourcesAuthorizationPartitionRepository;
+import com.giaokhoa.resources.repository.ResourcesUserAccountRepository;
+import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
+import com.giaokhoa.resources.repository.ShareGrantRepository;
+import com.giaokhoa.tenancy.model.Workspace;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,7 +37,9 @@ import org.springframework.stereotype.Component;
  * ghi lần đầu — còn projection của version nguồn tại workspace nhận mang dependency là partition đó
  * (do {@link ResourcePolicyProjector} tính), để fence của mọi protected request trên version đều
  * thấy grant đang đổi trạng thái. Mỗi lần ghi, projector ghi kèm desired projection của version
- * nguồn tại workspace nhận trên WORKSPACE partition của nơi nhận.
+ * nguồn tại workspace nhận trên WORKSPACE partition của nơi nhận, và — khi grant đã được
+ * copy-on-share — desired projection của các target bản sao tại workspace nhận, để quyền phái sinh
+ * trên bản sao được dựng ngay trong cùng operation với trạng thái mới của grant.
  */
 @Component
 public class SharePolicyProjector {
@@ -49,24 +57,32 @@ public class SharePolicyProjector {
     /** Trạng thái grant đang chờ phía nhận accept. */
     private static final String OFFERED_STATE = "OFFERED";
 
-    private static final int SINGLE_ROW = 1;
-
-    private final JdbcTemplate jdbc;
     private final AuthorizationOperationService operations;
     private final ResourcePolicyProjector resourceProjector;
+    private final ShareGrantRepository grants;
+    private final ResourceRepository resources;
+    private final ResourcesWorkspaceRepository workspaces;
+    private final ResourcesUserAccountRepository userAccounts;
+    private final ResourcesAuthorizationPartitionRepository partitions;
+    private final ResourceCopies copies;
 
-    /**
-     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} dựng sẵn: template được tạo trong
-     * constructor nên projector không giữ tham chiếu tới đối tượng mutable từ bên ngoài (SpotBugs
-     * EI_EXPOSE_REP2), cùng mẫu với {@link ResourcePolicyProjector}.
-     */
     public SharePolicyProjector(
-            DataSource dataSource,
             AuthorizationOperationService operations,
-            ResourcePolicyProjector resourceProjector) {
-        this.jdbc = new JdbcTemplate(dataSource);
+            ResourcePolicyProjector resourceProjector,
+            ShareGrantRepository grants,
+            ResourceRepository resources,
+            ResourcesWorkspaceRepository workspaces,
+            ResourcesUserAccountRepository userAccounts,
+            ResourcesAuthorizationPartitionRepository partitions,
+            ResourceCopies copies) {
         this.operations = operations;
         this.resourceProjector = resourceProjector;
+        this.grants = grants;
+        this.resources = resources;
+        this.workspaces = workspaces;
+        this.userAccounts = userAccounts;
+        this.partitions = partitions;
+        this.copies = copies;
     }
 
     /** Scope danh nghĩa ghi trên projection row của mọi bundle share grant. */
@@ -169,10 +185,12 @@ public class SharePolicyProjector {
      * Ghi operation cho trạng thái hiện hành của một grant vừa được ghi trong cùng luồng của
      * service gọi: tạo GRANT partition của grant nếu chưa có, bump nó với bundle hiện hành của
      * grant, và ghi kèm desired projection của version nguồn tại workspace nhận để dependency lên
-     * GRANT partition được thiết lập ngay từ lượt cấp. Replay cùng idempotency key và payload trả
-     * lại operation đã ghi mà không ghi lại gì, còn cùng key khác payload là 409 — cả hai do cơ chế
-     * operation dùng chung xử lý. Caller bọc trong transaction của mình và chờ operation SUCCEEDED
-     * trước khi báo thành công.
+     * GRANT partition được thiết lập ngay từ lượt cấp — cộng, khi grant đã có bản sao
+     * copy-on-share, desired projection của từng target bản sao tại workspace nhận trên cùng
+     * WORKSPACE partition của nơi nhận. Replay cùng idempotency key và payload trả lại operation đã
+     * ghi mà không ghi lại gì, còn cùng key khác payload là 409 — cả hai do cơ chế operation dùng
+     * chung xử lý. Caller bọc trong transaction của mình và chờ operation SUCCEEDED trước khi báo
+     * thành công.
      */
     public AuthorizationOperation recordShareChange(
             UUID initiatorUserId,
@@ -201,109 +219,108 @@ public class SharePolicyProjector {
                                         BUNDLE_SCOPE,
                                         bundleDescriptors(grantKey),
                                         List.of()))));
+        List<AuthorizationOperationService.DesiredProjection> recipientProjections =
+                new ArrayList<>();
+        recipientProjections.add(
+                resourceProjector.desiredProjection(grant.recipientWorkspaceId(), versionKey));
+        for (ResourceCopies.CopyLocation location :
+                copies.copiesOf(grant.sourceResourceId(), grant.sourceVersionId(), grantId)) {
+            if (location.ownerWorkspaceId().equals(grant.recipientWorkspaceId())) {
+                recipientProjections.add(
+                        resourceProjector.desiredProjection(
+                                grant.recipientWorkspaceId(),
+                                NativePolicyTemplates.resourceVersionKey(
+                                        grant.recipientWorkspaceId(),
+                                        location.copy().resourceId(),
+                                        location.copy().versionId())));
+            }
+        }
         changes.add(
                 new AuthorizationOperationService.PartitionChange(
-                        workspacePartition(grant.recipientWorkspaceId()),
-                        List.of(
-                                resourceProjector.desiredProjection(
-                                        grant.recipientWorkspaceId(), versionKey))));
+                        workspacePartition(grant.recipientWorkspaceId()), recipientProjections));
         return operations.applyDesiredState(
                 initiatorUserId, routeWorkspaceId, idempotencyKey, payloadHash, changes);
     }
 
     /**
      * GRANT partition của một grant, tạo nếu chưa có: một grant có đúng một partition mang
-     * owner_key {@code grant:{id}}, tạo lười ở lần ghi đầu tiên theo cùng mẫu ON CONFLICT của các
-     * partition được seed khác.
+     * owner_key {@code grant:{id}}, tạo lười ở lần ghi đầu tiên. Hàng mới mang đúng các giá trị mặc
+     * định của schema (revision 0, state PENDING); hai lượt ghi đầu đồng thời thì lượt thua unique
+     * (kind, owner_key) đọc lại hàng của lượt thắng.
      */
     UUID ensureGrantPartition(UUID grantId) {
         String ownerKey = "grant:" + grantId;
-        List<UUID> existing =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'GRANT' AND owner_key = ?",
-                        UUID.class,
-                        ownerKey);
-        if (!existing.isEmpty()) {
-            return existing.getFirst();
+        Optional<AuthorizationPartition> existing =
+                partitions.findByKindAndOwnerKey(AuthorizationPartition.Kind.GRANT, ownerKey);
+        if (existing.isPresent()) {
+            return existing.get().getId();
         }
         UUID candidate = UUID.randomUUID();
-        int inserted =
-                jdbc.update(
-                        "INSERT INTO authz_partition(id, kind, owner_key)"
-                                + " VALUES (?, 'GRANT', ?) ON CONFLICT (kind, owner_key)"
-                                + " DO NOTHING",
-                        candidate,
-                        ownerKey);
-        if (inserted == SINGLE_ROW) {
+        try {
+            partitions.saveAndFlush(
+                    new AuthorizationPartition(
+                            candidate,
+                            AuthorizationPartition.Kind.GRANT,
+                            ownerKey,
+                            0,
+                            0,
+                            AuthorizationPartition.State.PENDING));
             return candidate;
+        } catch (DataIntegrityViolationException race) {
+            return partitions
+                    .findByKindAndOwnerKey(AuthorizationPartition.Kind.GRANT, ownerKey)
+                    .map(AuthorizationPartition::getId)
+                    .orElseThrow(() ->
+                            new IllegalStateException("Grant partition is missing: " + grantId));
         }
-        return jdbc
-                .queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'GRANT' AND owner_key = ?",
-                        UUID.class,
-                        ownerKey)
-                .stream()
-                .findFirst()
-                .orElseThrow(
-                        () -> new IllegalStateException("Grant partition is missing: " + grantId));
     }
 
     /** Dữ kiện bền của một grant theo định danh; rỗng khi grant không tồn tại. */
     public Optional<GrantFacts> loadGrant(UUID grantId) {
-        return jdbc
-                .queryForList(
-                        "SELECT g.source_resource_id, g.source_version_id,"
-                                + " r.owner_workspace_id AS source_workspace_id,"
-                                + " g.grantor_user_id, gu.keycloak_sub AS grantor_subject,"
-                                + " g.recipient_workspace_id, rw.kind AS recipient_kind,"
-                                + " rw.owner_user_id AS recipient_owner_id,"
-                                + " ou.keycloak_sub AS recipient_owner_subject,"
-                                + " g.mode, g.state FROM share_grant g"
-                                + " JOIN resource r ON r.id = g.source_resource_id"
-                                + " JOIN user_account gu ON gu.id = g.grantor_user_id"
-                                + " JOIN workspace rw ON rw.id = g.recipient_workspace_id"
-                                + " LEFT JOIN user_account ou ON ou.id = rw.owner_user_id"
-                                + " WHERE g.id = ?",
-                        grantId)
-                .stream()
-                .findFirst()
-                .map(row ->
-                        new GrantFacts(
-                                grantId,
-                                Objects.requireNonNull(
-                                        (UUID) row.get("source_resource_id"), "source_resource_id"),
-                                Objects.requireNonNull(
-                                        (UUID) row.get("source_version_id"), "source_version_id"),
-                                Objects.requireNonNull(
-                                        (UUID) row.get("source_workspace_id"),
-                                        "source_workspace_id"),
-                                Objects.requireNonNull(
-                                        (UUID) row.get("grantor_user_id"), "grantor_user_id"),
-                                Objects.requireNonNull(
-                                        (String) row.get("grantor_subject"), "grantor_subject"),
-                                Objects.requireNonNull(
-                                        (UUID) row.get("recipient_workspace_id"),
-                                        "recipient_workspace_id"),
-                                Objects.requireNonNull(
-                                        (String) row.get("recipient_kind"), "recipient_kind"),
-                                (UUID) row.get("recipient_owner_id"),
-                                (String) row.get("recipient_owner_subject"),
-                                Objects.requireNonNull((String) row.get("mode"), "mode"),
-                                Objects.requireNonNull((String) row.get("state"), "state")));
+        Optional<ShareGrant> grant = grants.findById(grantId);
+        if (grant.isEmpty()) {
+            return Optional.empty();
+        }
+        ShareGrant row = grant.get();
+        var source = resources.findById(row.getSourceResourceId());
+        var grantor = userAccounts.findById(row.getGrantorUserId());
+        var recipient = workspaces.findById(row.getRecipientWorkspaceId());
+        if (source.isEmpty() || grantor.isEmpty() || recipient.isEmpty()) {
+            return Optional.empty();
+        }
+        Workspace recipientWorkspace = recipient.get();
+        UUID recipientOwnerUserId = recipientWorkspace.getOwnerUserId();
+        String recipientOwnerSubject =
+                recipientOwnerUserId == null
+                        ? null
+                        : userAccounts
+                                .findById(recipientOwnerUserId)
+                                .map(account -> account.getKeycloakSub())
+                                .orElse(null);
+        return Optional.of(
+                new GrantFacts(
+                        grantId,
+                        row.getSourceResourceId(),
+                        row.getSourceVersionId(),
+                        source.get().getOwnerWorkspaceId(),
+                        row.getGrantorUserId(),
+                        grantor.get().getKeycloakSub(),
+                        row.getRecipientWorkspaceId(),
+                        recipientWorkspace.getKind().name(),
+                        recipientOwnerUserId,
+                        recipientOwnerSubject,
+                        row.getMode().name(),
+                        row.getState().name()));
     }
 
     private UUID workspacePartition(UUID workspaceId) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
-        return partitions.getFirst();
+        return partitions
+                .findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
+                .map(AuthorizationPartition::getId)
+                .orElseThrow(() ->
+                        new IllegalStateException(
+                                "Workspace authorization partition is missing: " + workspaceId));
     }
 
     // Descriptor dùng lại đúng định dạng canonical của ResourcePolicyProjector để phép dựng

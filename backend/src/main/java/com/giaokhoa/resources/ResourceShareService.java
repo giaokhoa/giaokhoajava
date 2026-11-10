@@ -6,24 +6,40 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.resources.data.CanonicalResourceRepository;
+import com.giaokhoa.resources.model.LibraryItem;
+import com.giaokhoa.resources.model.ResourceAssignment;
+import com.giaokhoa.resources.model.ResourceDependency;
+import com.giaokhoa.resources.model.ResourceVersion;
+import com.giaokhoa.resources.model.ShareGrant;
+import com.giaokhoa.resources.repository.CanonicalResourceRepository;
+import com.giaokhoa.resources.repository.GrantRef;
+import com.giaokhoa.resources.repository.LibraryItemRepository;
+import com.giaokhoa.resources.repository.ResourceActionReceipts;
+import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
+import com.giaokhoa.resources.repository.ResourceDependencyRepository;
+import com.giaokhoa.resources.repository.ResourceRepository;
+import com.giaokhoa.resources.repository.ResourceScopePreconditions;
+import com.giaokhoa.resources.repository.ResourceVersionRepository;
+import com.giaokhoa.resources.repository.ResourcesAuthorizationOperationRepository;
+import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
+import com.giaokhoa.resources.repository.ShareGrantRepository;
+import com.giaokhoa.resources.repository.VersionMetadata;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -48,6 +64,13 @@ import tools.jackson.databind.json.JsonMapper;
  * trong cùng operation qua {@link ResourceRevocationContributor} và action chỉ báo thành công khi
  * operation đó {@code SUCCEEDED}; lịch sử không bị xóa ở bất kỳ bước nào.
  *
+ * <p>Accept một lượt cấp giữa hai tenant khác nhau kích hoạt copy-on-share: resource, version và
+ * closure phụ thuộc được sao vào mặt phẳng của workspace nhận kèm cạnh provenance về nguồn (qua
+ * {@link ResourceCopies}), và mục thư viện của phía nhận được tạo trỏ bản sao đó; từ thời điểm này
+ * quyền của phía nhận sống trên bản sao và thu hồi tác động qua projector trên bản sao thay vì thu
+ * hồi dây chuyền tức thì trên tham chiếu sống như mô hình trước đây. Lượt cấp từ hệ thống
+ * (workspace sở hữu có kind SYSTEM) và lượt cấp trong cùng một tenant giữ nguyên tham chiếu sống.
+ *
  * <p>Mọi action ghi biên nhận idempotency của chính mình trong cùng transaction với mutation (bảng
  * {@code sample_action_mutation}, cùng giao thức với service thư viện): replay cùng key và cùng
  * payload trả lại kết quả đầu tiên, khác payload trả 409. Trước khi hỏi PDP, service ghi lại bundle
@@ -59,8 +82,6 @@ public class ResourceShareService {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Duration PROJECTION_WAIT = Duration.ofSeconds(60);
-    private static final String OPERATION_SUCCEEDED = "SUCCEEDED";
-    private static final String OPERATION_FAILED = "FAILED";
     private static final String RECEIPT_TARGET_TYPE = "SHARE_GRANT";
     private static final List<String> MODES = List.of("REVOCABLE", "LONG_TERM");
 
@@ -72,33 +93,60 @@ public class ResourceShareService {
     private final SharePolicyProjector shareProjector;
     private final ResourceRevocationContributor revocation;
     private final CanonicalResourceRepository repository;
+    private final ShareGrantRepository grants;
+    private final ResourceRepository resources;
+    private final ResourceVersionRepository versions;
+    private final ResourceDependencyRepository dependencies;
+    private final ResourceAssignmentRepository assignments;
+    private final LibraryItemRepository libraryItems;
+    private final ResourcesWorkspaceRepository workspaceDirectory;
+    private final ResourceCopies copies;
+    private final ResourceActionReceipts receipts;
+    private final ResourcesAuthorizationOperationRepository operationStates;
+    private final ResourceScopePreconditions preconditions;
     private final IdempotencyService idempotency;
-    private final JdbcTemplate jdbc;
     private final WorkspaceTransaction workspaces;
     private final TransactionTemplate transactions;
 
-    /**
-     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} và repository dựng sẵn, cùng mẫu
-     * EI_EXPOSE_REP2 của {@link ResourceLibraryService}.
-     */
     public ResourceShareService(
             ProtectedActionExecutor executor,
             ResourcePolicyProjector projector,
             SharePolicyProjector shareProjector,
             ResourceRevocationContributor revocation,
             IdempotencyService idempotency,
-            DataSource dataSource,
             WorkspaceTransaction workspaces,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            CanonicalResourceRepository repository,
+            ShareGrantRepository grants,
+            ResourceRepository resources,
+            ResourceVersionRepository versions,
+            ResourceDependencyRepository dependencies,
+            ResourceAssignmentRepository assignments,
+            LibraryItemRepository libraryItems,
+            ResourcesWorkspaceRepository workspaceDirectory,
+            ResourceCopies copies,
+            ResourceActionReceipts receipts,
+            ResourcesAuthorizationOperationRepository operationStates,
+            ResourceScopePreconditions preconditions) {
         this.executor = executor;
         this.projector = projector;
         this.shareProjector = shareProjector;
         this.revocation = revocation;
-        this.repository = new CanonicalResourceRepository(dataSource);
         this.idempotency = idempotency;
-        this.jdbc = new JdbcTemplate(dataSource);
         this.workspaces = workspaces;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.repository = repository;
+        this.grants = grants;
+        this.resources = resources;
+        this.versions = versions;
+        this.dependencies = dependencies;
+        this.assignments = assignments;
+        this.libraryItems = libraryItems;
+        this.workspaceDirectory = workspaceDirectory;
+        this.copies = copies;
+        this.receipts = receipts;
+        this.operationStates = operationStates;
+        this.preconditions = preconditions;
     }
 
     /**
@@ -174,43 +222,28 @@ public class ResourceShareService {
             List<UUID> allowedWorkspaceIds,
             @Nullable OffsetDateTime expiresAt,
             UUID grantId) {
-        CanonicalResourceRepository.VersionMetadata metadata =
+        VersionMetadata metadata =
                 repository
                         .metadata(resourceId, versionId)
                         .orElseThrow(ResourceShareService::notFound);
-        if (jdbc.queryForList(
-                        "SELECT id FROM workspace WHERE id = ?", UUID.class, recipientWorkspaceId)
-                .isEmpty()) {
+        if (!workspaceDirectory.existsById(recipientWorkspaceId)) {
             throw notFound();
         }
         enforceSourceCeiling(actorUserId, workspaceId, metadata, actions);
         enforceComponentConstraints(
                 resourceId, versionId, actions, recipientWorkspaceId, allowedWorkspaceIds);
-        jdbc.update(
-                "INSERT INTO share_grant(id, source_resource_id,"
-                        + " source_version_id, grantor_user_id,"
-                        + " recipient_workspace_id, mode, state, actions,"
-                        + " allowed_workspace_ids, valid_from, expires_at)"
-                        + " VALUES (?,?,?,?,?,?,'OFFERED',?,?,?,?)",
-                ps -> {
-                    ps.setObject(1, grantId);
-                    ps.setObject(2, resourceId);
-                    ps.setObject(3, versionId);
-                    ps.setObject(4, actorUserId);
-                    ps.setObject(5, recipientWorkspaceId);
-                    ps.setString(6, mode);
-                    ps.setArray(
-                            7,
-                            ps.getConnection()
-                                    .createArrayOf("text", actions.toArray(new String[0])));
-                    ps.setArray(
-                            8,
-                            ps.getConnection()
-                                    .createArrayOf(
-                                            "uuid", allowedWorkspaceIds.toArray(new UUID[0])));
-                    ps.setObject(9, OffsetDateTime.now(ZoneOffset.UTC));
-                    ps.setObject(10, expiresAt);
-                });
+        grants.save(
+                new ShareGrant(
+                        grantId,
+                        resourceId,
+                        versionId,
+                        actorUserId,
+                        recipientWorkspaceId,
+                        ShareGrant.Mode.valueOf(mode),
+                        actions,
+                        allowedWorkspaceIds,
+                        Instant.now(),
+                        expiresAt == null ? null : expiresAt.toInstant()));
         return grantId;
     }
 
@@ -222,51 +255,31 @@ public class ResourceShareService {
      * scope {@code share} không tự làm trần này rộng hơn dữ kiện nguồn.
      */
     private void enforceSourceCeiling(
-            UUID actorUserId,
-            UUID workspaceId,
-            CanonicalResourceRepository.VersionMetadata metadata,
-            List<String> actions) {
+            UUID actorUserId, UUID workspaceId, VersionMetadata metadata, List<String> actions) {
         List<String> requestedScopes = ResourcePolicyProjector.mapActions(actions);
         boolean derivedFromGrant =
-                !jdbc.queryForList(
-                                "SELECT id FROM resource_dependency WHERE derived_resource_id = ?"
-                                        + " AND derived_version_id = ?"
-                                        + " AND share_grant_id IS NOT NULL"
-                                        + " AND usage_constraints LIKE 'origin=FORK%'",
-                                UUID.class, metadata.resourceId(), metadata.versionId())
-                        .isEmpty();
+                dependencies.existsGrantProvenance(metadata.resourceId(), metadata.versionId());
         if (!derivedFromGrant && metadata.ownerWorkspaceId().equals(workspaceId)) {
             return;
         }
         Set<String> ceiling = new HashSet<>();
-        for (CanonicalResourceRepository.GrantRef grant :
+        for (GrantRef grant :
                 repository.acceptedGrantsInWindow(
                         workspaceId, metadata.resourceId(), metadata.versionId())) {
             ceiling.addAll(ResourcePolicyProjector.mapActions(grant.actions()));
         }
-        String assignmentSql =
-                "SELECT array_to_string(actions, ',') AS actions_csv FROM resource_assignment"
-                        + " WHERE workspace_id = ? AND user_id = ? AND state = 'ACTIVE'"
-                        + " AND ((resource_id = ? AND (subject_id IS NULL OR subject_id = ?))"
-                        + " OR (resource_id IS NULL AND subject_id = ?))";
-        if (CENTER_KIND.equals(workspaceKind(workspaceId))) {
-            assignmentSql +=
-                    " AND EXISTS (SELECT 1 FROM center_membership m"
-                            + " WHERE m.workspace_id = resource_assignment.workspace_id"
-                            + " AND m.user_id = resource_assignment.user_id"
-                            + " AND m.state = 'ACTIVE')";
-        }
-        for (Map<String, Object> assignment :
-                jdbc.queryForList(
-                        assignmentSql,
-                        workspaceId,
-                        actorUserId,
-                        metadata.resourceId(),
-                        metadata.subjectId(),
-                        metadata.subjectId())) {
-            ceiling.addAll(
-                    ResourcePolicyProjector.mapActions(
-                            splitCsv((String) assignment.get("actions_csv"))));
+        boolean centerMembershipRequired = CENTER_KIND.equals(workspaceKind(workspaceId));
+        if (!centerMembershipRequired
+                || preconditions.centerMembershipActive(workspaceId, actorUserId)) {
+            for (ResourceAssignment assignment :
+                    assignments.findMatchingForUser(
+                            workspaceId,
+                            actorUserId,
+                            ResourceAssignment.State.ACTIVE,
+                            metadata.resourceId(),
+                            metadata.subjectId())) {
+                ceiling.addAll(ResourcePolicyProjector.mapActions(assignment.getActions()));
+            }
         }
         if (!ceiling.containsAll(requestedScopes)) {
             throw forbidden();
@@ -274,13 +287,15 @@ public class ResourceShareService {
     }
 
     /**
-     * Ràng buộc thành phần (FR-041): duyệt toàn bộ closure phụ thuộc của version xin chia sẻ bằng
-     * truy vấn đệ quy theo mẫu WITH RECURSIVE của PostgreSQL — mọi cạnh mang một grant đều là nguồn
-     * giới hạn của version này. Grant đó phải còn {@code ACCEPTED} và còn trong cửa sổ hiệu lực của
-     * nó, phải tự cho phép chia tiếp (scope {@code share}), và phạm vi mới không được rộng hơn phạm
-     * vi của nó: nơi nhận phải nằm trong danh sách workspace cho phép của grant thành phần khi danh
-     * sách đó không rỗng, và danh sách cho phép của lượt cấp mới phải là tập con của nó; actions
-     * của lượt cấp mới cũng phải là tập con của actions của grant thành phần.
+     * Ràng buộc thành phần (FR-041): duyệt toàn bộ closure phụ thuộc của version xin chia sẻ theo
+     * tầng (frontier loop) — mỗi tầng nạp các cạnh có đầu derived thuộc frontier hiện tại, các đầu
+     * source chưa thăm thành frontier kế tiếp, tập đã thăm khóa vòng lặp; mọi cạnh mang một grant
+     * trên các đỉnh đã thăm đều là nguồn giới hạn của version này. Grant đó phải còn {@code
+     * ACCEPTED} và còn trong cửa sổ hiệu lực của nó, phải tự cho phép chia tiếp (scope {@code
+     * share}), và phạm vi mới không được rộng hơn phạm vi của nó: nơi nhận phải nằm trong danh sách
+     * workspace cho phép của grant thành phần khi danh sách đó không rỗng, và danh sách cho phép
+     * của lượt cấp mới phải là tập con của nó; actions của lượt cấp mới cũng phải là tập con của
+     * actions của grant thành phần.
      */
     private void enforceComponentConstraints(
             UUID resourceId,
@@ -289,48 +304,24 @@ public class ResourceShareService {
             UUID recipientWorkspaceId,
             List<UUID> allowedWorkspaceIds) {
         List<String> requestedScopes = ResourcePolicyProjector.mapActions(actions);
-        List<Map<String, Object>> governing =
-                jdbc.queryForList(
-                        "WITH RECURSIVE closure (resource_id, version_id) AS ("
-                                + " SELECT ?, ?"
-                                + " UNION"
-                                + " SELECT d.source_resource_id, d.source_version_id"
-                                + " FROM resource_dependency d"
-                                + " JOIN closure c ON d.derived_resource_id = c.resource_id"
-                                + " AND d.derived_version_id = c.version_id)"
-                                + " SELECT g.state, g.valid_from, g.expires_at,"
-                                + " array_to_string(g.actions, ',') AS actions_csv,"
-                                + " array_to_string(g.allowed_workspace_ids, ',') AS allowed_csv"
-                                + " FROM resource_dependency d"
-                                + " JOIN share_grant g ON g.id = d.share_grant_id"
-                                + " WHERE (d.derived_resource_id, d.derived_version_id) IN"
-                                + " (SELECT resource_id, version_id FROM closure)",
-                        resourceId,
-                        versionId);
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        for (Map<String, Object> grant : governing) {
-            if (!"ACCEPTED".equals(grant.get("state"))) {
+        Set<UUID> governingGrantIds = governingGrantIds(resourceId, versionId);
+        Instant now = Instant.now();
+        for (ShareGrant grant : grants.findAllById(governingGrantIds)) {
+            if (grant.getState() != ShareGrant.State.ACCEPTED) {
                 throw forbidden();
             }
             // Hết hạn là trạng thái suy ra từ thời gian: grant điều phối đã qua cửa sổ hiệu lực
             // thì không còn cho chia tiếp, dù state trên dòng vẫn ACCEPTED.
-            OffsetDateTime validFrom = (OffsetDateTime) grant.get("valid_from");
-            OffsetDateTime expiresAt = (OffsetDateTime) grant.get("expires_at");
-            if (validFrom == null
-                    || validFrom.isAfter(now)
-                    || (expiresAt != null && !expiresAt.isAfter(now))) {
+            if (grant.getValidFrom().isAfter(now)
+                    || (grant.getExpiresAt() != null && !grant.getExpiresAt().isAfter(now))) {
                 throw forbidden();
             }
-            List<String> grantScopes =
-                    ResourcePolicyProjector.mapActions(splitCsv((String) grant.get("actions_csv")));
+            List<String> grantScopes = ResourcePolicyProjector.mapActions(grant.getActions());
             if (!grantScopes.contains(PermissionCatalog.ResourceVersionScope.SHARE.scopeName())
                     || !grantScopes.containsAll(requestedScopes)) {
                 throw forbidden();
             }
-            List<UUID> grantAllowed =
-                    splitCsv((String) grant.get("allowed_csv")).stream()
-                            .map(UUID::fromString)
-                            .toList();
+            List<UUID> grantAllowed = grant.getAllowedWorkspaceIds();
             if (!grantAllowed.isEmpty()
                     && (!grantAllowed.contains(recipientWorkspaceId)
                             || allowedWorkspaceIds.isEmpty()
@@ -338,6 +329,44 @@ public class ResourceShareService {
                 throw forbidden();
             }
         }
+    }
+
+    /** Một đỉnh của closure phụ thuộc: đúng cặp (resource, version) của một đầu cạnh. */
+    private record VersionKey(UUID resourceId, UUID versionId) {}
+
+    /**
+     * Tập grant điều phối của một version: duyệt lặp theo tầng từ chính version đó qua các cạnh
+     * dependency, thu grant của mọi cạnh mang grant trên các đỉnh đã thăm. Phép lọc theo cặp
+     * (resource, version) trong bộ nhớ giữ đúng semantics của phép nối đệ quy cũ, vì phép nạp theo
+     * tập version id của frontier có thể trả thêm cạnh của version trùng id ở resource khác (không
+     * thể xảy ra với id duy nhất toàn cục, nhưng phép lọc giữ phép duyệt đúng theo cặp bất kể).
+     */
+    Set<UUID> governingGrantIds(UUID resourceId, UUID versionId) {
+        Set<UUID> governing = new LinkedHashSet<>();
+        Set<VersionKey> visited = new HashSet<>();
+        Set<VersionKey> frontier = Set.of(new VersionKey(resourceId, versionId));
+        visited.addAll(frontier);
+        while (!frontier.isEmpty()) {
+            List<UUID> frontierVersionIds = frontier.stream().map(VersionKey::versionId).toList();
+            Set<VersionKey> next = new HashSet<>();
+            for (ResourceDependency edge :
+                    dependencies.findByDerivedVersionIdIn(frontierVersionIds)) {
+                if (!frontier.contains(
+                        new VersionKey(edge.getDerivedResourceId(), edge.getDerivedVersionId()))) {
+                    continue;
+                }
+                if (edge.getShareGrantId() != null) {
+                    governing.add(edge.getShareGrantId());
+                }
+                VersionKey source =
+                        new VersionKey(edge.getSourceResourceId(), edge.getSourceVersionId());
+                if (visited.add(source)) {
+                    next.add(source);
+                }
+            }
+            frontier = next;
+        }
+        return governing;
     }
 
     /**
@@ -354,7 +383,7 @@ public class ResourceShareService {
             String payloadHash) {
         UUID actorUserId = executor.actorUserId(authentication);
         GrantRow grant = grantRow(grantId).orElseThrow(ResourceShareService::notFound);
-        if (!grant.recipientWorkspaceId().equals(workspaceId)) {
+        if (!grant.grant().getRecipientWorkspaceId().equals(workspaceId)) {
             throw forbidden();
         }
         String targetKey = NativePolicyTemplates.grantKey(grantId);
@@ -386,23 +415,98 @@ public class ResourceShareService {
         return accepted;
     }
 
-    private UUID applyAccept(GrantRow grant) {
+    private UUID applyAccept(GrantRow row) {
+        ShareGrant grant = row.grant();
         // Hết hạn là trạng thái suy ra từ thời gian (không ghi state EXPIRED ở đường này), nên
         // một offer đã qua cửa sổ thì không còn nhận được dù state vẫn OFFERED trên dòng.
-        if (grant.expiresAt() != null
-                && !OffsetDateTime.now(ZoneOffset.UTC).isBefore(grant.expiresAt())) {
+        if (grant.getExpiresAt() != null && !Instant.now().isBefore(grant.getExpiresAt())) {
             throw notAcceptable();
         }
         int updated =
-                jdbc.update(
-                        "UPDATE share_grant SET state = 'ACCEPTED', accepted_at = now(),"
-                                + " version = version + 1, updated_at = now()"
-                                + " WHERE id = ? AND state = 'OFFERED'",
-                        grant.id());
+                grants.acceptIfOffered(
+                        grant.getId(),
+                        Instant.now(),
+                        ShareGrant.State.OFFERED,
+                        ShareGrant.State.ACCEPTED);
         if (updated == 0) {
             throw notAcceptable();
         }
-        return grant.id();
+        materializeCopyIfTenantShare(grant);
+        return grant.getId();
+    }
+
+    /**
+     * Vật chất hoá copy-on-share cho một grant vừa ACCEPTED giữa hai tenant: sao resource, version
+     * và closure vào mặt phẳng của workspace nhận (người tạo của bản sao ghi là grantor, vì nội
+     * dung là của phía cấp) và tạo mục thư viện của phía nhận trỏ bản sao. Lượt cấp từ hệ thống
+     * hoặc trong cùng một tenant không sao — phía nhận giữ tham chiếu sống như mô hình trước. Phép
+     * sao idempotent theo cạnh provenance: accept lại một grant đã có bản sao thì tái dùng đúng bản
+     * sao và mục thư viện đó.
+     */
+    private void materializeCopyIfTenantShare(ShareGrant grant) {
+        UUID recipientWorkspaceId = grant.getRecipientWorkspaceId();
+        VersionMetadata metadata =
+                repository
+                        .metadata(grant.getSourceResourceId(), grant.getSourceVersionId())
+                        .orElseThrow(ResourceShareService::notFound);
+        if (metadata.ownerWorkspaceId().equals(recipientWorkspaceId)
+                || "SYSTEM".equals(metadata.ownerKind())) {
+            return;
+        }
+        ResourceCopies.CopyRef copy =
+                copies.findCopy(
+                                grant.getSourceResourceId(),
+                                grant.getSourceVersionId(),
+                                grant.getId(),
+                                recipientWorkspaceId)
+                        .orElseGet(() -> copySourceVersion(grant, metadata));
+        libraryItems
+                .findFirstByWorkspaceIdAndResourceIdAndVersionIdOrderByCreatedAtAscIdAsc(
+                        recipientWorkspaceId, copy.resourceId(), copy.versionId())
+                .orElseGet(() ->
+                        libraryItems.save(
+                                new LibraryItem(
+                                        UUID.randomUUID(),
+                                        recipientWorkspaceId,
+                                        copy.resourceId(),
+                                        copy.versionId(),
+                                        grant.getId(),
+                                        LibraryItem.Custody.LICENSED)));
+    }
+
+    private ResourceCopies.CopyRef copySourceVersion(ShareGrant grant, VersionMetadata metadata) {
+        ResourceVersion sourceVersion =
+                versions.findById(grant.getSourceVersionId())
+                        .orElseThrow(ResourceShareService::notFound);
+        String usageConstraints =
+                ResourcePolicyProjector.shareOriginMarker()
+                        + ";grant="
+                        + grant.getId()
+                        + ";actions="
+                        + String.join(",", grant.getActions())
+                        + ";allowed="
+                        + (grant.getAllowedWorkspaceIds().isEmpty()
+                                ? "-"
+                                : grant.getAllowedWorkspaceIds().stream()
+                                        .map(UUID::toString)
+                                        .reduce((a, b) -> a + "," + b)
+                                        .orElse("-"));
+        return copies.copyVersion(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                grant.getGrantorUserId(),
+                grant.getRecipientWorkspaceId(),
+                metadata,
+                sourceVersion.getLabel(),
+                repository
+                        .body(grant.getSourceResourceId(), grant.getSourceVersionId())
+                        .orElseThrow(ResourceShareService::notFound),
+                repository.answer(grant.getSourceResourceId(), grant.getSourceVersionId()),
+                sourceVersion.getReviewState(),
+                sourceVersion.getLockedAt(),
+                1,
+                grant.getId(),
+                usageConstraints);
     }
 
     /**
@@ -459,51 +563,36 @@ public class ResourceShareService {
         return revoked;
     }
 
-    private UUID applyRevoke(GrantRow grant) {
+    private UUID applyRevoke(GrantRow row) {
         int updated =
-                jdbc.update(
-                        "UPDATE share_grant SET state = 'REVOKED', revoked_at = now(),"
-                                + " version = version + 1, updated_at = now()"
-                                + " WHERE id = ? AND state = 'ACCEPTED' AND mode = 'REVOCABLE'",
-                        grant.id());
+                grants.revokeIfAcceptedRevocable(
+                        row.grant().getId(),
+                        Instant.now(),
+                        ShareGrant.State.ACCEPTED,
+                        ShareGrant.State.REVOKED,
+                        ShareGrant.Mode.REVOCABLE);
         if (updated == 0) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "SHARE_NOT_REVOCABLE",
                     "Lượt cấp không ở trạng thái có thể thu hồi.");
         }
-        return grant.id();
+        return row.grant().getId();
     }
 
     // ---------- Dữ kiện grant và kiểm tra payload ----------
 
-    /** Các trường của một grant mà các quyết định invariant của service cần, đọc canonical. */
-    private record GrantRow(
-            UUID id,
-            UUID recipientWorkspaceId,
-            UUID sourceWorkspaceId,
-            @Nullable OffsetDateTime expiresAt) {}
+    /** Một grant kèm workspace sở hữu version nguồn của nó, cho các quyết định invariant. */
+    private record GrantRow(ShareGrant grant, UUID sourceWorkspaceId) {}
 
     private Optional<GrantRow> grantRow(UUID grantId) {
-        return jdbc
-                .queryForList(
-                        "SELECT g.recipient_workspace_id, r.owner_workspace_id"
-                                + " AS source_workspace_id, g.expires_at FROM share_grant g"
-                                + " JOIN resource r ON r.id = g.source_resource_id"
-                                + " WHERE g.id = ?",
-                        grantId)
-                .stream()
-                .findFirst()
-                .map(row ->
-                        new GrantRow(
-                                grantId,
-                                Objects.requireNonNull(
-                                        (UUID) row.get("recipient_workspace_id"),
-                                        "recipient_workspace_id"),
-                                Objects.requireNonNull(
-                                        (UUID) row.get("source_workspace_id"),
-                                        "source_workspace_id"),
-                                (OffsetDateTime) row.get("expires_at")));
+        Optional<ShareGrant> grant = grants.findById(grantId);
+        if (grant.isEmpty()) {
+            return Optional.empty();
+        }
+        return resources
+                .findById(grant.get().getSourceResourceId())
+                .map(resource -> new GrantRow(grant.get(), resource.getOwnerWorkspaceId()));
     }
 
     private void validateSharePayload(
@@ -533,18 +622,10 @@ public class ResourceShareService {
     }
 
     private String workspaceKind(UUID workspaceId) {
-        return jdbc
-                .queryForList("SELECT kind FROM workspace WHERE id = ?", String.class, workspaceId)
-                .stream()
-                .findFirst()
+        return workspaceDirectory
+                .findById(workspaceId)
+                .map(workspace -> workspace.getKind().name())
                 .orElseThrow(ResourceShareService::notFound);
-    }
-
-    private static List<String> splitCsv(@Nullable String csv) {
-        if (csv == null || csv.isBlank()) {
-            return List.of();
-        }
-        return List.of(csv.split(","));
     }
 
     // ---------- Biên nhận idempotency của chính action ----------
@@ -561,11 +642,7 @@ public class ResourceShareService {
             String payloadHash,
             UUID candidateTargetId) {
         int inserted =
-                jdbc.update(
-                        "INSERT INTO sample_action_mutation(actor_user_id, idempotency_key,"
-                                + " payload_hash, workspace_id, target_type, target_id)"
-                                + " VALUES (?,?,?,?,?,?)"
-                                + " ON CONFLICT (actor_user_id, idempotency_key) DO NOTHING",
+                receipts.claim(
                         actorUserId,
                         idempotencyKey,
                         payloadHash,
@@ -575,19 +652,18 @@ public class ResourceShareService {
         if (inserted != 0) {
             return Optional.empty();
         }
-        Map<String, Object> previous =
-                jdbc.queryForMap(
-                        "SELECT payload_hash, target_id FROM sample_action_mutation"
-                                + " WHERE actor_user_id = ? AND idempotency_key = ?",
-                        actorUserId,
-                        idempotencyKey);
-        if (!payloadHash.equals(previous.get("payload_hash"))) {
+        ResourceActionReceipts.Receipt previous =
+                receipts.findReceipt(actorUserId, idempotencyKey)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Idempotency receipt is missing after a claim conflict"));
+        if (!payloadHash.equals(previous.payloadHash())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "IDEMPOTENCY_CONFLICT",
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
-        return Optional.of(Objects.requireNonNull((UUID) previous.get("target_id"), "target_id"));
+        return Optional.of(previous.targetId());
     }
 
     // ---------- Ghi projection trước khi hỏi PDP ----------
@@ -631,15 +707,17 @@ public class ResourceShareService {
     private void awaitProjection(AuthorizationOperation operation) {
         long deadline = System.nanoTime() + PROJECTION_WAIT.toNanos();
         while (true) {
-            String state =
-                    jdbc.queryForObject(
-                            "SELECT state FROM authorization_operation WHERE id = ?",
-                            String.class,
-                            operation.getId());
-            if (OPERATION_SUCCEEDED.equals(state)) {
+            AuthorizationOperation.State state =
+                    operationStates
+                            .findStateById(operation.getId())
+                            .orElseThrow(() ->
+                                    new IllegalStateException(
+                                            "Authorization operation is missing: "
+                                                    + operation.getId()));
+            if (state == AuthorizationOperation.State.SUCCEEDED) {
                 return;
             }
-            if (OPERATION_FAILED.equals(state) || System.nanoTime() > deadline) {
+            if (state == AuthorizationOperation.State.FAILED || System.nanoTime() > deadline) {
                 throw AuthorizationFence.notReady();
             }
             try {
