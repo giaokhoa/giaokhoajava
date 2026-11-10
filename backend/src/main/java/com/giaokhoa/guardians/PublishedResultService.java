@@ -226,7 +226,7 @@ public class PublishedResultService {
                             readViews(
                                     workspaceId,
                                     studentUserId,
-                                    visible.stream().map(Candidate::id).toList());
+                                    visible.stream().map(candidate -> candidate.id()).toList());
                     String next =
                             allowed.size() > limit
                                     ? encodeCursor(

@@ -285,10 +285,10 @@
         <Field name="repository"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Test cố ý truyền null trong assertThrows để xác nhận validation của constructor. -->
+    <!-- Bốn lambda assertThrows cố ý truyền null; javac giữ tên test trong tên lambda, ECJ chỉ dùng số thứ tự. -->
     <Match>
         <Class name="com.giaokhoa.authorization.model.AuthorizationModelTest"/>
-        <Method name="~lambda\$requiredArraysRejectNullBeforePersisting\$[0-9]+"/>
+        <Method name="~lambda\$(requiredArraysRejectNullBeforePersisting\$)?[0-9]+"/>
         <Bug pattern="NP_NULL_PARAM_DEREF_NONVIRTUAL"/>
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, WorkspaceTransaction, IdempotencyService, GuardianPolicyProjector, ResourceMutationCoordinator); không sao chép khi inject vào service liên kết phụ huynh. -->
