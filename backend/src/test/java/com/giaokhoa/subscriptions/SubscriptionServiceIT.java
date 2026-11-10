@@ -109,11 +109,10 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                 // quan để thấy hai confirm thật sự đang bị chặn ở đâu.
                 String waiting =
                         jdbc.queryForList(
-                                                "SELECT pid, state, wait_event_type, wait_event,"
-                                                        + " left(query, 160) AS q"
+                                                "SELECT pid, wait_event, query"
                                                         + " FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
-                                                        + " AND (wait_event_type IS NOT NULL"
-                                                        + " OR state <> 'idle')")
+                                                        + " AND wait_event_type = 'Lock'",
+                                                String.class)
                                         .toString()
                                 + " firstDone="
                                 + first.isDone()
