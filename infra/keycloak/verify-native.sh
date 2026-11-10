@@ -112,6 +112,7 @@ PROV_ID="$(client_id giaokhoa-provisioner)"
 RM_ID="$(client_id realm-management)"
 
 assert_admin '' '.enabled == true and .organizationsEnabled == true and .verifyEmail == true and .sslRequired == "external" and .bruteForceProtected == true and .passwordPolicy == "length(10) and digits(1) and lowerCase(1) and upperCase(1) and notUsername(undefined)" and .resetPasswordAllowed == false and ((.attributes["gk.bootstrap.pending"] // "false") == "false")'
+assert_admin '' '.revokeRefreshToken == true and .refreshTokenMaxReuse == 0 and .accessTokenLifespan == 300 and .ssoSessionIdleTimeout == 1800 and .ssoSessionMaxLifespan == 36000'
 assert_admin "/clients/$WEB_ID" '.publicClient == false and .standardFlowEnabled == true and .directAccessGrantsEnabled == false and .serviceAccountsEnabled == false and .attributes["pkce.code.challenge.method"] == "S256" and .redirectUris == ["http://127.0.0.1:3000/login/oauth2/code/keycloak"]'
 assert_admin "/clients/$WEB_ID" '.attributes["post.logout.redirect.uris"] == "http://127.0.0.1:3000/" and .attributes["backchannel.logout.url"] == "http://127.0.0.1:3000/logout/connect/back-channel/keycloak"'
 admin_get "/clients/$WEB_ID/client-secret" | jq -e --arg secret "$OIDC_CLIENT_SECRET" '.value == $secret' >/dev/null || fail "Web secret not reconciled"
