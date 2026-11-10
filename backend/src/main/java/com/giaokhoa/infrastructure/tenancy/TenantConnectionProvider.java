@@ -5,6 +5,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
 import javax.sql.DataSource;
 import org.hibernate.engine.jdbc.connections.spi.MultiTenantConnectionProvider;
 import org.hibernate.service.UnknownUnwrapTypeException;
@@ -16,12 +19,13 @@ import org.springframework.stereotype.Component;
  * Connection provider cho chiến lược separate schema (Hibernate User Guide §24.2.2, §24.3.2): một
  * pool dùng chung, mỗi connection được đặt {@code search_path} = schema tenant + phần search_path
  * pool đã cấu hình (schema hệ thống của deployment) trước khi dùng. Khi trả connection về pool,
- * {@code search_path} bị reset bắt buộc — connection mang schema của tenant trước rò sang request
- * sau là lỗi cách ly nghiêm trọng nhất của mô hình này. Connection cho tenant hệ thống và
- * connection "any" (khởi động/metadata) giữ nguyên search_path của pool: schema hệ thống vật lý do
- * cấu hình datasource quyết định (là {@code public} ở deployment chuẩn, là schema riêng ở các môi
- * trường kiểm thử cô lập chạy toàn bộ ứng dụng trong một schema khác), không ép về một tên cố định
- * ở đây.
+ * {@code search_path} được khôi phục về đúng giá trị pool đã cấu hình lúc mượn — connection mang
+ * schema của tenant trước rò sang request sau là lỗi cách ly nghiêm trọng nhất của mô hình này, còn
+ * khôi phục bằng RESET về mặc định của role sẽ xoá mất cấu hình search_path mà pool đặt qua
+ * connection-init-sql trên chính connection vật lý đó. Connection cho tenant hệ thống và connection
+ * "any" (khởi động/metadata) giữ nguyên search_path của pool: schema hệ thống vật lý do cấu hình
+ * datasource quyết định (là {@code public} ở deployment chuẩn, là schema riêng ở các môi trường
+ * kiểm thử cô lập chạy toàn bộ ứng dụng trong một schema khác), không ép về một tên cố định ở đây.
  */
 @Component
 public class TenantConnectionProvider implements MultiTenantConnectionProvider<String> {
@@ -32,6 +36,14 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
     // transient: DataSource không Serializable còn interface SPI của Hibernate kế thừa
     // Serializable; bean singleton này không bao giờ được serialize trong ứng dụng.
     private final transient DataSource dataSource;
+
+    /**
+     * Search_path gốc (do pool cấu hình) của từng connection đang được mượn cho một tenant, để khôi
+     * phục đúng giá trị đó khi trả connection. WeakHashMap: mục của connection không được trả theo
+     * đường này (đóng đột ngột, pool loại bỏ) tự hết hạn theo connection.
+     */
+    private final transient Map<Connection, String> borrowedPaths =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     public TenantConnectionProvider(DataSource dataSource) {
         this.dataSource = dataSource;
@@ -54,9 +66,11 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
                 }
                 currentPath = result.getString(1);
             }
+            borrowedPaths.put(connection, currentPath);
             statement.setString(1, schema + ", " + currentPath);
             statement.execute();
         } catch (SQLException e) {
+            borrowedPaths.remove(connection);
             connection.close();
             throw e;
         }
@@ -66,15 +80,20 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
     @Override
     public void releaseConnection(String tenantIdentifier, Connection connection)
             throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("RESET search_path");
-        } catch (SQLException e) {
-            // shortcut: reset thất bại chỉ xảy ra khi connection đã hỏng; khi đó pool tự loại
-            // connection ở lần mượn sau. Ghi log để vận hành thấy thay vì nuốt lỗi.
-            LOG.warn(
-                    "Không reset được search_path khi trả connection của tenant {}",
-                    tenantIdentifier,
-                    e);
+        String originalPath = borrowedPaths.remove(connection);
+        if (originalPath != null) {
+            try (PreparedStatement statement =
+                    connection.prepareStatement("SELECT set_config('search_path', ?, false)")) {
+                statement.setString(1, originalPath);
+                statement.execute();
+            } catch (SQLException e) {
+                // shortcut: khôi phục thất bại chỉ xảy ra khi connection đã hỏng; khi đó pool
+                // tự loại connection ở lần mượn sau. Ghi log để vận hành thấy thay vì nuốt lỗi.
+                LOG.warn(
+                        "Không khôi phục được search_path khi trả connection của tenant {}",
+                        tenantIdentifier,
+                        e);
+            }
         }
         connection.close();
     }
