@@ -235,7 +235,9 @@ public class SessionController {
         }
         jdbc.query(
                 "SELECT id, name FROM center WHERE id IN (" + placeholders(centerIds) + ")",
-                rs -> names.put((UUID) rs.getObject("id"), rs.getString("name")),
+                rs -> {
+                    names.put((UUID) rs.getObject("id"), rs.getString("name"));
+                },
                 centerIds.toArray());
         return names;
     }
@@ -248,10 +250,11 @@ public class SessionController {
                         + placeholders(workspaceIds)
                         + ") AND valid_from <= now() AND expires_at > now()"
                         + " GROUP BY workspace_id",
-                rs ->
-                        expiries.put(
-                                (UUID) rs.getObject("workspace_id"),
-                                rs.getTimestamp("expires_at").toInstant()),
+                rs -> {
+                    expiries.put(
+                            (UUID) rs.getObject("workspace_id"),
+                            rs.getTimestamp("expires_at").toInstant());
+                },
                 workspaceIds.toArray());
         return expiries;
     }
@@ -264,7 +267,9 @@ public class SessionController {
                 "SELECT target_key, state FROM authz_projection WHERE target_key IN ("
                         + placeholders(targetKeys)
                         + ")",
-                rs -> states.put(rs.getString("target_key"), rs.getString("state")),
+                rs -> {
+                    states.put(rs.getString("target_key"), rs.getString("state"));
+                },
                 targetKeys.toArray());
         return states;
     }
