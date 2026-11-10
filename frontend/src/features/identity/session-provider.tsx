@@ -5,11 +5,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { apiRequest } from "../../lib/api-client";
+import { apiRequest, isRecord } from "../../lib/api-client";
 
 export type SessionUser = {
   id: string;
@@ -33,10 +34,6 @@ type SessionContextValue = {
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function parseSessionView(data: unknown): SessionState {
   if (!isRecord(data)) {
@@ -116,18 +113,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [applySession]);
 
-  return (
-    <SessionContext.Provider
-      value={{
-        session,
-        refreshSession,
-        activeWorkspaceId,
-        selectWorkspace: setActiveWorkspaceId,
-      }}
-    >
-      {children}
-    </SessionContext.Provider>
+  const value = useMemo<SessionContextValue>(
+    () => ({
+      session,
+      refreshSession,
+      activeWorkspaceId,
+      selectWorkspace: setActiveWorkspaceId,
+    }),
+    [session, refreshSession, activeWorkspaceId],
   );
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function useSession(): SessionContextValue {

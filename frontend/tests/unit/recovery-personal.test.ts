@@ -5,9 +5,11 @@ import {
   resolveRequestBody,
 } from "../../src/app/platform/recovery-requests/platform-recovery-content";
 import {
-  parseTrackedOperation,
   recoveryRequestBody,
 } from "../../src/features/identity/recovery-request-form";
+import {
+  parseTrackedOperation,
+} from "../../src/features/operations/operation-status";
 
 describe("form khôi phục chỉ gửi target của chính actor", () => {
   it("gửi đúng targetUserId của actor và lý do đã cắt khoảng trắng", () => {

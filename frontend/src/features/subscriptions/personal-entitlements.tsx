@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiRequest } from "../../lib/api-client";
+import { requestWorkspaces } from "../../lib/api-client";
+import { useSession } from "../identity/session-provider";
 import {
   parseWorkspaces,
   type WorkspaceView,
@@ -20,14 +22,17 @@ export function canManagePersonalClasses(workspace: WorkspaceView | null): boole
 }
 
 export function PersonalEntitlements() {
+  const { session } = useSession();
+  const userId = session.status === "authenticated" ? session.user.id : null;
   const [workspace, setWorkspace] = useState<WorkspaceView | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
+    if (!userId) return;
     let ignore = false;
-    apiRequest<unknown>("/api/me/workspaces")
+    requestWorkspaces(userId)
       .then((response) => {
         if (ignore || response.kind !== "data") return;
         setWorkspace(parsePersonalWorkspace(response.data));
@@ -43,7 +48,7 @@ export function PersonalEntitlements() {
     return () => {
       ignore = true;
     };
-  }, [reload]);
+  }, [userId, reload]);
 
   return (
     <section className="section" aria-labelledby="personal-plan-title">
@@ -80,7 +85,7 @@ export function PersonalEntitlements() {
             </p>
           )}
           <p>
-            <a href="/personal/classes">Xem lớp cá nhân</a>
+            <Link href="/personal/classes">Xem lớp cá nhân</Link>
           </p>
         </>
       ) : null}

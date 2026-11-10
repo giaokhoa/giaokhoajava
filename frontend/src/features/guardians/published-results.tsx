@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { requestAllPages } from "../../lib/api-client";
+import { isRecord, listItems, requestAllPages } from "../../lib/api-client";
+import { SessionGate } from "../identity/session-gate";
 import { useSession } from "../identity/session-provider";
 
 // Hình hiển thị duy nhất của đường đọc kết quả: đúng các trường của
@@ -18,10 +19,6 @@ export type PublishedResult = {
   publishedAt: string | null;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isNullableText(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
@@ -30,9 +27,7 @@ function isNullableText(value: unknown): value is string | null {
 // đồng. Object kết quả được dựng lại chỉ từ các trường hiển thị đã biết: trường lạ
 // trong phản hồi (nếu có) không đi tiếp vào dữ liệu hiển thị.
 export function parsePublishedResults(data: unknown): PublishedResult[] {
-  const items = Array.isArray(data)
-    ? data
-    : isRecord(data) && Array.isArray(data.items) ? data.items : [];
+  const items = listItems(data);
   const results: PublishedResult[] = [];
   for (const item of items) {
     if (!isRecord(item)
@@ -60,43 +55,6 @@ export function parsePublishedResults(data: unknown): PublishedResult[] {
     });
   }
   return results;
-}
-
-function SessionGate({
-  status,
-  message,
-  onRetry,
-  children,
-}: {
-  status: string;
-  message?: string;
-  onRetry: () => void;
-  children: React.ReactNode;
-}) {
-  if (status === "loading") return <p role="status">Đang tải trạng thái tài khoản…</p>;
-  if (status === "error") {
-    return (
-      <>
-        <p role="alert">{message}</p>
-        <button className="action-button" type="button" onClick={onRetry}>
-          Thử lại
-        </button>
-      </>
-    );
-  }
-  if (status === "anonymous") {
-    return (
-      <>
-        <p className="introduction">
-          Đăng nhập để xem kết quả đã công bố của con.
-        </p>
-        <a className="login-link" href="/oauth2/authorization/keycloak">
-          Đăng nhập
-        </a>
-      </>
-    );
-  }
-  return <>{children}</>;
 }
 
 export function ChildResultsContent({
@@ -160,6 +118,7 @@ export function ChildResultsContent({
           status={session.status}
           message={session.status === "error" ? session.message : undefined}
           onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để xem kết quả đã công bố của con."
         >
           <p className="introduction">
             Chỉ các kết quả đã được công bố của học sinh này tại trung tâm hiện tại mới

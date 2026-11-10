@@ -1,10 +1,3 @@
-export type PendingOperation = {
-  operationId: string;
-  state: string;
-  completed: false;
-  statusUrl: string;
-};
-
 export type ApiResult<T> =
   | { kind: "data"; status: number; data: T }
   | { kind: "pending"; status: 202; data: T };
@@ -32,8 +25,14 @@ export class ApiError extends Error {
   }
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Chấp nhận cả danh sách trần và dạng {items} theo quy tắc query danh sách của hợp đồng.
+export function listItems(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data;
+  return isRecord(data) && Array.isArray(data.items) ? data.items : [];
 }
 
 // Không nhận URL tuyệt đối, protocol-relative hay path thoát khỏi /api.
@@ -63,11 +62,11 @@ export async function readApiResponse<T>(
     }
   }
 
-  if (!response.ok) throw new ApiError(response.status, isObject(body) ? body : {});
+  if (!response.ok) throw new ApiError(response.status, isRecord(body) ? body : {});
 
   if (response.status === 202) {
-    const payload = isObject(body) ? body : null;
-    const nested = payload && isObject(payload.operation) ? payload.operation : null;
+    const payload = isRecord(body) ? body : null;
+    const nested = payload && isRecord(payload.operation) ? payload.operation : null;
     const operation = nested ?? payload;
     const id = nested ? nested.id : payload?.operationId;
     if (!operation || typeof id !== "string" || !id
@@ -176,6 +175,28 @@ export async function requestWhenReady<T = unknown>(path: string, init: RequestI
   }
 }
 
+// Nhiều component cùng gắn trên một trang từng gọi trùng GET /api/me/workspaces.
+// Gộp các lời gọi đang bay của cùng một người dùng thành một request; lời gọi có
+// AbortSignal tự quản vòng đời nên không gộp. Chỉ gộp lúc request chưa kết thúc —
+// bản đã tải xong không giữ lại vì các trang quản trị phải đọc trạng thái
+// workspace/gói mới nhất sau mỗi thao tác.
+const inflightWorkspaces = new Map<string, Promise<ApiResult<unknown>>>();
+
+export function requestWorkspaces(userId: string, signal?: AbortSignal): Promise<ApiResult<unknown>> {
+  if (signal) {
+    return requestWhenReady<unknown>("/api/me/workspaces", { signal });
+  }
+  const inflight = inflightWorkspaces.get(userId);
+  if (inflight) return inflight;
+  const request = requestWhenReady<unknown>("/api/me/workspaces");
+  inflightWorkspaces.set(userId, request);
+  const forget = () => {
+    if (inflightWorkspaces.get(userId) === request) inflightWorkspaces.delete(userId);
+  };
+  request.then(forget, forget);
+  return request;
+}
+
 // Danh sách dùng làm đầu vào chọn người/quan hệ phải đọc đủ trang trước khi hiển thị.
 export async function requestAllPages(
   path: string,
@@ -186,7 +207,7 @@ export async function requestAllPages(
   let next = apiPath(path);
   for (;;) {
     const result = await requestWhenReady<unknown>(next, init);
-    if (result.kind !== "data" || !isObject(result.data) || !Array.isArray(result.data.items)) {
+    if (result.kind !== "data" || !isRecord(result.data) || !Array.isArray(result.data.items)) {
       throw new Error("Phản hồi danh sách không hợp lệ.");
     }
     items.push(...result.data.items);

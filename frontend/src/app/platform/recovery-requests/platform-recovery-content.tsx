@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiRequest, requestWhenReady } from "../../../lib/api-client";
-import {
-  operationStatus,
-} from "../../../features/operations/operation-status";
+import { apiRequest, isRecord, listItems, requestWhenReady } from "../../../lib/api-client";
+import { SessionGate } from "../../../features/identity/session-gate";
+import { OperationPanel, useOperationCheck } from "../../../features/operations/operation-panel";
 import {
   parseTrackedOperation,
   type TrackedOperation,
-} from "../../../features/identity/recovery-request-form";
+} from "../../../features/operations/operation-status";
 import { useSession } from "../../../features/identity/session-provider";
 
 export type RecoveryRequestState = "REQUESTED" | "VERIFIED" | "RESOLVED" | "REJECTED";
@@ -34,10 +33,6 @@ const stateLabels: Record<RecoveryRequestState, string> = {
   REJECTED: "Đã từ chối",
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function parseRequest(item: unknown): PlatformRecoveryRequest | null {
   if (!isRecord(item)
       || typeof item.id !== "string" || !item.id
@@ -60,9 +55,8 @@ function parseRequest(item: unknown): PlatformRecoveryRequest | null {
   };
 }
 
-// Chấp nhận cả danh sách trần và dạng {items} theo quy tắc query danh sách của hợp đồng.
 export function parsePlatformRecoveryRequests(data: unknown): PlatformRecoveryRequest[] {
-  const items = Array.isArray(data) ? data : isRecord(data) && Array.isArray(data.items) ? data.items : [];
+  const items = listItems(data);
   const requests: PlatformRecoveryRequest[] = [];
   for (const item of items) {
     const request = parseRequest(item);
@@ -85,6 +79,7 @@ export function resolveRequestBody(
 
 export function PlatformRecoveryContent() {
   const { session, refreshSession } = useSession();
+  const checkOperationStatus = useOperationCheck();
   const [requests, setRequests] = useState<PlatformRecoveryRequest[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -167,11 +162,7 @@ export function PlatformRecoveryContent() {
     setPendingAction("operation");
     setActionError(null);
     try {
-      const result = await apiRequest<unknown>(`/api/me/operations/${encodeURIComponent(operation.id)}`);
-      const nextOperation = result.kind === "data" ? parseTrackedOperation(result.data) : null;
-      if (!nextOperation) {
-        throw new Error("Phản hồi trạng thái thao tác không hợp lệ.");
-      }
+      const nextOperation = await checkOperationStatus(operation.id);
       setOperation(nextOperation);
       if (nextOperation.completed && nextOperation.state === "SUCCEEDED") {
         await loadRequests();
@@ -189,32 +180,12 @@ export function PlatformRecoveryContent() {
         <p className="eyebrow">Giáo Khoa</p>
         <h1 id="platform-recovery-title">Yêu cầu khôi phục</h1>
 
-        {session.status === "loading" ? (
-          <p role="status">Đang tải trạng thái tài khoản…</p>
-        ) : null}
-
-        {session.status === "error" ? (
-          <>
-            <p role="alert">{session.message}</p>
-            <button className="action-button" type="button" onClick={() => void refreshSession()}>
-              Thử lại
-            </button>
-          </>
-        ) : null}
-
-        {session.status === "anonymous" ? (
-          <>
-            <p className="introduction">
-              Đăng nhập để xem các yêu cầu khôi phục thuộc phạm vi vận hành của bạn.
-            </p>
-            <a className="login-link" href="/oauth2/authorization/keycloak">
-              Đăng nhập
-            </a>
-          </>
-        ) : null}
-
-        {session.status === "authenticated" ? (
-          <>
+        <SessionGate
+          status={session.status}
+          message={session.status === "error" ? session.message : undefined}
+          onRetry={() => void refreshSession()}
+          anonymousText="Đăng nhập để xem các yêu cầu khôi phục thuộc phạm vi vận hành của bạn."
+        >
             <p className="introduction">
               Danh sách chỉ gồm mã yêu cầu, tài khoản đích và trạng thái — operator không xem
               nội dung học tập từ chức vụ và không tạo gói hoặc lớp khi chỉ có quyền nền.
@@ -309,27 +280,15 @@ export function PlatformRecoveryContent() {
             </div>
 
             {operation ? (
-              <section className="section" aria-labelledby="operation-title">
-                <h2 id="operation-title">Trạng thái thao tác</h2>
-                <p>{operationStatus(operation).message}</p>
-                <p>
-                  Mã thao tác: <code>{operation.id}</code>
-                </p>
-                {operation.errorCode ? <p>Mã lỗi: {operation.errorCode}</p> : null}
-                <button
-                  className="secondary-button"
-                  type="button"
-                  disabled={pendingAction !== null}
-                  onClick={() => void checkOperation()}
-                >
-                  Kiểm tra trạng thái
-                </button>
-              </section>
+              <OperationPanel
+                operation={operation}
+                checking={pendingAction !== null}
+                onCheck={() => void checkOperation()}
+              />
             ) : null}
 
             {actionError ? <p role="alert">{actionError}</p> : null}
-          </>
-        ) : null}
+        </SessionGate>
       </section>
     </main>
   );
