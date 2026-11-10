@@ -32,8 +32,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Kiểm chứng điểm ghi audit dùng chung trên PostgreSQL thật: mỗi biến động thuộc danh mục của
  * data-model (gói, khôi phục, đặc quyền qua chấp nhận lời mời) để lại đúng một dòng {@code
  * audit_event} trong cùng transaction của nghiệp vụ, đủ actor/action/target/operation/outcome, và
- * replay theo idempotency không ghi dòng thứ hai. Các flow qua Keycloak (tạo center, cấp học
- * sinh) được khẳng định audit ngay trong IT riêng của chúng.
+ * replay theo idempotency không ghi dòng thứ hai. Các flow qua Keycloak (tạo center, cấp học sinh)
+ * được khẳng định audit ngay trong IT riêng của chúng.
  */
 @SpringBootTest
 class AuditRecordingIT extends IntegrationEnvironment {

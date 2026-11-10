@@ -131,7 +131,8 @@ class ProjectionWorkerTest {
                 .thenReturn(List.of(PARTITION));
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(List.of(PARTITION));
         when(reconciler.tryReconcilePartition(PARTITION)).thenReturn(false);
-        ProjectionWorker worker = new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
+        ProjectionWorker worker =
+                new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
 
         worker.reconcileOrphanedPartitions();
         worker.reconcileOrphanedPartitions();
@@ -155,7 +156,8 @@ class ProjectionWorkerTest {
                             new ProjectionReconciler.PartitionRow(
                                     id, 1, 0, AuthorizationPartition.State.PENDING));
         }
-        var worker = new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
+        var worker =
+                new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
         worker.reconcileAffected(List.of(a, c, b), List.of(1L, 1L, 1L));
         var order = inOrder(reconciler);
         order.verify(reconciler).reconcilePartition(a, 1);
@@ -170,11 +172,12 @@ class ProjectionWorkerTest {
         UUID b = uuid(2);
         when(reconciler.projectionsOf(a)).thenReturn(List.of(projection(a, b)));
         when(reconciler.projectionsOf(b)).thenReturn(List.of(projection(b, a)));
-        var worker = new ProjectionWorker(
-                mock(JdbcTemplate.class),
-                reconciler,
-                stubTransactions(),
-                new AuditRecorder(mock(JdbcTemplate.class)));
+        var worker =
+                new ProjectionWorker(
+                        mock(JdbcTemplate.class),
+                        reconciler,
+                        stubTransactions(),
+                        new AuditRecorder(mock(JdbcTemplate.class)));
         var failure =
                 assertThrows(
                         ProjectionReconciler.ReconciliationException.class,
@@ -191,7 +194,8 @@ class ProjectionWorkerTest {
         List<UUID> ids = List.of(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6));
         when(jdbc.queryForList(anyString(), eq(UUID.class))).thenReturn(ids);
         when(reconciler.tryReconcilePartition(uuid(6))).thenReturn(true);
-        var worker = new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
+        var worker =
+                new ProjectionWorker(jdbc, reconciler, stubTransactions(), new AuditRecorder(jdbc));
         worker.reconcileOrphanedPartitions();
         worker.reconcileOrphanedPartitions();
         verify(reconciler).tryReconcilePartition(uuid(6));

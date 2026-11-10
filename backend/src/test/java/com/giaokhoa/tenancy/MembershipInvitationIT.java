@@ -767,9 +767,7 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             String username = "student-replay-" + UUID.randomUUID();
             String key = "issue-replay-" + UUID.randomUUID();
             String requestBody =
-                    "{\"username\":\""
-                            + username
-                            + "\",\"displayName\":\"Học sinh phát lại\"}";
+                    "{\"username\":\"" + username + "\",\"displayName\":\"Học sinh phát lại\"}";
 
             String temporaryPassword;
             UUID operationId;
@@ -798,8 +796,7 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                 assertNotNull(handoff, "Lần cấp đầu tiên phải mang handoff");
                 temporaryPassword = handoff.get("temporaryPassword").stringValue();
                 assertFalse(temporaryPassword.isBlank(), "Handoff phải có mật khẩu tạm");
-                operationId =
-                        UUID.fromString(firstBody.get("operation").get("id").stringValue());
+                operationId = UUID.fromString(firstBody.get("operation").get("id").stringValue());
                 awaitOperationSucceeded(session, operationId);
 
                 // Phát lại đúng key và payload: trả lại operation đã ghi, tuyệt đối

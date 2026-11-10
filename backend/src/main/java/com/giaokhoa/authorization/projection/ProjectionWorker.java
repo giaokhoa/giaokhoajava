@@ -53,6 +53,22 @@ public class ProjectionWorker {
 
     private static final int MAX_OPERATIONS_PER_CYCLE = 10;
     private static final int MAX_PARTITIONS_PER_CYCLE = 5;
+
+    private static final String LIVE_OPERATION_STATES =
+            "('PENDING', 'APPLYING', 'RETRYABLE_FAILURE')";
+
+    // Điều kiện claim dùng chung cho lượt quét, tập claimable và update chốt sở hữu: tới
+    // hạn theo lịch retry, hoặc đang APPLYING nhưng đã stale.
+    private static final String CLAIMABLE_CONDITION =
+            "((state IN ('PENDING', 'RETRYABLE_FAILURE')"
+                    + " AND (next_attempt_at IS NULL OR next_attempt_at <= now()))"
+                    + " OR (state = 'APPLYING'"
+                    + " AND updated_at <= now() - INTERVAL '5 minutes'))";
+
+    // Cửa sổ quét claim theo recorded_seq: lớn hơn nhiều số operation xử lý tối đa một chu
+    // kỳ (10), nên operation ngoài cửa sổ hoặc bị một operation cũ hơn cùng partition chặn
+    // trong cửa sổ, hoặc được chu kỳ sau nhận; thứ tự claim theo partition không đổi.
+    private static final int CLAIM_SCAN_LIMIT = 100;
     private static final Duration DRIFT_SCAN_INTERVAL = Duration.ofMinutes(1);
 
     private final JdbcTemplate jdbc;
@@ -125,9 +141,10 @@ public class ProjectionWorker {
                                     + " (updated_at <= now() - INTERVAL '5 minutes')"
                                     + " AS stale"
                                     + " FROM authorization_operation"
-                                    + " WHERE state IN ('PENDING', 'APPLYING',"
-                                    + " 'RETRYABLE_FAILURE')"
-                                    + " ORDER BY recorded_seq",
+                                    + " WHERE state IN "
+                                    + LIVE_OPERATION_STATES
+                                    + " ORDER BY recorded_seq LIMIT "
+                                    + CLAIM_SCAN_LIMIT,
                             (rs, _) -> {
                                 boolean due =
                                         "APPLYING".equals(rs.getString("state"))
@@ -148,13 +165,10 @@ public class ProjectionWorker {
                     new HashSet<>(
                             jdbc.queryForList(
                                     "SELECT id FROM authorization_operation"
-                                            + " WHERE (state IN ('PENDING', 'RETRYABLE_FAILURE')"
-                                            + " AND (next_attempt_at IS NULL"
-                                            + " OR next_attempt_at <= now()))"
-                                            + " OR (state = 'APPLYING'"
-                                            + " AND updated_at <= now()"
-                                            + " - INTERVAL '5 minutes')"
-                                            + " ORDER BY recorded_seq"
+                                            + " WHERE "
+                                            + CLAIMABLE_CONDITION
+                                            + " ORDER BY recorded_seq LIMIT "
+                                            + CLAIM_SCAN_LIMIT
                                             + " FOR UPDATE SKIP LOCKED",
                                     UUID.class));
             Set<UUID> blocked = new HashSet<>();
@@ -168,11 +182,8 @@ public class ProjectionWorker {
                                     "UPDATE authorization_operation SET state = 'APPLYING',"
                                             + " attempt_count = attempt_count + 1,"
                                             + " next_attempt_at = NULL, last_error_code = NULL,"
-                                            + " updated_at = now() WHERE id = ?"
-                                            + " AND (state IN ('PENDING', 'RETRYABLE_FAILURE')"
-                                            + " OR (state = 'APPLYING'"
-                                            + " AND updated_at <= now()"
-                                            + " - INTERVAL '5 minutes'))",
+                                            + " updated_at = now() WHERE id = ? AND "
+                                            + CLAIMABLE_CONDITION,
                                     row.id());
                     boolean claimedByThisInstance = updated == 1;
                     if (claimedByThisInstance) {

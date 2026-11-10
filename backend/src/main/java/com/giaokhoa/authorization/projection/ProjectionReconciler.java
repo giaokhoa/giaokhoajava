@@ -20,17 +20,21 @@ import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
@@ -186,6 +190,28 @@ public class ProjectionReconciler {
                 partitionId);
     }
 
+    /** Nạp nhiều partition trong một query, lập chỉ mục theo id cho các kiểm tra theo lô. */
+    private Map<UUID, PartitionRow> partitionsById(Set<UUID> partitionIds) {
+        Map<UUID, PartitionRow> byId = new HashMap<>();
+        if (partitionIds.isEmpty()) {
+            return byId;
+        }
+        for (PartitionRow row :
+                jdbc.query(
+                        "SELECT id, desired_revision, applied_revision, state"
+                                + " FROM authz_partition WHERE id = ANY(?)",
+                        ps ->
+                                ps.setArray(
+                                        1,
+                                        ps.getConnection()
+                                                .createArrayOf(
+                                                        "uuid", partitionIds.toArray(new UUID[0]))),
+                        PARTITION_MAPPER)) {
+            byId.put(row.id(), row);
+        }
+        return byId;
+    }
+
     public List<ProjectionRow> projectionsOf(UUID partitionId) {
         return jdbc.query(
                 "SELECT id, partition_id, target_key, keycloak_resource_id, policy_names,"
@@ -244,16 +270,26 @@ public class ProjectionReconciler {
         for (ProjectionRow projection : projections) {
             resolved.add(resolve(projection));
         }
+        // Dependency phân biệt của mọi projection được nạp một lần theo lô thay vì một
+        // query cho từng cặp projection × dependency; thứ tự kiểm tra vẫn là thứ tự xuất
+        // hiện đầu tiên nên dependency lỗi đầu tiên được báo cáo không đổi.
+        Set<UUID> dependencyIds = new LinkedHashSet<>();
         for (ProjectionRow projection : projections) {
-            for (UUID dependency : projection.dependencyPartitionIds()) {
-                PartitionRow dependencyPartition = partition(dependency);
-                if (dependencyPartition.state() != AuthorizationPartition.State.READY
-                        || dependencyPartition.appliedRevision()
-                                != dependencyPartition.desiredRevision()) {
-                    throw new ReconciliationException(
-                            ERROR_DEPENDENCY_NOT_READY,
-                            "Dependency partition is not READY: " + dependency);
-                }
+            dependencyIds.addAll(projection.dependencyPartitionIds());
+        }
+        Map<UUID, PartitionRow> dependencyPartitions = partitionsById(dependencyIds);
+        for (UUID dependency : dependencyIds) {
+            PartitionRow dependencyPartition = dependencyPartitions.get(dependency);
+            if (dependencyPartition == null) {
+                // Giữ đúng ngoại lệ của partition(): partition chưa từng được ghi.
+                throw new EmptyResultDataAccessException(1);
+            }
+            if (dependencyPartition.state() != AuthorizationPartition.State.READY
+                    || dependencyPartition.appliedRevision()
+                            != dependencyPartition.desiredRevision()) {
+                throw new ReconciliationException(
+                        ERROR_DEPENDENCY_NOT_READY,
+                        "Dependency partition is not READY: " + dependency);
             }
         }
         // Group của workspace là tiền đề mà policy tham chiếu: writer chỉ lấy id của group đã

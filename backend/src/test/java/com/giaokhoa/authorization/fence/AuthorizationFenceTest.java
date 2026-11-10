@@ -2,21 +2,24 @@ package com.giaokhoa.authorization.fence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.shared.http.HttpProblemException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementSetter;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -144,10 +147,20 @@ class AuthorizationFenceTest {
     }
 
     private static JdbcTemplate stubLocks(JdbcTemplate jdbc, Map<UUID, Map<String, Object>> rows) {
-        when(jdbc.queryForList(contains("FOR SHARE"), any(UUID.class)))
+        // Query khóa đã gộp theo lô: stub trả mọi dòng đã khai, production tự đối chiếu
+        // từng partition của manifest theo id trong bộ nhớ.
+        when(jdbc.query(
+                        contains("FOR SHARE"),
+                        ArgumentMatchers.<PreparedStatementSetter>any(),
+                        ArgumentMatchers.<RowMapper<Map<String, Object>>>any()))
                 .thenAnswer(invocation -> {
-                    Map<String, Object> row = rows.get(invocation.getArgument(1, UUID.class));
-                    return row == null ? List.of() : List.of(row);
+                    List<Map<String, Object>> locked = new ArrayList<>();
+                    rows.forEach((id, row) -> {
+                        Map<String, Object> copy = new LinkedHashMap<>(row);
+                        copy.put("id", id);
+                        locked.add(copy);
+                    });
+                    return locked;
                 });
         return jdbc;
     }
