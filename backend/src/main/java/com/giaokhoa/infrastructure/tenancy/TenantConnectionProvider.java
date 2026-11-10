@@ -1,5 +1,6 @@
 package com.giaokhoa.infrastructure.tenancy;
 
+import java.io.Serial;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -22,7 +23,11 @@ import org.springframework.stereotype.Component;
 public class TenantConnectionProvider implements MultiTenantConnectionProvider<String> {
     private static final Logger LOG = LoggerFactory.getLogger(TenantConnectionProvider.class);
 
-    private final DataSource dataSource;
+    @Serial private static final long serialVersionUID = 1L;
+
+    // transient: DataSource không Serializable còn interface SPI của Hibernate kế thừa
+    // Serializable; bean singleton này không bao giờ được serialize trong ứng dụng.
+    private final transient DataSource dataSource;
 
     public TenantConnectionProvider(DataSource dataSource) {
         this.dataSource = dataSource;
