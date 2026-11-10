@@ -30,6 +30,7 @@ import com.giaokhoa.support.RandomIds;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.verification.ActivityPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -282,6 +283,7 @@ class ProjectionReconcilerTest {
                 mock(TeachingPolicyProjector.class),
                 mock(GuardianPolicyProjector.class),
                 mock(ResultPolicyProjector.class),
+                mock(ActivityPolicyProjector.class),
                 mock(ResourcePolicyProjector.class),
                 mock(SharePolicyProjector.class),
                 mock(PersonalEntitlementProjector.class),
