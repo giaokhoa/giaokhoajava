@@ -333,4 +333,16 @@
         <Field name="jdbc"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- JdbcTemplate là dependency singleton do Spring quản lý; không sao chép khi inject vào recorder ghi audit. -->
+    <Match>
+        <Class name="com.giaokhoa.shared.audit.AuditRecorder"/>
+        <Field name="jdbc"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Fixture test trả cookie phiên do chính fixture tạo cho các IT đặt vào request; không có dữ kiện nội bộ nào khác bị lộ qua accessor này. -->
+    <Match>
+        <Class name="com.giaokhoa.support.KeycloakSessionFixture$RealSession"/>
+        <Method name="cookie"/>
+        <Bug pattern="EI_EXPOSE_REP"/>
+    </Match>
 </FindBugsFilter>
