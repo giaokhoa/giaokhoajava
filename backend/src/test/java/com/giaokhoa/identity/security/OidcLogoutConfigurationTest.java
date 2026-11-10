@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.shared.config.GiaokhoaProperties;
@@ -13,7 +14,9 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -27,7 +30,8 @@ class OidcLogoutConfigurationTest {
     void sessionCookieSecurityAttributes() {
         CookieSerializer serializer =
                 new OidcLogoutConfiguration()
-                        .sessionCookieSerializer(properties("https://app.example.test"));
+                        .sessionCookieSerializer(
+                                properties("https://app.example.test"), environment());
         var request = new MockHttpServletRequest();
         request.setServerName("app.example.test");
         var response = new MockHttpServletResponse();
@@ -81,6 +85,53 @@ class OidcLogoutConfigurationTest {
         assertSame(valid, passed.getRequest());
     }
 
+    @Nested
+    @DisplayName("Khi profile production đang hoạt động")
+    class ProductionProfile {
+
+        @DisplayName(
+                "Origin http bị từ chối ngay khi tạo cookie serializer, với cả hai tên profile"
+                        + " prod và production, để ứng dụng không khởi động được")
+        @Test
+        void httpOriginRejected() {
+            var configuration = new OidcLogoutConfiguration();
+            for (String profile : List.of("prod", "production")) {
+                IllegalStateException failure =
+                        assertThrows(
+                                IllegalStateException.class,
+                                () ->
+                                        configuration.sessionCookieSerializer(
+                                                properties("http://app.example.test"),
+                                                environment(profile)));
+                String message = Objects.requireNonNull(failure.getMessage(), "exception message");
+                assertTrue(message.contains("https"));
+                assertTrue(message.contains("http://app.example.test"));
+            }
+        }
+
+        @DisplayName("Origin https vẫn tạo được cookie serializer và cookie mang cờ Secure")
+        @Test
+        void httpsOriginAccepted() {
+            CookieSerializer serializer =
+                    new OidcLogoutConfiguration()
+                            .sessionCookieSerializer(
+                                    properties("https://app.example.test"), environment("prod"));
+            var response = new MockHttpServletResponse();
+            serializer.writeCookieValue(
+                    new CookieSerializer.CookieValue(
+                            new MockHttpServletRequest(), response, "prod-id"));
+            String header = Objects.requireNonNull(response.getHeader("Set-Cookie"), "Set-Cookie");
+            assertTrue(header.startsWith("SESSION=prod-id;"));
+            assertTrue(header.contains("Secure"));
+        }
+    }
+
+    private static MockEnvironment environment(String... profiles) {
+        var environment = new MockEnvironment();
+        environment.setActiveProfiles(profiles);
+        return environment;
+    }
+
     /**
      * Chỉ appOrigin được method đọc; phần Keycloak không được tiêu dùng nên để giá trị trung tính.
      */
@@ -101,11 +152,13 @@ class OidcLogoutConfigurationTest {
                 + ".signature";
     }
 
+    @DisplayName("Ngoài profile production, origin http trên máy local vẫn tạo cookie không Secure")
     @Test
     void localHttpSessionCookieDoesNotRequireTls() {
         CookieSerializer serializer =
                 new OidcLogoutConfiguration()
-                        .sessionCookieSerializer(properties("http://localhost:3000"));
+                        .sessionCookieSerializer(
+                                properties("http://localhost:3000"), environment());
         var response = new MockHttpServletResponse();
         serializer.writeCookieValue(
                 new CookieSerializer.CookieValue(

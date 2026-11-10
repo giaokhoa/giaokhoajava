@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { requestWorkspaces } from "../../lib/api-client";
-import { useSession } from "../identity/session-provider";
+import { requestWorkspaces } from "@/lib/api-client";
+import { useSession } from "@/features/identity/session-provider";
 import {
   parseWorkspaces,
   type WorkspaceView,
-} from "../identity/workspace-switcher";
+} from "@/features/identity/workspace-switcher";
 
 // Workspace cá nhân của chính người đang đăng nhập: backend tự bootstrap khi đăng
 // nhập nên luôn có, không cần gói hay membership nào để tồn tại.

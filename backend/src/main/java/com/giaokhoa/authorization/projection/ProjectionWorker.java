@@ -82,7 +82,7 @@ public class ProjectionWorker {
     private @Nullable UUID orphanScanCursor;
 
     /** Trạng thái giới hạn tốc độ của một partition bị fence mà không có operation đang sống. */
-    private record OrphanRetry(int failures, Instant nextAttemptAt) {}
+    private record OrphanRetry(int failures, Instant nextAttemptAt, long desiredRevision) {}
 
     public ProjectionWorker(
             AuthorizationOperationRepository operations,
@@ -352,9 +352,14 @@ public class ProjectionWorker {
 
     /**
      * Các partition bị fence mà không có operation đang sống vẫn hội tụ: xác minh và mở lại, hoặc
-     * giữ nguyên fence. Retry bị giới hạn tốc độ bằng cùng backoff có giới hạn như đường operation,
-     * nên một partition không thể hội tụ (ví dụ khi Keycloak đang sập) không bị retry ở mọi poll
-     * một giây.
+     * giữ nguyên fence. Lượt quét chỉ lấy partition đã từng có ý định trạng thái (đã ghi ít nhất
+     * một projection, hoặc desired/applied revision đã rời 0): partition do trigger tạo ở PENDING
+     * với revision 0 và chưa một projection nào thì chưa có gì để đối chiếu, nên giữ nguyên PENDING
+     * mà không thử — operation đầu tiên ghi projection cho nó sẽ tiếp quản qua đường operation.
+     * Retry bị giới hạn tốc độ bằng cùng backoff có giới hạn như đường operation và dùng chung ngân
+     * sách {@link #MAX_ATTEMPTS}: cạn ngân sách mà partition không hề thay đổi desired revision thì
+     * ngừng thử, chỉ thử lại khi revision đổi, nên một partition không thể hội tụ (ví dụ khi
+     * Keycloak đang sập) không bị retry vô hạn ở mọi poll một giây.
      */
     void reconcileOrphanedPartitions() {
         Set<UUID> referenced = new HashSet<>();
@@ -363,7 +368,9 @@ public class ProjectionWorker {
             referenced.addAll(affected);
         }
         List<UUID> orphaned =
-                partitions.findIdsByStateOrderByIdAsc(AuthorizationPartition.State.PENDING).stream()
+                partitions
+                        .findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING)
+                        .stream()
                         .filter(partitionId -> !referenced.contains(partitionId))
                         .toList();
         orphanRetries.keySet().retainAll(new HashSet<>(orphaned));
@@ -373,20 +380,44 @@ public class ProjectionWorker {
         }
         Instant now = Instant.now();
         for (UUID partitionId : batch) {
+            ProjectionReconciler.PartitionRow partition = reconciler.partition(partitionId);
             OrphanRetry retry = orphanRetries.get(partitionId);
-            if (retry != null && now.isBefore(retry.nextAttemptAt())) {
-                continue;
-            }
-            // Fail-closed: một partition không thể hội tụ giữ nguyên PENDING tới lần thử
-            // đã lên lịch tiếp theo của nó.
-            if (reconciler.tryReconcilePartition(partitionId)) {
-                orphanRetries.remove(partitionId);
+            if (retry != null && retry.desiredRevision() == partition.desiredRevision()) {
+                if (retry.failures() >= MAX_ATTEMPTS || now.isBefore(retry.nextAttemptAt())) {
+                    continue;
+                }
+                attemptOrphan(partition, retry.failures() + 1, now);
             } else {
-                int failures = retry == null ? 1 : retry.failures() + 1;
-                orphanRetries.put(
-                        partitionId, new OrphanRetry(failures, now.plus(backoffFor(failures))));
+                // Chưa từng thử, hoặc partition đã nhận ý định trạng thái mới kể từ các lần
+                // thử trước: ngân sách thử tính lại từ đầu.
+                attemptOrphan(partition, 1, now);
             }
         }
+    }
+
+    /**
+     * Một lần thử reconcile cho partition mồ côi: thành công thì xoá trạng thái retry; thất bại thì
+     * ghi lại số lần thất bại và mốc thử tiếp theo theo backoff. Fail-closed: partition không thể
+     * hội tụ giữ nguyên PENDING, và khi ngân sách cạn thì không còn lần thử nào nữa cho tới khi
+     * desired revision của partition đổi.
+     */
+    private void attemptOrphan(
+            ProjectionReconciler.PartitionRow partition, int failures, Instant now) {
+        if (reconciler.tryReconcilePartition(partition.id(), failures)) {
+            orphanRetries.remove(partition.id());
+        } else {
+            recordOrphanFailure(
+                    partition.id(),
+                    failures,
+                    now.plus(backoffFor(failures)),
+                    partition.desiredRevision());
+        }
+    }
+
+    /** Ghi trạng thái retry của một partition mồ côi sau một lần thử thất bại. */
+    void recordOrphanFailure(
+            UUID partitionId, int failures, Instant nextAttemptAt, long desiredRevision) {
+        orphanRetries.put(partitionId, new OrphanRetry(failures, nextAttemptAt, desiredRevision));
     }
 
     /**

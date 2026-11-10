@@ -3,7 +3,7 @@
 import {
   operationStatus,
   type TrackedOperation,
-} from "../../lib/operation-status";
+} from "@/lib/operation-status";
 
 export function OperationPanel({
   operation,

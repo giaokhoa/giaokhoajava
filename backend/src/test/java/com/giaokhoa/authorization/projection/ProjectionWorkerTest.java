@@ -23,6 +23,7 @@ import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.support.RandomIds;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -119,16 +120,64 @@ class ProjectionWorkerTest {
     @Test
     void aFailingOrphanedPartitionIsNotRetriedOnEveryPoll() {
         when(operations.findAffectedPartitionsByStateIn(any())).thenReturn(List.of());
-        when(partitions.findIdsByStateOrderByIdAsc(AuthorizationPartition.State.PENDING))
+        when(partitions.findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING))
                 .thenReturn(List.of(PARTITION));
-        when(reconciler.tryReconcilePartition(PARTITION)).thenReturn(false);
+        when(reconciler.partition(PARTITION))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                PARTITION, 1L, 0L, AuthorizationPartition.State.PENDING));
+        when(reconciler.tryReconcilePartition(eq(PARTITION), anyInt())).thenReturn(false);
         ProjectionWorker worker = worker();
 
         worker.reconcileOrphanedPartitions();
         worker.reconcileOrphanedPartitions();
 
         // Poll thứ hai nằm trong cửa sổ backoff có giới hạn: không có lần thử mạng mới.
-        verify(reconciler, times(1)).tryReconcilePartition(PARTITION);
+        verify(reconciler, times(1)).tryReconcilePartition(eq(PARTITION), anyInt());
+    }
+
+    @Test
+    void orphanScanOnlySelectsPartitionsWithRecordedStateIntent() {
+        when(operations.findAffectedPartitionsByStateIn(any())).thenReturn(List.of());
+        when(partitions.findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING))
+                .thenReturn(List.of());
+        ProjectionWorker worker = worker();
+
+        worker.reconcileOrphanedPartitions();
+
+        // Lượt quét phải đi qua truy vấn đã lọc ý định trạng thái ngay từ DB (PENDING, revision
+        // đã rời 0 hoặc đã có projection): các partition chưa từng được chiếu không còn vào
+        // được vòng thử. Hành vi trên DB thật do bộ IT projection trên CI khóa tiếp.
+        verify(partitions)
+                .findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING);
+        verify(partitions, never()).findIdsByStateOrderByIdAsc(any());
+        verify(reconciler, never()).partition(any());
+    }
+
+    @Test
+    void anOrphanThatExhaustedItsBudgetIsSkippedUntilItsRevisionChanges() {
+        when(operations.findAffectedPartitionsByStateIn(any())).thenReturn(List.of());
+        when(partitions.findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING))
+                .thenReturn(List.of(PARTITION));
+        ProjectionWorker worker = worker();
+        worker.recordOrphanFailure(PARTITION, ProjectionWorker.MAX_ATTEMPTS, Instant.EPOCH, 1L);
+
+        // Ngân sách đã cạn và revision không đổi: không thử thêm lần nào nữa.
+        when(reconciler.partition(PARTITION))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                PARTITION, 1L, 0L, AuthorizationPartition.State.PENDING));
+        worker.reconcileOrphanedPartitions();
+        verify(reconciler, never()).tryReconcilePartition(any(), anyInt());
+
+        // Revision đổi nghĩa là partition đã nhận ý định trạng thái mới: ngân sách tính lại
+        // từ đầu và partition được thử ngay trong lượt quét này.
+        when(reconciler.partition(PARTITION))
+                .thenReturn(
+                        new ProjectionReconciler.PartitionRow(
+                                PARTITION, 2L, 0L, AuthorizationPartition.State.PENDING));
+        worker.reconcileOrphanedPartitions();
+        verify(reconciler, times(1)).tryReconcilePartition(PARTITION, 1);
     }
 
     @Test
@@ -172,15 +221,21 @@ class ProjectionWorkerTest {
     void orphanScanReachesRecoverableRowsBehindFiveFailingRowsDuringBackoff() {
         List<UUID> ids = List.of(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6));
         when(operations.findAffectedPartitionsByStateIn(any())).thenReturn(List.of());
-        when(partitions.findIdsByStateOrderByIdAsc(AuthorizationPartition.State.PENDING))
+        when(partitions.findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING))
                 .thenReturn(ids);
-        when(reconciler.tryReconcilePartition(uuid(6))).thenReturn(true);
+        for (UUID id : ids) {
+            when(reconciler.partition(id))
+                    .thenReturn(
+                            new ProjectionReconciler.PartitionRow(
+                                    id, 1L, 0L, AuthorizationPartition.State.PENDING));
+        }
+        when(reconciler.tryReconcilePartition(eq(uuid(6)), anyInt())).thenReturn(true);
         var worker = worker();
         worker.reconcileOrphanedPartitions();
         worker.reconcileOrphanedPartitions();
-        verify(reconciler).tryReconcilePartition(uuid(6));
+        verify(reconciler).tryReconcilePartition(eq(uuid(6)), anyInt());
         for (UUID id : ids.subList(0, 5)) {
-            verify(reconciler, times(1)).tryReconcilePartition(id);
+            verify(reconciler, times(1)).tryReconcilePartition(eq(id), anyInt());
         }
     }
 
@@ -242,7 +297,7 @@ class ProjectionWorkerTest {
         // Operation đang sống nên partition của nó không phải partition mồ côi.
         when(operations.findAffectedPartitionsByStateIn(any()))
                 .thenReturn(List.of(List.of(PARTITION)));
-        when(partitions.findIdsByStateOrderByIdAsc(AuthorizationPartition.State.PENDING))
+        when(partitions.findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING))
                 .thenReturn(List.of(PARTITION));
     }
 

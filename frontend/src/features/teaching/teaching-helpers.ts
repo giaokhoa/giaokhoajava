@@ -1,5 +1,5 @@
-import { ApiError, isRecord } from "../../lib/api-client";
-import { parseTrackedOperation } from "../../lib/operation-status";
+import { ApiError, isRecord } from "@/lib/api-client";
+import { parseTrackedOperation } from "@/lib/operation-status";
 
 export type TeachingClass = {
   id: string;

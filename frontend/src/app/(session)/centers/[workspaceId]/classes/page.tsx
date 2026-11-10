@@ -1,6 +1,7 @@
-import { CenterClassesContent } from "../../../../features/teaching/class-management";
+import type { Metadata } from "next";
+import { CenterClassesContent } from "@/features/teaching/class-management";
 
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Lớp, khóa và phân công" };
 
 // Next 16: params của dynamic route là Promise, trang server phải await trước khi dùng.
 export default async function CenterClassesPage({

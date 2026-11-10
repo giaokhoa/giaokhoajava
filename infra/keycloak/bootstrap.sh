@@ -76,7 +76,9 @@ PENDING_BOOTSTRAP="$(jq -r '.attributes["gk.bootstrap.pending"] // "false"' "$TM
 jq -s '.[0] * (.[1] | {
   organizationsEnabled, registrationAllowed, registrationEmailAsUsername,
   loginWithEmailAllowed, verifyEmail, duplicateEmailsAllowed,
-  sslRequired, bruteForceProtected, passwordPolicy, resetPasswordAllowed
+  sslRequired, bruteForceProtected, passwordPolicy, resetPasswordAllowed,
+  revokeRefreshToken, refreshTokenMaxReuse, accessTokenLifespan,
+  ssoSessionIdleTimeout, ssoSessionMaxLifespan
 })' "$TMP/realm-current.json" "$BASELINE" > "$TMP/realm-update.json"
 admin_send PUT '' "$TMP/realm-update.json"
 

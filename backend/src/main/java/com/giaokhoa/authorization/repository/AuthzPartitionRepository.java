@@ -57,6 +57,19 @@ public interface AuthzPartitionRepository extends JpaRepository<AuthorizationPar
                     + " where p.state = :state order by p.id asc")
     List<UUID> findIdsByStateOrderByIdAsc(@Param("state") AuthorizationPartition.State state);
 
+    /**
+     * ID các partition PENDING đã từng có ý định trạng thái (revision đã rời 0 hoặc đã có ít nhất
+     * một projection), theo thứ tự id: partition do trigger tạo ở PENDING với revision 0 và chưa
+     * một projection nào thì chưa có gì để đối chiếu, nên đường quét orphan không thử.
+     */
+    @Query(
+            "select p.id from AuthorizationPartition p where p.state = :state"
+                    + " and (p.desiredRevision > 0 or p.appliedRevision > 0"
+                    + " or exists (select 1 from AuthorizationProjection pr"
+                    + " where pr.partitionId = p.id)) order by p.id asc")
+    List<UUID> findIdsByStateWithIntentOrderByIdAsc(
+            @Param("state") AuthorizationPartition.State state);
+
     @Modifying
     @Query(
             "update AuthorizationPartition p set p.state = :pending,"

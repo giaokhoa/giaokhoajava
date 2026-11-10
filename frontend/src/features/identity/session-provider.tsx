@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { apiRequest, isRecord } from "../../lib/api-client";
+import { apiRequest, isRecord, setSessionIdentity } from "@/lib/api-client";
 
 export type SessionUser = {
   id: string;
@@ -84,10 +84,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const refreshSequenceRef = useRef(0);
 
   // Trạng thái phiên chỉ sống trong bộ nhớ của request hiện tại, không lưu trữ ở
-  // client; CSRF cũng không giữ tại đây vì api-client lấy mới từ /api/session
-  // cho từng mutation, nên sau login/logout token luôn theo đúng phiên hiện hành.
+  // client. CSRF được api-client giữ trong bộ nhớ theo danh tính báo tại đây:
+  // đổi người dùng hoặc mất phiên thì token của phiên trước bị bỏ ngay tại điểm
+  // này, nên token luôn theo đúng phiên hiện hành như khi lấy mới từng lần.
   const applySession = useCallback((next: SessionState) => {
     const nextUserId = next.status === "authenticated" ? next.user.id : null;
+    setSessionIdentity(nextUserId);
     if (nextUserId !== userIdRef.current) {
       // Đổi tài khoản hoặc mất phiên: bỏ lựa chọn workspace của phiên trước.
       userIdRef.current = nextUserId;

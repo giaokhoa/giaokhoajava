@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, requestWhenReady } from "../../lib/api-client";
-import { useSession } from "../identity/session-provider";
+import { ApiError, requestWhenReady } from "@/lib/api-client";
+import { useSession } from "@/features/identity/session-provider";
 import {
   attemptKey,
   closeAttempt,
-} from "../operations/operation-attempts";
+} from "@/features/operations/operation-attempts";
 import {
   operationStatus,
   pollOperationUntilSettled,
   type OperationView,
-} from "../../lib/operation-status";
+} from "@/lib/operation-status";
 import {
   CorrectionNoticeView,
   parseCorrectionNotice,

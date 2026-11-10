@@ -6,24 +6,24 @@ import {
   requestAllPages,
   requestWhenReady,
   requestWorkspaces,
-} from "../../lib/api-client";
-import { SessionGate } from "../identity/session-gate";
-import { useSession } from "../identity/session-provider";
+} from "@/lib/api-client";
+import { SessionGate } from "@/features/identity/session-gate";
+import { useSession } from "@/features/identity/session-provider";
 import {
   memberPermissions,
   parseMemberships,
   type Membership,
-} from "../../lib/memberships";
-import { attemptKey, submitMutation } from "../operations/operation-attempts";
-import { OperationPanel } from "../operations/operation-panel";
-import { useOperationCheck } from "../../lib/use-operation-check";
+} from "@/lib/memberships";
+import { attemptKey, submitMutation } from "@/features/operations/operation-attempts";
+import { OperationPanel } from "@/features/operations/operation-panel";
+import { useOperationCheck } from "@/lib/use-operation-check";
 import {
   operationStatus,
   parseTrackedOperation,
   pollOperationUntilSettled,
   type TrackedOperation,
-} from "../../lib/operation-status";
-import { parseWorkspaces, type WorkspaceView } from "../identity/workspace-switcher";
+} from "@/lib/operation-status";
+import { parseWorkspaces, type WorkspaceView } from "@/features/identity/workspace-switcher";
 import { CourseSubjectEditor } from "./course-subject-editor";
 import { HomeroomAssignmentList } from "./homeroom-assignment-list";
 import {

@@ -1,17 +1,50 @@
 package com.giaokhoa.authorization.projection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.authorization.policy.PolicyGraphWriter;
+import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
+import com.giaokhoa.guardians.GuardianPolicyProjector;
+import com.giaokhoa.resources.ResourcePolicyProjector;
+import com.giaokhoa.resources.SharePolicyProjector;
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.support.RandomIds;
+import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
+import com.giaokhoa.teaching.TeachingPolicyProjector;
+import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.verification.ResultPolicyProjector;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 class ProjectionReconcilerTest {
     private static final UUID WORKSPACE = RandomIds.randomId();
@@ -138,6 +171,138 @@ class ProjectionReconcilerTest {
         PolicyGraph graph =
                 ProjectionReconciler.graphFor(target, "recovery.request", List.of(descriptor));
         assertEquals(List.of(), graph.commonGates());
+    }
+
+    @Test
+    void noRecordedProjectionLogsDebugWithoutStackTraceAndOnlyAtMilestones() {
+        UUID partitionId = RandomIds.randomId();
+        AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
+        AuthzProjectionRepository projections = mock(AuthzProjectionRepository.class);
+        when(partitions.findById(partitionId))
+                .thenReturn(
+                        Optional.of(
+                                partition(
+                                        partitionId,
+                                        1L,
+                                        0L,
+                                        AuthorizationPartition.State.PENDING)));
+        when(projections.findByPartitionIdOrderByTargetKeyAsc(partitionId)).thenReturn(List.of());
+        ProjectionReconciler reconciler = reconcilerWithInlineLock(partitions, projections);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ProjectionReconciler.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Level previousLevel = logger.getLevel();
+        logger.setLevel(Level.DEBUG);
+        logger.addAppender(appender);
+        try {
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 1));
+            // Lần thất bại thứ ba không phải mốc lũy thừa hai: không ghi thêm.
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 3));
+            assertEquals(1, appender.list.size());
+            // Mốc lũy thừa tiếp theo (4) ghi lại đúng một dòng.
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 4));
+            assertEquals(2, appender.list.size());
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previousLevel);
+        }
+        for (ILoggingEvent event : appender.list) {
+            assertEquals(Level.DEBUG, event.getLevel());
+            assertTrue(
+                    event.getFormattedMessage()
+                            .contains(ProjectionReconciler.ERROR_NO_RECORDED_PROJECTION));
+            // Lỗi đã phân loại không được kéo theo stack trace.
+            assertNull(event.getThrowableProxy());
+        }
+    }
+
+    @Test
+    void supersededRevisionLogsWarnWithCodeAndNoStackTrace() {
+        UUID partitionId = RandomIds.randomId();
+        AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
+        AuthzProjectionRepository projections = mock(AuthzProjectionRepository.class);
+        when(partitions.findById(partitionId))
+                .thenReturn(
+                        Optional.of(
+                                partition(
+                                        partitionId, 1L, 0L, AuthorizationPartition.State.READY)));
+        ProjectionReconciler reconciler = reconcilerWithInlineLock(partitions, projections);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ProjectionReconciler.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertFalse(reconciler.tryReconcilePartition(partitionId, 1));
+        } finally {
+            logger.detachAppender(appender);
+        }
+        assertEquals(1, appender.list.size());
+        ILoggingEvent event = appender.list.getFirst();
+        assertEquals(Level.WARN, event.getLevel());
+        assertTrue(
+                event.getFormattedMessage()
+                        .contains(ProjectionReconciler.ERROR_REVISION_SUPERSEDED));
+        assertNull(event.getThrowableProxy());
+    }
+
+    private static AuthorizationPartition partition(
+            UUID id,
+            long desiredRevision,
+            long appliedRevision,
+            AuthorizationPartition.State state) {
+        return new AuthorizationPartition(
+                id,
+                AuthorizationPartition.Kind.WORKSPACE,
+                "owner:" + id,
+                desiredRevision,
+                appliedRevision,
+                state);
+    }
+
+    /**
+     * Reconciler với coordinator và transaction chạy thẳng action trong luồng gọi, các cộng tác còn
+     * lại là mock.
+     */
+    private static ProjectionReconciler reconcilerWithInlineLock(
+            AuthzPartitionRepository partitions, AuthzProjectionRepository projections) {
+        ResourceMutationCoordinator coordinator = mock(ResourceMutationCoordinator.class);
+        when(coordinator.withResourceLock(anyString(), any()))
+                .thenAnswer(invocation -> {
+                    Supplier<?> action = invocation.getArgument(1);
+                    return action.get();
+                });
+        return new ProjectionReconciler(
+                partitions,
+                projections,
+                mock(PolicyGraphWriter.class),
+                mock(AuthorizationProvisioningClient.class),
+                mock(CenterPolicyProjector.class),
+                mock(TeachingPolicyProjector.class),
+                mock(GuardianPolicyProjector.class),
+                mock(ResultPolicyProjector.class),
+                mock(ResourcePolicyProjector.class),
+                mock(SharePolicyProjector.class),
+                mock(PersonalEntitlementProjector.class),
+                mock(PersonalTeachingPolicyProjector.class),
+                stubTransactions(),
+                coordinator);
+    }
+
+    private static PlatformTransactionManager stubTransactions() {
+        return new PlatformTransactionManager() {
+            @Override
+            public TransactionStatus getTransaction(@Nullable TransactionDefinition definition) {
+                return new SimpleTransactionStatus();
+            }
+
+            @Override
+            public void commit(TransactionStatus status) {}
+
+            @Override
+            public void rollback(TransactionStatus status) {}
+        };
     }
 
     private static String sha256(String value) throws Exception {
