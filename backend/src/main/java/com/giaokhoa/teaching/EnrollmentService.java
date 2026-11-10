@@ -6,7 +6,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction.WorkspaceInfo;
+import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
 import com.giaokhoa.teaching.model.ClassStudent;
 import com.giaokhoa.teaching.model.CourseSubject;
 import com.giaokhoa.teaching.model.Enrollment;

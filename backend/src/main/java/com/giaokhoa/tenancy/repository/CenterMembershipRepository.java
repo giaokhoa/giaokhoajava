@@ -46,6 +46,13 @@ public interface CenterMembershipRepository extends JpaRepository<CenterMembersh
             MembershipRole.Role role,
             Pageable pageable);
 
+    /** Mọi user có membership ở trạng thái này mang role này trong workspace. */
+    @Query(
+            "SELECT DISTINCT m.userId FROM CenterMembership m JOIN m.roles r"
+                    + " WHERE m.workspaceId = :workspaceId AND m.state = :state AND r = :role")
+    List<UUID> findUserIdsByWorkspaceIdAndStateAndRole(
+            UUID workspaceId, CenterMembership.State state, MembershipRole.Role role);
+
     /**
      * Một trang roster theo keyset (joined_at, id); mốc null là trang đầu. Hàng đã thu hồi vẫn được
      * tính ở bước tra mốc nên bộ lọc trạng thái không áp ở truy vấn này.

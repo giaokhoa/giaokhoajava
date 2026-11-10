@@ -3,7 +3,7 @@ package com.giaokhoa.teaching;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction.WorkspaceInfo;
+import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
 import com.giaokhoa.teaching.model.ClassStudent;
 import com.giaokhoa.teaching.model.SchoolClass;
 import com.giaokhoa.teaching.repository.ClassStudentRepository;
