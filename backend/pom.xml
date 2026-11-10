@@ -104,6 +104,7 @@
                     <failOnWarning>true</failOnWarning>
                     <compilerArgs>
                         <arg>-Xlint:all</arg>
+                        <arg>-Xlint:-processing</arg>
                         <arg>-XDcompilePolicy=simple</arg>
                         <arg>--should-stop=ifError=FLOW</arg>
                         <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
