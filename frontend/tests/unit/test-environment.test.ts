@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, expect, test, vi } from "vitest";
 import { TestEnvironment } from "../e2e/support/test-environment";
 
@@ -6,7 +7,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const USER_ID = "11111111-2222-3333-4444-555555555555";
+const USER_ID = randomUUID();
 
 function stubEnvTest() {
   vi.stubEnv("TEST_KEYCLOAK_BASE_URL", "http://127.0.0.1:18081");

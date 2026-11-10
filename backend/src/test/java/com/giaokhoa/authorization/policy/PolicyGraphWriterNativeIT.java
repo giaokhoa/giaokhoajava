@@ -44,6 +44,8 @@ class PolicyGraphWriterNativeIT {
     private static final String CLIENT_ID = "giaokhoa-provisioner";
     private static final String AUDIENCE = "giaokhoa-api";
     private static final String USER = "native-gate-assigned";
+    // ID giữ cố định, thuộc dải native gate (cùng họ infra/keycloak/fixtures/native-gate.json):
+    // các lần chạy verify-native.sh phải hội tụ trên cùng một workspace thay vì phình dữ liệu.
     private static final UUID WORKSPACE = UUID.fromString("71000000-0000-4000-8000-0000000000fa");
 
     @AfterEach

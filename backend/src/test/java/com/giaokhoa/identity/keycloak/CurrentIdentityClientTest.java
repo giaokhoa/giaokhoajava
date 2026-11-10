@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
+import com.giaokhoa.support.TestIds;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -27,7 +28,7 @@ import org.springframework.web.client.RestClientResponseException;
 class CurrentIdentityClientTest {
     private static final String HOST = "http://keycloak.test";
     private static final String REALM = "giaokhoa-it";
-    private static final String USER_ID = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+    private static final String USER_ID = TestIds.randomId().toString();
     private static final String USER_URL = HOST + "/admin/realms/" + REALM + "/users/" + USER_ID;
 
     @Test

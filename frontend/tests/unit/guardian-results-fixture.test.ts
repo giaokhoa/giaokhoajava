@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { seedGuardianResult } from "../e2e/support/guardian-results-fixture";
 
 vi.mock("node:child_process", () => ({ spawnSync: vi.fn() }));
-const id = "00000000-0000-4000-8000-000000000001";
+const id = randomUUID();
 const seed = {
   workspaceId: id, teacherUserId: id, studentUserId: id, courseSubjectId: id,
   subjectId: id, score: "9.5", comment: "nhận xét 'riêng'", published: true,

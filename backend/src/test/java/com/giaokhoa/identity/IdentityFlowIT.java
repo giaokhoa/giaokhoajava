@@ -15,6 +15,8 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.support.KeycloakSessionFixture;
 import com.giaokhoa.support.RealmFoundation;
+import com.giaokhoa.tenancy.WorkspaceDirectory;
+import com.giaokhoa.tenancy.model.Workspace;
 import jakarta.servlet.http.Cookie;
 import java.util.HashMap;
 import java.util.List;
@@ -56,6 +58,8 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     }
 
     @Autowired IdentityEligibilitySynchronizer synchronizer;
+
+    @Autowired WorkspaceDirectory directory;
 
     @Test
     void unverifiedSelfRegisteredUserHasNoEligibilityUntilEmailVerified() {
@@ -316,11 +320,11 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                             actor));
             assertEquals(
                     "ACTIVE",
-                    jdbc.queryForObject(
-                            "SELECT state FROM workspace WHERE owner_user_id = ?"
-                                    + " AND kind = 'PERSONAL'",
-                            String.class,
-                            actor));
+                    directory.listWorkspaces(actor).stream()
+                            .filter(workspace -> workspace.kind() == Workspace.Kind.PERSONAL)
+                            .map(WorkspaceDirectory.ListedWorkspace::state)
+                            .findFirst()
+                            .orElse("MISSING"));
             assertEquals(Set.of("STUDENT"), activeRoles(centerB, actor));
             assertTrue(
                     groupPathsOf(subject).contains(ELIGIBLE_GROUP),
@@ -666,11 +670,10 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                             two.get(20, java.util.concurrent.TimeUnit.SECONDS).id());
                 }
                 assertEquals(
-                        2,
-                        jdbc.queryForObject(
-                                "SELECT count(*) FROM recovery_request WHERE requester_user_id = ?",
-                                Integer.class,
-                                actor));
+                        2L,
+                        service.listRequests().stream()
+                                .filter(request -> request.requesterUserId().equals(actor))
+                                .count());
             }
         } finally {
             deleteUser(subject);
@@ -746,12 +749,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                         JSON.readTree(approved.getContentAsString())
                                 .get("completed")
                                 .booleanValue());
-                assertEquals(
-                        "VERIFIED",
-                        jdbc.queryForObject(
-                                "SELECT state FROM recovery_request WHERE id = ?",
-                                String.class,
-                                submitted.id()));
+                assertEquals("VERIFIED", recoveryRequestState(session, submitted.id()));
                 var replay =
                         mockMvc()
                                 .perform(
@@ -827,12 +825,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                         JSON.readTree(completed.getContentAsString())
                                 .get("completed")
                                 .booleanValue());
-                assertEquals(
-                        "RESOLVED",
-                        jdbc.queryForObject(
-                                "SELECT state FROM recovery_request WHERE id = ?",
-                                String.class,
-                                submitted.id()));
+                assertEquals("RESOLVED", recoveryRequestState(session, submitted.id()));
             }
         } finally {
             deleteUser(subject);
@@ -937,6 +930,21 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                     userId);
             return null;
         });
+    }
+
+    private String recoveryRequestState(RealSession session, UUID requestId) throws Exception {
+        MockHttpServletResponse response =
+                requestWhenReady(
+                        mockMvc(),
+                        get("/api/platform/recovery-requests").cookie(session.cookie()));
+        assertEquals(200, response.getStatus(), response.getContentAsString());
+        for (JsonNode item : JSON.readTree(response.getContentAsString())) {
+            if (requestId.toString().equals(item.get("id").stringValue())) {
+                return item.get("state").stringValue();
+            }
+        }
+        throw new AssertionError(
+                "Không thấy yêu cầu khôi phục " + requestId + " trong danh sách của operator");
     }
 
     private Set<String> activeRoles(UUID workspaceId, UUID userId) {

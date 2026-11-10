@@ -10,13 +10,16 @@ import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.identity.IdentityService.BootstrapResult;
 import com.giaokhoa.identity.IdentityService.CurrentUser;
 import com.giaokhoa.identity.IssuedStudentRegistrar.IssuedStudent;
+import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
+import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.WorkspaceDirectory;
 import com.giaokhoa.tenancy.WorkspaceDirectory.ListedWorkspace;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.net.URI;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,11 +64,25 @@ class BootstrapProfileIT extends IntegrationEnvironment {
     @Autowired IdentityService identityService;
     @Autowired WorkspaceDirectory directory;
     @Autowired IssuedStudentRegistrar registrar;
+    @Autowired MembershipService memberships;
 
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua service đồng
     // bộ): mock để worker nền không tự xử lý operation song song với các lời gọi service
     // trực tiếp của class.
     @MockitoBean ProjectionWorker scheduledWorker;
+
+    /** Membership của một user trong một workspace, đọc qua đúng service mà endpoint danh sách gọi. */
+    private List<MembershipService.MembershipView> membershipsOf(UUID workspaceId, UUID userId) {
+        List<MembershipService.MembershipView> all = new ArrayList<>();
+        String cursor = null;
+        do {
+            MembershipService.MembershipPage page =
+                    memberships.pageMemberships(workspaceId, cursor, 100);
+            all.addAll(page.items());
+            cursor = page.nextCursor();
+        } while (cursor != null);
+        return all.stream().filter(item -> item.userId().equals(userId)).toList();
+    }
 
     @Test
     void bootstrapCreatesAccountAndPersonalWorkspaceForNewSelfRegisteredIdentity() {
@@ -75,30 +92,10 @@ class BootstrapProfileIT extends IntegrationEnvironment {
             BootstrapResult result = identityService.bootstrap(subject);
 
             assertTrue(result.created());
-            assertEquals(
-                    "SELF_REGISTERED",
-                    jdbc.queryForObject(
-                            "SELECT origin FROM user_account WHERE id = ?",
-                            String.class,
-                            result.userId()));
-            assertEquals(
-                    username + "@example.test",
-                    jdbc.queryForObject(
-                            "SELECT email FROM user_account WHERE id = ?",
-                            String.class,
-                            result.userId()));
-            assertEquals(
-                    Boolean.TRUE,
-                    jdbc.queryForObject(
-                            "SELECT email_verified FROM user_account WHERE id = ?",
-                            Boolean.class,
-                            result.userId()));
-            assertEquals(
-                    "ACTIVE",
-                    jdbc.queryForObject(
-                            "SELECT state FROM workspace WHERE id = ?",
-                            String.class,
-                            result.personalWorkspaceId()));
+            CurrentUser current = identityService.currentUser(result.userId());
+            assertEquals(UserAccount.Origin.SELF_REGISTERED, current.origin());
+            assertEquals(username + "@example.test", current.email());
+            assertTrue(current.emailVerified());
             assertEquals(
                     List.of(
                             new ListedWorkspace(
@@ -126,17 +123,8 @@ class BootstrapProfileIT extends IntegrationEnvironment {
             assertEquals(first.userId(), second.userId());
             assertEquals(first.personalWorkspaceId(), second.personalWorkspaceId());
             assertEquals(
-                    "after@example.test",
-                    jdbc.queryForObject(
-                            "SELECT email FROM user_account WHERE id = ?",
-                            String.class,
-                            first.userId()));
-            assertEquals(
-                    Boolean.FALSE,
-                    jdbc.queryForObject(
-                            "SELECT email_verified FROM user_account WHERE id = ?",
-                            Boolean.class,
-                            first.userId()));
+                    "after@example.test", identityService.currentUser(first.userId()).email());
+            assertFalse(identityService.currentUser(first.userId()).emailVerified());
             assertEquals(
                     1,
                     jdbc.queryForObject(
@@ -159,20 +147,10 @@ class BootstrapProfileIT extends IntegrationEnvironment {
 
             assertFalse(result.created());
             assertEquals(actor, result.userId());
-            assertEquals(
-                    "CENTER_ISSUED",
-                    jdbc.queryForObject(
-                            "SELECT origin FROM user_account WHERE id = ?", String.class, actor));
-            assertEquals(
-                    username + "@example.test",
-                    jdbc.queryForObject(
-                            "SELECT email FROM user_account WHERE id = ?", String.class, actor));
-            assertEquals(
-                    Boolean.TRUE,
-                    jdbc.queryForObject(
-                            "SELECT email_verified FROM user_account WHERE id = ?",
-                            Boolean.class,
-                            actor));
+            CurrentUser current = identityService.currentUser(actor);
+            assertEquals(UserAccount.Origin.CENTER_ISSUED, current.origin());
+            assertEquals(username + "@example.test", current.email());
+            assertTrue(current.emailVerified());
         } finally {
             deleteUser(subject);
         }
@@ -186,17 +164,8 @@ class BootstrapProfileIT extends IntegrationEnvironment {
             BootstrapResult result = identityService.bootstrap(subject);
 
             assertTrue(result.created());
-            assertNull(
-                    jdbc.queryForObject(
-                            "SELECT email FROM user_account WHERE id = ?",
-                            String.class,
-                            result.userId()));
-            assertEquals(
-                    Boolean.FALSE,
-                    jdbc.queryForObject(
-                            "SELECT email_verified FROM user_account WHERE id = ?",
-                            Boolean.class,
-                            result.userId()));
+            assertNull(identityService.currentUser(result.userId()).email());
+            assertFalse(identityService.currentUser(result.userId()).emailVerified());
         } finally {
             deleteUser(subject);
         }
@@ -260,32 +229,16 @@ class BootstrapProfileIT extends IntegrationEnvironment {
         assertEquals(first.userId(), second.userId());
         assertEquals(first.membershipId(), second.membershipId());
         assertEquals(
-                "CENTER_ISSUED",
-                jdbc.queryForObject(
-                        "SELECT origin FROM user_account WHERE id = ?",
-                        String.class,
-                        first.userId()));
-        assertNull(
-                jdbc.queryForObject(
-                        "SELECT email FROM user_account WHERE id = ?",
-                        String.class,
-                        first.userId()));
-        assertEquals(
-                "ACTIVE",
-                jdbc.queryForObject(
-                        "SELECT state FROM center_membership WHERE id = ?",
-                        String.class,
-                        first.membershipId()));
+                UserAccount.Origin.CENTER_ISSUED,
+                identityService.currentUser(first.userId()).origin());
+        assertNull(identityService.currentUser(first.userId()).email());
+        List<MembershipService.MembershipView> issuedMemberships =
+                membershipsOf(center, first.userId());
+        assertEquals(1, issuedMemberships.size());
+        assertEquals(first.membershipId(), issuedMemberships.getFirst().id());
+        assertEquals("ACTIVE", issuedMemberships.getFirst().state());
         assertEquals(
                 Set.of(MembershipRole.Role.STUDENT), directory.rolesIn(first.userId(), center));
-        assertEquals(
-                1,
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM center_membership WHERE workspace_id = ? AND"
-                                + " user_id = ?",
-                        Integer.class,
-                        center,
-                        first.userId()));
     }
 
     @Test
@@ -315,10 +268,10 @@ class BootstrapProfileIT extends IntegrationEnvironment {
 
         assertFalse(issued.membershipCreated(), "Membership đã có từ lúc mời nên không tạo mới");
         assertEquals(pending, issued.membershipId());
-        assertEquals(
-                "ACTIVE",
-                jdbc.queryForObject(
-                        "SELECT state FROM center_membership WHERE id = ?", String.class, pending));
+        List<MembershipService.MembershipView> reissued = membershipsOf(center, student);
+        assertEquals(1, reissued.size());
+        assertEquals(pending, reissued.getFirst().id());
+        assertEquals("ACTIVE", reissued.getFirst().state());
         assertEquals(
                 joinedBefore,
                 jdbc.queryForObject(
@@ -327,14 +280,6 @@ class BootstrapProfileIT extends IntegrationEnvironment {
                         pending),
                 "Kích hoạt không được sửa lịch sử tham gia");
         assertEquals(Set.of(MembershipRole.Role.STUDENT), directory.rolesIn(student, center));
-        assertEquals(
-                1,
-                jdbc.queryForObject(
-                        "SELECT count(*) FROM center_membership WHERE workspace_id = ? AND"
-                                + " user_id = ?",
-                        Integer.class,
-                        center,
-                        student));
         assertTrue(
                 directory.listWorkspaces(student).stream().anyMatch(w -> w.id().equals(center)),
                 "Học sinh vừa được cấp phải thấy center trong thư mục");
@@ -354,9 +299,7 @@ class BootstrapProfileIT extends IntegrationEnvironment {
         assertTrue(issued.membershipCreated());
         assertEquals(actor, issued.userId());
         assertEquals(
-                "SELF_REGISTERED",
-                jdbc.queryForObject(
-                        "SELECT origin FROM user_account WHERE id = ?", String.class, actor));
+                UserAccount.Origin.SELF_REGISTERED, identityService.currentUser(actor).origin());
 
         HttpProblemException mismatch =
                 assertThrows(
@@ -419,18 +362,14 @@ class BootstrapProfileIT extends IntegrationEnvironment {
                         String.class,
                         inA.userId()),
                 "Rời một trung tâm không xóa hay đổi danh tính");
+        assertEquals("ACTIVE", identityService.currentUser(inA.userId()).identityState());
         assertEquals(
                 "ACTIVE",
-                jdbc.queryForObject(
-                        "SELECT identity_state FROM user_account WHERE id = ?",
-                        String.class,
-                        inA.userId()));
-        assertEquals(
-                "ACTIVE",
-                jdbc.queryForObject(
-                        "SELECT state FROM workspace WHERE owner_user_id = ? AND kind = 'PERSONAL'",
-                        String.class,
-                        inA.userId()));
+                directory.listWorkspaces(inA.userId()).stream()
+                        .filter(view -> view.id().equals(inA.personalWorkspaceId()))
+                        .findFirst()
+                        .orElseThrow()
+                        .state());
         assertEquals(
                 Set.of(inA.personalWorkspaceId(), centerB),
                 Set.copyOf(

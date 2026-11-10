@@ -508,16 +508,25 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             "{\"teacherUserId\":\"" + fixture.teacherAId() + "\"}",
                             "POST");
             awaitOperationSucceeded(jdbc, operationId);
+            JsonNode homeroom =
+                    getJson(
+                            manager,
+                            "/api/workspaces/"
+                                    + fixture.workspaceId()
+                                    + "/classes/"
+                                    + setup.classId()
+                                    + "/homeroom-assignments",
+                            200);
+            int homeroomOfTeacher = 0;
+            for (JsonNode item : homeroom.get("items")) {
+                if (fixture.teacherAId()
+                        .toString()
+                        .equals(item.get("teacherUserId").stringValue())) {
+                    homeroomOfTeacher++;
+                }
+            }
             assertEquals(
-                    1,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM homeroom_assignment"
-                                    + " WHERE class_id = ? AND teacher_user_id = ?"
-                                    + " AND state = 'ACTIVE'",
-                            Integer.class,
-                            setup.classId(),
-                            fixture.teacherAId()),
-                    "Quản lý chỉ định được chủ nhiệm cho lớp");
+                    1, homeroomOfTeacher, "Quản lý chỉ định được chủ nhiệm cho lớp");
         }
     }
 

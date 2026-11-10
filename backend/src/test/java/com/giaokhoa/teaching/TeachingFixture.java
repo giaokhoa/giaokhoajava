@@ -230,6 +230,23 @@ abstract class TeachingFixture extends IntegrationEnvironment {
         return items.size();
     }
 
+    protected int teacherAssignmentCount(
+            RealSession session, UUID workspaceId, UUID courseSubjectId) throws Exception {
+        JsonNode body =
+                getJson(
+                        session,
+                        "/api/workspaces/"
+                                + workspaceId
+                                + "/course-subjects/"
+                                + courseSubjectId
+                                + "/teachers",
+                        200);
+        JsonNode items = body.get("items");
+        assertNotNull(items, "Danh sách phân công trả dạng {items}");
+        assertTrue(items.isArray(), "Danh sách phân công là một mảng");
+        return items.size();
+    }
+
     protected UUID courseSubjectId(UUID courseId, UUID subjectId) {
         return Objects.requireNonNull(
                 jdbc.queryForObject(

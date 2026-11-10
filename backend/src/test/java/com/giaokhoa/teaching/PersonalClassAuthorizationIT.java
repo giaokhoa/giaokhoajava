@@ -100,14 +100,13 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
                         403,
                         response.getStatus(),
                         "Chưa có gói cá nhân thì tạo lớp personal phải bị từ chối");
+                assertEquals(
+                        0,
+                        getJson(owner, "/api/workspaces/" + personal + "/classes", 200)
+                                .get("items")
+                                .size(),
+                        "Lời gọi bị từ chối không được để lại lớp");
             }
-            assertEquals(
-                    0,
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM school_class WHERE workspace_id = ?",
-                            Integer.class,
-                            personal),
-                    "Lời gọi bị từ chối không được để lại lớp");
         } finally {
             deleteUser(ownerLogin.subject());
         }
@@ -366,19 +365,6 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
                                         + "\"}");
                 assertEquals("SUCCEEDED", published.get("state").stringValue());
             }
-            assertEquals(
-                    "PUBLISHED",
-                    jdbc.queryForObject(
-                            "SELECT state FROM sample_result WHERE id = ?", String.class, resultId),
-                    "Công bố phải chuyển kết quả sang PUBLISHED");
-            assertEquals(
-                    "9.5",
-                    jdbc.queryForObject(
-                            "SELECT score_stub FROM sample_result WHERE id = ?",
-                            String.class,
-                            resultId),
-                    "Chấm phải ghi điểm của owner lớp personal");
-
             try (var student = openSession(studentLogin)) {
                 JsonNode after = getJson(student, resultsUri(personal, studentId), 200);
                 assertEquals(

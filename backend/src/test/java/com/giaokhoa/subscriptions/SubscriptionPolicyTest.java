@@ -1,29 +1,39 @@
 package com.giaokhoa.subscriptions;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.giaokhoa.support.TestIds;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class SubscriptionPolicyTest {
-    private static final UUID WORKSPACE = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID WORKSPACE = TestIds.randomId();
 
+    // Ngữ nghĩa thật của điều kiện gói (chưa có gói, gói hết hạn, gói còn hạn) khóa trên
+    // PostgreSQL thật ở TeachingServiceIT.subscriptionPolicyMatchesRealPostgresLifecycle. Ở tầng
+    // unit chỉ khẳng định ánh xạ từ kết quả truy vấn sang boolean của cả hai phương thức, khớp
+    // theo đúng workspace được truyền vào chứ không theo văn bản SQL.
     @Test
-    void nullResultFromQueryMapsToFalse() {
-        // Ngữ nghĩa thật của điều kiện gói (chưa có gói, gói hết hạn, gói còn hạn) đã khóa trên
-        // PostgreSQL thật ở TeachingServiceIT.subscriptionPolicyMatchesRealPostgresLifecycle; ở
-        // tầng unit chỉ còn khẳng định được ánh xạ kết quả null thành false, không buộc khẳng
-        // định vào cú pháp SQL như bản cũ.
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.queryForObject(anyString(), eq(Boolean.class), any(), any()))
-                .thenReturn((Boolean) null);
+    void queryResultMapsToBooleanForBothPolicies() {
+        for (Boolean result : new Boolean[] {Boolean.TRUE, Boolean.FALSE, null}) {
+            JdbcTemplate jdbc = jdbcReturning(result);
+            boolean expected = Boolean.TRUE.equals(result);
+            assertEquals(expected, SubscriptionPolicy.current(jdbc, WORKSPACE));
+            assertEquals(expected, SubscriptionPolicy.currentOrUnconfirmed(jdbc, WORKSPACE));
+        }
+    }
 
-        assertFalse(SubscriptionPolicy.currentOrUnconfirmed(jdbc, WORKSPACE));
+    private static JdbcTemplate jdbcReturning(Boolean result) {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(WORKSPACE)))
+                .thenReturn(result);
+        when(jdbc.queryForObject(anyString(), eq(Boolean.class), eq(WORKSPACE), eq(WORKSPACE)))
+                .thenReturn(result);
+        return jdbc;
     }
 }

@@ -149,11 +149,8 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
                 awaitOperationSucceeded(session, operationId);
 
                 assertEquals(
-                        1,
-                        jdbc.queryForObject(
-                                "SELECT count(*) FROM center WHERE owner_user_id = ?",
-                                Integer.class,
-                                owner),
+                        1L,
+                        countCentersByOwner(session, owner),
                         "Center chỉ tồn tại sau khi operation SUCCEEDED");
             }
         } finally {
@@ -1199,6 +1196,27 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
                 + "\",\"confirmationRef\":\"center-confirm-"
                 + UUID.randomUUID()
                 + "\"}";
+    }
+
+    private long countCentersByOwner(RealSession session, UUID ownerUserId) throws Exception {
+        long count = 0;
+        String cursor = null;
+        do {
+            String url =
+                    "/api/platform/centers?limit=100"
+                            + (cursor == null ? "" : "&cursor=" + cursor);
+            MockHttpServletResponse response =
+                    requestWhenReady(mockMvc(), get(url).cookie(session.cookie()));
+            assertEquals(200, response.getStatus(), response.getContentAsString());
+            JsonNode body = JSON.readTree(response.getContentAsString());
+            for (JsonNode item : body.get("items")) {
+                if (ownerUserId.toString().equals(item.get("ownerUserId").stringValue())) {
+                    count++;
+                }
+            }
+            cursor = body.hasNonNull("nextCursor") ? body.get("nextCursor").stringValue() : null;
+        } while (cursor != null);
+        return count;
     }
 
     private void awaitOperationSucceeded(RealSession session, UUID operationId) throws Exception {
