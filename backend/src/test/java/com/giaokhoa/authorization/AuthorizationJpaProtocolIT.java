@@ -1,6 +1,7 @@
 package com.giaokhoa.authorization;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,12 +9,15 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
+import com.giaokhoa.authorization.operation.OperationController;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
+import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.persistence.EntityManager;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -29,7 +33,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -53,6 +60,7 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
     @Autowired AuthzProjectionRepository projections;
     @Autowired AuthorizationOperationRepository operations;
     @Autowired AuthorizationOperationService operationService;
+    @Autowired OperationController operationController;
     @Autowired JdbcTemplate jdbc;
     @Autowired EntityManager entities;
     @Autowired PlatformTransactionManager transactions;
@@ -116,6 +124,119 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
                 loadedOperation.getAffectedPartitions());
         assertEquals(List.of(0L, 1L), loadedOperation.getAffectedRevisions());
         assertTrue(loadedOperation.getRecordedSeq() > 0);
+    }
+
+    @DisplayName(
+            "Quét mảng partition bị ảnh hưởng chỉ trả operation thuộc tập trạng thái được lọc,"
+                    + " bỏ qua operation đã kết thúc")
+    @Test
+    void affectedPartitionsScanCoversOnlyRequestedStates() {
+        UUID actor = user();
+        UUID workspace = workspaceOf(actor);
+        UUID pendingFirst = grantPartition();
+        UUID pendingSecond = grantPartition();
+        UUID retryPartition = grantPartition();
+        UUID succeededPartition = grantPartition();
+
+        operationInState(
+                actor,
+                workspace,
+                "scan-pending",
+                AuthorizationOperation.State.PENDING,
+                pendingFirst,
+                pendingSecond);
+        operationInState(
+                actor,
+                workspace,
+                "scan-retry",
+                AuthorizationOperation.State.RETRYABLE_FAILURE,
+                retryPartition);
+        operationInState(
+                actor,
+                workspace,
+                "scan-succeeded",
+                AuthorizationOperation.State.SUCCEEDED,
+                succeededPartition);
+        entities.clear();
+
+        // Tập trạng thái đang sống đúng như cửa sổ quét partition mồ côi của worker.
+        List<List<UUID>> live =
+                operations.findAffectedPartitionsByStateIn(
+                        List.of(
+                                AuthorizationOperation.State.PENDING,
+                                AuthorizationOperation.State.APPLYING,
+                                AuthorizationOperation.State.RETRYABLE_FAILURE));
+        assertTrue(live.contains(List.of(pendingFirst, pendingSecond)));
+        assertTrue(live.contains(List.of(retryPartition)));
+        assertTrue(live.stream().noneMatch(affected -> affected.contains(succeededPartition)));
+
+        List<List<UUID>> succeeded =
+                operations.findAffectedPartitionsByStateIn(
+                        List.of(AuthorizationOperation.State.SUCCEEDED));
+        assertTrue(succeeded.contains(List.of(succeededPartition)));
+        assertTrue(succeeded.stream().noneMatch(affected -> affected.contains(pendingFirst)));
+    }
+
+    @DisplayName(
+            "Trạng thái khôi phục trên PostgreSQL thật: người gửi thấy trạng thái đã ánh xạ"
+                    + " SUCCEEDED/FAILED, operator có mutation RESOLVE cũng đọc được yêu cầu,"
+                    + " người ngoài nhận 404")
+    @Test
+    void recoveryStatusReadsRealRows() {
+        UUID requester = user();
+        UUID target = user();
+        UUID operator = user();
+        UUID outsider = user();
+
+        UUID resolved = finishedRecoveryRequest(requester, target, operator, "RESOLVED");
+        UUID rejected = finishedRecoveryRequest(requester, target, operator, "REJECTED");
+        jdbc.update(
+                "INSERT INTO recovery_mutation(actor_user_id,idempotency_key,payload_hash,"
+                        + "request_id,kind) VALUES (?,?,?,?,'RESOLVE')",
+                operator,
+                "resolve-resolved",
+                "a".repeat(64),
+                resolved);
+
+        // Câu native chạy thật: alias quoted khớp projection, trạng thái gốc và tài khoản
+        // đích trả đúng cho người gửi.
+        var byRequester = operations.findRecoveryStatus(resolved, requester).orElseThrow();
+        assertEquals("RESOLVED", byRequester.getState());
+        assertEquals(target, byRequester.getTargetUserId());
+        // Operator không phải người gửi nhưng là actor của mutation RESOLVE nên nhánh
+        // EXISTS cho thấy cùng yêu cầu; trên yêu cầu rejected operator chỉ là người xác
+        // minh (verified_by), không có mutation RESOLVE nên không thấy.
+        var byOperator = operations.findRecoveryStatus(resolved, operator).orElseThrow();
+        assertEquals("RESOLVED", byOperator.getState());
+        assertEquals(target, byOperator.getTargetUserId());
+        assertTrue(operations.findRecoveryStatus(rejected, operator).isEmpty());
+
+        // Qua controller: trạng thái yêu cầu ánh xạ sang vòng đời operation.
+        var resolvedView =
+                Objects.requireNonNull(
+                        operationController
+                                .status(resolved, authenticationFor(requester))
+                                .getBody());
+        assertEquals("SUCCEEDED", resolvedView.state());
+        assertTrue(resolvedView.completed());
+        assertEquals("PROFILE", resolvedView.targetType());
+        assertEquals(target, resolvedView.targetId());
+        assertNull(resolvedView.errorCode());
+
+        var rejectedView =
+                Objects.requireNonNull(
+                        operationController
+                                .status(rejected, authenticationFor(requester))
+                                .getBody());
+        assertEquals("FAILED", rejectedView.state());
+        assertTrue(rejectedView.completed());
+        assertEquals("RECOVERY_REJECTED", rejectedView.errorCode());
+
+        HttpProblemException problem =
+                assertThrows(
+                        HttpProblemException.class,
+                        () -> operationController.status(resolved, authenticationFor(outsider)));
+        assertEquals(HttpStatus.NOT_FOUND, problem.getStatus());
     }
 
     @DisplayName(
@@ -315,6 +436,57 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
         assertEquals(
                 AuthorizationPartition.State.PENDING,
                 partitions.findById(grantPartition).orElseThrow().getState());
+    }
+
+    private UUID grantPartition() {
+        UUID id = UUID.randomUUID();
+        partitions.saveAndFlush(
+                new AuthorizationPartition(
+                        id,
+                        AuthorizationPartition.Kind.GRANT,
+                        "grant:" + id,
+                        0,
+                        0,
+                        AuthorizationPartition.State.PENDING));
+        return id;
+    }
+
+    private void operationInState(
+            UUID actor,
+            UUID workspace,
+            String key,
+            AuthorizationOperation.State state,
+            UUID... affected) {
+        var operation =
+                new AuthorizationOperation(
+                        UUID.randomUUID(),
+                        actor,
+                        workspace,
+                        key,
+                        "a".repeat(64),
+                        List.of(affected),
+                        List.of(affected).stream().map(_ -> 1L).toList(),
+                        1L);
+        operation.setState(state);
+        operations.saveAndFlush(operation);
+    }
+
+    private UUID finishedRecoveryRequest(UUID requester, UUID target, UUID verifier, String state) {
+        UUID id = UUID.randomUUID();
+        jdbc.update(
+                "INSERT INTO recovery_request(id,requester_user_id,target_user_id,state,"
+                        + "verified_by,resolved_at) VALUES (?,?,?,?,?,?)",
+                id,
+                requester,
+                target,
+                state,
+                verifier,
+                Timestamp.from(Instant.now()));
+        return id;
+    }
+
+    private static Authentication authenticationFor(UUID userId) {
+        return UsernamePasswordAuthenticationToken.authenticated("sub-" + userId, null, List.of());
     }
 
     private static void await(CountDownLatch latch) {

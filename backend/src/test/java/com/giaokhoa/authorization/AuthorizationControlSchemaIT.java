@@ -239,6 +239,25 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
         assertEquals(1, entity.getAttemptCount());
     }
 
+    @DisplayName(
+            "Bốn cột mảng của projection và operation đều NOT NULL nên trạng thái mảng null"
+                    + " không thể tồn tại qua bất kỳ đường ghi nào")
+    @Test
+    void arrayColumnsAreNotNull() {
+        var columns =
+                jdbc.queryForList(
+                        "SELECT table_name, column_name, is_nullable FROM information_schema.columns"
+                                + " WHERE table_schema = current_schema()"
+                                + " AND (table_name, column_name) IN"
+                                + " (('authz_projection', 'dependency_partition_ids'),"
+                                + " ('authz_projection', 'policy_names'),"
+                                + " ('authorization_operation', 'affected_partitions'),"
+                                + " ('authorization_operation', 'affected_revisions'))");
+        // Đủ 4 dòng để khẳng định không âm thầm khớp 0 dòng khi tên bảng/cột sai.
+        assertEquals(4, columns.size());
+        assertTrue(columns.stream().allMatch(column -> "NO".equals(column.get("is_nullable"))));
+    }
+
     @DisplayName("Idempotency key trùng lặp bị từ chối đối với cùng một actor")
     @Test
     void duplicateKeyRejectedForSameActor() {
