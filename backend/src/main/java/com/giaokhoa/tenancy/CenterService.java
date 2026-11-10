@@ -6,6 +6,8 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.guardians.GuardianRevocationContributor;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingRevocationContributor;
 import com.giaokhoa.tenancy.model.MembershipRole;
@@ -52,6 +54,7 @@ public class CenterService {
     private final KeycloakProvisioningClient directory;
     private final TeachingRevocationContributor teachingRevocations;
     private final GuardianRevocationContributor guardianRevocations;
+    private final AuditRecorder audit;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -62,7 +65,8 @@ public class CenterService {
             KeycloakProvisioningClient directory,
             ResourceMutationCoordinator coordinator,
             TeachingRevocationContributor teachingRevocations,
-            GuardianRevocationContributor guardianRevocations) {
+            GuardianRevocationContributor guardianRevocations,
+            AuditRecorder audit) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.revocations = revocations;
@@ -70,6 +74,7 @@ public class CenterService {
         this.coordinator = coordinator;
         this.teachingRevocations = teachingRevocations;
         this.guardianRevocations = guardianRevocations;
+        this.audit = audit;
     }
 
     /** Metadata tối thiểu của một center cho danh sách của platform operator. */
@@ -128,7 +133,17 @@ public class CenterService {
         jdbc.update(
                 "INSERT INTO membership_role (membership_id, role) VALUES (?, 'OWNER')",
                 membershipId);
-        return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        AuthorizationOperation operation =
+                recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        audit.record(
+                initiatorUserId,
+                workspaceId,
+                AuditEvent.Action.PRIVILEGE_CHANGE,
+                AuditEvent.TargetType.MEMBERSHIP,
+                membershipId,
+                operation.getId(),
+                AuditEvent.Outcome.PENDING);
+        return operation;
     }
 
     /** Danh sách metadata dành cho operator; keyset theo (created_at, id). */
@@ -280,7 +295,17 @@ public class CenterService {
         if (removed.contains(MembershipRole.Role.STUDENT)) {
             guardianRevocations.revokeLinksOfStudent(workspaceId, row.userId());
         }
-        return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        AuthorizationOperation operation =
+                recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        audit.record(
+                initiatorUserId,
+                workspaceId,
+                AuditEvent.Action.PRIVILEGE_CHANGE,
+                AuditEvent.TargetType.MEMBERSHIP,
+                membershipId,
+                operation.getId(),
+                AuditEvent.Outcome.PENDING);
+        return operation;
     }
 
     /**
@@ -327,7 +352,17 @@ public class CenterService {
         teachingRevocations.revokeAllRelationsOfMember(workspaceId, row.userId());
         // Liên kết phụ huynh cũng là nguồn theo membership: đóng link đã duyệt ở cả hai phía.
         guardianRevocations.revokeAllLinksOfMember(workspaceId, row.userId());
-        return recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        AuthorizationOperation operation =
+                recordWorkspaceOperation(initiatorUserId, workspaceId, idempotencyKey, payloadHash);
+        audit.record(
+                initiatorUserId,
+                workspaceId,
+                AuditEvent.Action.PRIVILEGE_CHANGE,
+                AuditEvent.TargetType.MEMBERSHIP,
+                membershipId,
+                operation.getId(),
+                AuditEvent.Outcome.PENDING);
+        return operation;
     }
 
     private record MembershipRow(UUID workspaceId, UUID userId, String state, long version) {}

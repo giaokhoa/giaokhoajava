@@ -6,6 +6,8 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
@@ -60,6 +62,7 @@ public class SubscriptionService {
     private final TeachingPolicyProjector teachingProjector;
     private final PersonalEntitlementProjector entitlementProjector;
     private final PersonalTeachingPolicyProjector personalTeachingProjector;
+    private final AuditRecorder audit;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -71,7 +74,8 @@ public class SubscriptionService {
             ResourceMutationCoordinator coordinator,
             TeachingPolicyProjector teachingProjector,
             PersonalEntitlementProjector entitlementProjector,
-            PersonalTeachingPolicyProjector personalTeachingProjector) {
+            PersonalTeachingPolicyProjector personalTeachingProjector,
+            AuditRecorder audit) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
@@ -80,6 +84,7 @@ public class SubscriptionService {
         this.teachingProjector = teachingProjector;
         this.entitlementProjector = entitlementProjector;
         this.personalTeachingProjector = personalTeachingProjector;
+        this.audit = audit;
     }
 
     /**
@@ -132,11 +137,12 @@ public class SubscriptionService {
                     "SUBSCRIPTION_CONFIRMATION_REF_USED",
                     "Confirmation ref đã được ghi cho một kỳ gói khác.");
         }
+        UUID periodId = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO subscription_period"
                         + " (id, workspace_id, valid_from, expires_at, confirmation_ref,"
                         + " confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?, ?, now())",
-                UUID.randomUUID(),
+                periodId,
                 workspaceId,
                 Timestamp.from(from),
                 Timestamp.from(until),
@@ -145,12 +151,22 @@ public class SubscriptionService {
         Optional<AuthorizationOperationService.PartitionChange> change =
                 partitionChange(workspaceId, kind);
         if (change.isPresent()) {
-            return operations.applyDesiredState(
+            AuthorizationOperation operation =
+                    operations.applyDesiredState(
+                            operatorUserId,
+                            workspaceId,
+                            idempotencyKey,
+                            payloadHash,
+                            List.of(change.get()));
+            audit.record(
                     operatorUserId,
                     workspaceId,
-                    idempotencyKey,
-                    payloadHash,
-                    List.of(change.get()));
+                    AuditEvent.Action.SUBSCRIPTION_CHANGE,
+                    AuditEvent.TargetType.SUBSCRIPTION,
+                    periodId,
+                    operation.getId(),
+                    AuditEvent.Outcome.PENDING);
+            return operation;
         }
         // Trigger của DB luôn tạo partition cho mọi workspace; thiếu là dữ liệu hỏng,
         // không được âm thầm ghi kỳ mà không chiếu hiệu lực.

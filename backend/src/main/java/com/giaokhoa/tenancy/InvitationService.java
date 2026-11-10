@@ -3,6 +3,8 @@ package com.giaokhoa.tenancy;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import java.nio.charset.StandardCharsets;
@@ -64,6 +66,7 @@ public class InvitationService {
     private final JdbcTemplate jdbc;
     private final IdempotencyService idempotency;
     private final MembershipPolicyProjector projector;
+    private final AuditRecorder audit;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -71,11 +74,13 @@ public class InvitationService {
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
             MembershipPolicyProjector projector,
-            ResourceMutationCoordinator coordinator) {
+            ResourceMutationCoordinator coordinator,
+            AuditRecorder audit) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.projector = projector;
         this.coordinator = coordinator;
+        this.audit = audit;
     }
 
     /**
@@ -261,8 +266,20 @@ public class InvitationService {
                     "INVITATION_NOT_PENDING",
                     "Lời mời không còn chờ chấp nhận.");
         }
-        return projector.recordMembershipChange(
-                acceptorUserId, invitation.workspaceId(), idempotencyKey, payloadHash);
+        AuthorizationOperation operation =
+                projector.recordMembershipChange(
+                        acceptorUserId, invitation.workspaceId(), idempotencyKey, payloadHash);
+        // Chỉ chấp nhận mới đổi đặc quyền (tạo membership hoặc cộng role); tạo lời mời chưa
+        // tạo membership nào nên không ghi audit ở đường invite.
+        audit.record(
+                acceptorUserId,
+                invitation.workspaceId(),
+                AuditEvent.Action.PRIVILEGE_CHANGE,
+                AuditEvent.TargetType.MEMBERSHIP,
+                membershipId,
+                operation.getId(),
+                AuditEvent.Outcome.PENDING);
+        return operation;
     }
 
     /** Một dòng lời mời như accept cần dùng, mọi cột đã đọc theo kiểu đích. */

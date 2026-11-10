@@ -33,6 +33,7 @@ import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.support.IntegrationEnvironment;
@@ -549,7 +550,7 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
     }
 
     private ProjectionWorker worker() {
-        return new ProjectionWorker(jdbc, reconciler, transactionManager);
+        return new ProjectionWorker(jdbc, reconciler, transactionManager, new AuditRecorder(jdbc));
     }
 
     private TransactionTemplate tx() {

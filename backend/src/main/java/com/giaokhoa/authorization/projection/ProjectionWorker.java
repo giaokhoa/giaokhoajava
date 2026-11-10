@@ -1,6 +1,8 @@
 package com.giaokhoa.authorization.projection;
 
 import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.shared.audit.AuditEvent;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import java.sql.Array;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -55,6 +57,7 @@ public class ProjectionWorker {
 
     private final JdbcTemplate jdbc;
     private final ProjectionReconciler reconciler;
+    private final AuditRecorder audit;
     private final TransactionTemplate transactions;
     private final AtomicBoolean running = new AtomicBoolean();
     private final Map<UUID, OrphanRetry> orphanRetries = new ConcurrentHashMap<>();
@@ -68,9 +71,11 @@ public class ProjectionWorker {
     public ProjectionWorker(
             JdbcTemplate jdbc,
             ProjectionReconciler reconciler,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            AuditRecorder audit) {
         this.jdbc = jdbc;
         this.reconciler = reconciler;
+        this.audit = audit;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -325,6 +330,19 @@ public class ProjectionWorker {
                                     + " WHERE partition_id = ? AND state = 'PENDING'",
                             partitionId);
                 }
+            }
+            // Lỗi đồng bộ chỉ thành sự kiện audit khi operation thật sự kết thúc ở FAILED:
+            // lần thử còn retry không ghi (tránh một dòng cho mỗi lần thử), và SUPERSEDED là
+            // thay thế revision chứ không phải lỗi đồng bộ.
+            if (updated == 1 && terminal && !ERROR_SUPERSEDED.equals(errorCode)) {
+                audit.record(
+                        null,
+                        null,
+                        AuditEvent.Action.AUTHORIZATION_SYNC,
+                        AuditEvent.TargetType.AUTHORIZATION_OPERATION,
+                        operation.id(),
+                        operation.id(),
+                        AuditEvent.Outcome.FAILED);
             }
         });
     }

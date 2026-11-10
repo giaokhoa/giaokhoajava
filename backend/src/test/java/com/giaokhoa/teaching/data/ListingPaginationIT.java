@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.data.TeachingRepository.Page;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
@@ -67,7 +68,8 @@ class ListingPaginationIT extends IntegrationEnvironment {
                         mock(IdempotencyService.class),
                         mock(InitialCredentialHandoff.class),
                         mock(MembershipPolicyProjector.class),
-                        mock(ResourceMutationCoordinator.class));
+                        mock(ResourceMutationCoordinator.class),
+                        mock(AuditRecorder.class));
 
         var page = service.pageMemberships(workspace, previous.toString(), 1);
         assertEquals(

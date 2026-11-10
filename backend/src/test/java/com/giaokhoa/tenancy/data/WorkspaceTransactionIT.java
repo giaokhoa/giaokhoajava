@@ -2,12 +2,10 @@ package com.giaokhoa.tenancy.data;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -162,7 +160,12 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
         // Cùng một connection vật lý (SingleConnectionDataSource): context theo transaction
         // phải biến mất khi transaction kết thúc, không rò sang lần dùng connection sau.
         assertEquals(0, countVisible(runtimeJdbc, workspace));
-        assertEquals(Optional.empty(), runtimeTransaction.currentWorkspace());
+        assertEquals(
+                "",
+                runtimeJdbc.queryForObject(
+                        "SELECT current_setting(?, true)",
+                        String.class,
+                        WorkspaceTransaction.WORKSPACE_SETTING));
     }
 
     @Test
@@ -228,12 +231,24 @@ class WorkspaceTransactionIT extends IntegrationEnvironment {
     }
 
     @Test
-    void springBeanReportsTheContextOnlyInsideItsTransaction() {
+    void springBeanSetsTheContextOnlyInsideItsTransaction() {
         UUID workspace = UUID.randomUUID();
-        Optional<UUID> inside =
-                workspaceTransaction.inWorkspace(workspace, workspaceTransaction::currentWorkspace);
-        assertEquals(Optional.of(workspace), inside);
-        assertTrue(workspaceTransaction.currentWorkspace().isEmpty());
+        String inside =
+                Objects.requireNonNull(
+                        workspaceTransaction.inWorkspace(
+                                workspace,
+                                () ->
+                                        jdbc.queryForObject(
+                                                "SELECT current_setting(?, true)",
+                                                String.class,
+                                                WorkspaceTransaction.WORKSPACE_SETTING)));
+        assertEquals(workspace.toString(), inside);
+        assertEquals(
+                "",
+                jdbc.queryForObject(
+                        "SELECT current_setting(?, true)",
+                        String.class,
+                        WorkspaceTransaction.WORKSPACE_SETTING));
     }
 
     private UUID seedWorkspace() {
