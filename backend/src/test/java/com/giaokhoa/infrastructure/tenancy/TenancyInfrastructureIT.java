@@ -404,7 +404,9 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
         try (PreparedStatement statement =
                         connection.prepareStatement("SELECT current_setting('search_path')");
                 ResultSet result = statement.executeQuery()) {
-            assertTrue(result.next());
+            if (!result.next()) {
+                throw new IllegalStateException("Không có dòng kết quả khi đọc search_path");
+            }
             return result.getString(1);
         }
     }
@@ -412,7 +414,9 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     private static long queryLong(Connection connection, String sql) throws Exception {
         try (PreparedStatement statement = connection.prepareStatement(sql);
                 ResultSet result = statement.executeQuery()) {
-            assertTrue(result.next());
+            if (!result.next()) {
+                throw new IllegalStateException("Không có dòng kết quả khi truy vấn");
+            }
             return result.getLong(1);
         }
     }
