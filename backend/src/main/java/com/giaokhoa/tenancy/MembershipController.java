@@ -7,9 +7,15 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.Violation;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -109,7 +115,9 @@ public class MembershipController {
     public record AcceptRequest() {}
 
     public record StudentIssueRequest(
-            @Nullable String username, @Nullable String displayName, @Nullable String email) {}
+            @NotBlank @Nullable String username,
+            @NotBlank @Nullable String displayName,
+            @Nullable String email) {}
 
     public record OperationPart(UUID id, String state, boolean completed) {}
 
@@ -154,8 +162,8 @@ public class MembershipController {
     @PostMapping("/workspaces/{workspaceId}/invitations")
     public ResponseEntity<InvitationCreatedView> invite(
             @PathVariable UUID workspaceId,
-            @RequestBody @Nullable InvitationCreateRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable InvitationCreateRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(
@@ -164,10 +172,11 @@ public class MembershipController {
                 workspaceId,
                 actor -> {
                     if (body == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu danh sách role của lời mời.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu danh sách role của lời mời.",
+                                List.of(
+                                        new Violation(
+                                                "roles", "NotNull", "Giá trị không hợp lệ.")));
                     }
                     Set<MembershipRole.Role> roles = parseRoles(body.roles());
                     memberships.requireAdmin(actor, workspaceId);
@@ -182,7 +191,9 @@ public class MembershipController {
                                     key,
                                     idempotency.payloadHash(
                                             "POST",
-                                            "/api/workspaces/" + workspaceId + "/invitations",
+                                            HttpConstants.WORKSPACE_API_PREFIX
+                                                    + workspaceId
+                                                    + "/invitations",
                                             JSON.valueToTree(body)));
                     AuthorizationOperation operation = issued.operation();
                     boolean completed = completedOrThrow(operation);
@@ -203,8 +214,8 @@ public class MembershipController {
     @PostMapping("/invitations/{token}/accept")
     public ResponseEntity<IdempotencyService.OperationReceipt> acceptInvitation(
             @PathVariable String token,
-            @RequestBody @Nullable AcceptRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable AcceptRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(
@@ -229,8 +240,8 @@ public class MembershipController {
     @PostMapping("/workspaces/{workspaceId}/students")
     public ResponseEntity<StudentIssueView> issueStudent(
             @PathVariable UUID workspaceId,
-            @RequestBody @Nullable StudentIssueRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable StudentIssueRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(
@@ -239,10 +250,11 @@ public class MembershipController {
                 workspaceId,
                 actor -> {
                     if (body == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu thông tin học sinh cần cấp.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu thông tin học sinh cần cấp.",
+                                List.of(
+                                        new Violation(
+                                                "username", "NotNull", "Giá trị không hợp lệ.")));
                     }
                     String username = body.username();
                     String displayName = body.displayName();
@@ -252,10 +264,22 @@ public class MembershipController {
                             || displayName == null
                             || displayName.isBlank()
                             || (email != null && email.isBlank())) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu tên đăng nhập hoặc tên hiển thị của học sinh.");
+                        List<Violation> violations = new ArrayList<>();
+                        if (username == null || username.isBlank()) {
+                            violations.add(
+                                    new Violation("username", "NotBlank", "Giá trị không hợp lệ."));
+                        }
+                        if (displayName == null || displayName.isBlank()) {
+                            violations.add(
+                                    new Violation(
+                                            "displayName", "NotBlank", "Giá trị không hợp lệ."));
+                        }
+                        if (email != null && email.isBlank()) {
+                            violations.add(
+                                    new Violation("email", "NotBlank", "Giá trị không hợp lệ."));
+                        }
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu tên đăng nhập hoặc tên hiển thị của học sinh.", violations);
                     }
                     memberships.requireAdmin(actor, workspaceId);
                     memberships.requireSubscriptionCurrent(workspaceId);
@@ -269,7 +293,9 @@ public class MembershipController {
                                     key,
                                     idempotency.payloadHash(
                                             "POST",
-                                            "/api/workspaces/" + workspaceId + "/students",
+                                            HttpConstants.WORKSPACE_API_PREFIX
+                                                    + workspaceId
+                                                    + "/students",
                                             JSON.valueToTree(body)));
                     AuthorizationOperation operation = result.operation();
                     boolean completed = completedOrThrow(operation);
@@ -299,8 +325,8 @@ public class MembershipController {
     public ResponseEntity<IdempotencyService.OperationReceipt> replaceRoles(
             @PathVariable UUID workspaceId,
             @PathVariable UUID membershipId,
-            @RequestBody @Nullable RoleChangeRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable RoleChangeRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             @RequestHeader(value = "If-Match", required = false) @Nullable String ifMatch,
             Authentication authentication,
             HttpServletRequest request) {
@@ -310,10 +336,11 @@ public class MembershipController {
                 workspaceId,
                 actor -> {
                     if (body == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu danh sách role đích.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu danh sách role đích.",
+                                List.of(
+                                        new Violation(
+                                                "roles", "NotNull", "Giá trị không hợp lệ.")));
                     }
                     Set<MembershipRole.Role> desired = parseRoles(body.roles());
                     Set<MembershipRole.Role> actorRoles =
@@ -348,7 +375,7 @@ public class MembershipController {
                                     key,
                                     idempotency.payloadHash(
                                             "PUT",
-                                            "/api/workspaces/"
+                                            HttpConstants.WORKSPACE_API_PREFIX
                                                     + workspaceId
                                                     + "/memberships/"
                                                     + membershipId
@@ -362,7 +389,7 @@ public class MembershipController {
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeMembership(
             @PathVariable UUID workspaceId,
             @PathVariable UUID membershipId,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(
@@ -387,7 +414,7 @@ public class MembershipController {
                                     key,
                                     idempotency.payloadHash(
                                             "DELETE",
-                                            "/api/workspaces/"
+                                            HttpConstants.WORKSPACE_API_PREFIX
                                                     + workspaceId
                                                     + "/memberships/"
                                                     + membershipId,
@@ -434,14 +461,17 @@ public class MembershipController {
         Set<MembershipRole.Role> parsed = EnumSet.noneOf(MembershipRole.Role.class);
         for (String role : roles) {
             if (role == null) {
-                throw new HttpProblemException(
-                        HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Role không hợp lệ.");
+                throw HttpProblemException.validationFailed(
+                        "Role không hợp lệ.",
+                        List.of(new Violation("roles", "INVALID", "Giá trị không hợp lệ.")));
             }
             try {
                 parsed.add(MembershipRole.Role.valueOf(role));
             } catch (IllegalArgumentException ex) {
-                throw new HttpProblemException(
-                        HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Role không hợp lệ.", ex);
+                throw HttpProblemException.validationFailed(
+                        "Role không hợp lệ.",
+                        List.of(new Violation("roles", "INVALID", "Giá trị không hợp lệ.")),
+                        ex);
             }
         }
         return Set.copyOf(parsed);
@@ -451,14 +481,14 @@ public class MembershipController {
         if (operation.getState() == AuthorizationOperation.State.FAILED) {
             throw new HttpProblemException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "OPERATION_FAILED",
+                    ErrorCodes.OPERATION_FAILED,
                     "Đồng bộ quyền không thành công.");
         }
         return operation.getState() == AuthorizationOperation.State.SUCCEEDED;
     }
 
     private static HttpProblemException denied(String detail) {
-        return new HttpProblemException(HttpStatus.FORBIDDEN, "PERMISSION_DENIED", detail);
+        return new HttpProblemException(HttpStatus.FORBIDDEN, ErrorCodes.PERMISSION_DENIED, detail);
     }
 
     private static <T> ResponseEntity<T> protectedOk(T body) {

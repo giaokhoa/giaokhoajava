@@ -5,14 +5,18 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.Violation;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,17 +47,17 @@ public class SubscriptionController {
     }
 
     public record SubscriptionConfirmRequest(
-            @Nullable UUID workspaceId,
-            @Nullable OffsetDateTime validFrom,
-            @Nullable OffsetDateTime expiresAt,
+            @NotNull @Nullable UUID workspaceId,
+            @NotNull @Nullable OffsetDateTime validFrom,
+            @NotNull @Nullable OffsetDateTime expiresAt,
             @Nullable String confirmationRef) {}
 
     @PostMapping("/api/platform/subscriptions")
     public ResponseEntity<IdempotencyService.OperationReceipt> confirmSubscription(
             Authentication authentication,
             HttpServletRequest request,
-            @RequestBody @Nullable SubscriptionConfirmRequest body,
-            @RequestHeader("Idempotency-Key") String key) {
+            @RequestBody @Valid @Nullable SubscriptionConfirmRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key) {
         return executor.executeForActor(
                 authentication,
                 request,
@@ -65,19 +69,36 @@ public class SubscriptionController {
                                                 .scopeName()))),
                 () -> {
                     if (body == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu trường bắt buộc của kỳ gói.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu trường bắt buộc của kỳ gói.",
+                                List.of(
+                                        new Violation(
+                                                "workspaceId", "NotNull", "Giá trị không hợp lệ."),
+                                        new Violation(
+                                                "validFrom", "NotNull", "Giá trị không hợp lệ."),
+                                        new Violation(
+                                                "expiresAt", "NotNull", "Giá trị không hợp lệ.")));
                     }
                     UUID workspaceId = body.workspaceId();
                     OffsetDateTime validFrom = body.validFrom();
                     OffsetDateTime expiresAt = body.expiresAt();
                     if (workspaceId == null || validFrom == null || expiresAt == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu trường bắt buộc của kỳ gói.");
+                        List<Violation> violations = new ArrayList<>();
+                        if (workspaceId == null) {
+                            violations.add(
+                                    new Violation(
+                                            "workspaceId", "NotNull", "Giá trị không hợp lệ."));
+                        }
+                        if (validFrom == null) {
+                            violations.add(
+                                    new Violation("validFrom", "NotNull", "Giá trị không hợp lệ."));
+                        }
+                        if (expiresAt == null) {
+                            violations.add(
+                                    new Violation("expiresAt", "NotNull", "Giá trị không hợp lệ."));
+                        }
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu trường bắt buộc của kỳ gói.", violations);
                     }
                     UUID actor = executor.actorUserId(authentication);
                     AuthorizationOperation operation =

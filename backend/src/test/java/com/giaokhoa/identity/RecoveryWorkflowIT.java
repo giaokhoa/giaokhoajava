@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.identity.InitialCredentialHandoff.Handoff;
+import com.giaokhoa.identity.InitialCredentialService.Handoff;
 import com.giaokhoa.identity.RecoveryService.Decision;
 import com.giaokhoa.identity.RecoveryService.RequestView;
 import com.giaokhoa.identity.model.RecoveryRequest;
@@ -45,7 +45,7 @@ import org.springframework.web.client.RestClientResponseException;
 /**
  * Workflow khôi phục danh tính và bàn giao credential ban đầu trên stack TEST thật: RecoveryService
  * ép phạm vi gửi yêu cầu và thứ tự REQUESTED → VERIFIED → RESOLVED/REJECTED trên schema dùng chung
- * của suite, InitialCredentialHandoff tạo identity trên Keycloak 26.8.1 thật rồi mới ghi directory,
+ * của suite, InitialCredentialService tạo identity trên Keycloak 26.8.1 thật rồi mới ghi directory,
  * và mọi lỗi sau identity-create đều reconcile sạch. Endpoint HTTP thuộc task sau; class này khóa
  * hành vi service mà endpoint sẽ gọi.
  */
@@ -85,7 +85,7 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired RecoveryService recoveryService;
-    @Autowired InitialCredentialHandoff handoff;
+    @Autowired InitialCredentialService handoff;
 
     @AfterEach
     void removeKeycloakUsers() {
@@ -341,7 +341,7 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         assertTrue(ids.indexOf(first.id()) < ids.indexOf(second.id()));
     }
 
-    // ---------- InitialCredentialHandoff ----------
+    // ---------- InitialCredentialService ----------
 
     @DisplayName("Cấp phát học sinh mới bàn giao credential tạm thời đúng một lần")
     @Test

@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisioningClient;
+import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
@@ -58,7 +58,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
 
     @Autowired GuardianLinkService links;
     @Autowired CenterService centers;
-    @Autowired KeycloakProvisioningClient directory;
+    @Autowired AuthorizationProvisioningClient directory;
     @Autowired EntityManagerFactory entityManagerFactory;
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;

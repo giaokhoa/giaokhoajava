@@ -46,7 +46,7 @@ class OperationControllerTest {
     void pendingAccountOperationIsReportedIncompleteForItsInitiator() {
         operationRow("PENDING", null, "ACCOUNT", "account:" + ACTOR);
 
-        var response = controller.status(OPERATION, authentication);
+        var response = controller.getStatus(OPERATION, authentication);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(
@@ -64,7 +64,8 @@ class OperationControllerTest {
     void succeededWorkspaceOperationIsTheOnlyCompletedState() {
         operationRow("SUCCEEDED", null, "WORKSPACE", "workspace:" + WORKSPACE);
 
-        var view = Objects.requireNonNull(controller.status(OPERATION, authentication).getBody());
+        var view =
+                Objects.requireNonNull(controller.getStatus(OPERATION, authentication).getBody());
 
         assertTrue(view.completed());
         assertEquals("WORKSPACE", view.targetType());
@@ -75,7 +76,8 @@ class OperationControllerTest {
     void retryableFailureStaysIncompleteAndExposesOnlyTheErrorCode() {
         operationRow("RETRYABLE_FAILURE", "KEYCLOAK_UNAVAILABLE", "GRANT", "grant:" + GRANT);
 
-        var view = Objects.requireNonNull(controller.status(OPERATION, authentication).getBody());
+        var view =
+                Objects.requireNonNull(controller.getStatus(OPERATION, authentication).getBody());
 
         assertFalse(view.completed());
         assertEquals("KEYCLOAK_UNAVAILABLE", view.errorCode());
@@ -90,7 +92,7 @@ class OperationControllerTest {
         HttpProblemException problem =
                 assertThrows(
                         HttpProblemException.class,
-                        () -> controller.status(OPERATION, authentication));
+                        () -> controller.getStatus(OPERATION, authentication));
 
         assertEquals(HttpStatus.NOT_FOUND, problem.getStatus());
         assertEquals("NOT_FOUND", problem.getCode());

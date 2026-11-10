@@ -10,9 +10,12 @@ import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.resources.CorrectionService;
 import com.giaokhoa.resources.ResourceLibraryService;
 import com.giaokhoa.resources.ResourceShareService;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -60,6 +63,9 @@ public class SampleActionController {
     private static final Duration PROJECTION_WAIT = Duration.ofSeconds(60);
     private static final String OPERATION_SUCCEEDED = "SUCCEEDED";
     private static final String OPERATION_FAILED = "FAILED";
+    private static final String TARGET_TYPE_RESOURCE = "RESOURCE";
+    private static final String TARGET_TYPE_ACTIVITY = "ACTIVITY";
+    private static final String TARGET_TYPE_RESULT = "RESULT";
     private static final int SINGLE_ROW = 1;
 
     private final ProtectedActionExecutor executor;
@@ -149,8 +155,8 @@ public class SampleActionController {
     @PostMapping("/api/workspaces/{workspaceId}/samples/actions")
     public ResponseEntity<SampleActionResult> act(
             @PathVariable UUID workspaceId,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
-            @RequestBody SampleActionRequest request,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
+            @RequestBody @Valid SampleActionRequest request,
             Authentication authentication,
             HttpServletRequest httpRequest) {
         idempotency.requireKey(idempotencyKey);
@@ -367,10 +373,15 @@ public class SampleActionController {
             UUID actorUserId, UUID workspaceId, String idempotencyKey, String payloadHash) {
         UUID id = UUID.randomUUID();
         return claimActionReceipt(
-                        actorUserId, workspaceId, idempotencyKey, payloadHash, "RESOURCE", id)
+                        actorUserId,
+                        workspaceId,
+                        idempotencyKey,
+                        payloadHash,
+                        TARGET_TYPE_RESOURCE,
+                        id)
                 .orElseGet(() ->
                         new SampleActionResult(
-                                id, OPERATION_SUCCEEDED, true, "RESOURCE", id, null));
+                                id, OPERATION_SUCCEEDED, true, TARGET_TYPE_RESOURCE, id, null));
     }
 
     // ---------- ASSIGN_ACTIVITY / SUBMIT_ACTIVITY ----------
@@ -414,7 +425,7 @@ public class SampleActionController {
                                                             workspaceId,
                                                             idempotencyKey,
                                                             payloadHash,
-                                                            "ACTIVITY",
+                                                            TARGET_TYPE_ACTIVITY,
                                                             activityId)
                                                     .orElseGet(() ->
                                                             insertActivity(
@@ -507,7 +518,7 @@ public class SampleActionController {
                 request.attemptLimit(),
                 periods.getFirst());
         return new SampleActionResult(
-                activityId, OPERATION_SUCCEEDED, true, "ACTIVITY", activityId, null);
+                activityId, OPERATION_SUCCEEDED, true, TARGET_TYPE_ACTIVITY, activityId, null);
     }
 
     private SampleActionResult submitActivity(
@@ -673,7 +684,7 @@ public class SampleActionController {
                                                                 workspaceId,
                                                                 idempotencyKey,
                                                                 payloadHash,
-                                                                "RESULT",
+                                                                TARGET_TYPE_RESULT,
                                                                 request.resultId())
                                                         .orElseGet(() ->
                                                                 applyGrade(
@@ -715,7 +726,7 @@ public class SampleActionController {
                                                                         workspaceId,
                                                                         idempotencyKey,
                                                                         payloadHash,
-                                                                        "RESULT",
+                                                                        TARGET_TYPE_RESULT,
                                                                         request.resultId())
                                                                 .orElseGet(() ->
                                                                         applyPublish(
@@ -733,8 +744,7 @@ public class SampleActionController {
             UUID workspaceId, UUID actorUserId, SampleActionRequest request) {
         Map<String, Object> result = resultRow(workspaceId, request.resultId());
         if (!"DRAFT".equals(result.get("state"))) {
-            throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
+            throw resultNotDraft();
         }
         int graded =
                 jdbc.update(
@@ -747,18 +757,21 @@ public class SampleActionController {
                         workspaceId,
                         request.resultId());
         if (graded != SINGLE_ROW) {
-            throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
+            throw resultNotDraft();
         }
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId(), null);
+                request.resultId(),
+                OPERATION_SUCCEEDED,
+                true,
+                TARGET_TYPE_RESULT,
+                request.resultId(),
+                null);
     }
 
     private SampleActionResult applyPublish(UUID workspaceId, SampleActionRequest request) {
         Map<String, Object> result = resultRow(workspaceId, request.resultId());
         if (!"DRAFT".equals(result.get("state"))) {
-            throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
+            throw resultNotDraft();
         }
         int published =
                 jdbc.update(
@@ -768,11 +781,15 @@ public class SampleActionController {
                         workspaceId,
                         request.resultId());
         if (published != SINGLE_ROW) {
-            throw new HttpProblemException(
-                    HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
+            throw resultNotDraft();
         }
         return new SampleActionResult(
-                request.resultId(), OPERATION_SUCCEEDED, true, "RESULT", request.resultId(), null);
+                request.resultId(),
+                OPERATION_SUCCEEDED,
+                true,
+                TARGET_TYPE_RESULT,
+                request.resultId(),
+                null);
     }
 
     private Map<String, Object> resultRow(UUID workspaceId, UUID resultId) {
@@ -1010,7 +1027,7 @@ public class SampleActionController {
     private String actionPayloadHash(UUID workspaceId, SampleActionRequest request) {
         return idempotency.payloadHash(
                 "POST",
-                "/api/workspaces/" + workspaceId + "/samples/actions",
+                HttpConstants.WORKSPACE_API_PREFIX + workspaceId + "/samples/actions",
                 JSON.convertValue(request, tools.jackson.databind.JsonNode.class));
     }
 
@@ -1095,7 +1112,7 @@ public class SampleActionController {
     private String projectionPayloadHash(UUID workspaceId, String targetKey) {
         return idempotency.payloadHash(
                 "POST",
-                "/api/workspaces/" + workspaceId + "/samples/actions",
+                HttpConstants.WORKSPACE_API_PREFIX + workspaceId + "/samples/actions",
                 JSON.createObjectNode().put("projectionTarget", targetKey));
     }
 
@@ -1123,6 +1140,13 @@ public class SampleActionController {
     }
 
     // ---------- Lỗi dùng chung ----------
+
+    private static HttpProblemException resultNotDraft() {
+        return new HttpProblemException(
+                HttpStatus.CONFLICT,
+                ErrorCodes.RESULT_NOT_DRAFT,
+                "Kết quả đã công bố không sửa được.");
+    }
 
     private static HttpProblemException unsupported() {
         return new HttpProblemException(

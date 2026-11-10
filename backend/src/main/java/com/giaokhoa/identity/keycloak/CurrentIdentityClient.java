@@ -1,11 +1,11 @@
 package com.giaokhoa.identity.keycloak;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisionerFactory;
+import com.giaokhoa.authorization.keycloak.KeycloakProvisionerTokens;
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -25,21 +25,12 @@ public class CurrentIdentityClient {
     private final String realm;
 
     @Autowired
-    public CurrentIdentityClient(
-            @Value("${giaokhoa.keycloak.admin-base-url}") String baseUrl,
-            @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
-                    String issuerUri,
-            @Value("${giaokhoa.keycloak.provisioner.client-id}") String clientId,
-            @Value("${giaokhoa.keycloak.provisioner.client-secret}") String clientSecret) {
+    public CurrentIdentityClient(GiaokhoaProperties properties, KeycloakProvisionerTokens tokens) {
         this(
                 RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
-                baseUrl,
-                KeycloakProvisionerFactory.realmOf(issuerUri),
-                KeycloakProvisionerFactory.clientManager(
-                        baseUrl.replaceAll("/+$", ""),
-                        KeycloakProvisionerFactory.realmOf(issuerUri),
-                        clientId,
-                        clientSecret));
+                properties.keycloak().adminBaseUrl(),
+                tokens.realm(),
+                tokens.manager());
     }
 
     CurrentIdentityClient(

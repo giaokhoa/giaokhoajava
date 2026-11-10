@@ -29,7 +29,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -489,12 +488,12 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
                         .andReturn()
                         .getResponse();
 
-        assertEquals(302, response.getStatus());
-        String location =
-                Objects.requireNonNull(response.getHeader(HttpHeaders.LOCATION), "Location");
-        assertTrue(
-                location.contains("/oauth2/authorization/keycloak"),
-                "Khôi phục ẩn danh bị từ chối và được hướng dẫn đăng nhập");
+        assertEquals(401, response.getStatus());
+        JsonNode problem = JSON.readTree(response.getContentAsString());
+        assertEquals(
+                "UNAUTHORIZED",
+                problem.get("code").stringValue(),
+                "Khôi phục ẩn danh bị từ chối bằng 401 ProblemDetail");
         assertFalse(response.getContentAsString().contains("targetUserId"));
     }
 
@@ -518,7 +517,7 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
                         .andReturn()
                         .getResponse();
 
-        assertEquals(302, response.getStatus());
+        assertEquals(401, response.getStatus());
     }
 
     // ---------- Dữ kiện thư mục ----------

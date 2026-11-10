@@ -44,7 +44,7 @@ class CapabilitiesControllerTest {
         CapabilitiesController controller = new CapabilitiesController(executor);
 
         var response =
-                controller.capabilities(
+                controller.evaluateCapabilities(
                         WORKSPACE,
                         new CapabilitiesRequest(
                                 List.of(
@@ -77,7 +77,7 @@ class CapabilitiesControllerTest {
                 assertThrows(
                         HttpProblemException.class,
                         () ->
-                                controller.capabilities(
+                                controller.evaluateCapabilities(
                                         WORKSPACE,
                                         new CapabilitiesRequest(
                                                 List.of(
@@ -108,7 +108,7 @@ class CapabilitiesControllerTest {
                 assertThrows(
                         HttpProblemException.class,
                         () ->
-                                controller.capabilities(
+                                controller.evaluateCapabilities(
                                         WORKSPACE,
                                         request,
                                         authentication,
@@ -133,7 +133,7 @@ class CapabilitiesControllerTest {
                         List.of(new TargetInput("PROFILE", ACTOR, null, List.of("profile.read"))));
 
         var response =
-                controller.capabilities(
+                controller.evaluateCapabilities(
                         WORKSPACE, request, authentication, new MockHttpServletRequest());
 
         assertEquals(HttpStatus.OK, response.getStatusCode());

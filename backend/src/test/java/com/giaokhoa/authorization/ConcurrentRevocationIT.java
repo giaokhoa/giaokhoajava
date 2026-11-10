@@ -9,7 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
-import com.giaokhoa.identity.eligibility.IdentityEligibilitySynchronizer;
+import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Duration;
@@ -58,7 +58,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
 
     @Autowired JdbcTemplate jdbc;
     @Autowired IdempotencyService idempotency;
-    @Autowired IdentityEligibilitySynchronizer eligibility;
+    @Autowired IdentityEligibilityService eligibility;
     @Autowired ProjectionReconciler reconciler;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired WebApplicationContext webContext;

@@ -34,9 +34,33 @@ spring:
         provider:
           keycloak:
             issuer-uri: ${OIDC_ISSUER_URI}
+  # Hai tác vụ nền (projection poll 1 giây và dọn phiên OIDC mỗi giờ) không dùng chung scheduler
+  # mặc định một luồng của Boot: một tác vụ chậm không được phép trễ tác vụ còn lại.
+  task:
+    scheduling:
+      pool:
+        size: 2
 
 server:
   forward-headers-strategy: framework
+  servlet:
+    session:
+      # Chốt tường minh đúng thời hạn phiên hiện hành để thay đổi mặc định của framework
+      # không lặng lẽ đổi hành vi phiên.
+      timeout: 30m
+
+# Chỉ mở health cho kiểm tra sống; show-details mặc định never nên đáp án chỉ lộ trạng thái tổng.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+# traceId do TraceIdFilter đặt vào MDC ở đầu mỗi request; cùng một giá trị xuất hiện trong log
+# và trong member traceId của đáp án lỗi để đối chiếu hai phía.
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} [%thread] %-5level %logger{36} [%X{traceId:-}] - %msg%n"
 
 giaokhoa:
   app-origin: ${APP_ORIGIN}

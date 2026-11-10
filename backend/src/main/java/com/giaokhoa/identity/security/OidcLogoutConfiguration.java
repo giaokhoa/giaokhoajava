@@ -1,5 +1,6 @@
 package com.giaokhoa.identity.security;
 
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -24,11 +25,12 @@ public class OidcLogoutConfiguration {
     private static final JsonMapper LOGOUT_JSON = JsonMapper.builder().build();
 
     @Bean
-    CookieSerializer sessionCookieSerializer(@Value("${giaokhoa.app-origin}") String appOrigin) {
+    CookieSerializer sessionCookieSerializer(GiaokhoaProperties properties) {
         var serializer = new DefaultCookieSerializer();
         serializer.setCookieName("SESSION");
         serializer.setUseHttpOnlyCookie(true);
-        serializer.setUseSecureCookie("https".equalsIgnoreCase(URI.create(appOrigin).getScheme()));
+        serializer.setUseSecureCookie(
+                "https".equalsIgnoreCase(URI.create(properties.appOrigin()).getScheme()));
         serializer.setSameSite("Lax");
         // Back-channel handler của Spring gửi session ID thô trong cookie SESSION.
         serializer.setUseBase64Encoding(false);

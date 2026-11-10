@@ -1,5 +1,6 @@
 package com.giaokhoa.teaching.data;
 
+import com.giaokhoa.shared.http.ErrorCodes;
 import static com.giaokhoa.teaching.data.TeachingRepository.mapClass;
 import static com.giaokhoa.teaching.data.TeachingRepository.mapCourse;
 import static com.giaokhoa.teaching.data.TeachingRepository.mapHomeroomAssignment;
@@ -27,7 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 /** Truy vấn phân trang chỉ đọc, tách khỏi các thao tác ghi dữ kiện giảng dạy. */
-final class TeachingPageQueries {
+final class TeachingPageRepository {
     /** Cursor không thuộc đúng danh sách đang đọc thì 400 như các đường đọc phân trang khác. */
     private static HttpProblemException invalidCursor() {
         return invalidCursor(null);
@@ -35,12 +36,15 @@ final class TeachingPageQueries {
 
     private static HttpProblemException invalidCursor(@Nullable Throwable cause) {
         return new HttpProblemException(
-                HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "Cursor danh sách không hợp lệ.", cause);
+                HttpStatus.BAD_REQUEST,
+                ErrorCodes.INVALID_CURSOR,
+                "Cursor danh sách không hợp lệ.",
+                cause);
     }
 
     private final JdbcTemplate jdbc;
 
-    TeachingPageQueries(JdbcTemplate jdbc) {
+    TeachingPageRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 

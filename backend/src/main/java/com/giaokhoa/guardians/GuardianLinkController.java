@@ -8,9 +8,15 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.guardians.GuardianLinkService.GuardianLinkView;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.Violation;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -66,10 +72,11 @@ public class GuardianLinkController {
      * actor hiện hành, không bao giờ tạo link cho phụ huynh khác.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record GuardianRequest(@Nullable UUID studentUserId) {}
+    public record GuardianRequest(@NotNull @Nullable UUID studentUserId) {}
 
     /** Body quyết định liên kết: APPROVE hoặc REJECT kèm row version đã đọc. */
-    public record GuardianDecision(@Nullable String decision, @Nullable Long expectedVersion) {}
+    public record GuardianDecision(
+            @NotNull @Nullable String decision, @NotNull @Nullable Long expectedVersion) {}
 
     /** Trang danh sách liên kết: chỉ items, không totalCount. */
     public record GuardianLinkPage(List<GuardianLinkView> items) {
@@ -81,8 +88,8 @@ public class GuardianLinkController {
     @PostMapping
     public ResponseEntity<IdempotencyService.OperationReceipt> requestLink(
             @PathVariable UUID workspaceId,
-            @RequestBody @Nullable GuardianRequest body,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody @Valid @Nullable GuardianRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(
@@ -91,17 +98,23 @@ public class GuardianLinkController {
                 workspaceId,
                 actor -> {
                     if (body == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu studentUserId.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu studentUserId.",
+                                List.of(
+                                        new Violation(
+                                                "studentUserId",
+                                                "NotNull",
+                                                "Giá trị không hợp lệ.")));
                     }
                     UUID studentUserId = body.studentUserId();
                     if (studentUserId == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu studentUserId.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu studentUserId.",
+                                List.of(
+                                        new Violation(
+                                                "studentUserId",
+                                                "NotNull",
+                                                "Giá trị không hợp lệ.")));
                     }
                     requireParent(actor, workspaceId);
                     AuthorizationOperation operation =
@@ -112,7 +125,9 @@ public class GuardianLinkController {
                                     idempotencyKey,
                                     idempotency.payloadHash(
                                             "POST",
-                                            "/api/workspaces/" + workspaceId + "/guardian-links",
+                                            HttpConstants.WORKSPACE_API_PREFIX
+                                                    + workspaceId
+                                                    + "/guardian-links",
                                             JSON.valueToTree(body)));
                     return idempotency.responseFor(operation);
                 });
@@ -138,7 +153,7 @@ public class GuardianLinkController {
                     } else {
                         throw new HttpProblemException(
                                 HttpStatus.FORBIDDEN,
-                                "PERMISSION_DENIED",
+                                ErrorCodes.PERMISSION_DENIED,
                                 "Actor không có quyền xem danh sách liên kết của center này.");
                     }
                     return protectedOk(new GuardianLinkPage(items));
@@ -149,8 +164,8 @@ public class GuardianLinkController {
     public ResponseEntity<IdempotencyService.OperationReceipt> decideLink(
             @PathVariable UUID workspaceId,
             @PathVariable UUID linkId,
-            @RequestBody @Nullable GuardianDecision body,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody @Valid @Nullable GuardianDecision body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(
@@ -159,18 +174,31 @@ public class GuardianLinkController {
                 workspaceId,
                 actor -> {
                     if (body == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu decision hoặc expectedVersion.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu decision hoặc expectedVersion.",
+                                List.of(
+                                        new Violation(
+                                                "decision", "NotNull", "Giá trị không hợp lệ."),
+                                        new Violation(
+                                                "expectedVersion",
+                                                "NotNull",
+                                                "Giá trị không hợp lệ.")));
                     }
                     String decision = body.decision();
                     Long expectedVersion = body.expectedVersion();
                     if (decision == null || expectedVersion == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu decision hoặc expectedVersion.");
+                        List<Violation> violations = new ArrayList<>();
+                        if (decision == null) {
+                            violations.add(
+                                    new Violation("decision", "NotNull", "Giá trị không hợp lệ."));
+                        }
+                        if (expectedVersion == null) {
+                            violations.add(
+                                    new Violation(
+                                            "expectedVersion", "NotNull", "Giá trị không hợp lệ."));
+                        }
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu decision hoặc expectedVersion.", violations);
                     }
                     requireAdmin(actor, workspaceId);
                     AuthorizationOperation operation =
@@ -183,7 +211,7 @@ public class GuardianLinkController {
                                     idempotencyKey,
                                     idempotency.payloadHash(
                                             "POST",
-                                            "/api/workspaces/"
+                                            HttpConstants.WORKSPACE_API_PREFIX
                                                     + workspaceId
                                                     + "/guardian-links/"
                                                     + linkId
@@ -197,7 +225,7 @@ public class GuardianLinkController {
     public ResponseEntity<IdempotencyService.OperationReceipt> revokeLink(
             @PathVariable UUID workspaceId,
             @PathVariable UUID linkId,
-            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(
@@ -214,7 +242,7 @@ public class GuardianLinkController {
                                     idempotencyKey,
                                     idempotency.payloadHash(
                                             "DELETE",
-                                            "/api/workspaces/"
+                                            HttpConstants.WORKSPACE_API_PREFIX
                                                     + workspaceId
                                                     + "/guardian-links/"
                                                     + linkId,
@@ -233,7 +261,7 @@ public class GuardianLinkController {
         if (!actorRoles(actor, workspaceId).contains(MembershipRole.Role.PARENT)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "GUARDIAN_PARENT_NOT_CURRENT",
+                    ErrorCodes.GUARDIAN_PARENT_NOT_CURRENT,
                     "Actor không phải phụ huynh còn hiệu lực của center này.");
         }
     }
@@ -244,7 +272,7 @@ public class GuardianLinkController {
                 && !roles.contains(MembershipRole.Role.MANAGER)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "PERMISSION_DENIED",
+                    ErrorCodes.PERMISSION_DENIED,
                     "Actor không phải owner hoặc manager của center này.");
         }
     }

@@ -7,8 +7,13 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.identity.RecoveryService.Decision;
 import com.giaokhoa.identity.RecoveryService.RequestView;
+import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.Violation;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -51,12 +56,15 @@ public class RecoveryController {
     }
 
     public record SubmitRequest(
-            @Nullable UUID targetUserId, @Nullable UUID workspaceId, @Nullable String reason) {}
+            @NotNull @Nullable UUID targetUserId,
+            @Nullable UUID workspaceId,
+            @NotBlank @Nullable String reason) {}
 
     public record SubmitReceipt(
             UUID operationId, String state, boolean completed, String statusUrl) {}
 
-    public record ResolveRequest(@Nullable String decision, @Nullable String verificationNote) {}
+    public record ResolveRequest(
+            @NotNull @Nullable String decision, @Nullable String verificationNote) {}
 
     public record ResolveReceipt(
             UUID id, String state, boolean completed, String targetType, UUID targetId) {}
@@ -77,20 +85,20 @@ public class RecoveryController {
     @PostMapping("/me/recovery-requests")
     public ResponseEntity<SubmitReceipt> submit(
             Authentication authentication,
-            @RequestBody @Nullable SubmitRequest body,
-            @RequestHeader("Idempotency-Key") String key) {
+            @RequestBody @Valid @Nullable SubmitRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key) {
         if (body == null || body.targetUserId() == null) {
-            throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST,
-                    "VALIDATION_FAILED",
-                    "Thiếu tài khoản đích của yêu cầu.");
+            throw HttpProblemException.validationFailed(
+                    "Thiếu tài khoản đích của yêu cầu.",
+                    List.of(new Violation("targetUserId", "NotNull", "Giá trị không hợp lệ.")));
         }
         // Giữ lý do trong biến cục bộ: gọi body.reason() hai lần khiến phân tích null
         // không nối được lần kiểm tra với lần dùng.
         String reason = body.reason();
         if (reason == null || reason.isBlank()) {
-            throw new HttpProblemException(
-                    HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Thiếu lý do cần hỗ trợ.");
+            throw HttpProblemException.validationFailed(
+                    "Thiếu lý do cần hỗ trợ.",
+                    List.of(new Violation("reason", "NotBlank", "Giá trị không hợp lệ.")));
         }
         UUID actor = executor.actorUserId(authentication);
         RequestView created =
@@ -140,8 +148,8 @@ public class RecoveryController {
             Authentication authentication,
             HttpServletRequest request,
             @PathVariable UUID requestId,
-            @RequestBody @Nullable ResolveRequest body,
-            @RequestHeader("Idempotency-Key") String key,
+            @RequestBody @Valid @Nullable ResolveRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
             @RequestHeader("If-Match") String ifMatch) {
         return executor.executeForActor(
                 authentication,
@@ -154,19 +162,21 @@ public class RecoveryController {
                                                 .scopeName()))),
                 () -> {
                     if (body == null || body.decision() == null) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
-                                "Thiếu quyết định xử lý yêu cầu.");
+                        throw HttpProblemException.validationFailed(
+                                "Thiếu quyết định xử lý yêu cầu.",
+                                List.of(
+                                        new Violation(
+                                                "decision", "NotNull", "Giá trị không hợp lệ.")));
                     }
                     Decision decision;
                     try {
                         decision = Decision.valueOf(body.decision());
                     } catch (IllegalArgumentException ex) {
-                        throw new HttpProblemException(
-                                HttpStatus.BAD_REQUEST,
-                                "VALIDATION_FAILED",
+                        throw HttpProblemException.validationFailed(
                                 "Quyết định xử lý không hợp lệ.",
+                                List.of(
+                                        new Violation(
+                                                "decision", "INVALID", "Giá trị không hợp lệ.")),
                                 ex);
                     }
                     UUID operator = executor.actorUserId(authentication);

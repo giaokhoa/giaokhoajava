@@ -156,7 +156,7 @@ PROVISIONING_TEST_KEYCLOAK_USER_ID="$(admin_get '/users?username=student-without
 export PROVISIONING_TEST_KEYCLOAK_USER_ID
 REPO="$(cd "$ROOT/../.." && pwd)"
 if ! "$REPO/backend/mvnw" -B -ntp -f "$REPO/backend/pom.xml" \
-    -Dtest=KeycloakProvisioningClientNativeIT test > "$TMP/java-native.log" 2>&1; then
+    -Dtest=AuthorizationProvisioningClientNativeIT test > "$TMP/java-native.log" 2>&1; then
   tail -55 "$TMP/java-native.log" >&2
   fail "Java native provisioning integration test"
 fi

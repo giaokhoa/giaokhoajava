@@ -20,6 +20,9 @@ public final class NativePolicyTemplates {
     public static final String ELIGIBILITY_GROUP = "/gk/identity/eligible";
     public static final String PLATFORM_OPERATORS_GROUP = "/gk/platform/operators";
 
+    /** Tiền tố key của mọi target thuộc workspace; ngữ pháp key do template này định nghĩa. */
+    public static final String WORKSPACE_PREFIX = "workspace:";
+
     private static final String UUID_PATTERN =
             "[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}";
     private static final Pattern GROUP_SOURCE =
@@ -111,19 +114,19 @@ public final class NativePolicyTemplates {
                 "account:" + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.ProfileScope.values())),
         WORKSPACE(
-                "workspace:" + UUID_PATTERN,
+                WORKSPACE_PREFIX + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.WorkspaceScope.values())),
         CLASS(
-                "workspace:" + UUID_PATTERN + ":class:" + UUID_PATTERN,
+                WORKSPACE_PREFIX + UUID_PATTERN + ":class:" + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.ClassScope.values())),
         COURSE(
-                "workspace:" + UUID_PATTERN + ":course:" + UUID_PATTERN,
+                WORKSPACE_PREFIX + UUID_PATTERN + ":course:" + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.CourseScope.values())),
         COURSE_SUBJECT(
-                "workspace:" + UUID_PATTERN + ":course-subject:" + UUID_PATTERN,
+                WORKSPACE_PREFIX + UUID_PATTERN + ":course-subject:" + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.CourseSubjectScope.values())),
         RESOURCE_VERSION(
-                "workspace:"
+                WORKSPACE_PREFIX
                         + UUID_PATTERN
                         + ":resource:"
                         + UUID_PATTERN
@@ -131,13 +134,13 @@ public final class NativePolicyTemplates {
                         + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.ResourceVersionScope.values())),
         RESOURCE(
-                "workspace:" + UUID_PATTERN + ":resource:" + UUID_PATTERN,
+                WORKSPACE_PREFIX + UUID_PATTERN + ":resource:" + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.ResourceScope.values())),
         ACTIVITY(
-                "workspace:" + UUID_PATTERN + ":activity:" + UUID_PATTERN,
+                WORKSPACE_PREFIX + UUID_PATTERN + ":activity:" + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.ActivityScope.values())),
         RESULT(
-                "workspace:" + UUID_PATTERN + ":result:" + UUID_PATTERN,
+                WORKSPACE_PREFIX + UUID_PATTERN + ":result:" + UUID_PATTERN,
                 PermissionCatalog.names(PermissionCatalog.ResultScope.values())),
         GRANT(
                 "grant:" + UUID_PATTERN,
@@ -193,7 +196,7 @@ public final class NativePolicyTemplates {
     }
 
     public static String workspaceKey(UUID workspaceId) {
-        return "workspace:" + requireId(workspaceId);
+        return WORKSPACE_PREFIX + requireId(workspaceId);
     }
 
     public static String classKey(UUID workspaceId, UUID classId) {

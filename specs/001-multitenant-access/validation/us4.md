@@ -164,7 +164,7 @@ trên máy chạy pipeline, ngày 2026-11-09.
 
 ## Quyết định về nhóm Native
 
-Ba class `KeycloakProvisioningClientNativeIT`, `NativePermissionGateIT`,
+Ba class `AuthorizationProvisioningClientNativeIT`, `NativePermissionGateIT`,
 `NativeTimePolicyIT` bị `backend/pom.xml` loại khỏi profile integration
 theo thiết kế (chú thích trong pom: Native Keycloak dùng stack riêng và
 được CI chạy qua `verify-native.sh`). Trên máy chạy pipeline hiện tại,

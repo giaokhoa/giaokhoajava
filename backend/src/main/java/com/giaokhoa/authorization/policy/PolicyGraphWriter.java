@@ -1,6 +1,7 @@
 package com.giaokhoa.authorization.policy;
 
-import com.giaokhoa.authorization.keycloak.KeycloakProvisionerFactory;
+import com.giaokhoa.authorization.keycloak.KeycloakProvisionerTokens;
+import com.giaokhoa.shared.config.GiaokhoaProperties;
 import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import java.net.URI;
 import java.time.Instant;
@@ -15,7 +16,6 @@ import java.util.Set;
 import java.util.TreeSet;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -56,23 +56,15 @@ public class PolicyGraphWriter {
 
     @Autowired
     public PolicyGraphWriter(
-            @Value("${giaokhoa.keycloak.admin-base-url}") String baseUrl,
-            @Value("${spring.security.oauth2.client.provider.keycloak.issuer-uri}")
-                    String issuerUri,
-            @Value("${giaokhoa.keycloak.provisioner.client-id}") String clientId,
-            @Value("${giaokhoa.keycloak.provisioner.client-secret}") String clientSecret,
-            @Value("${giaokhoa.keycloak.authorization-audience}") String audienceClientId,
+            GiaokhoaProperties properties,
+            KeycloakProvisionerTokens tokens,
             ResourceMutationCoordinator mutationCoordinator) {
         this(
                 RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
-                baseUrl,
-                KeycloakProvisionerFactory.realmOf(issuerUri),
-                KeycloakProvisionerFactory.clientManager(
-                        baseUrl.replaceAll("/+$", ""),
-                        KeycloakProvisionerFactory.realmOf(issuerUri),
-                        clientId,
-                        clientSecret),
-                audienceClientId,
+                properties.keycloak().adminBaseUrl(),
+                tokens.realm(),
+                tokens.manager(),
+                properties.keycloak().authorizationAudience(),
                 mutationCoordinator);
     }
 

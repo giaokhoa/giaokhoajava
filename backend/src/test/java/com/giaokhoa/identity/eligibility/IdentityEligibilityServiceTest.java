@@ -33,7 +33,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.HttpServerErrorException;
 
-class IdentityEligibilitySynchronizerTest {
+class IdentityEligibilityServiceTest {
     private static final UUID ACTOR = RandomIds.randomId();
     private static final UUID ACCOUNT_PARTITION = RandomIds.randomId();
     private static final String SUBJECT = "keycloak-subject-1";
@@ -44,8 +44,8 @@ class IdentityEligibilitySynchronizerTest {
     private final CurrentIdentityClient identities = mock(CurrentIdentityClient.class);
     private final AuthorizationOperationService operations =
             mock(AuthorizationOperationService.class);
-    private final IdentityEligibilitySynchronizer synchronizer =
-            new IdentityEligibilitySynchronizer(
+    private final IdentityEligibilityService synchronizer =
+            new IdentityEligibilityService(
                     jdbc,
                     identities,
                     operations,

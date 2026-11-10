@@ -3,9 +3,10 @@ package com.giaokhoa.tenancy;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.identity.InitialCredentialHandoff;
+import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.tenancy.model.MembershipRole;
@@ -30,7 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
  * sở hữu đường cấp học sinh vì nó là workflow qua Keycloak chứ không chỉ là thay đổi dữ kiện nguồn
  * trong app-db.
  *
- * <p>Cấp học sinh là CREATE mới qua {@link InitialCredentialHandoff}: tạo user Keycloak kèm
+ * <p>Cấp học sinh là CREATE mới qua {@link InitialCredentialService}: tạo user Keycloak kèm
  * credential tạm, rồi registrar ghi account CENTER_ISSUED, personal workspace và membership STUDENT
  * ACTIVE. Username trùng không bao giờ chiếm hay reset danh tính đã có — Keycloak trả 409 cho
  * username đã tồn tại và registrar từ chối subject/username không khớp, cả hai đều thành 409.
@@ -55,7 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MembershipService {
     private final JdbcTemplate jdbc;
     private final IdempotencyService idempotency;
-    private final InitialCredentialHandoff handoff;
+    private final InitialCredentialService handoff;
     private final MembershipPolicyProjector projector;
     private final ResourceMutationCoordinator coordinator;
     private final AuditRecorder audit;
@@ -63,7 +64,7 @@ public class MembershipService {
     public MembershipService(
             JdbcTemplate jdbc,
             IdempotencyService idempotency,
-            InitialCredentialHandoff handoff,
+            InitialCredentialService handoff,
             MembershipPolicyProjector projector,
             ResourceMutationCoordinator coordinator,
             AuditRecorder audit) {
@@ -80,7 +81,7 @@ public class MembershipService {
      * gọi này thật sự tạo danh tính mới.
      */
     public record StudentIssueResult(
-            AuthorizationOperation operation, InitialCredentialHandoff.@Nullable Handoff handoff) {}
+            AuthorizationOperation operation, InitialCredentialService.@Nullable Handoff handoff) {}
 
     /** Một dòng của danh sách thành viên: dữ kiện thư mục tối thiểu đúng một center. */
     public record MembershipView(
@@ -121,7 +122,7 @@ public class MembershipService {
             return new StudentIssueResult(existing.get(), null);
         }
         requireCenterOperator(initiatorUserId, workspaceId);
-        InitialCredentialHandoff.Handoff issued =
+        InitialCredentialService.Handoff issued =
                 handoff.issueNewStudent(initiatorUserId, workspaceId, username, displayName, email);
         AuthorizationOperation operation =
                 projector.recordMembershipChange(
@@ -260,7 +261,7 @@ public class MembershipService {
                 && !roles.contains(MembershipRole.Role.MANAGER)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "PERMISSION_DENIED",
+                    ErrorCodes.PERMISSION_DENIED,
                     "Không có quyền quản trị thành viên của trung tâm này.");
         }
         return roles;
@@ -270,7 +271,7 @@ public class MembershipService {
         if (!SubscriptionPolicy.currentOrUnconfirmed(jdbc, workspaceId)) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "SUBSCRIPTION_INACTIVE",
+                    ErrorCodes.SUBSCRIPTION_INACTIVE,
                     "Gói sử dụng của trung tâm đã hết hiệu lực.");
         }
     }
@@ -310,7 +311,7 @@ public class MembershipService {
             // Không phân biệt thiếu/không phải center/không ACTIVE: không lộ sự tồn tại.
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
-                    "WORKSPACE_NOT_FOUND",
+                    ErrorCodes.WORKSPACE_NOT_FOUND,
                     "Không tìm thấy trung tâm hợp lệ.");
         }
         List<String> operatorRoles =
@@ -325,7 +326,7 @@ public class MembershipService {
         if (operatorRoles.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.FORBIDDEN,
-                    "OPERATOR_NOT_AUTHORIZED",
+                    ErrorCodes.OPERATOR_NOT_AUTHORIZED,
                     "Chỉ chủ sở hữu hoặc quản lý của trung tâm mới được cấp danh tính học sinh.");
         }
     }

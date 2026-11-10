@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -19,7 +18,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.annotation.Propagation;
@@ -549,17 +547,18 @@ class TeachingStructureIT extends TeachingFixture {
     }
 
     @Test
-    void anonymousClassListRedirectsToLogin() throws Exception {
+    void anonymousClassListReceivesProblemUnauthorized() throws Exception {
         MockHttpServletResponse response =
                 mockMvc()
                         .perform(get("/api/workspaces/" + UUID.randomUUID() + "/classes"))
                         .andReturn()
                         .getResponse();
-        assertEquals(302, response.getStatus());
-        assertTrue(
-                Objects.requireNonNull(response.getHeader(HttpHeaders.LOCATION), "Location")
-                        .contains("/oauth2/authorization/keycloak"),
-                "Chưa đăng nhập thì được hướng dẫn đăng nhập, không nhận dữ liệu nghiệp vụ");
+        assertEquals(401, response.getStatus());
+        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals(
+                "UNAUTHORIZED",
+                body.get("code").stringValue(),
+                "Chưa đăng nhập nhận 401 ProblemDetail, không nhận dữ liệu nghiệp vụ");
     }
 
     @Test

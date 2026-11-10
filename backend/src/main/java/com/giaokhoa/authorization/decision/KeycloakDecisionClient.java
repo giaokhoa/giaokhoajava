@@ -1,12 +1,13 @@
 package com.giaokhoa.authorization.decision;
 
+import com.giaokhoa.shared.config.GiaokhoaProperties;
+import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.shared.http.KeycloakRequestFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -48,12 +49,12 @@ public class KeycloakDecisionClient {
     public KeycloakDecisionClient(
             OAuth2AuthorizedClientRepository authorizedClients,
             ClientRegistrationRepository registrations,
-            @Value("${giaokhoa.keycloak.authorization-audience}") String audience) {
+            GiaokhoaProperties properties) {
         this(
                 RestClient.builder().requestFactory(KeycloakRequestFactory.create()),
                 sessionClientManager(registrations, authorizedClients),
                 tokenEndpoint(registrations),
-                audience);
+                properties.keycloak().authorizationAudience());
     }
 
     KeycloakDecisionClient(
@@ -163,6 +164,9 @@ public class KeycloakDecisionClient {
 
     private static HttpProblemException unverifiable(@Nullable Throwable cause) {
         return new HttpProblemException(
-                HttpStatus.SERVICE_UNAVAILABLE, "DECISION_UNVERIFIABLE", FAILURE_DETAIL, cause);
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ErrorCodes.DECISION_UNVERIFIABLE,
+                FAILURE_DETAIL,
+                cause);
     }
 }
