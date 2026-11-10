@@ -1414,19 +1414,19 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
     // Token master được giữ trong bộ nhớ tới gần hết hạn thay vì xin mới cho mỗi lần gọi
     // Admin API: mỗi lần xin token là một lượt Keycloak xác thực mật khẩu của tài khoản master.
     // Hiệu lực chỉ căn theo masterTokenValidUntil: hạ hạn về EPOCH là token cũ hết được dùng.
-    private static String cachedMasterToken = "";
+    private static String masterTokenCache = "";
     private static Instant masterTokenValidUntil = Instant.EPOCH;
 
-    private static String masterToken() {
+    private static String cachedMasterToken() {
         if (Instant.now().isBefore(masterTokenValidUntil)) {
-            return cachedMasterToken;
+            return masterTokenCache;
         }
         return fetchMasterTokenStatic();
     }
 
     private static synchronized String fetchMasterTokenStatic() {
         if (Instant.now().isBefore(masterTokenValidUntil)) {
-            return cachedMasterToken;
+            return masterTokenCache;
         }
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", "password");
@@ -1447,7 +1447,7 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
                 Objects.requireNonNull((String) response.get("access_token"), "access_token");
         long expiresIn =
                 response.get("expires_in") instanceof Number number ? number.longValue() : 60;
-        cachedMasterToken = token;
+        masterTokenCache = token;
         // Chừa biên 10 giây để không cầm token sắp hết hạn vào một lời gọi Admin API.
         masterTokenValidUntil = Instant.now().plusSeconds(Math.max(5, expiresIn - 10));
         return token;
@@ -1463,13 +1463,13 @@ class CenterAdministrationIT extends KeycloakSessionFixture {
      */
     private static <T> T withMasterToken(java.util.function.Function<String, T> call) {
         try {
-            return call.apply(masterToken());
+            return call.apply(cachedMasterToken());
         } catch (RestClientResponseException ex) {
             if (!ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
                 throw ex;
             }
             invalidateMasterToken();
-            return call.apply(masterToken());
+            return call.apply(cachedMasterToken());
         }
     }
 }

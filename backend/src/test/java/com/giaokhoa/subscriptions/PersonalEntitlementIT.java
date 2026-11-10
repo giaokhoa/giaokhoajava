@@ -457,19 +457,19 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
 
     // Token master được giữ trong bộ nhớ tới gần hết hạn thay vì xin mới cho mỗi lần gọi
     // Admin API; hạ hạn về EPOCH là token cũ hết được dùng.
-    private static String cachedMasterToken = "";
+    private static String masterTokenCache = "";
     private static Instant masterTokenValidUntil = Instant.EPOCH;
 
-    private static String masterToken() {
+    private static String cachedMasterToken() {
         if (Instant.now().isBefore(masterTokenValidUntil)) {
-            return cachedMasterToken;
+            return masterTokenCache;
         }
         return fetchMasterToken();
     }
 
     private static synchronized String fetchMasterToken() {
         if (Instant.now().isBefore(masterTokenValidUntil)) {
-            return cachedMasterToken;
+            return masterTokenCache;
         }
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", "password");
@@ -490,7 +490,7 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
                 Objects.requireNonNull((String) response.get("access_token"), "access_token");
         long expiresIn =
                 response.get("expires_in") instanceof Number number ? number.longValue() : 60;
-        cachedMasterToken = token;
+        masterTokenCache = token;
         masterTokenValidUntil = Instant.now().plusSeconds(Math.max(5, expiresIn - 10));
         return token;
     }
@@ -501,13 +501,13 @@ class PersonalEntitlementIT extends KeycloakSessionFixture {
 
     private static <T> T withMasterToken(java.util.function.Function<String, T> call) {
         try {
-            return call.apply(masterToken());
+            return call.apply(cachedMasterToken());
         } catch (RestClientResponseException ex) {
             if (!ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
                 throw ex;
             }
             invalidateMasterToken();
-            return call.apply(masterToken());
+            return call.apply(cachedMasterToken());
         }
     }
 
