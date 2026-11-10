@@ -69,7 +69,7 @@ class DependencyManifestResolverTest {
                 new DependencyManifestResolver(jdbc)
                         .resolve(ACTOR, WORKSPACE, List.of("workspace:" + WORKSPACE));
 
-        assertEquals(List.of(ACCOUNT, WORKSPACE_PARTITION), sorted(manifest.partitionIds()));
+        assertEquals(sorted(List.of(ACCOUNT, WORKSPACE_PARTITION)), manifest.partitionIds());
         assertTrue(manifest.recordedResourceIds().isEmpty());
     }
 
@@ -92,7 +92,7 @@ class DependencyManifestResolverTest {
         var manifest =
                 new DependencyManifestResolver(jdbc).resolve(ACTOR, WORKSPACE, List.of(resultKey));
 
-        assertEquals(List.of(ACCOUNT, WORKSPACE_PARTITION), sorted(manifest.partitionIds()));
+        assertEquals(sorted(List.of(ACCOUNT, WORKSPACE_PARTITION)), manifest.partitionIds());
         assertEquals("result-resource", manifest.recordedResourceIds().get(resultKey));
     }
 
