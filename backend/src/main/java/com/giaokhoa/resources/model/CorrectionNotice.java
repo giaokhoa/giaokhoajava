@@ -34,7 +34,11 @@ public class CorrectionNotice {
     protected CorrectionNotice() {}
 
     public CorrectionNotice(
-            UUID id, UUID resourceId, UUID affectedVersionId, UUID replacementVersionId, String reason) {
+            UUID id,
+            UUID resourceId,
+            UUID affectedVersionId,
+            UUID replacementVersionId,
+            String reason) {
         this.id = id;
         this.resourceId = resourceId;
         this.affectedVersionId = affectedVersionId;
