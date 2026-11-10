@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.resources.ResourceLibraryService;
+import com.giaokhoa.resources.ResourceShareService;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
@@ -43,11 +44,12 @@ import tools.jackson.databind.json.JsonMapper;
  * bundle hiện hành của target qua cơ chế operation dùng chung và chờ chiếu xong — chờ không xong
  * thì fail-closed 503 như mọi protected request khác. Các action thư viện SAVE_VERSION,
  * FORK_VERSION, RECEIVE_UPDATE và hai route đọc thân bài/đáp án của resource version uỷ cho {@link
- * ResourceLibraryService}, nơi giữ pipeline và giao thức biên nhận của chúng. Action lạ bị từ chối,
- * không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận idempotency của chính mình trong
- * cùng transaction với mutation (bảng sample_action_mutation, theo tiền lệ recovery_mutation):
- * retry cùng key và cùng payload trả lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload
- * trả 409 như quy tắc mutation chung của hợp đồng HTTP.
+ * ResourceLibraryService}, nơi giữ pipeline và giao thức biên nhận của chúng; các action chia sẻ
+ * SHARE_VERSION, ACCEPT_SHARE, REVOKE_SHARE uỷ cho {@link ResourceShareService} theo cùng mẫu.
+ * Action lạ bị từ chối, không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên nhận
+ * idempotency của chính mình trong cùng transaction với mutation (bảng sample_action_mutation, theo
+ * tiền lệ recovery_mutation): retry cùng key và cùng payload trả lại kết quả đầu tiên thay vì ghi
+ * thêm, cùng key khác payload trả 409 như quy tắc mutation chung của hợp đồng HTTP.
  */
 @RestController
 public class SampleActionController {
@@ -63,6 +65,7 @@ public class SampleActionController {
     private final SourceRevocationCoordinator coordinator;
     private final ResultPolicyProjector resultProjector;
     private final ResourceLibraryService library;
+    private final ResourceShareService shareService;
     private final WorkspaceTransaction workspaces;
     private final TransactionTemplate transactions;
 
@@ -73,6 +76,7 @@ public class SampleActionController {
             SourceRevocationCoordinator coordinator,
             ResultPolicyProjector resultProjector,
             ResourceLibraryService library,
+            ResourceShareService shareService,
             WorkspaceTransaction workspaces,
             PlatformTransactionManager transactionManager) {
         this.executor = executor;
@@ -81,6 +85,7 @@ public class SampleActionController {
         this.coordinator = coordinator;
         this.resultProjector = resultProjector;
         this.library = library;
+        this.shareService = shareService;
         this.workspaces = workspaces;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -101,7 +106,23 @@ public class SampleActionController {
             String scoreStub,
             String commentStub,
             UUID libraryItemId,
-            UUID replacementVersionId) {}
+            UUID replacementVersionId,
+            UUID grantId,
+            UUID recipientWorkspaceId,
+            String mode,
+            List<String> actions,
+            List<UUID> allowedWorkspaceIds,
+            OffsetDateTime expiresAt) {
+        // Sao chép phòng thủ theo mẫu CapabilitiesController: hai danh sách là dữ kiện đầu vào
+        // từ JSON, không cho caller giữ tham chiếu mutable vào trạng thái nội bộ của request.
+        // Chuẩn hoá null về danh sách rỗng: controller từ chối null và rỗng giống nhau
+        // ở shareVersion nên không đổi hành vi quan sát được.
+        public SampleActionRequest {
+            actions = actions == null ? List.of() : List.copyOf(actions);
+            allowedWorkspaceIds =
+                    allowedWorkspaceIds == null ? List.of() : List.copyOf(allowedWorkspaceIds);
+        }
+    }
 
     public record SampleActionResult(
             UUID id, String state, boolean completed, String targetType, UUID targetId) {}
@@ -184,6 +205,30 @@ public class SampleActionController {
                                     httpRequest);
                     case "RECEIVE_UPDATE" ->
                             receiveUpdate(
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    request,
+                                    authentication,
+                                    httpRequest);
+                    case "SHARE_VERSION" ->
+                            shareVersion(
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    request,
+                                    authentication,
+                                    httpRequest);
+                    case "ACCEPT_SHARE" ->
+                            acceptShare(
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    request,
+                                    authentication,
+                                    httpRequest);
+                    case "REVOKE_SHARE" ->
+                            revokeShare(
                                     workspaceId,
                                     idempotencyKey,
                                     payloadHash,
@@ -791,6 +836,85 @@ public class SampleActionController {
                         idempotencyKey,
                         payloadHash);
         return new SampleActionResult(itemId, OPERATION_SUCCEEDED, true, "LIBRARY_ITEM", itemId);
+    }
+
+    // ---------- Chia sẻ resource: cấp, nhận và thu hồi lượt cấp ----------
+
+    private SampleActionResult shareVersion(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.resourceId() == null
+                || request.versionId() == null
+                || request.recipientWorkspaceId() == null
+                || request.mode() == null
+                || request.mode().isBlank()
+                || request.actions() == null
+                || request.actions().isEmpty()) {
+            throw invalid();
+        }
+        UUID grantId =
+                shareService.shareVersion(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.resourceId(),
+                        request.versionId(),
+                        request.recipientWorkspaceId(),
+                        request.mode(),
+                        request.actions(),
+                        request.allowedWorkspaceIds() == null
+                                ? List.of()
+                                : request.allowedWorkspaceIds(),
+                        request.expiresAt(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId);
+    }
+
+    private SampleActionResult acceptShare(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.grantId() == null) {
+            throw invalid();
+        }
+        UUID grantId =
+                shareService.acceptShare(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.grantId(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId);
+    }
+
+    private SampleActionResult revokeShare(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.grantId() == null) {
+            throw invalid();
+        }
+        UUID grantId =
+                shareService.revokeShare(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.grantId(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(grantId, OPERATION_SUCCEEDED, true, "SHARE_GRANT", grantId);
     }
 
     @GetMapping("/api/workspaces/{workspaceId}/samples/resources/{resourceId}/versions/{versionId}")
