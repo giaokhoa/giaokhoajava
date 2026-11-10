@@ -183,6 +183,12 @@
         <Method name="&lt;init&gt;"/>
         <Bug pattern="CT_CONSTRUCTOR_THROW"/>
     </Match>
+    <!-- Entity ResourceAssignment chỉ gán field trong constructor (kèm requireNonNull cho mảng actions, theo mẫu Invitation); không giữ tài nguyên hay gọi code ngoài. -->
+    <Match>
+        <Class name="com.giaokhoa.resources.model.ResourceAssignment"/>
+        <Method name="&lt;init&gt;"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
     <!-- Dependency singleton do Spring quản lý (CenterService, PolicyGraphWriter); không sao chép khi inject vào controller nền tảng. -->
     <Match>
         <Class name="com.giaokhoa.tenancy.CenterController"/>
