@@ -4,6 +4,7 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
@@ -24,7 +25,10 @@ import org.springframework.stereotype.Component;
  * mọi đường ghi ở đây luôn ghi kèm bundle kết quả của toàn bộ workspace: nguồn của kết quả là phân
  * công giảng dạy, ghi danh, liên kết phụ huynh đã duyệt và membership/role tiền đề của chúng, tức
  * đúng các nguồn mà một lần thu hồi role/membership/lớp/ phân công/ghi danh/phụ huynh có thể đổi;
- * bundle nào không đổi thì hash khớp nguyên nên chỉ là ghi lại, không đổi graph.
+ * bundle nào không đổi thì hash khớp nguyên nên chỉ là ghi lại, không đổi graph. Cùng lý do đó,
+ * bundle resource version của toàn bộ workspace cũng được ghi kèm: nguồn của nó có nhánh tác giả và
+ * phân công tường minh tiền đề là membership hiện hành, và nhánh học sinh tiền đề là hoạt động được
+ * giao từ phân công/ghi danh.
  *
  * <p>Closure này chỉ bao phủ các bundle thuộc WORKSPACE partition của workspace đó. Mọi nguồn của
  * sáu nhóm đều là dòng bền trong workspace và mọi projection bị ảnh hưởng đều thuộc cùng partition
@@ -51,6 +55,7 @@ public class SourceRevocationCoordinator {
     private final TeachingPolicyProjector teachingProjector;
     private final PersonalTeachingPolicyProjector personalTeachingProjector;
     private final ResultPolicyProjector resultProjector;
+    private final ResourcePolicyProjector resourceProjector;
 
     public SourceRevocationCoordinator(
             JdbcTemplate jdbc,
@@ -58,13 +63,15 @@ public class SourceRevocationCoordinator {
             CenterPolicyProjector centerProjector,
             TeachingPolicyProjector teachingProjector,
             PersonalTeachingPolicyProjector personalTeachingProjector,
-            ResultPolicyProjector resultProjector) {
+            ResultPolicyProjector resultProjector,
+            ResourcePolicyProjector resourceProjector) {
         this.jdbc = jdbc;
         this.operations = operations;
         this.centerProjector = centerProjector;
         this.teachingProjector = teachingProjector;
         this.personalTeachingProjector = personalTeachingProjector;
         this.resultProjector = resultProjector;
+        this.resourceProjector = resourceProjector;
     }
 
     /**
@@ -95,6 +102,7 @@ public class SourceRevocationCoordinator {
                             List.of()));
         }
         projections.addAll(resultProjector.allBundleProjections(workspaceId));
+        projections.addAll(resourceProjector.allBundleProjections(workspaceId));
         return operations.applyDesiredState(
                 initiatorUserId,
                 workspaceId,
@@ -125,6 +133,7 @@ public class SourceRevocationCoordinator {
                         List.of()));
         projections.addAll(teachingProjector.allBundleProjections(workspaceId));
         projections.addAll(resultProjector.allBundleProjections(workspaceId));
+        projections.addAll(resourceProjector.allBundleProjections(workspaceId));
         return operations.applyDesiredState(
                 initiatorUserId,
                 workspaceId,

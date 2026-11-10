@@ -6,6 +6,7 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
@@ -61,6 +62,7 @@ public class SubscriptionService {
     private final PersonalEntitlementProjector entitlementProjector;
     private final PersonalTeachingPolicyProjector personalTeachingProjector;
     private final AuditRecorder audit;
+    private final ResourcePolicyProjector resourceProjector;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -73,7 +75,8 @@ public class SubscriptionService {
             TeachingPolicyProjector teachingProjector,
             PersonalEntitlementProjector entitlementProjector,
             PersonalTeachingPolicyProjector personalTeachingProjector,
-            AuditRecorder audit) {
+            AuditRecorder audit,
+            ResourcePolicyProjector resourceProjector) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.operations = operations;
@@ -83,6 +86,7 @@ public class SubscriptionService {
         this.entitlementProjector = entitlementProjector;
         this.personalTeachingProjector = personalTeachingProjector;
         this.audit = audit;
+        this.resourceProjector = resourceProjector;
     }
 
     /**
@@ -175,8 +179,9 @@ public class SubscriptionService {
     /**
      * Thay đổi partition cần ghi cho một thay đổi gói trên workspace này: bundle trọn vẹn của
      * projector theo loại workspace trên WORKSPACE partition của chính workspace, kèm bundle của
-     * mọi target giảng dạy — kỳ gói đổi hiệu lực mà các scope giảng dạy cổng gói tham chiếu nên
-     * chúng phải ghi lại trong cùng operation. Rỗng khi partition chưa tồn tại.
+     * mọi target giảng dạy và mọi target resource version — kỳ gói đổi hiệu lực mà các scope cổng
+     * gói của chúng tham chiếu (descriptor mang chính định danh kỳ) nên chúng phải ghi lại trong
+     * cùng operation. Rỗng khi partition chưa tồn tại.
      */
     private Optional<AuthorizationOperationService.PartitionChange> partitionChange(
             UUID workspaceId, String kind) {
@@ -207,6 +212,7 @@ public class SubscriptionService {
                             List.of()));
             projections.addAll(personalTeachingProjector.allBundleProjections(workspaceId));
         }
+        projections.addAll(resourceProjector.allBundleProjections(workspaceId));
         return Optional.of(
                 new AuthorizationOperationService.PartitionChange(
                         partitions.getFirst(), List.copyOf(projections)));
