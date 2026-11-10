@@ -112,7 +112,17 @@ public class SampleActionController {
             String mode,
             List<String> actions,
             List<UUID> allowedWorkspaceIds,
-            OffsetDateTime expiresAt) {}
+            OffsetDateTime expiresAt) {
+        // Sao chép phòng thủ theo mẫu CapabilitiesController: hai danh sách là dữ kiện đầu vào
+        // từ JSON, không cho caller giữ tham chiếu mutable vào trạng thái nội bộ của request.
+        // Chuẩn hoá null về danh sách rỗng: controller từ chối null và rỗng giống nhau
+        // ở shareVersion nên không đổi hành vi quan sát được.
+        public SampleActionRequest {
+            actions = actions == null ? List.of() : List.copyOf(actions);
+            allowedWorkspaceIds =
+                    allowedWorkspaceIds == null ? List.of() : List.copyOf(allowedWorkspaceIds);
+        }
+    }
 
     public record SampleActionResult(
             UUID id, String state, boolean completed, String targetType, UUID targetId) {}

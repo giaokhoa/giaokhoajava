@@ -186,27 +186,31 @@ public class ResourceShareService {
         enforceSourceCeiling(actorUserId, workspaceId, metadata, actions);
         enforceComponentConstraints(
                 resourceId, versionId, actions, recipientWorkspaceId, allowedWorkspaceIds);
-        jdbc.update(connection -> {
-            var statement =
-                    connection.prepareStatement(
-                            "INSERT INTO share_grant(id, source_resource_id,"
-                                    + " source_version_id, grantor_user_id,"
-                                    + " recipient_workspace_id, mode, state, actions,"
-                                    + " allowed_workspace_ids, valid_from, expires_at)"
-                                    + " VALUES (?,?,?,?,?,?,'OFFERED',?,?,?,?)");
-            statement.setObject(1, grantId);
-            statement.setObject(2, resourceId);
-            statement.setObject(3, versionId);
-            statement.setObject(4, actorUserId);
-            statement.setObject(5, recipientWorkspaceId);
-            statement.setString(6, mode);
-            statement.setArray(7, connection.createArrayOf("text", actions.toArray(new String[0])));
-            statement.setArray(
-                    8, connection.createArrayOf("uuid", allowedWorkspaceIds.toArray(new UUID[0])));
-            statement.setObject(9, OffsetDateTime.now(ZoneOffset.UTC));
-            statement.setObject(10, expiresAt);
-            return statement;
-        });
+        jdbc.update(
+                "INSERT INTO share_grant(id, source_resource_id,"
+                        + " source_version_id, grantor_user_id,"
+                        + " recipient_workspace_id, mode, state, actions,"
+                        + " allowed_workspace_ids, valid_from, expires_at)"
+                        + " VALUES (?,?,?,?,?,?,'OFFERED',?,?,?,?)",
+                ps -> {
+                    ps.setObject(1, grantId);
+                    ps.setObject(2, resourceId);
+                    ps.setObject(3, versionId);
+                    ps.setObject(4, actorUserId);
+                    ps.setObject(5, recipientWorkspaceId);
+                    ps.setString(6, mode);
+                    ps.setArray(
+                            7,
+                            ps.getConnection()
+                                    .createArrayOf("text", actions.toArray(new String[0])));
+                    ps.setArray(
+                            8,
+                            ps.getConnection()
+                                    .createArrayOf(
+                                            "uuid", allowedWorkspaceIds.toArray(new UUID[0])));
+                    ps.setObject(9, OffsetDateTime.now(ZoneOffset.UTC));
+                    ps.setObject(10, expiresAt);
+                });
         return grantId;
     }
 
