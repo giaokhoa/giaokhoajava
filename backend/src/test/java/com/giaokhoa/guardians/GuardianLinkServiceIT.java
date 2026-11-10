@@ -34,6 +34,7 @@ import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import com.giaokhoa.verification.repository.SampleResultRepository;
+import com.giaokhoa.verification.repository.VerificationCenterMembershipRepository;
 import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
 import com.giaokhoa.verification.repository.VerificationTeachingAssignmentRepository;
 import jakarta.persistence.EntityManagerFactory;
@@ -586,7 +587,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                             com.giaokhoa.verification.repository
                                                     .VerificationUserAccountRepository.class),
                                     runtimeRepositories.getRepository(GuardianLinkRepository.class),
-                                    runtimeMemberships,
+                                    runtimeRepositories.getRepository(
+                                            VerificationCenterMembershipRepository.class),
                                     runtimeWorkspaceTx,
                                     runtimeOperations,
                                     runtimeTxManager);

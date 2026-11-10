@@ -29,6 +29,7 @@ import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
+import com.giaokhoa.verification.repository.VerificationCenterMembershipRepository;
 import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import jakarta.persistence.EntityManagerFactory;
@@ -83,6 +84,7 @@ final class RuntimeJpaRepositories implements AutoCloseable {
     final com.giaokhoa.verification.repository.VerificationEnrollmentRepository
             verificationEnrollments;
     final VerificationAuthorizationPartitionRepository verificationPartitions;
+    final VerificationCenterMembershipRepository verificationMemberships;
     final VerificationWorkspaceRepository verificationWorkspaces;
     final VerificationUserAccountRepository verificationAccounts;
     final GuardianLinkRepository guardianLinks;
@@ -143,6 +145,8 @@ final class RuntimeJpaRepositories implements AutoCloseable {
                                 .class);
         this.verificationPartitions =
                 factory.getRepository(VerificationAuthorizationPartitionRepository.class);
+        this.verificationMemberships =
+                factory.getRepository(VerificationCenterMembershipRepository.class);
         this.verificationWorkspaces = factory.getRepository(VerificationWorkspaceRepository.class);
         this.verificationAccounts = factory.getRepository(VerificationUserAccountRepository.class);
         this.guardianLinks = factory.getRepository(GuardianLinkRepository.class);

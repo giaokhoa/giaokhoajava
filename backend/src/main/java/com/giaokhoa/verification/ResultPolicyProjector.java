@@ -10,12 +10,13 @@ import com.giaokhoa.guardians.model.GuardianLink;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.tenancy.MembershipService;
+import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.model.SampleResult;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
+import com.giaokhoa.verification.repository.VerificationCenterMembershipRepository;
 import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
 import com.giaokhoa.verification.repository.VerificationTeachingAssignmentRepository;
 import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
@@ -73,7 +75,7 @@ public class ResultPolicyProjector {
     private final VerificationWorkspaceRepository workspaces;
     private final VerificationUserAccountRepository userAccounts;
     private final GuardianLinkRepository guardianLinks;
-    private final MembershipService memberships;
+    private final VerificationCenterMembershipRepository memberships;
     private final WorkspaceTransaction workspaceTransaction;
     private final AuthorizationOperationService operations;
     private final TransactionTemplate transactions;
@@ -86,7 +88,7 @@ public class ResultPolicyProjector {
             VerificationWorkspaceRepository workspaces,
             VerificationUserAccountRepository userAccounts,
             GuardianLinkRepository guardianLinks,
-            MembershipService memberships,
+            VerificationCenterMembershipRepository memberships,
             WorkspaceTransaction workspaceTransaction,
             AuthorizationOperationService operations,
             PlatformTransactionManager transactionManager) {
@@ -391,6 +393,20 @@ public class ResultPolicyProjector {
     }
 
     /**
+     * Vai trò hiện hành của một tài khoản trong workspace, đọc thẳng từ dòng membership ACTIVE qua
+     * repository: projector này nằm trong chuỗi chiếu mà {@code MembershipService} cũng phụ thuộc
+     * vào (qua {@code MembershipPolicyProjector} và {@code SourceRevocationCoordinator}), nên một
+     * phụ thuộc service ngược về tenancy sẽ khép vòng khởi tạo bean.
+     */
+    private Set<MembershipRole.Role> activeRoles(UUID userId, UUID workspaceId) {
+        return memberships
+                .findByWorkspaceIdAndUserIdAndState(
+                        workspaceId, userId, CenterMembership.State.ACTIVE)
+                .map(membership -> Set.copyOf(membership.getRoles()))
+                .orElse(Set.of());
+    }
+
+    /**
      * Subject của học sinh sở hữu kết quả khi nhánh học sinh còn hiệu lực: còn ghi danh ở môn–khóa
      * của kết quả và, ở center, còn membership ACTIVE kèm role STUDENT hiện hành. Rỗng khi nhánh đã
      * mất hiệu lực thì nguồn học sinh không được chiếu.
@@ -403,9 +419,7 @@ public class ResultPolicyProjector {
             return Optional.empty();
         }
         if (center
-                && !memberships
-                        .activeRoles(studentUserId, workspaceId)
-                        .contains(MembershipRole.Role.STUDENT)) {
+                && !activeRoles(studentUserId, workspaceId).contains(MembershipRole.Role.STUDENT)) {
             return Optional.empty();
         }
         return userAccounts.findById(studentUserId).map(UserAccount::getKeycloakSub);
@@ -418,9 +432,7 @@ public class ResultPolicyProjector {
      * dụng, để group của descriptor luôn có ít nhất một thành viên thật khi writer áp graph.
      */
     private boolean guardianSourcePresent(UUID workspaceId, UUID studentUserId) {
-        if (!memberships
-                .activeRoles(studentUserId, workspaceId)
-                .contains(MembershipRole.Role.STUDENT)) {
+        if (!activeRoles(studentUserId, workspaceId).contains(MembershipRole.Role.STUDENT)) {
             return false;
         }
         return guardianLinks
@@ -428,8 +440,7 @@ public class ResultPolicyProjector {
                         workspaceId, studentUserId, GuardianLink.APPROVED)
                 .stream()
                 .anyMatch(link ->
-                        memberships
-                                .activeRoles(link.getParentUserId(), workspaceId)
+                        activeRoles(link.getParentUserId(), workspaceId)
                                 .contains(MembershipRole.Role.PARENT));
     }
 

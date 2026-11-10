@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
@@ -16,11 +15,9 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
-import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.ResourceCopies;
 import com.giaokhoa.resources.repository.ResourceScopePreconditions;
-import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.support.IntegrationEnvironment;
@@ -32,8 +29,6 @@ import com.giaokhoa.teaching.CourseService.CourseView;
 import com.giaokhoa.teaching.EnrollmentService.EnrollmentView;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.CenterService;
-import com.giaokhoa.tenancy.MembershipPolicyProjector;
-import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;
@@ -501,17 +496,6 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             runtime.transactionManager);
             ResourceMutationCoordinator runtimeCoordinator =
                     new ResourceMutationCoordinator(runtimeJdbc, runtime.transactionManager);
-            MembershipService runtimeMemberships =
-                    new MembershipService(
-                            runtime.memberships,
-                            runtime.accounts,
-                            runtime.workspaces,
-                            new SubscriptionPolicy(runtime.periods),
-                            runtimeIdempotency,
-                            mock(InitialCredentialService.class),
-                            mock(MembershipPolicyProjector.class),
-                            runtimeCoordinator,
-                            new AuditRecorder(runtimeJdbc));
             com.giaokhoa.resources.ResourcePolicyProjector runtimeResourceProjector =
                     new com.giaokhoa.resources.ResourcePolicyProjector(
                             runtimeOperations,
@@ -569,7 +553,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                                     runtime.verificationWorkspaces,
                                     runtime.verificationAccounts,
                                     runtime.guardianLinks,
-                                    runtimeMemberships,
+                                    runtime.verificationMemberships,
                                     runtimeWorkspaceTx,
                                     runtimeOperations,
                                     runtime.transactionManager),
