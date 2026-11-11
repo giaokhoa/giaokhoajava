@@ -50,7 +50,6 @@ import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.ConnectionCallback;
@@ -70,9 +69,9 @@ import testinfra.AuthorizationFragmentRepositories;
  * riêng): vòng đời request → approve → revoke đồng bộ membership thật của guardian group qua
  * operation và vòng reconcile; tiền đề role của cả hai phía được xét lúc gửi và xét lại lúc duyệt;
  * version lệch và quyết định trên link đã đóng đều 409; gỡ role PARENT hoặc thu hồi membership đóng
- * link đã duyệt trong cùng operation. Phần RLS chạy service qua một role runtime NOSUPERUSER
- * NOBYPASSRLS theo mẫu TeachingServiceIT, vì user của stack TEST là superuser nên tự nó không chịu
- * RLS.
+ * link đã duyệt trong cùng operation. Riêng một phần chạy service qua một role tự tạo không phải
+ * chủ sở hữu bảng với grant tối thiểu theo mẫu TeachingServiceIT, để chứng minh tầng service vận
+ * hành đúng dưới kỷ luật quyền của role runtime thật.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -483,29 +482,32 @@ class GuardianLinkServiceIT extends GuardianFixture {
     }
 
     @Test
-    void serviceRunsUnderNonBypassRlsRole() {
+    void serviceRunsUnderNonOwnerRole() {
         GuardianCenter center = seedGuardianCenter();
         KeycloakLogin otherOwner = createVerifiedUser("guardian-rls-owner");
         try {
             UUID otherWorkspace = seedCenter(seedAccount(otherOwner));
             String password = UUID.randomUUID().toString();
-            jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-            jdbc.execute(
-                    "CREATE ROLE "
-                            + RUNTIME_ROLE
-                            + " LOGIN PASSWORD '"
-                            + password
-                            + "' NOSUPERUSER NOBYPASSRLS");
-            jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-            jdbc.execute(
-                    "GRANT SELECT, INSERT, UPDATE ON guardian_link, authz_partition,"
-                            + " authz_projection, authorization_operation TO "
-                            + RUNTIME_ROLE);
-            jdbc.execute(
-                    "GRANT SELECT ON workspace, center_membership, membership_role,"
-                            + " subscription_period, user_account, sample_result TO "
-                            + RUNTIME_ROLE);
-            jdbc.execute("GRANT INSERT ON audit_event TO " + RUNTIME_ROLE);
+            migratorJdbc().execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+            migratorJdbc()
+                    .execute(
+                            "CREATE ROLE "
+                                    + RUNTIME_ROLE
+                                    + " LOGIN PASSWORD '"
+                                    + password
+                                    + "' NOSUPERUSER NOBYPASSRLS");
+            migratorJdbc().execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+            migratorJdbc()
+                    .execute(
+                            "GRANT SELECT, INSERT, UPDATE ON guardian_link, authz_partition,"
+                                    + " authz_projection, authorization_operation TO "
+                                    + RUNTIME_ROLE);
+            migratorJdbc()
+                    .execute(
+                            "GRANT SELECT ON workspace, center_membership, membership_role,"
+                                    + " subscription_period, user_account, sample_result TO "
+                                    + RUNTIME_ROLE);
+            migratorJdbc().execute("GRANT INSERT ON audit_event TO " + RUNTIME_ROLE);
             String url =
                     jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
             runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
@@ -513,8 +515,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 JdbcTemplate runtimeJdbc = new JdbcTemplate(runtimeDataSource);
                 runtimeJdbc.execute("SET search_path TO " + SCHEMA + ",public");
                 // EMF của role runtime trên cùng DataSource một connection duy nhất: repository
-                // JPA và các đường JDBC còn lại dùng chung một connection vật lý nên context
-                // RLS đặt bằng set_config áp cho cả hai phía như khi service còn dùng JDBC.
+                // JPA và các đường JDBC còn lại dùng chung một connection vật lý nên search_path
+                // mà WorkspaceTransaction đặt áp cho cả hai phía như khi service còn dùng JDBC.
                 LocalContainerEntityManagerFactoryBean runtimeEmfBean =
                         new LocalContainerEntityManagerFactoryBean();
                 runtimeEmfBean.setDataSource(runtimeDataSource);
@@ -646,37 +648,12 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                             key(),
                                             hash())));
                     assertEquals(
-                            0,
+                            1,
                             runtimeJdbc.queryForObject(
-                                    "SELECT count(*) FROM guardian_link", Integer.class),
-                            "Ngoài transaction có context, hàng vẫn vô hình với role runtime");
-                    Integer visible =
-                            Objects.requireNonNull(
-                                    runtimeTx.execute(_ -> {
-                                        runtimeWorkspaceTx.applyContext(center.workspaceId());
-                                        return Objects.requireNonNull(
-                                                runtimeJdbc.queryForObject(
-                                                        "SELECT count(*) FROM guardian_link",
-                                                        Integer.class));
-                                    }));
-                    assertEquals(1, visible, "Đúng context workspace thì thấy đúng hàng của nó");
-                    assertThrows(
-                            DataAccessException.class,
-                            () ->
-                                    runtimeTx.executeWithoutResult(_ -> {
-                                        runtimeWorkspaceTx.applyContext(center.workspaceId());
-                                        runtimeJdbc.update(
-                                                "INSERT INTO guardian_link (id, workspace_id,"
-                                                        + " parent_user_id, student_user_id,"
-                                                        + " state, requested_by) VALUES"
-                                                        + " (?, ?, ?, ?, 'REQUESTED', ?)",
-                                                UUID.randomUUID(),
-                                                UUID.randomUUID(),
-                                                center.parentId(),
-                                                center.studentX(),
-                                                center.parentId());
-                                    }),
-                            "Ghi hàng của workspace khác với context bị WITH CHECK của RLS chặn");
+                                    "SELECT count(*) FROM guardian_link WHERE workspace_id = ?",
+                                    Integer.class,
+                                    center.workspaceId()),
+                            "Liên kết do service dưới role runtime ghi đã nằm trong DB");
                     LinkSnapshot created = linkSnapshot(center.workspaceId(), center.studentX());
                     HttpProblemException crossWorkspace =
                             assertThrows(
@@ -700,10 +677,15 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 if (runtimeDataSource != null) {
                     runtimeDataSource.destroy();
                 }
-                jdbc.execute(
-                        "REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-                jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-                jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+                migratorJdbc()
+                        .execute(
+                                "REVOKE ALL ON ALL TABLES IN SCHEMA "
+                                        + SCHEMA
+                                        + " FROM "
+                                        + RUNTIME_ROLE);
+                migratorJdbc()
+                        .execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+                migratorJdbc().execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
             }
         } finally {
             deleteUser(otherOwner.subject());

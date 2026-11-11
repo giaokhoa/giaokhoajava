@@ -70,7 +70,9 @@ jobs:
     timeout-minutes: 120
     env:
       TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:15432/giaokhoa_test
-      TEST_DATABASE_USERNAME: giaokhoa_test
+      # Datasource của suite là role runtime thật để mọi IT chịu đúng kỷ luật quyền
+      # production (không phải chủ sở hữu đối tượng); migration vẫn chạy bằng owner.
+      TEST_DATABASE_USERNAME: giaokhoa_runtime
       TEST_DATABASE_PASSWORD: test-only-password
       TEST_DATABASE_MIGRATOR_USERNAME: giaokhoa_test
       TEST_DATABASE_MIGRATOR_PASSWORD: test-only-password
@@ -116,6 +118,13 @@ jobs:
           for role in view-clients view-authorization manage-authorization query-groups manage-organizations view-organizations query-organizations; do
             docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename "$role"
           done
+      # Role runtime phải tồn tại kèm LOGIN trước context đầu tiên: baseline chỉ tạo
+      # role ở dạng NOLOGIN khi chưa có, còn mật khẩu là việc của môi trường TEST.
+      - name: Create runtime database role
+        run: |
+          docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-app-db \
+            psql -U giaokhoa_test -d giaokhoa_test -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE giaokhoa_runtime LOGIN PASSWORD 'test-only-password' NOSUPERUSER NOBYPASSRLS"
       - name: Verify implemented Spring integration tests
         run: ./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration,${{ matrix.tier }} failsafe:integration-test failsafe:verify
       - name: Upload backend integration reports
@@ -168,7 +177,9 @@ jobs:
     timeout-minutes: 120
     env:
       TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:15432/giaokhoa_test
-      TEST_DATABASE_USERNAME: giaokhoa_test
+      # Backend E2E và các spec seed chạy bằng role runtime thật như production;
+      # migration vẫn chạy bằng owner.
+      TEST_DATABASE_USERNAME: giaokhoa_runtime
       TEST_DATABASE_PASSWORD: test-only-password
       TEST_DATABASE_MIGRATOR_USERNAME: giaokhoa_test
       TEST_DATABASE_MIGRATOR_PASSWORD: test-only-password
@@ -236,6 +247,13 @@ jobs:
           for role in view-clients view-authorization manage-authorization query-groups manage-organizations view-organizations query-organizations; do
             docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename "$role"
           done
+      # Role runtime phải tồn tại kèm LOGIN trước khi backend E2E khởi động (xem job
+      # backend-checks).
+      - name: Create runtime database role
+        run: |
+          docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-app-db \
+            psql -U giaokhoa_test -d giaokhoa_test -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE giaokhoa_runtime LOGIN PASSWORD 'test-only-password' NOSUPERUSER NOBYPASSRLS"
       - name: Verify frontend/backend E2E with PostgreSQL and Keycloak
         run: npm --prefix frontend run test:e2e -- --project=${{ matrix.project }}
       - name: Upload E2E reports

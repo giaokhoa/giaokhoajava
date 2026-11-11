@@ -51,6 +51,7 @@ class ListingPaginationIT extends IntegrationEnvironment {
             "listing_pages_" + UUID.randomUUID().toString().replace("-", "");
 
     private static JdbcTemplate jdbc;
+    private static JdbcTemplate surgery;
     private static RuntimeJpaRepositories repositories;
     private static PlatformTransactionManager txManager;
     private TransactionStatus txStatus;
@@ -68,6 +69,7 @@ class ListingPaginationIT extends IntegrationEnvironment {
                 .defaultSchema(SCHEMA)
                 .load()
                 .migrate();
+        surgery = new JdbcTemplate(migrator);
         var source =
                 new DriverManagerDataSource(
                         testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
@@ -91,7 +93,7 @@ class ListingPaginationIT extends IntegrationEnvironment {
     @AfterAll
     static void removeSchema() {
         repositories.close();
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+        surgery.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
     @DisplayName("Trang membership giữ mọi role và tiến qua cursor đã bị revoke")

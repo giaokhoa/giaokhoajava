@@ -119,7 +119,11 @@ class AuditEventSchemaIT extends IntegrationEnvironment {
 
     @Test
     void auditHistoryCannotBeTruncated() {
-        assertThrows(DataAccessException.class, () -> jdbc.execute("TRUNCATE audit_event"));
+        // Chạy qua credential migration (chủ sở hữu, có quyền TRUNCATE) để chốt chặn duy nhất
+        // còn lại là trigger append-only; role runtime của datasource ứng dụng đã bị chặn từ
+        // tầng quyền trước khi tới trigger.
+        assertThrows(
+                DataAccessException.class, () -> migratorJdbc().execute("TRUNCATE audit_event"));
     }
 
     @DisplayName("Action tùy ý không thể bị lợi dụng để lưu nội dung nhạy cảm")

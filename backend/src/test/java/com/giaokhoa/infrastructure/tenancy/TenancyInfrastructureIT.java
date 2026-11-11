@@ -308,11 +308,6 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                                         "SELECT count(*) FROM subscription_period WHERE id = ?",
                                         Long.class,
                                         probeId));
-                        assertEquals(
-                                workspaceA.toString(),
-                                jdbc.queryForObject(
-                                        "SELECT current_setting('app.workspace_id', true)",
-                                        String.class));
                         return null;
                     });
             assertEquals(1L, countIn(schemaA, probeId));

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -88,10 +89,10 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
      * nên bước này tự bỏ qua.
      *
      * <p>Các ngoại lệ không truncate như dữ kiện thường: {@code flyway_schema_history} (lịch sử
-     * migrate, là một phần của schema đã migrate) và {@code subject} — migration V015 gieo đúng ba
-     * môn M1/M2/M3 mà test giảng dạy đọc trực tiếp qua danh mục, nên bảng này chỉ xoá các môn ngoài
-     * ba mã gốc (môn do test tự thêm), giữ nguyên ba dòng gieo. Migration nào gieo thêm bảng gốc
-     * mới thì phải xử lý tương tự ở bước dọn này.
+     * migrate, là một phần của schema đã migrate) và {@code subject} — baseline hệ thống gieo đúng
+     * ba môn M1/M2/M3 mà test giảng dạy đọc trực tiếp qua danh mục, nên bảng này chỉ xoá các môn
+     * ngoài ba mã gốc (môn do test tự thêm), giữ nguyên ba dòng gieo. Migration nào gieo thêm bảng
+     * gốc mới thì phải xử lý tương tự ở bước dọn này.
      *
      * <p>Ngoại lệ nữa: hai dòng singleton của target {@code platform} trong {@code
      * authz_partition}/{@code authz_projection} — {@code PlatformProjectionSeeder} chỉ tạo chúng
@@ -103,7 +104,9 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
      * qua khóa ngoại), nên dọn liên class phải tắt trigger trên đúng phiên dọn dẹp này. Mọi test
      * thật vẫn chạy ở role {@code origin} nên bất biến append-only vẫn được khóa nguyên vẹn (xem
      * {@code AuditEventSchemaIT}); đây là thao tác của harness trên DB TEST, giữa hai class, không
-     * phải đường dữ kiện của test.
+     * phải đường dữ kiện của test. Connection dọn dẹp dùng credential migration (chủ sở hữu đối
+     * tượng, có quyền đặt session_replication_role) vì datasource ứng dụng của suite chạy bằng role
+     * runtime không có quyền đó.
      */
     @BeforeAll
     static void truncateSharedSchemaData() {
@@ -138,8 +141,8 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
         try (Connection connection =
                         DriverManager.getConnection(
                                 required("TEST_DATABASE_URL"),
-                                required("TEST_DATABASE_USERNAME"),
-                                required("TEST_DATABASE_PASSWORD"));
+                                required("TEST_DATABASE_MIGRATOR_USERNAME"),
+                                required("TEST_DATABASE_MIGRATOR_PASSWORD"));
                 Statement statement = connection.createStatement()) {
             statement.execute("SET session_replication_role = 'replica'");
             statement.execute("SET lock_timeout = '5s'");
@@ -166,7 +169,7 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
                                 + " EXECUTE 'ALTER SEQUENCE ' || quote_ident(r.schemaname)"
                                 + " || '.' || quote_ident(r.sequencename) || ' RESTART';"
                                 + " END LOOP; END $$");
-                // Giữ đúng ba môn gốc M1/M2/M3 của V015, chỉ xoá môn ngoài danh mục gốc;
+                // Giữ đúng ba môn gốc M1/M2/M3 của baseline, chỉ xoá môn ngoài danh mục gốc;
                 // chạy sau vòng xoá chính nên không còn khoá ngoại nào trỏ tới các môn bị xoá.
                 // Guard to_regclass cho trường hợp DB chưa migrate lần nào (bảng chưa tồn tại).
                 statement.execute(
@@ -194,6 +197,20 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
                 statement.execute("SET session_replication_role = 'origin'");
             }
         }
+    }
+
+    /**
+     * JdbcTemplate trên credential migration (chủ sở hữu đối tượng của stack TEST) cho các thao tác
+     * hạ tầng mà role runtime của datasource ứng dụng không được phép làm: tạo/xoá role probe, cấp
+     * quyền cho role probe, xoá schema cô lập. Đường dữ kiện nghiệp vụ của test vẫn chạy qua
+     * datasource ứng dụng (role runtime) để toàn bộ suite chịu cùng kỷ luật quyền như runtime thật.
+     */
+    protected static JdbcTemplate migratorJdbc() {
+        return new JdbcTemplate(
+                new DriverManagerDataSource(
+                        testDatabaseUrl(),
+                        required("TEST_DATABASE_MIGRATOR_USERNAME"),
+                        required("TEST_DATABASE_MIGRATOR_PASSWORD")));
     }
 
     /**

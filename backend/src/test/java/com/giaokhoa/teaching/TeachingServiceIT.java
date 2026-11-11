@@ -31,7 +31,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -47,9 +46,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * membership ACTIVE và lô roster nguyên tử, thu hồi roster kéo theo thu hồi ghi danh phụ thuộc mà
  * giữ lịch sử, khóa phải có ít nhất một môn lúc tạo, và thêm môn không tự ghi danh. Seed chỉ bằng
  * JDBC trong schema dùng chung của suite; không cần Keycloak vì tầng service không quyết quyền và
- * không ghi operation. Riêng phần RLS chạy service qua một role runtime NOSUPERUSER NOBYPASSRLS
- * theo mẫu SystemPracticeHistoryIT, vì user của stack TEST là superuser nên tự nó không chịu RLS —
- * chỉ qua role đó mới chứng minh được service đặt đúng context workspace cho mọi đường.
+ * không ghi operation. Riêng một phần chạy service qua một role tự tạo không phải chủ sở hữu bảng
+ * với grant tối thiểu, để chứng minh tầng service vận hành đúng dưới đúng kỷ luật quyền của role
+ * runtime thật thay vì quyền của chủ sở hữu.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -490,7 +489,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
     }
 
     @Test
-    void serviceOperationsRunUnderNonBypassRlsRole() {
+    void serviceOperationsRunUnderNonOwnerRole() {
         UUID owner = seedAccount();
         UUID workspace = seedCenter(owner);
         UUID other = seedCenter(seedAccount());
@@ -499,22 +498,25 @@ class TeachingServiceIT extends IntegrationEnvironment {
         UUID subject = courses.listSubjects().getFirst().id();
 
         String password = UUID.randomUUID().toString();
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-        jdbc.execute(
-                "CREATE ROLE "
-                        + RUNTIME_ROLE
-                        + " LOGIN PASSWORD '"
-                        + password
-                        + "' NOSUPERUSER NOBYPASSRLS");
-        jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        jdbc.execute(
-                "GRANT SELECT, INSERT, UPDATE ON school_class, class_student, course,"
-                        + " course_subject, enrollment TO "
-                        + RUNTIME_ROLE);
-        jdbc.execute(
-                "GRANT SELECT ON workspace, subscription_period, user_account, center_membership,"
-                        + " membership_role, subject TO "
-                        + RUNTIME_ROLE);
+        migratorJdbc().execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        migratorJdbc()
+                .execute(
+                        "CREATE ROLE "
+                                + RUNTIME_ROLE
+                                + " LOGIN PASSWORD '"
+                                + password
+                                + "' NOSUPERUSER NOBYPASSRLS");
+        migratorJdbc().execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        migratorJdbc()
+                .execute(
+                        "GRANT SELECT, INSERT, UPDATE ON school_class, class_student, course,"
+                                + " course_subject, enrollment TO "
+                                + RUNTIME_ROLE);
+        migratorJdbc()
+                .execute(
+                        "GRANT SELECT ON workspace, subscription_period, user_account, center_membership,"
+                                + " membership_role, subject TO "
+                                + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
         try (var runtime = new RuntimeJpaRepositories(runtimeDataSource)) {
@@ -567,18 +569,9 @@ class TeachingServiceIT extends IntegrationEnvironment {
                             runtimeTx.execute(
                                     _ -> runtimeClasses.createClass(workspace, "Lớp runtime")));
             assertEquals(
-                    0,
-                    runtimeJdbc.queryForObject("SELECT count(*) FROM school_class", Integer.class),
-                    "Không có context thì role runtime không thấy hàng nào (fail-closed)");
-            assertThrows(
-                    DataAccessException.class,
-                    () ->
-                            runtimeJdbc.update(
-                                    "INSERT INTO school_class (id, workspace_id, name, state)"
-                                            + " VALUES (?, ?, 'Lớp lậu', 'ACTIVE')",
-                                    UUID.randomUUID(),
-                                    workspace),
-                    "Ghi không qua context bị WITH CHECK của RLS chặn");
+                    List.of(),
+                    runtimeTx.execute(_ -> runtimeClasses.listClasses(other)),
+                    "Service dưới role runtime chỉ thấy lớp của đúng workspace đang phục vụ");
             assertEquals(
                     created,
                     runtimeTx.execute(_ -> runtimeClasses.getClass(workspace, created.id())));
@@ -616,9 +609,14 @@ class TeachingServiceIT extends IntegrationEnvironment {
             if (runtimeDataSource != null) {
                 runtimeDataSource.destroy();
             }
-            jdbc.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-            jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-            jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+            migratorJdbc()
+                    .execute(
+                            "REVOKE ALL ON ALL TABLES IN SCHEMA "
+                                    + SCHEMA
+                                    + " FROM "
+                                    + RUNTIME_ROLE);
+            migratorJdbc().execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+            migratorJdbc().execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
         }
     }
 

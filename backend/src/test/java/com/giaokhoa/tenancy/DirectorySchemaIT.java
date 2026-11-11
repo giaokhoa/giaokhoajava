@@ -32,6 +32,7 @@ class DirectorySchemaIT extends IntegrationEnvironment {
             "directory_schema_" + UUID.randomUUID().toString().replace("-", "");
 
     private static JdbcTemplate jdbc;
+    private static JdbcTemplate surgery;
     private static DataSourceTransactionManager txManager;
     private TransactionStatus txStatus;
 
@@ -48,6 +49,7 @@ class DirectorySchemaIT extends IntegrationEnvironment {
                 .defaultSchema(SCHEMA)
                 .load()
                 .migrate();
+        surgery = new JdbcTemplate(migrator);
         var source =
                 new DriverManagerDataSource(
                         testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
@@ -69,7 +71,7 @@ class DirectorySchemaIT extends IntegrationEnvironment {
 
     @AfterAll
     static void removeSchema() {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+        surgery.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
     @DisplayName("Bootstrap center với đúng một owner và các role bổ sung")
