@@ -6,6 +6,15 @@
 - **Trạng thái:** KẾT LUẬN CUỐI (2026-11-11 ~19:15) — **ĐẠT, có điều kiện: merge PR #288 rồi đóng #95.** Xem "Kết luận" cuối tệp.
 - **Lưu ý phạm vi:** các scenario US8.1–US8.7 nằm ở PR #288 (chưa merge); nghiệm thu tính cả PR #288 vào bằng chứng theo lệnh điều phối. Đội test-first báo xanh toàn bộ trên làn 1 (238/238 unit test + các ca hết hạn/hoàn tất); gate kiểm chứng lại bằng đọc code + chạy độc lập (xem "Chạy kiểm chứng") — lượt chạy lại của gate bị chặn bởi 2 sự cố môi trường (chi tiết dưới), không phải lỗi sản phẩm.
 
+## Cập nhật khi tiếp nhận PR #288 — 2026-11-12
+
+Phần kiểm chứng dưới đây mô tả **lịch sử nghiệm thu trên `da8ba071` ngày 11/11**, không phải trạng thái chưa sửa của `main` hiện hành. Tại thời điểm tiếp nhận, `main` đã ở `043572e` (sau PR #301), và nhánh PR #288 đã ghép `origin/main` mà không có xung đột.
+
+- **Các điểm lệch US8 đã có sửa lỗi trên `main`:** PR #295 xử lý mã `SUBSCRIPTION_INACTIVE` cho các action gia hạn/mở lượt/giao lại, thêm time gate cho `CourseScope.UPDATE` và sửa Javadoc `HistoricalDataGuard`; PR #298 cập nhật desired projection của activity/result khi xác nhận kỳ gia hạn có hoạt động đã giao. Những nhận xét ở các mục bên dưới phản ánh kết quả ở SHA cũ; phải dựa vào lượt kiểm chứng mới trước khi kết luận các sửa lỗi còn hồi quy hay không.
+- **CI ở head cũ `2a2b335`** (run `43066852667`): `backend-build`, `frontend`, `backend (it-pure)`, `backend (e2e-backend)` và `chromium-teaching-guardians` thành công. Job `chromium-core` chạm `globalTimeout` 1.200 giây khi chạy 45 ca tuần tự; báo cáo Playwright có **41 ca pass**, trong đó ca US8 trung tâm pass trong 296.938 ms, còn ca US8 cá nhân bị skip do hết giới hạn tổng. Đây là lỗi phân bổ thời gian kiểm thử, **không được coi ca bị skip là đã pass**.
+- **Thay đổi kiểm thử ở PR #288:** tách `subscription-expiry.spec.ts` (hai ca dùng đồng hồ thật) sang project `chromium-expiry`, thêm project này vào cả `.github/workflows/ci.yml` và `verification.yml`. `chromium-core` loại trừ đúng file đó; `chromium-teaching-guardians` giữ nguyên. Kiểm tra bằng `playwright test --list`: 43 core + 13 teaching/guardians + 2 expiry = **58 ca**, không bỏ ca nào. `tsc --noEmit` đạt.
+- **Điều kiện bàn giao:** kiểm tra kết quả CI ba project sau khi đẩy bản sửa, review và xử lý toàn bộ finding *Must fix*. **Chưa đóng gate #95** khi ca cá nhân chưa có kết quả green trên cây mới. Phán quyết 7/7 bên dưới là đánh giá nghiệp vụ có điều kiện từ vòng trước, không thay thế lượt kiểm chứng này.
+
 ## Kết quả theo scenario (spec.md User Story 8)
 
 | # | Kịch bản | Kết quả | Bằng chứng |

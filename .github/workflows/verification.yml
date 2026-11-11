@@ -211,7 +211,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [chromium-core, chromium-teaching-guardians]
+        # Mốc expiry theo thời gian thật chạy riêng, không đè globalTimeout 20 phút của core.
+        project: [chromium-core, chromium-teaching-guardians, chromium-expiry]
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
