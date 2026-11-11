@@ -26,6 +26,9 @@ const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+// dongBoEligibility poll tới 60s nên ca nào gọi nó cần hạn test dài hơn mặc định 30s.
+const HAN_DUNG_TEST = 300_000;
+
 async function dangNhapQuaUngDung(
   page: Page,
   origin: string,
@@ -124,6 +127,7 @@ test("IDOR: thành viên không xem được danh sách membership của workspa
   page,
   browser,
 }) => {
+  test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const userA = await env.createUser();
@@ -167,6 +171,7 @@ test("IDOR: thành viên không xem được danh sách membership của workspa
 test("người mất eligibility không đọc được danh sách workspace", async ({
   page,
 }) => {
+  test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const user = await env.createUser();
@@ -190,7 +195,7 @@ test("người mất eligibility không đọc được danh sách workspace", a
   }
 });
 
-test("production không fixture: POST /api/verification/fixtures trả 404 cả ẩn danh lẫn đã đăng nhập", async ({
+test("production không fixture: ẩn danh bị chuyển về đăng nhập, đã đăng nhập trả 404", async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -198,17 +203,24 @@ test("production không fixture: POST /api/verification/fixtures trả 404 cả 
   const user = await env.createUser();
   try {
     // Route chỉ đăng ký khi profile test/review bật; stack e2e chạy profile mặc định
-    // như production nên route không tồn tại. Phải kèm CSRF token hợp lệ để CsrfFilter
-    // không chặn 403 trước khi tới khâu tìm handler — 403 sẽ che mất 404 cần khóa.
+    // như production nên route không tồn tại. Ẩn danh không tới được khâu tìm handler:
+    // security chain chuyển về đăng nhập trước, nên chỉ khóa được 302; 404 chỉ quan
+    // sát được khi đã đăng nhập. Phải kèm CSRF token hợp lệ để CsrfFilter không chặn
+    // 403 trước — 403 sẽ che mất đáp án cần khóa. Playwright mặc định theo redirect
+    // nên phải tắt theo redirect để thấy 302 gốc thay vì 200 của trang đăng nhập.
     const anonymousCsrf = await layCsrf(page, origin);
     const anonymous = await page.request.post(
       `${origin}/api/verification/fixtures`,
       {
         headers: { [anonymousCsrf.headerName]: anonymousCsrf.token },
         data: { scenarioSet: "resource-access" },
+        maxRedirects: 0,
       },
     );
-    expect(anonymous.status()).toBe(404);
+    expect(anonymous.status()).toBe(302);
+    expect(anonymous.headers().location ?? "").toContain(
+      "/oauth2/authorization/keycloak",
+    );
 
     await dangNhapQuaUngDung(page, origin, user);
     const csrf = await layCsrf(page, origin);
