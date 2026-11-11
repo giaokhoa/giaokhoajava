@@ -13,15 +13,12 @@
 // share, accept, revoke, assign, mở body/answer) đều bấm trên giao diện review,
 // không gọi tắt API thay cho UI.
 //
-// Trạng thái trên main d7adfb4f (đỏ đúng lý do — thiếu implementation US7, không
-// phải lỗi fixture/harness): frontend chưa có route /review và panel resource
-// actions; backend SampleActionController chỉ cài CREATE_RESOURCE dạng stub (id
-// ngẫu nhiên, không lưu resource), các action tài nguyên SAVE_VERSION/FORK_VERSION/
-// SHARE_VERSION/ACCEPT_SHARE/REVOKE_SHARE trả 400 UNSUPPORTED_SAMPLE_ACTION; chưa
-// có endpoint đọc stub body/answer của sample resource. Spec này khóa hành vi để
-// các task implementation US7 làm xanh; neo tương tác của panel (discriminator cố
-// định, tên trường của hợp đồng, vùng kết quả) đã ghi ở mục B76 của Sổ điểm chưa
-// chắc chắn/lệch spec.
+// Lịch sử: spec viết test-first trên main d7adfb4f khi implementation US7 chưa
+// có (đỏ đúng lý do thiếu hành vi). Implementation đã land sau đó (panel /review,
+// SampleActionController đủ action, endpoint đọc body/answer tách riêng); spec
+// được rebase lên main 89fbef1a, neo tương tác của panel (discriminator cố định,
+// tên trường của hợp đồng, vùng kết quả) giữ theo mục B109 của Sổ điểm chưa chắc
+// chắn/lệch spec.
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { expect, test, type APIResponse, type Locator, type Page } from "@playwright/test";
@@ -510,13 +507,16 @@ COMMIT;
 // --- Panel review: mọi hành vi thuộc phạm vi test đều đi qua giao diện này. ---
 // Neo tương tác theo hợp đồng: route /review, discriminator action là chuỗi cố
 // định của hợp đồng SampleAction, tên trường là tên field của hợp đồng, kết quả
-// hiện trạng thái SUCCEEDED hoặc mã lỗi nghiệp vụ (ghi ở B76 của Sổ).
+// hiện trạng thái SUCCEEDED hoặc mã lỗi nghiệp vụ (ghi ở B109 của Sổ).
 
 async function moPanelReview(page: Page): Promise<void> {
   await page.goto(`${frontendOrigin}/review`);
-  // Panel liệt kê các action tài nguyên theo discriminator cố định của hợp đồng.
-  await expect(page.getByText("SAVE_VERSION", { exact: true }).first())
+  // Panel đã dựng xong khi select action và trường workspaceId hiện. Option của
+  // một select đang đóng không có hộp hiển thị nên Playwright không tính là
+  // visible — neo vào chính select thay vì text của option.
+  await expect(page.locator('select[name="action"]'))
     .toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[name="workspaceId"]')).toBeVisible();
 }
 
 // Tìm control của một trường hợp đồng: ưu tiên label trùng tên trường, sau đó
@@ -591,6 +591,15 @@ async function choHanhDongThanhCong(page: Page): Promise<void> {
 async function choHanhDongBiTuChoi(page: Page): Promise<void> {
   await expect(page.getByText(
     /PERMISSION_DENIED|SUBSCRIPTION_INACTIVE|không có quyền|không được phép|bị từ chối/i,
+  ).first()).toBeVisible({ timeout: 60_000 });
+}
+
+// Từ chối dạng validation của hợp đồng cho ca ASSIGN sai môn: PDP cho qua theo
+// phân công của actor nhưng invariant môn của version chặn ở service bằng
+// 400 INVALID_SAMPLE_ACTION kèm câu giải thích — khác hẳn từ chối quyền.
+async function choHanhDongBiTuChoiValidation(page: Page): Promise<void> {
+  await expect(page.getByText(
+    /INVALID_SAMPLE_ACTION|Version không thuộc/i,
   ).first()).toBeVisible({ timeout: 60_000 });
 }
 
@@ -881,7 +890,8 @@ test("giao hoạt động bằng tài nguyên sai môn bị chặn, đúng môn 
     await choHanhDongThanhCong(page);
 
     // Cùng actor, cùng tài nguyên, đổi sang môn-khóa của môn khác: invariant
-    // môn của tài nguyên phải khớp môn trong khóa — bị chặn.
+    // môn của tài nguyên phải khớp môn trong khóa — bị chặn ở service bằng
+    // lỗi validation của hợp đồng, không phải từ chối quyền.
     await chayHanhDong(page, "ASSIGN_ACTIVITY", {
       workspaceId: nguon.workspaceId,
       courseSubjectId: monSai.id,
@@ -890,7 +900,7 @@ test("giao hoạt động bằng tài nguyên sai môn bị chặn, đúng môn 
       dueAt: hanNop,
       attemptLimit: "1",
     });
-    await choHanhDongBiTuChoi(page);
+    await choHanhDongBiTuChoiValidation(page);
   } finally {
     await xoaNguoiDung(env, daTao);
   }
