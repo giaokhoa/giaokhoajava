@@ -1,6 +1,8 @@
--- Baseline hệ thống: toàn bộ cấu trúc dữ liệu của mặt phẳng hệ thống (schema public)
--- và của mặt phẳng dùng chung cho workspace chưa kích hoạt, gộp từ chuỗi migration đầu
--- tiên. Mọi thay đổi cấu trúc kể từ đây đi qua migration tăng dần mới; không sửa file này.
+-- Baseline hệ thống: toàn bộ cấu trúc dữ liệu của mặt phẳng hệ thống và của mặt phẳng
+-- dùng chung cho workspace chưa kích hoạt, gộp từ chuỗi migration đầu tiên. File chạy
+-- trong schema đích mà Flyway trỏ tới (public ở deployment chuẩn; schema riêng ở các
+-- môi trường kiểm thử cô lập) nên mọi statement để tên trần như chuỗi migration cũ.
+-- Mọi thay đổi cấu trúc kể từ đây đi qua migration tăng dần mới; không sửa file này.
 --
 -- Cách ly tenant không dùng row-level security: workspace đã kích hoạt có schema riêng
 -- (xem baseline tenant), còn các bảng tenant trong public là mặt phẳng dùng chung cho
@@ -17,10 +19,9 @@
 SET LOCAL check_function_bodies = false;
 
 --
+--
 
-COMMENT ON SCHEMA public IS 'standard public schema';
-
-CREATE FUNCTION public.create_authz_scope() RETURNS trigger
+CREATE FUNCTION create_authz_scope() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -32,7 +33,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.enforce_directory_immutable_links() RETURNS trigger
+CREATE FUNCTION enforce_directory_immutable_links() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -56,7 +57,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.enforce_directory_workspace_kind() RETURNS trigger
+CREATE FUNCTION enforce_directory_workspace_kind() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -73,7 +74,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.enforce_resource_immutable_owner() RETURNS trigger
+CREATE FUNCTION enforce_resource_immutable_owner() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -84,7 +85,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_authz_operation_payload() RETURNS trigger
+CREATE FUNCTION guard_authz_operation_payload() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -102,7 +103,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_authz_partition_identity() RETURNS trigger
+CREATE FUNCTION guard_authz_partition_identity() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -115,7 +116,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_authz_projection_desired() RETURNS trigger
+CREATE FUNCTION guard_authz_projection_desired() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -150,7 +151,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_class_student_history() RETURNS trigger
+CREATE FUNCTION guard_class_student_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -174,7 +175,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_correction_notice_history() RETURNS trigger
+CREATE FUNCTION guard_correction_notice_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -189,7 +190,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_course_history() RETURNS trigger
+CREATE FUNCTION guard_course_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -212,7 +213,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_course_subject_history() RETURNS trigger
+CREATE FUNCTION guard_course_subject_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -237,7 +238,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_directory_history() RETURNS trigger
+CREATE FUNCTION guard_directory_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -277,7 +278,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_enrollment_history() RETURNS trigger
+CREATE FUNCTION guard_enrollment_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -301,7 +302,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_guardian_link_history() RETURNS trigger
+CREATE FUNCTION guard_guardian_link_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -331,7 +332,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_homeroom_assignment_history() RETURNS trigger
+CREATE FUNCTION guard_homeroom_assignment_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -358,7 +359,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_invitation_history() RETURNS trigger
+CREATE FUNCTION guard_invitation_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -379,7 +380,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_library_item_history() RETURNS trigger
+CREATE FUNCTION guard_library_item_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -399,7 +400,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_notification_receipt_history() RETURNS trigger
+CREATE FUNCTION guard_notification_receipt_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -418,7 +419,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_practice_history() RETURNS trigger
+CREATE FUNCTION guard_practice_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -436,7 +437,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_recovery_request_history() RETURNS trigger
+CREATE FUNCTION guard_recovery_request_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -454,7 +455,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_resource_assignment_history() RETURNS trigger
+CREATE FUNCTION guard_resource_assignment_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -483,7 +484,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_resource_dependency_acyclic() RETURNS trigger
+CREATE FUNCTION guard_resource_dependency_acyclic() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -506,7 +507,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_resource_dependency_history() RETURNS trigger
+CREATE FUNCTION guard_resource_dependency_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -528,7 +529,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_resource_version() RETURNS trigger
+CREATE FUNCTION guard_resource_version() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -544,7 +545,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_sample_activity_history() RETURNS trigger
+CREATE FUNCTION guard_sample_activity_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -575,7 +576,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_sample_result_history() RETURNS trigger
+CREATE FUNCTION guard_sample_result_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -597,7 +598,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_sample_submission_history() RETURNS trigger
+CREATE FUNCTION guard_sample_submission_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -619,7 +620,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_school_class_history() RETURNS trigger
+CREATE FUNCTION guard_school_class_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -641,7 +642,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_share_grant_history() RETURNS trigger
+CREATE FUNCTION guard_share_grant_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -673,7 +674,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_subject_history() RETURNS trigger
+CREATE FUNCTION guard_subject_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -688,7 +689,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.guard_teaching_assignment_history() RETURNS trigger
+CREATE FUNCTION guard_teaching_assignment_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -715,7 +716,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.preserve_authz_partition() RETURNS trigger
+CREATE FUNCTION preserve_authz_partition() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -723,7 +724,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.reject_audit_event_mutation() RETURNS trigger
+CREATE FUNCTION reject_audit_event_mutation() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -731,7 +732,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.sync_oidc_correlation_session() RETURNS trigger
+CREATE FUNCTION sync_oidc_correlation_session() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -745,7 +746,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_authz_partition_ids() RETURNS trigger
+CREATE FUNCTION validate_authz_partition_ids() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -781,7 +782,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_class_student_membership() RETURNS trigger
+CREATE FUNCTION validate_class_student_membership() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -801,7 +802,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_enrollment_same_class() RETURNS trigger
+CREATE FUNCTION validate_enrollment_same_class() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -818,7 +819,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_guardian_link_approval() RETURNS trigger
+CREATE FUNCTION validate_guardian_link_approval() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -836,7 +837,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_guardian_link_membership() RETURNS trigger
+CREATE FUNCTION validate_guardian_link_membership() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -869,7 +870,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_homeroom_assignment_membership() RETURNS trigger
+CREATE FUNCTION validate_homeroom_assignment_membership() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -889,7 +890,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_practice_attempt() RETURNS trigger
+CREATE FUNCTION validate_practice_attempt() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -922,7 +923,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_sample_result_source() RETURNS trigger
+CREATE FUNCTION validate_sample_result_source() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -947,7 +948,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.validate_sample_submission() RETURNS trigger
+CREATE FUNCTION validate_sample_submission() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -983,7 +984,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.verify_authz_operation_succeeded() RETURNS trigger
+CREATE FUNCTION verify_authz_operation_succeeded() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -1006,7 +1007,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.verify_authz_partition_ready() RETURNS trigger
+CREATE FUNCTION verify_authz_partition_ready() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -1041,7 +1042,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.verify_authz_projection_ready() RETURNS trigger
+CREATE FUNCTION verify_authz_projection_ready() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -1070,7 +1071,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.verify_center_owner() RETURNS trigger
+CREATE FUNCTION verify_center_owner() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -1113,7 +1114,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.verify_user_personal_workspace() RETURNS trigger
+CREATE FUNCTION verify_user_personal_workspace() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -1140,7 +1141,7 @@ SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
-CREATE TABLE public.audit_event (
+CREATE TABLE audit_event (
     id uuid NOT NULL,
     actor_user_id uuid,
     workspace_id uuid,
@@ -1155,7 +1156,7 @@ CREATE TABLE public.audit_event (
     CONSTRAINT audit_event_target_type_check CHECK (((target_type)::text = ANY ((ARRAY['ACCOUNT'::character varying, 'WORKSPACE'::character varying, 'MEMBERSHIP'::character varying, 'SUBSCRIPTION'::character varying, 'RELATIONSHIP'::character varying, 'GRANT'::character varying, 'AUTHORIZATION_OPERATION'::character varying])::text[])))
 );
 
-CREATE TABLE public.authorization_operation (
+CREATE TABLE authorization_operation (
     id uuid NOT NULL,
     initiator_user_id uuid NOT NULL,
     workspace_id uuid,
@@ -1182,8 +1183,8 @@ CREATE TABLE public.authorization_operation (
     CONSTRAINT ck_authz_operation_succeeded CHECK ((((state)::text <> 'SUCCEEDED'::text) OR ((next_attempt_at IS NULL) AND (last_error_code IS NULL))))
 );
 
-ALTER TABLE public.authorization_operation ALTER COLUMN recorded_seq ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.authorization_operation_recorded_seq_seq
+ALTER TABLE authorization_operation ALTER COLUMN recorded_seq ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME authorization_operation_recorded_seq_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -1191,7 +1192,7 @@ ALTER TABLE public.authorization_operation ALTER COLUMN recorded_seq ADD GENERAT
     CACHE 1
 );
 
-CREATE TABLE public.authz_partition (
+CREATE TABLE authz_partition (
     id uuid NOT NULL,
     kind character varying(16) NOT NULL,
     owner_key character varying(255) NOT NULL,
@@ -1210,7 +1211,7 @@ CREATE TABLE public.authz_partition (
     CONSTRAINT ck_authz_partition_revision CHECK ((applied_revision <= desired_revision))
 );
 
-CREATE TABLE public.authz_projection (
+CREATE TABLE authz_projection (
     id uuid NOT NULL,
     partition_id uuid NOT NULL,
     target_key character varying(1024) NOT NULL,
@@ -1231,7 +1232,7 @@ CREATE TABLE public.authz_projection (
     CONSTRAINT ck_authz_projection_ready CHECK ((((state)::text <> 'READY'::text) OR ((applied_hash IS NOT NULL) AND ((applied_hash)::text = (desired_hash)::text) AND (keycloak_resource_id IS NOT NULL))))
 );
 
-CREATE TABLE public.center (
+CREATE TABLE center (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     keycloak_organization_id character varying(512) NOT NULL,
@@ -1246,7 +1247,7 @@ CREATE TABLE public.center (
     CONSTRAINT center_state_check CHECK ((btrim((state)::text) <> ''::text))
 );
 
-CREATE TABLE public.center_membership (
+CREATE TABLE center_membership (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1260,7 +1261,7 @@ CREATE TABLE public.center_membership (
     CONSTRAINT ck_membership_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL) AND (revoked_at >= joined_at))))
 );
 
-CREATE TABLE public.class_student (
+CREATE TABLE class_student (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     class_id uuid NOT NULL,
@@ -1274,7 +1275,7 @@ CREATE TABLE public.class_student (
     CONSTRAINT class_student_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.correction_notice (
+CREATE TABLE correction_notice (
     id uuid NOT NULL,
     resource_id uuid NOT NULL,
     affected_version_id uuid NOT NULL,
@@ -1285,7 +1286,7 @@ CREATE TABLE public.correction_notice (
     CONSTRAINT correction_notice_reason_check CHECK ((btrim(reason) <> ''::text))
 );
 
-CREATE TABLE public.course (
+CREATE TABLE course (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     class_id uuid NOT NULL,
@@ -1298,7 +1299,7 @@ CREATE TABLE public.course (
     CONSTRAINT course_state_check CHECK (((state)::text = ANY ((ARRAY['ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.course_subject (
+CREATE TABLE course_subject (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     class_id uuid NOT NULL,
@@ -1313,7 +1314,7 @@ CREATE TABLE public.course_subject (
     CONSTRAINT course_subject_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.enrollment (
+CREATE TABLE enrollment (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     class_student_id uuid NOT NULL,
@@ -1327,7 +1328,7 @@ CREATE TABLE public.enrollment (
     CONSTRAINT enrollment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.guardian_link (
+CREATE TABLE guardian_link (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     parent_user_id uuid NOT NULL,
@@ -1344,7 +1345,7 @@ CREATE TABLE public.guardian_link (
     CONSTRAINT guardian_link_state_check CHECK (((state)::text = ANY ((ARRAY['REQUESTED'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.homeroom_assignment (
+CREATE TABLE homeroom_assignment (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     class_id uuid NOT NULL,
@@ -1358,7 +1359,7 @@ CREATE TABLE public.homeroom_assignment (
     CONSTRAINT homeroom_assignment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.invitation (
+CREATE TABLE invitation (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     target_email character varying(320),
@@ -1376,7 +1377,7 @@ CREATE TABLE public.invitation (
     CONSTRAINT invitation_target_email_check CHECK (((target_email IS NULL) OR (btrim((target_email)::text) <> ''::text)))
 );
 
-CREATE TABLE public.library_item (
+CREATE TABLE library_item (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     resource_id uuid NOT NULL,
@@ -1389,7 +1390,7 @@ CREATE TABLE public.library_item (
     CONSTRAINT library_item_custody_check CHECK (((custody)::text = ANY ((ARRAY['OWNED'::character varying, 'LICENSED'::character varying])::text[])))
 );
 
-CREATE TABLE public.membership_index (
+CREATE TABLE membership_index (
     user_id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     state character varying(16) NOT NULL,
@@ -1398,7 +1399,7 @@ CREATE TABLE public.membership_index (
     CONSTRAINT membership_index_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.membership_role (
+CREATE TABLE membership_role (
     membership_id uuid NOT NULL,
     role character varying(16) NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -1407,14 +1408,14 @@ CREATE TABLE public.membership_role (
     CONSTRAINT membership_role_role_check CHECK (((role)::text = ANY ((ARRAY['OWNER'::character varying, 'MANAGER'::character varying, 'TEACHER'::character varying, 'STUDENT'::character varying, 'PARENT'::character varying])::text[])))
 );
 
-CREATE TABLE public.notification_receipt (
+CREATE TABLE notification_receipt (
     notice_id uuid NOT NULL,
     recipient_workspace_id uuid NOT NULL,
     acknowledged_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
-CREATE TABLE public.oidc_session_correlation (
+CREATE TABLE oidc_session_correlation (
     session_id character(36) NOT NULL,
     issuer character varying(2048) NOT NULL,
     client_id character varying(255) NOT NULL,
@@ -1426,7 +1427,7 @@ CREATE TABLE public.oidc_session_correlation (
     CONSTRAINT ck_oidc_correlation_csrf CHECK (((csrf_header_name IS NULL) = (csrf_token IS NULL)))
 );
 
-CREATE TABLE public.recovery_mutation (
+CREATE TABLE recovery_mutation (
     actor_user_id uuid NOT NULL,
     idempotency_key character varying(255) NOT NULL,
     payload_hash character varying(64) NOT NULL,
@@ -1436,7 +1437,7 @@ CREATE TABLE public.recovery_mutation (
     CONSTRAINT recovery_mutation_kind_check CHECK (((kind)::text = ANY ((ARRAY['SUBMIT'::character varying, 'RESOLVE'::character varying])::text[])))
 );
 
-CREATE TABLE public.recovery_request (
+CREATE TABLE recovery_request (
     id uuid NOT NULL,
     requester_user_id uuid NOT NULL,
     workspace_id uuid,
@@ -1455,7 +1456,7 @@ CREATE TABLE public.recovery_request (
     CONSTRAINT recovery_request_verification_note_check CHECK (((verification_note IS NULL) OR (btrim((verification_note)::text) <> ''::text)))
 );
 
-CREATE TABLE public.resource (
+CREATE TABLE resource (
     id uuid NOT NULL,
     owner_workspace_id uuid NOT NULL,
     created_by_user_id uuid NOT NULL,
@@ -1469,7 +1470,7 @@ CREATE TABLE public.resource (
     CONSTRAINT resource_state_check CHECK ((btrim((state)::text) <> ''::text))
 );
 
-CREATE TABLE public.resource_assignment (
+CREATE TABLE resource_assignment (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1487,7 +1488,7 @@ CREATE TABLE public.resource_assignment (
     CONSTRAINT resource_assignment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.resource_dependency (
+CREATE TABLE resource_dependency (
     id uuid NOT NULL,
     derived_resource_id uuid NOT NULL,
     derived_version_id uuid NOT NULL,
@@ -1502,7 +1503,7 @@ CREATE TABLE public.resource_dependency (
     CONSTRAINT resource_dependency_usage_constraints_check CHECK ((btrim(usage_constraints) <> ''::text))
 );
 
-CREATE TABLE public.resource_version (
+CREATE TABLE resource_version (
     id uuid NOT NULL,
     resource_id uuid NOT NULL,
     version_no integer NOT NULL,
@@ -1520,7 +1521,7 @@ CREATE TABLE public.resource_version (
     CONSTRAINT resource_version_version_no_check CHECK ((version_no >= 1))
 );
 
-CREATE TABLE public.sample_action_mutation (
+CREATE TABLE sample_action_mutation (
     actor_user_id uuid NOT NULL,
     idempotency_key character varying(255) NOT NULL,
     payload_hash character varying(64) NOT NULL,
@@ -1531,7 +1532,7 @@ CREATE TABLE public.sample_action_mutation (
     CONSTRAINT sample_action_mutation_target_type_check CHECK (((target_type)::text = ANY ((ARRAY['RESOURCE'::character varying, 'ACTIVITY'::character varying, 'SUBMISSION'::character varying, 'RESULT'::character varying, 'LIBRARY_ITEM'::character varying, 'SHARE_GRANT'::character varying, 'CORRECTION_NOTICE'::character varying])::text[])))
 );
 
-CREATE TABLE public.sample_activity (
+CREATE TABLE sample_activity (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     course_subject_id uuid NOT NULL,
@@ -1550,7 +1551,7 @@ CREATE TABLE public.sample_activity (
     CONSTRAINT sample_activity_state_check CHECK (((state)::text = ANY ((ARRAY['ASSIGNED'::character varying, 'CLOSED'::character varying, 'ARCHIVED'::character varying])::text[])))
 );
 
-CREATE TABLE public.sample_result (
+CREATE TABLE sample_result (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     submission_id uuid NOT NULL,
@@ -1568,7 +1569,7 @@ CREATE TABLE public.sample_result (
     CONSTRAINT sample_result_state_check CHECK (((state)::text = ANY ((ARRAY['DRAFT'::character varying, 'PUBLISHED'::character varying])::text[])))
 );
 
-CREATE TABLE public.sample_submission (
+CREATE TABLE sample_submission (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     activity_id uuid NOT NULL,
@@ -1584,7 +1585,7 @@ CREATE TABLE public.sample_submission (
     CONSTRAINT sample_submission_state_check CHECK ((btrim((state)::text) <> ''::text))
 );
 
-CREATE TABLE public.school_class (
+CREATE TABLE school_class (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     name character varying(255) NOT NULL,
@@ -1596,7 +1597,7 @@ CREATE TABLE public.school_class (
     CONSTRAINT school_class_state_check CHECK (((state)::text = ANY ((ARRAY['ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.share_grant (
+CREATE TABLE share_grant (
     id uuid NOT NULL,
     source_resource_id uuid NOT NULL,
     source_version_id uuid NOT NULL,
@@ -1620,7 +1621,7 @@ CREATE TABLE public.share_grant (
     CONSTRAINT share_grant_state_check CHECK (((state)::text = ANY ((ARRAY['OFFERED'::character varying, 'ACCEPTED'::character varying, 'REVOKED'::character varying, 'EXPIRED'::character varying])::text[])))
 );
 
-CREATE TABLE public.spring_session (
+CREATE TABLE spring_session (
     primary_id character(36) NOT NULL,
     session_id character(36) NOT NULL,
     creation_time bigint NOT NULL,
@@ -1630,13 +1631,13 @@ CREATE TABLE public.spring_session (
     principal_name character varying(100)
 );
 
-CREATE TABLE public.spring_session_attributes (
+CREATE TABLE spring_session_attributes (
     session_primary_id character(36) NOT NULL,
     attribute_name character varying(200) NOT NULL,
     attribute_bytes bytea NOT NULL
 );
 
-CREATE TABLE public.subject (
+CREATE TABLE subject (
     id uuid NOT NULL,
     code character varying(32) NOT NULL,
     name character varying(255) NOT NULL,
@@ -1649,7 +1650,7 @@ CREATE TABLE public.subject (
     CONSTRAINT subject_state_check CHECK (((state)::text = ANY ((ARRAY['ACTIVE'::character varying, 'ARCHIVED'::character varying])::text[])))
 );
 
-CREATE TABLE public.subscription_period (
+CREATE TABLE subscription_period (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     valid_from timestamp(0) with time zone NOT NULL,
@@ -1664,7 +1665,7 @@ CREATE TABLE public.subscription_period (
     CONSTRAINT subscription_period_confirmation_ref_check CHECK ((btrim((confirmation_ref)::text) <> ''::text))
 );
 
-CREATE TABLE public.system_practice_attempt_sample (
+CREATE TABLE system_practice_attempt_sample (
     id uuid NOT NULL,
     personal_workspace_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1680,7 +1681,7 @@ CREATE TABLE public.system_practice_attempt_sample (
     CONSTRAINT system_practice_attempt_sample_outcome_stub_check CHECK (((outcome_stub IS NULL) OR (btrim(outcome_stub) <> ''::text)))
 );
 
-CREATE TABLE public.teaching_assignment (
+CREATE TABLE teaching_assignment (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     course_subject_id uuid NOT NULL,
@@ -1694,7 +1695,7 @@ CREATE TABLE public.teaching_assignment (
     CONSTRAINT teaching_assignment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
 );
 
-CREATE TABLE public.user_account (
+CREATE TABLE user_account (
     id uuid NOT NULL,
     keycloak_sub character varying(512) NOT NULL,
     username character varying(255) NOT NULL,
@@ -1713,7 +1714,7 @@ CREATE TABLE public.user_account (
     CONSTRAINT user_account_username_check CHECK ((btrim((username)::text) <> ''::text))
 );
 
-CREATE TABLE public.workspace (
+CREATE TABLE workspace (
     id uuid NOT NULL,
     kind character varying(16) NOT NULL,
     owner_user_id uuid,
@@ -1728,698 +1729,698 @@ CREATE TABLE public.workspace (
     CONSTRAINT workspace_state_check CHECK ((btrim((state)::text) <> ''::text))
 );
 
-ALTER TABLE ONLY public.audit_event
+ALTER TABLE ONLY audit_event
     ADD CONSTRAINT audit_event_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.authorization_operation
+ALTER TABLE ONLY authorization_operation
     ADD CONSTRAINT authorization_operation_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.authz_partition
+ALTER TABLE ONLY authz_partition
     ADD CONSTRAINT authz_partition_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.authz_projection
+ALTER TABLE ONLY authz_projection
     ADD CONSTRAINT authz_projection_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.authz_projection
+ALTER TABLE ONLY authz_projection
     ADD CONSTRAINT authz_projection_target_key_key UNIQUE (target_key);
 
-ALTER TABLE ONLY public.center
+ALTER TABLE ONLY center
     ADD CONSTRAINT center_keycloak_organization_id_key UNIQUE (keycloak_organization_id);
 
-ALTER TABLE ONLY public.center_membership
+ALTER TABLE ONLY center_membership
     ADD CONSTRAINT center_membership_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.center
+ALTER TABLE ONLY center
     ADD CONSTRAINT center_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.center
+ALTER TABLE ONLY center
     ADD CONSTRAINT center_workspace_id_key UNIQUE (workspace_id);
 
-ALTER TABLE ONLY public.class_student
+ALTER TABLE ONLY class_student
     ADD CONSTRAINT class_student_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.correction_notice
+ALTER TABLE ONLY correction_notice
     ADD CONSTRAINT correction_notice_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.course
+ALTER TABLE ONLY course
     ADD CONSTRAINT course_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.course_subject
+ALTER TABLE ONLY course_subject
     ADD CONSTRAINT course_subject_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.enrollment
+ALTER TABLE ONLY enrollment
     ADD CONSTRAINT enrollment_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.guardian_link
+ALTER TABLE ONLY guardian_link
     ADD CONSTRAINT guardian_link_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.homeroom_assignment
+ALTER TABLE ONLY homeroom_assignment
     ADD CONSTRAINT homeroom_assignment_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.invitation
+ALTER TABLE ONLY invitation
     ADD CONSTRAINT invitation_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.invitation
+ALTER TABLE ONLY invitation
     ADD CONSTRAINT invitation_token_hash_key UNIQUE (token_hash);
 
-ALTER TABLE ONLY public.library_item
+ALTER TABLE ONLY library_item
     ADD CONSTRAINT library_item_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.membership_index
+ALTER TABLE ONLY membership_index
     ADD CONSTRAINT membership_index_pkey PRIMARY KEY (user_id, workspace_id);
 
-ALTER TABLE ONLY public.membership_role
+ALTER TABLE ONLY membership_role
     ADD CONSTRAINT membership_role_pkey PRIMARY KEY (membership_id, role);
 
-ALTER TABLE ONLY public.oidc_session_correlation
+ALTER TABLE ONLY oidc_session_correlation
     ADD CONSTRAINT oidc_session_correlation_pkey PRIMARY KEY (session_id);
 
-ALTER TABLE ONLY public.notification_receipt
+ALTER TABLE ONLY notification_receipt
     ADD CONSTRAINT pk_notification_receipt PRIMARY KEY (notice_id, recipient_workspace_id);
 
-ALTER TABLE ONLY public.recovery_mutation
+ALTER TABLE ONLY recovery_mutation
     ADD CONSTRAINT recovery_mutation_pkey PRIMARY KEY (actor_user_id, idempotency_key);
 
-ALTER TABLE ONLY public.recovery_request
+ALTER TABLE ONLY recovery_request
     ADD CONSTRAINT recovery_request_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.resource_assignment
+ALTER TABLE ONLY resource_assignment
     ADD CONSTRAINT resource_assignment_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.resource_dependency
+ALTER TABLE ONLY resource_dependency
     ADD CONSTRAINT resource_dependency_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.resource
+ALTER TABLE ONLY resource
     ADD CONSTRAINT resource_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.resource_version
+ALTER TABLE ONLY resource_version
     ADD CONSTRAINT resource_version_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.sample_action_mutation
+ALTER TABLE ONLY sample_action_mutation
     ADD CONSTRAINT sample_action_mutation_pkey PRIMARY KEY (actor_user_id, idempotency_key);
 
-ALTER TABLE ONLY public.sample_activity
+ALTER TABLE ONLY sample_activity
     ADD CONSTRAINT sample_activity_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.sample_result
+ALTER TABLE ONLY sample_result
     ADD CONSTRAINT sample_result_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.sample_submission
+ALTER TABLE ONLY sample_submission
     ADD CONSTRAINT sample_submission_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.school_class
+ALTER TABLE ONLY school_class
     ADD CONSTRAINT school_class_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.share_grant
+ALTER TABLE ONLY share_grant
     ADD CONSTRAINT share_grant_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.spring_session_attributes
+ALTER TABLE ONLY spring_session_attributes
     ADD CONSTRAINT spring_session_attributes_pk PRIMARY KEY (session_primary_id, attribute_name);
 
-ALTER TABLE ONLY public.spring_session
+ALTER TABLE ONLY spring_session
     ADD CONSTRAINT spring_session_pk PRIMARY KEY (primary_id);
 
-ALTER TABLE ONLY public.subject
+ALTER TABLE ONLY subject
     ADD CONSTRAINT subject_code_key UNIQUE (code);
 
-ALTER TABLE ONLY public.subject
+ALTER TABLE ONLY subject
     ADD CONSTRAINT subject_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.subscription_period
+ALTER TABLE ONLY subscription_period
     ADD CONSTRAINT subscription_period_confirmation_ref_key UNIQUE (confirmation_ref);
 
-ALTER TABLE ONLY public.subscription_period
+ALTER TABLE ONLY subscription_period
     ADD CONSTRAINT subscription_period_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.system_practice_attempt_sample
+ALTER TABLE ONLY system_practice_attempt_sample
     ADD CONSTRAINT system_practice_attempt_sample_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.teaching_assignment
+ALTER TABLE ONLY teaching_assignment
     ADD CONSTRAINT teaching_assignment_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.authorization_operation
+ALTER TABLE ONLY authorization_operation
     ADD CONSTRAINT uq_authz_operation_idempotency UNIQUE (initiator_user_id, idempotency_key);
 
-ALTER TABLE ONLY public.authz_partition
+ALTER TABLE ONLY authz_partition
     ADD CONSTRAINT uq_authz_partition_owner UNIQUE (kind, owner_key);
 
-ALTER TABLE ONLY public.center
+ALTER TABLE ONLY center
     ADD CONSTRAINT uq_center_id_workspace UNIQUE (id, workspace_id);
 
-ALTER TABLE ONLY public.class_student
+ALTER TABLE ONLY class_student
     ADD CONSTRAINT uq_class_student_workspace_id UNIQUE (workspace_id, id);
 
-ALTER TABLE ONLY public.course_subject
+ALTER TABLE ONLY course_subject
     ADD CONSTRAINT uq_course_subject_workspace_id UNIQUE (workspace_id, id);
 
-ALTER TABLE ONLY public.course
+ALTER TABLE ONLY course
     ADD CONSTRAINT uq_course_workspace_class_id UNIQUE (workspace_id, class_id, id);
 
-ALTER TABLE ONLY public.library_item
+ALTER TABLE ONLY library_item
     ADD CONSTRAINT uq_library_item_workspace_id UNIQUE (workspace_id, id);
 
-ALTER TABLE ONLY public.center_membership
+ALTER TABLE ONLY center_membership
     ADD CONSTRAINT uq_membership_id_workspace UNIQUE (id, workspace_id);
 
-ALTER TABLE ONLY public.resource_version
+ALTER TABLE ONLY resource_version
     ADD CONSTRAINT uq_resource_version_no UNIQUE (resource_id, version_no);
 
-ALTER TABLE ONLY public.resource_version
+ALTER TABLE ONLY resource_version
     ADD CONSTRAINT uq_resource_version_resource_id UNIQUE (resource_id, id);
 
-ALTER TABLE ONLY public.sample_activity
+ALTER TABLE ONLY sample_activity
     ADD CONSTRAINT uq_sample_activity_workspace_id UNIQUE (workspace_id, id);
 
-ALTER TABLE ONLY public.sample_submission
+ALTER TABLE ONLY sample_submission
     ADD CONSTRAINT uq_sample_submission_attempt UNIQUE (activity_id, student_user_id, attempt_no);
 
-ALTER TABLE ONLY public.sample_submission
+ALTER TABLE ONLY sample_submission
     ADD CONSTRAINT uq_sample_submission_workspace_id UNIQUE (workspace_id, id);
 
-ALTER TABLE ONLY public.school_class
+ALTER TABLE ONLY school_class
     ADD CONSTRAINT uq_school_class_workspace_id UNIQUE (workspace_id, id);
 
-ALTER TABLE ONLY public.subscription_period
+ALTER TABLE ONLY subscription_period
     ADD CONSTRAINT uq_subscription_period_workspace_id UNIQUE (workspace_id, id);
 
-ALTER TABLE ONLY public.user_account
+ALTER TABLE ONLY user_account
     ADD CONSTRAINT user_account_keycloak_sub_key UNIQUE (keycloak_sub);
 
-ALTER TABLE ONLY public.user_account
+ALTER TABLE ONLY user_account
     ADD CONSTRAINT user_account_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY public.user_account
+ALTER TABLE ONLY user_account
     ADD CONSTRAINT user_account_username_key UNIQUE (username);
 
-ALTER TABLE ONLY public.workspace
+ALTER TABLE ONLY workspace
     ADD CONSTRAINT workspace_pkey PRIMARY KEY (id);
 
-CREATE INDEX ix_audit_operation ON public.audit_event USING btree (operation_id) WHERE (operation_id IS NOT NULL);
+CREATE INDEX ix_audit_operation ON audit_event USING btree (operation_id) WHERE (operation_id IS NOT NULL);
 
-CREATE INDEX ix_audit_workspace_occurred ON public.audit_event USING btree (workspace_id, occurred_at DESC);
+CREATE INDEX ix_audit_workspace_occurred ON audit_event USING btree (workspace_id, occurred_at DESC);
 
-CREATE INDEX ix_authz_operation_live_recorded_seq ON public.authorization_operation USING btree (recorded_seq) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'APPLYING'::character varying, 'RETRYABLE_FAILURE'::character varying])::text[]));
+CREATE INDEX ix_authz_operation_live_recorded_seq ON authorization_operation USING btree (recorded_seq) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'APPLYING'::character varying, 'RETRYABLE_FAILURE'::character varying])::text[]));
 
 --
 
-CREATE INDEX ix_authz_operation_workspace ON public.authorization_operation USING btree (workspace_id, created_at DESC);
+CREATE INDEX ix_authz_operation_workspace ON authorization_operation USING btree (workspace_id, created_at DESC);
 
-CREATE INDEX ix_authz_projection_dependencies ON public.authz_projection USING gin (dependency_partition_ids);
+CREATE INDEX ix_authz_projection_dependencies ON authz_projection USING gin (dependency_partition_ids);
 
-CREATE INDEX ix_authz_projection_partition ON public.authz_projection USING btree (partition_id);
+CREATE INDEX ix_authz_projection_partition ON authz_projection USING btree (partition_id);
 
-CREATE INDEX ix_center_membership_listing_page ON public.center_membership USING btree (workspace_id, joined_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_center_membership_listing_page ON center_membership USING btree (workspace_id, joined_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_class_listing_page ON public.school_class USING btree (workspace_id, created_at, id) WHERE ((state)::text = 'ACTIVE'::text);
+CREATE INDEX ix_class_listing_page ON school_class USING btree (workspace_id, created_at, id) WHERE ((state)::text = 'ACTIVE'::text);
 
-CREATE UNIQUE INDEX ix_class_student_current_unique ON public.class_student USING btree (workspace_id, class_id, student_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_class_student_current_unique ON class_student USING btree (workspace_id, class_id, student_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_class_student_workspace_state ON public.class_student USING btree (workspace_id, state);
+CREATE INDEX ix_class_student_workspace_state ON class_student USING btree (workspace_id, state);
 
-CREATE INDEX ix_correction_notice_resource ON public.correction_notice USING btree (resource_id);
+CREATE INDEX ix_correction_notice_resource ON correction_notice USING btree (resource_id);
 
-CREATE INDEX ix_course_listing_page ON public.course USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = 'ACTIVE'::text);
+CREATE INDEX ix_course_listing_page ON course USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = 'ACTIVE'::text);
 
-CREATE UNIQUE INDEX ix_course_subject_current_unique ON public.course_subject USING btree (workspace_id, class_id, course_id, subject_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_course_subject_current_unique ON course_subject USING btree (workspace_id, class_id, course_id, subject_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_course_subject_workspace_state ON public.course_subject USING btree (workspace_id, state);
+CREATE INDEX ix_course_subject_workspace_state ON course_subject USING btree (workspace_id, state);
 
-CREATE INDEX ix_course_workspace_state ON public.course USING btree (workspace_id, state);
+CREATE INDEX ix_course_workspace_state ON course USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX ix_enrollment_current_unique ON public.enrollment USING btree (workspace_id, class_student_id, course_subject_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_enrollment_current_unique ON enrollment USING btree (workspace_id, class_student_id, course_subject_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_enrollment_listing_page ON public.enrollment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_enrollment_listing_page ON enrollment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_enrollment_workspace_state ON public.enrollment USING btree (workspace_id, state);
+CREATE INDEX ix_enrollment_workspace_state ON enrollment USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX ix_guardian_link_current_unique ON public.guardian_link USING btree (workspace_id, parent_user_id, student_user_id) WHERE ((state)::text = ANY ((ARRAY['REQUESTED'::character varying, 'APPROVED'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_guardian_link_current_unique ON guardian_link USING btree (workspace_id, parent_user_id, student_user_id) WHERE ((state)::text = ANY ((ARRAY['REQUESTED'::character varying, 'APPROVED'::character varying])::text[]));
 
-CREATE INDEX ix_guardian_link_workspace_state ON public.guardian_link USING btree (workspace_id, state);
+CREATE INDEX ix_guardian_link_workspace_state ON guardian_link USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX ix_homeroom_assignment_current_unique ON public.homeroom_assignment USING btree (workspace_id, class_id, teacher_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_homeroom_assignment_current_unique ON homeroom_assignment USING btree (workspace_id, class_id, teacher_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_homeroom_assignment_listing_page ON public.homeroom_assignment USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_homeroom_assignment_listing_page ON homeroom_assignment USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_homeroom_assignment_workspace_state ON public.homeroom_assignment USING btree (workspace_id, state);
+CREATE INDEX ix_homeroom_assignment_workspace_state ON homeroom_assignment USING btree (workspace_id, state);
 
-CREATE INDEX ix_invitation_target_state ON public.invitation USING btree (target_user_id, state);
+CREATE INDEX ix_invitation_target_state ON invitation USING btree (target_user_id, state);
 
-CREATE INDEX ix_invitation_workspace_state ON public.invitation USING btree (workspace_id, state);
+CREATE INDEX ix_invitation_workspace_state ON invitation USING btree (workspace_id, state);
 
-CREATE INDEX ix_library_item_resource_version ON public.library_item USING btree (resource_id, version_id);
+CREATE INDEX ix_library_item_resource_version ON library_item USING btree (resource_id, version_id);
 
-CREATE INDEX ix_library_item_share_grant ON public.library_item USING btree (share_grant_id) WHERE (share_grant_id IS NOT NULL);
+CREATE INDEX ix_library_item_share_grant ON library_item USING btree (share_grant_id) WHERE (share_grant_id IS NOT NULL);
 
-CREATE INDEX ix_library_item_workspace_resource ON public.library_item USING btree (workspace_id, resource_id);
+CREATE INDEX ix_library_item_workspace_resource ON library_item USING btree (workspace_id, resource_id);
 
-CREATE INDEX ix_notification_receipt_recipient ON public.notification_receipt USING btree (recipient_workspace_id);
+CREATE INDEX ix_notification_receipt_recipient ON notification_receipt USING btree (recipient_workspace_id);
 
-CREATE INDEX ix_oidc_correlation_sid ON public.oidc_session_correlation USING btree (issuer, client_id, sid) WHERE (sid IS NOT NULL);
+CREATE INDEX ix_oidc_correlation_sid ON oidc_session_correlation USING btree (issuer, client_id, sid) WHERE (sid IS NOT NULL);
 
-CREATE INDEX ix_oidc_correlation_sub ON public.oidc_session_correlation USING btree (issuer, client_id, sub);
+CREATE INDEX ix_oidc_correlation_sub ON oidc_session_correlation USING btree (issuer, client_id, sub);
 
-CREATE INDEX ix_practice_history_workspace_time ON public.system_practice_attempt_sample USING btree (personal_workspace_id, attempted_at DESC);
+CREATE INDEX ix_practice_history_workspace_time ON system_practice_attempt_sample USING btree (personal_workspace_id, attempted_at DESC);
 
-CREATE INDEX ix_recovery_request_state ON public.recovery_request USING btree (state, created_at);
+CREATE INDEX ix_recovery_request_state ON recovery_request USING btree (state, created_at);
 
-CREATE INDEX ix_recovery_request_target ON public.recovery_request USING btree (target_user_id, state);
+CREATE INDEX ix_recovery_request_target ON recovery_request USING btree (target_user_id, state);
 
-CREATE UNIQUE INDEX ix_resource_assignment_current_resource ON public.resource_assignment USING btree (workspace_id, user_id, resource_id) WHERE (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (resource_id IS NOT NULL));
+CREATE UNIQUE INDEX ix_resource_assignment_current_resource ON resource_assignment USING btree (workspace_id, user_id, resource_id) WHERE (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (resource_id IS NOT NULL));
 
-CREATE UNIQUE INDEX ix_resource_assignment_current_subject ON public.resource_assignment USING btree (workspace_id, user_id, subject_id) WHERE (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (subject_id IS NOT NULL));
+CREATE UNIQUE INDEX ix_resource_assignment_current_subject ON resource_assignment USING btree (workspace_id, user_id, subject_id) WHERE (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (subject_id IS NOT NULL));
 
-CREATE INDEX ix_resource_assignment_workspace_state ON public.resource_assignment USING btree (workspace_id, state);
+CREATE INDEX ix_resource_assignment_workspace_state ON resource_assignment USING btree (workspace_id, state);
 
-CREATE INDEX ix_resource_dependency_derived ON public.resource_dependency USING btree (derived_resource_id, derived_version_id);
+CREATE INDEX ix_resource_dependency_derived ON resource_dependency USING btree (derived_resource_id, derived_version_id);
 
-CREATE INDEX ix_resource_dependency_share_grant ON public.resource_dependency USING btree (share_grant_id) WHERE (share_grant_id IS NOT NULL);
+CREATE INDEX ix_resource_dependency_share_grant ON resource_dependency USING btree (share_grant_id) WHERE (share_grant_id IS NOT NULL);
 
-CREATE INDEX ix_resource_dependency_source_grant ON public.resource_dependency USING btree (source_version_id, share_grant_id);
+CREATE INDEX ix_resource_dependency_source_grant ON resource_dependency USING btree (source_version_id, share_grant_id);
 
-CREATE INDEX ix_resource_owner_state ON public.resource USING btree (owner_workspace_id, state);
+CREATE INDEX ix_resource_owner_state ON resource USING btree (owner_workspace_id, state);
 
-CREATE INDEX ix_roster_listing_page ON public.class_student USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_roster_listing_page ON class_student USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_sample_activity_course_subject ON public.sample_activity USING btree (workspace_id, course_subject_id);
+CREATE INDEX ix_sample_activity_course_subject ON sample_activity USING btree (workspace_id, course_subject_id);
 
-CREATE INDEX ix_sample_activity_workspace_state ON public.sample_activity USING btree (workspace_id, state);
+CREATE INDEX ix_sample_activity_workspace_state ON sample_activity USING btree (workspace_id, state);
 
-CREATE INDEX ix_sample_result_course_subject ON public.sample_result USING btree (workspace_id, course_subject_id);
+CREATE INDEX ix_sample_result_course_subject ON sample_result USING btree (workspace_id, course_subject_id);
 
-CREATE INDEX ix_sample_result_workspace_state ON public.sample_result USING btree (workspace_id, state);
+CREATE INDEX ix_sample_result_workspace_state ON sample_result USING btree (workspace_id, state);
 
-CREATE INDEX ix_sample_submission_workspace_state ON public.sample_submission USING btree (workspace_id, state);
+CREATE INDEX ix_sample_submission_workspace_state ON sample_submission USING btree (workspace_id, state);
 
-CREATE INDEX ix_school_class_workspace_state ON public.school_class USING btree (workspace_id, state);
+CREATE INDEX ix_school_class_workspace_state ON school_class USING btree (workspace_id, state);
 
-CREATE INDEX ix_share_grant_recipient_state ON public.share_grant USING btree (recipient_workspace_id, state);
+CREATE INDEX ix_share_grant_recipient_state ON share_grant USING btree (recipient_workspace_id, state);
 
-CREATE INDEX ix_share_grant_source_version ON public.share_grant USING btree (source_resource_id, source_version_id);
+CREATE INDEX ix_share_grant_source_version ON share_grant USING btree (source_resource_id, source_version_id);
 
-CREATE INDEX ix_subscription_workspace_range ON public.subscription_period USING btree (workspace_id, valid_from, expires_at);
+CREATE INDEX ix_subscription_workspace_range ON subscription_period USING btree (workspace_id, valid_from, expires_at);
 
-CREATE UNIQUE INDEX ix_teaching_assignment_current_unique ON public.teaching_assignment USING btree (workspace_id, course_subject_id, teacher_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_teaching_assignment_current_unique ON teaching_assignment USING btree (workspace_id, course_subject_id, teacher_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_teaching_assignment_listing_page ON public.teaching_assignment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_teaching_assignment_listing_page ON teaching_assignment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE INDEX ix_teaching_assignment_workspace_state ON public.teaching_assignment USING btree (workspace_id, state);
+CREATE INDEX ix_teaching_assignment_workspace_state ON teaching_assignment USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX spring_session_ix1 ON public.spring_session USING btree (session_id);
+CREATE UNIQUE INDEX spring_session_ix1 ON spring_session USING btree (session_id);
 
-CREATE INDEX spring_session_ix2 ON public.spring_session USING btree (expiry_time);
+CREATE INDEX spring_session_ix2 ON spring_session USING btree (expiry_time);
 
-CREATE INDEX spring_session_ix3 ON public.spring_session USING btree (principal_name);
+CREATE INDEX spring_session_ix3 ON spring_session USING btree (principal_name);
 
-CREATE UNIQUE INDEX uq_membership_current ON public.center_membership USING btree (workspace_id, user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_membership_current ON center_membership USING btree (workspace_id, user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
 
-CREATE UNIQUE INDEX uq_workspace_personal_owner ON public.workspace USING btree (owner_user_id) WHERE ((kind)::text = 'PERSONAL'::text);
+CREATE UNIQUE INDEX uq_workspace_personal_owner ON workspace USING btree (owner_user_id) WHERE ((kind)::text = 'PERSONAL'::text);
 
-CREATE TRIGGER ck_audit_event_append_only BEFORE DELETE OR UPDATE ON public.audit_event FOR EACH ROW EXECUTE FUNCTION public.reject_audit_event_mutation();
+CREATE TRIGGER ck_audit_event_append_only BEFORE DELETE OR UPDATE ON audit_event FOR EACH ROW EXECUTE FUNCTION reject_audit_event_mutation();
 
-CREATE TRIGGER ck_audit_event_no_truncate BEFORE TRUNCATE ON public.audit_event FOR EACH STATEMENT EXECUTE FUNCTION public.reject_audit_event_mutation();
+CREATE TRIGGER ck_audit_event_no_truncate BEFORE TRUNCATE ON audit_event FOR EACH STATEMENT EXECUTE FUNCTION reject_audit_event_mutation();
 
-CREATE TRIGGER ck_authz_operation_immutable_payload BEFORE UPDATE ON public.authorization_operation FOR EACH ROW EXECUTE FUNCTION public.guard_authz_operation_payload();
+CREATE TRIGGER ck_authz_operation_immutable_payload BEFORE UPDATE ON authorization_operation FOR EACH ROW EXECUTE FUNCTION guard_authz_operation_payload();
 
-CREATE TRIGGER ck_authz_operation_refs BEFORE INSERT OR UPDATE OF affected_partitions, affected_revisions ON public.authorization_operation FOR EACH ROW EXECUTE FUNCTION public.validate_authz_partition_ids();
+CREATE TRIGGER ck_authz_operation_refs BEFORE INSERT OR UPDATE OF affected_partitions, affected_revisions ON authorization_operation FOR EACH ROW EXECUTE FUNCTION validate_authz_partition_ids();
 
-CREATE CONSTRAINT TRIGGER ck_authz_operation_success_deferred AFTER INSERT OR UPDATE ON public.authorization_operation DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_authz_operation_succeeded();
+CREATE CONSTRAINT TRIGGER ck_authz_operation_success_deferred AFTER INSERT OR UPDATE ON authorization_operation DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_authz_operation_succeeded();
 
-CREATE TRIGGER ck_authz_partition_durable BEFORE DELETE ON public.authz_partition FOR EACH ROW EXECUTE FUNCTION public.preserve_authz_partition();
+CREATE TRIGGER ck_authz_partition_durable BEFORE DELETE ON authz_partition FOR EACH ROW EXECUTE FUNCTION preserve_authz_partition();
 
-CREATE TRIGGER ck_authz_partition_monotonic BEFORE UPDATE ON public.authz_partition FOR EACH ROW EXECUTE FUNCTION public.guard_authz_partition_identity();
+CREATE TRIGGER ck_authz_partition_monotonic BEFORE UPDATE ON authz_partition FOR EACH ROW EXECUTE FUNCTION guard_authz_partition_identity();
 
-CREATE CONSTRAINT TRIGGER ck_authz_partition_ready_deferred AFTER INSERT OR UPDATE ON public.authz_partition DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_authz_partition_ready();
+CREATE CONSTRAINT TRIGGER ck_authz_partition_ready_deferred AFTER INSERT OR UPDATE ON authz_partition DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_authz_partition_ready();
 
-CREATE TRIGGER ck_authz_projection_desired BEFORE INSERT OR DELETE OR UPDATE ON public.authz_projection FOR EACH ROW EXECUTE FUNCTION public.guard_authz_projection_desired();
+CREATE TRIGGER ck_authz_projection_desired BEFORE INSERT OR DELETE OR UPDATE ON authz_projection FOR EACH ROW EXECUTE FUNCTION guard_authz_projection_desired();
 
-CREATE CONSTRAINT TRIGGER ck_authz_projection_ready_deferred AFTER INSERT OR UPDATE ON public.authz_projection DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_authz_projection_ready();
+CREATE CONSTRAINT TRIGGER ck_authz_projection_ready_deferred AFTER INSERT OR UPDATE ON authz_projection DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_authz_projection_ready();
 
-CREATE TRIGGER ck_authz_projection_refs BEFORE INSERT OR UPDATE OF partition_id, dependency_partition_ids ON public.authz_projection FOR EACH ROW EXECUTE FUNCTION public.validate_authz_partition_ids();
+CREATE TRIGGER ck_authz_projection_refs BEFORE INSERT OR UPDATE OF partition_id, dependency_partition_ids ON authz_projection FOR EACH ROW EXECUTE FUNCTION validate_authz_partition_ids();
 
-CREATE TRIGGER ck_center_immutable_owner BEFORE UPDATE OF workspace_id, owner_user_id ON public.center FOR EACH ROW EXECUTE FUNCTION public.enforce_directory_immutable_links();
+CREATE TRIGGER ck_center_immutable_owner BEFORE UPDATE OF workspace_id, owner_user_id ON center FOR EACH ROW EXECUTE FUNCTION enforce_directory_immutable_links();
 
-CREATE CONSTRAINT TRIGGER ck_center_owner AFTER INSERT OR DELETE OR UPDATE ON public.center DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_center_owner();
+CREATE CONSTRAINT TRIGGER ck_center_owner AFTER INSERT OR DELETE OR UPDATE ON center DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_center_owner();
 
-CREATE TRIGGER ck_class_student_membership BEFORE INSERT ON public.class_student FOR EACH ROW EXECUTE FUNCTION public.validate_class_student_membership();
+CREATE TRIGGER ck_class_student_membership BEFORE INSERT ON class_student FOR EACH ROW EXECUTE FUNCTION validate_class_student_membership();
 
-CREATE TRIGGER ck_class_student_preserve_history BEFORE DELETE OR UPDATE ON public.class_student FOR EACH ROW EXECUTE FUNCTION public.guard_class_student_history();
+CREATE TRIGGER ck_class_student_preserve_history BEFORE DELETE OR UPDATE ON class_student FOR EACH ROW EXECUTE FUNCTION guard_class_student_history();
 
-CREATE TRIGGER ck_correction_notice_preserve_history BEFORE DELETE OR UPDATE ON public.correction_notice FOR EACH ROW EXECUTE FUNCTION public.guard_correction_notice_history();
+CREATE TRIGGER ck_correction_notice_preserve_history BEFORE DELETE OR UPDATE ON correction_notice FOR EACH ROW EXECUTE FUNCTION guard_correction_notice_history();
 
-CREATE TRIGGER ck_course_preserve_history BEFORE DELETE OR UPDATE ON public.course FOR EACH ROW EXECUTE FUNCTION public.guard_course_history();
+CREATE TRIGGER ck_course_preserve_history BEFORE DELETE OR UPDATE ON course FOR EACH ROW EXECUTE FUNCTION guard_course_history();
 
-CREATE TRIGGER ck_course_subject_preserve_history BEFORE DELETE OR UPDATE ON public.course_subject FOR EACH ROW EXECUTE FUNCTION public.guard_course_subject_history();
+CREATE TRIGGER ck_course_subject_preserve_history BEFORE DELETE OR UPDATE ON course_subject FOR EACH ROW EXECUTE FUNCTION guard_course_subject_history();
 
-CREATE TRIGGER ck_enrollment_preserve_history BEFORE DELETE OR UPDATE ON public.enrollment FOR EACH ROW EXECUTE FUNCTION public.guard_enrollment_history();
+CREATE TRIGGER ck_enrollment_preserve_history BEFORE DELETE OR UPDATE ON enrollment FOR EACH ROW EXECUTE FUNCTION guard_enrollment_history();
 
-CREATE TRIGGER ck_enrollment_same_class BEFORE INSERT ON public.enrollment FOR EACH ROW EXECUTE FUNCTION public.validate_enrollment_same_class();
+CREATE TRIGGER ck_enrollment_same_class BEFORE INSERT ON enrollment FOR EACH ROW EXECUTE FUNCTION validate_enrollment_same_class();
 
-CREATE TRIGGER ck_guardian_link_approval BEFORE UPDATE ON public.guardian_link FOR EACH ROW EXECUTE FUNCTION public.validate_guardian_link_approval();
+CREATE TRIGGER ck_guardian_link_approval BEFORE UPDATE ON guardian_link FOR EACH ROW EXECUTE FUNCTION validate_guardian_link_approval();
 
-CREATE TRIGGER ck_guardian_link_membership BEFORE INSERT ON public.guardian_link FOR EACH ROW EXECUTE FUNCTION public.validate_guardian_link_membership();
+CREATE TRIGGER ck_guardian_link_membership BEFORE INSERT ON guardian_link FOR EACH ROW EXECUTE FUNCTION validate_guardian_link_membership();
 
-CREATE TRIGGER ck_guardian_link_preserve_history BEFORE DELETE OR UPDATE ON public.guardian_link FOR EACH ROW EXECUTE FUNCTION public.guard_guardian_link_history();
+CREATE TRIGGER ck_guardian_link_preserve_history BEFORE DELETE OR UPDATE ON guardian_link FOR EACH ROW EXECUTE FUNCTION guard_guardian_link_history();
 
-CREATE TRIGGER ck_homeroom_assignment_membership BEFORE INSERT ON public.homeroom_assignment FOR EACH ROW EXECUTE FUNCTION public.validate_homeroom_assignment_membership();
+CREATE TRIGGER ck_homeroom_assignment_membership BEFORE INSERT ON homeroom_assignment FOR EACH ROW EXECUTE FUNCTION validate_homeroom_assignment_membership();
 
-CREATE TRIGGER ck_homeroom_assignment_preserve_history BEFORE DELETE OR UPDATE ON public.homeroom_assignment FOR EACH ROW EXECUTE FUNCTION public.guard_homeroom_assignment_history();
+CREATE TRIGGER ck_homeroom_assignment_preserve_history BEFORE DELETE OR UPDATE ON homeroom_assignment FOR EACH ROW EXECUTE FUNCTION guard_homeroom_assignment_history();
 
-CREATE TRIGGER ck_invitation_preserve_history BEFORE DELETE OR UPDATE ON public.invitation FOR EACH ROW EXECUTE FUNCTION public.guard_invitation_history();
+CREATE TRIGGER ck_invitation_preserve_history BEFORE DELETE OR UPDATE ON invitation FOR EACH ROW EXECUTE FUNCTION guard_invitation_history();
 
-CREATE TRIGGER ck_library_item_preserve_history BEFORE DELETE OR UPDATE ON public.library_item FOR EACH ROW EXECUTE FUNCTION public.guard_library_item_history();
+CREATE TRIGGER ck_library_item_preserve_history BEFORE DELETE OR UPDATE ON library_item FOR EACH ROW EXECUTE FUNCTION guard_library_item_history();
 
-CREATE TRIGGER ck_membership_immutable_identity BEFORE UPDATE OF workspace_id, user_id ON public.center_membership FOR EACH ROW EXECUTE FUNCTION public.enforce_directory_immutable_links();
+CREATE TRIGGER ck_membership_immutable_identity BEFORE UPDATE OF workspace_id, user_id ON center_membership FOR EACH ROW EXECUTE FUNCTION enforce_directory_immutable_links();
 
-CREATE CONSTRAINT TRIGGER ck_membership_owner AFTER INSERT OR DELETE OR UPDATE ON public.center_membership DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_center_owner();
+CREATE CONSTRAINT TRIGGER ck_membership_owner AFTER INSERT OR DELETE OR UPDATE ON center_membership DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_center_owner();
 
-CREATE TRIGGER ck_membership_preserve_history BEFORE DELETE OR UPDATE ON public.center_membership FOR EACH ROW EXECUTE FUNCTION public.guard_directory_history();
+CREATE TRIGGER ck_membership_preserve_history BEFORE DELETE OR UPDATE ON center_membership FOR EACH ROW EXECUTE FUNCTION guard_directory_history();
 
-CREATE TRIGGER ck_membership_workspace_kind BEFORE INSERT OR UPDATE OF workspace_id ON public.center_membership FOR EACH ROW EXECUTE FUNCTION public.enforce_directory_workspace_kind();
+CREATE TRIGGER ck_membership_workspace_kind BEFORE INSERT OR UPDATE OF workspace_id ON center_membership FOR EACH ROW EXECUTE FUNCTION enforce_directory_workspace_kind();
 
-CREATE TRIGGER ck_notification_receipt_preserve_history BEFORE DELETE OR UPDATE ON public.notification_receipt FOR EACH ROW EXECUTE FUNCTION public.guard_notification_receipt_history();
+CREATE TRIGGER ck_notification_receipt_preserve_history BEFORE DELETE OR UPDATE ON notification_receipt FOR EACH ROW EXECUTE FUNCTION guard_notification_receipt_history();
 
-CREATE CONSTRAINT TRIGGER ck_personal_workspace_survives AFTER DELETE ON public.workspace DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_user_personal_workspace();
+CREATE CONSTRAINT TRIGGER ck_personal_workspace_survives AFTER DELETE ON workspace DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_user_personal_workspace();
 
-CREATE TRIGGER ck_practice_attempt_source BEFORE INSERT ON public.system_practice_attempt_sample FOR EACH ROW EXECUTE FUNCTION public.validate_practice_attempt();
+CREATE TRIGGER ck_practice_attempt_source BEFORE INSERT ON system_practice_attempt_sample FOR EACH ROW EXECUTE FUNCTION validate_practice_attempt();
 
-CREATE TRIGGER ck_practice_history_immutable BEFORE DELETE OR UPDATE ON public.system_practice_attempt_sample FOR EACH ROW EXECUTE FUNCTION public.guard_practice_history();
+CREATE TRIGGER ck_practice_history_immutable BEFORE DELETE OR UPDATE ON system_practice_attempt_sample FOR EACH ROW EXECUTE FUNCTION guard_practice_history();
 
-CREATE TRIGGER ck_recovery_request_preserve_history BEFORE DELETE OR UPDATE ON public.recovery_request FOR EACH ROW EXECUTE FUNCTION public.guard_recovery_request_history();
+CREATE TRIGGER ck_recovery_request_preserve_history BEFORE DELETE OR UPDATE ON recovery_request FOR EACH ROW EXECUTE FUNCTION guard_recovery_request_history();
 
-CREATE TRIGGER ck_resource_assignment_preserve_history BEFORE DELETE OR UPDATE ON public.resource_assignment FOR EACH ROW EXECUTE FUNCTION public.guard_resource_assignment_history();
+CREATE TRIGGER ck_resource_assignment_preserve_history BEFORE DELETE OR UPDATE ON resource_assignment FOR EACH ROW EXECUTE FUNCTION guard_resource_assignment_history();
 
-CREATE TRIGGER ck_resource_dependency_acyclic BEFORE INSERT ON public.resource_dependency FOR EACH ROW EXECUTE FUNCTION public.guard_resource_dependency_acyclic();
+CREATE TRIGGER ck_resource_dependency_acyclic BEFORE INSERT ON resource_dependency FOR EACH ROW EXECUTE FUNCTION guard_resource_dependency_acyclic();
 
-CREATE TRIGGER ck_resource_dependency_preserve_history BEFORE DELETE OR UPDATE ON public.resource_dependency FOR EACH ROW EXECUTE FUNCTION public.guard_resource_dependency_history();
+CREATE TRIGGER ck_resource_dependency_preserve_history BEFORE DELETE OR UPDATE ON resource_dependency FOR EACH ROW EXECUTE FUNCTION guard_resource_dependency_history();
 
-CREATE TRIGGER ck_resource_immutable_owner BEFORE UPDATE OF owner_workspace_id ON public.resource FOR EACH ROW EXECUTE FUNCTION public.enforce_resource_immutable_owner();
+CREATE TRIGGER ck_resource_immutable_owner BEFORE UPDATE OF owner_workspace_id ON resource FOR EACH ROW EXECUTE FUNCTION enforce_resource_immutable_owner();
 
-CREATE TRIGGER ck_resource_version_guard BEFORE UPDATE ON public.resource_version FOR EACH ROW EXECUTE FUNCTION public.guard_resource_version();
+CREATE TRIGGER ck_resource_version_guard BEFORE UPDATE ON resource_version FOR EACH ROW EXECUTE FUNCTION guard_resource_version();
 
-CREATE CONSTRAINT TRIGGER ck_role_owner AFTER INSERT OR DELETE OR UPDATE ON public.membership_role DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_center_owner();
+CREATE CONSTRAINT TRIGGER ck_role_owner AFTER INSERT OR DELETE OR UPDATE ON membership_role DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_center_owner();
 
-CREATE TRIGGER ck_sample_activity_preserve_history BEFORE DELETE OR UPDATE ON public.sample_activity FOR EACH ROW EXECUTE FUNCTION public.guard_sample_activity_history();
+CREATE TRIGGER ck_sample_activity_preserve_history BEFORE DELETE OR UPDATE ON sample_activity FOR EACH ROW EXECUTE FUNCTION guard_sample_activity_history();
 
-CREATE TRIGGER ck_sample_result_preserve_history BEFORE DELETE OR UPDATE ON public.sample_result FOR EACH ROW EXECUTE FUNCTION public.guard_sample_result_history();
+CREATE TRIGGER ck_sample_result_preserve_history BEFORE DELETE OR UPDATE ON sample_result FOR EACH ROW EXECUTE FUNCTION guard_sample_result_history();
 
-CREATE TRIGGER ck_sample_result_source BEFORE INSERT ON public.sample_result FOR EACH ROW EXECUTE FUNCTION public.validate_sample_result_source();
+CREATE TRIGGER ck_sample_result_source BEFORE INSERT ON sample_result FOR EACH ROW EXECUTE FUNCTION validate_sample_result_source();
 
-CREATE TRIGGER ck_sample_submission_preserve_history BEFORE DELETE OR UPDATE ON public.sample_submission FOR EACH ROW EXECUTE FUNCTION public.guard_sample_submission_history();
+CREATE TRIGGER ck_sample_submission_preserve_history BEFORE DELETE OR UPDATE ON sample_submission FOR EACH ROW EXECUTE FUNCTION guard_sample_submission_history();
 
-CREATE TRIGGER ck_sample_submission_valid BEFORE INSERT ON public.sample_submission FOR EACH ROW EXECUTE FUNCTION public.validate_sample_submission();
+CREATE TRIGGER ck_sample_submission_valid BEFORE INSERT ON sample_submission FOR EACH ROW EXECUTE FUNCTION validate_sample_submission();
 
-CREATE TRIGGER ck_school_class_preserve_history BEFORE DELETE OR UPDATE ON public.school_class FOR EACH ROW EXECUTE FUNCTION public.guard_school_class_history();
+CREATE TRIGGER ck_school_class_preserve_history BEFORE DELETE OR UPDATE ON school_class FOR EACH ROW EXECUTE FUNCTION guard_school_class_history();
 
-CREATE TRIGGER ck_share_grant_preserve_history BEFORE DELETE OR UPDATE ON public.share_grant FOR EACH ROW EXECUTE FUNCTION public.guard_share_grant_history();
+CREATE TRIGGER ck_share_grant_preserve_history BEFORE DELETE OR UPDATE ON share_grant FOR EACH ROW EXECUTE FUNCTION guard_share_grant_history();
 
-CREATE TRIGGER ck_subject_preserve_history BEFORE DELETE OR UPDATE ON public.subject FOR EACH ROW EXECUTE FUNCTION public.guard_subject_history();
+CREATE TRIGGER ck_subject_preserve_history BEFORE DELETE OR UPDATE ON subject FOR EACH ROW EXECUTE FUNCTION guard_subject_history();
 
-CREATE TRIGGER ck_subscription_preserve_history BEFORE DELETE OR UPDATE ON public.subscription_period FOR EACH ROW EXECUTE FUNCTION public.guard_directory_history();
+CREATE TRIGGER ck_subscription_preserve_history BEFORE DELETE OR UPDATE ON subscription_period FOR EACH ROW EXECUTE FUNCTION guard_directory_history();
 
-CREATE TRIGGER ck_subscription_workspace_kind BEFORE INSERT OR UPDATE OF workspace_id ON public.subscription_period FOR EACH ROW EXECUTE FUNCTION public.enforce_directory_workspace_kind();
+CREATE TRIGGER ck_subscription_workspace_kind BEFORE INSERT OR UPDATE OF workspace_id ON subscription_period FOR EACH ROW EXECUTE FUNCTION enforce_directory_workspace_kind();
 
-CREATE TRIGGER ck_teaching_assignment_preserve_history BEFORE DELETE OR UPDATE ON public.teaching_assignment FOR EACH ROW EXECUTE FUNCTION public.guard_teaching_assignment_history();
+CREATE TRIGGER ck_teaching_assignment_preserve_history BEFORE DELETE OR UPDATE ON teaching_assignment FOR EACH ROW EXECUTE FUNCTION guard_teaching_assignment_history();
 
-CREATE CONSTRAINT TRIGGER ck_user_has_personal_workspace AFTER INSERT ON public.user_account DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_user_personal_workspace();
+CREATE CONSTRAINT TRIGGER ck_user_has_personal_workspace AFTER INSERT ON user_account DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_user_personal_workspace();
 
-CREATE CONSTRAINT TRIGGER ck_workspace_center_owner AFTER INSERT OR UPDATE ON public.workspace DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.verify_center_owner();
+CREATE CONSTRAINT TRIGGER ck_workspace_center_owner AFTER INSERT OR UPDATE ON workspace DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_center_owner();
 
-CREATE TRIGGER ck_workspace_immutable_kind BEFORE UPDATE OF kind, owner_user_id ON public.workspace FOR EACH ROW EXECUTE FUNCTION public.enforce_directory_immutable_links();
+CREATE TRIGGER ck_workspace_immutable_kind BEFORE UPDATE OF kind, owner_user_id ON workspace FOR EACH ROW EXECUTE FUNCTION enforce_directory_immutable_links();
 
-CREATE TRIGGER delete_oidc_correlation_after_session_delete AFTER DELETE ON public.spring_session FOR EACH ROW EXECUTE FUNCTION public.sync_oidc_correlation_session();
+CREATE TRIGGER delete_oidc_correlation_after_session_delete AFTER DELETE ON spring_session FOR EACH ROW EXECUTE FUNCTION sync_oidc_correlation_session();
 
-CREATE TRIGGER move_oidc_correlation_after_session_id_change AFTER UPDATE OF session_id ON public.spring_session FOR EACH ROW EXECUTE FUNCTION public.sync_oidc_correlation_session();
+CREATE TRIGGER move_oidc_correlation_after_session_id_change AFTER UPDATE OF session_id ON spring_session FOR EACH ROW EXECUTE FUNCTION sync_oidc_correlation_session();
 
-CREATE TRIGGER tr_authz_account_scope AFTER INSERT ON public.user_account FOR EACH ROW EXECUTE FUNCTION public.create_authz_scope();
+CREATE TRIGGER tr_authz_account_scope AFTER INSERT ON user_account FOR EACH ROW EXECUTE FUNCTION create_authz_scope();
 
-CREATE TRIGGER tr_authz_workspace_scope AFTER INSERT ON public.workspace FOR EACH ROW EXECUTE FUNCTION public.create_authz_scope();
+CREATE TRIGGER tr_authz_workspace_scope AFTER INSERT ON workspace FOR EACH ROW EXECUTE FUNCTION create_authz_scope();
 
-ALTER TABLE ONLY public.audit_event
-    ADD CONSTRAINT audit_event_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY audit_event
+    ADD CONSTRAINT audit_event_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.audit_event
-    ADD CONSTRAINT audit_event_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES public.authorization_operation(id);
+ALTER TABLE ONLY audit_event
+    ADD CONSTRAINT audit_event_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES authorization_operation(id);
 
-ALTER TABLE ONLY public.audit_event
-    ADD CONSTRAINT audit_event_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY audit_event
+    ADD CONSTRAINT audit_event_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.authorization_operation
-    ADD CONSTRAINT authorization_operation_initiator_user_id_fkey FOREIGN KEY (initiator_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY authorization_operation
+    ADD CONSTRAINT authorization_operation_initiator_user_id_fkey FOREIGN KEY (initiator_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.authorization_operation
-    ADD CONSTRAINT authorization_operation_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY authorization_operation
+    ADD CONSTRAINT authorization_operation_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.authz_projection
-    ADD CONSTRAINT authz_projection_partition_id_fkey FOREIGN KEY (partition_id) REFERENCES public.authz_partition(id);
+ALTER TABLE ONLY authz_projection
+    ADD CONSTRAINT authz_projection_partition_id_fkey FOREIGN KEY (partition_id) REFERENCES authz_partition(id);
 
-ALTER TABLE ONLY public.center_membership
-    ADD CONSTRAINT center_membership_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY center_membership
+    ADD CONSTRAINT center_membership_user_id_fkey FOREIGN KEY (user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.center_membership
-    ADD CONSTRAINT center_membership_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY center_membership
+    ADD CONSTRAINT center_membership_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.center
-    ADD CONSTRAINT center_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY center
+    ADD CONSTRAINT center_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.center
-    ADD CONSTRAINT center_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY center
+    ADD CONSTRAINT center_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.class_student
-    ADD CONSTRAINT class_student_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY class_student
+    ADD CONSTRAINT class_student_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.class_student
-    ADD CONSTRAINT class_student_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY class_student
+    ADD CONSTRAINT class_student_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.course_subject
-    ADD CONSTRAINT course_subject_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.subject(id);
+ALTER TABLE ONLY course_subject
+    ADD CONSTRAINT course_subject_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES subject(id);
 
-ALTER TABLE ONLY public.course_subject
-    ADD CONSTRAINT course_subject_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY course_subject
+    ADD CONSTRAINT course_subject_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.course
-    ADD CONSTRAINT course_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY course
+    ADD CONSTRAINT course_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.enrollment
-    ADD CONSTRAINT enrollment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY enrollment
+    ADD CONSTRAINT enrollment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.class_student
-    ADD CONSTRAINT fk_class_student_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES public.school_class(workspace_id, id);
+ALTER TABLE ONLY class_student
+    ADD CONSTRAINT fk_class_student_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
 
-ALTER TABLE ONLY public.correction_notice
-    ADD CONSTRAINT fk_correction_notice_affected_version FOREIGN KEY (resource_id, affected_version_id) REFERENCES public.resource_version(resource_id, id);
+ALTER TABLE ONLY correction_notice
+    ADD CONSTRAINT fk_correction_notice_affected_version FOREIGN KEY (resource_id, affected_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY public.correction_notice
-    ADD CONSTRAINT fk_correction_notice_replacement_version FOREIGN KEY (resource_id, replacement_version_id) REFERENCES public.resource_version(resource_id, id);
+ALTER TABLE ONLY correction_notice
+    ADD CONSTRAINT fk_correction_notice_replacement_version FOREIGN KEY (resource_id, replacement_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY public.course
-    ADD CONSTRAINT fk_course_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES public.school_class(workspace_id, id);
+ALTER TABLE ONLY course
+    ADD CONSTRAINT fk_course_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
 
-ALTER TABLE ONLY public.course_subject
-    ADD CONSTRAINT fk_course_subject_course FOREIGN KEY (workspace_id, class_id, course_id) REFERENCES public.course(workspace_id, class_id, id);
+ALTER TABLE ONLY course_subject
+    ADD CONSTRAINT fk_course_subject_course FOREIGN KEY (workspace_id, class_id, course_id) REFERENCES course(workspace_id, class_id, id);
 
-ALTER TABLE ONLY public.enrollment
-    ADD CONSTRAINT fk_enrollment_class_student FOREIGN KEY (workspace_id, class_student_id) REFERENCES public.class_student(workspace_id, id);
+ALTER TABLE ONLY enrollment
+    ADD CONSTRAINT fk_enrollment_class_student FOREIGN KEY (workspace_id, class_student_id) REFERENCES class_student(workspace_id, id);
 
-ALTER TABLE ONLY public.enrollment
-    ADD CONSTRAINT fk_enrollment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES public.course_subject(workspace_id, id);
+ALTER TABLE ONLY enrollment
+    ADD CONSTRAINT fk_enrollment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-ALTER TABLE ONLY public.homeroom_assignment
-    ADD CONSTRAINT fk_homeroom_assignment_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES public.school_class(workspace_id, id);
+ALTER TABLE ONLY homeroom_assignment
+    ADD CONSTRAINT fk_homeroom_assignment_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
 
-ALTER TABLE ONLY public.library_item
-    ADD CONSTRAINT fk_library_item_resource_version FOREIGN KEY (resource_id, version_id) REFERENCES public.resource_version(resource_id, id);
+ALTER TABLE ONLY library_item
+    ADD CONSTRAINT fk_library_item_resource_version FOREIGN KEY (resource_id, version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY public.library_item
-    ADD CONSTRAINT fk_library_item_share_grant FOREIGN KEY (share_grant_id) REFERENCES public.share_grant(id);
+ALTER TABLE ONLY library_item
+    ADD CONSTRAINT fk_library_item_share_grant FOREIGN KEY (share_grant_id) REFERENCES share_grant(id);
 
-ALTER TABLE ONLY public.resource_dependency
-    ADD CONSTRAINT fk_resource_dependency_derived_version FOREIGN KEY (derived_resource_id, derived_version_id) REFERENCES public.resource_version(resource_id, id);
+ALTER TABLE ONLY resource_dependency
+    ADD CONSTRAINT fk_resource_dependency_derived_version FOREIGN KEY (derived_resource_id, derived_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY public.resource_dependency
-    ADD CONSTRAINT fk_resource_dependency_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES public.resource_version(resource_id, id);
+ALTER TABLE ONLY resource_dependency
+    ADD CONSTRAINT fk_resource_dependency_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY public.sample_activity
-    ADD CONSTRAINT fk_sample_activity_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES public.course_subject(workspace_id, id);
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT fk_sample_activity_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-ALTER TABLE ONLY public.sample_activity
-    ADD CONSTRAINT fk_sample_activity_resource_version FOREIGN KEY (resource_id, version_id) REFERENCES public.resource_version(resource_id, id);
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT fk_sample_activity_resource_version FOREIGN KEY (resource_id, version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY public.sample_activity
-    ADD CONSTRAINT fk_sample_activity_subscription_period FOREIGN KEY (workspace_id, subscription_period_id) REFERENCES public.subscription_period(workspace_id, id);
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT fk_sample_activity_subscription_period FOREIGN KEY (workspace_id, subscription_period_id) REFERENCES subscription_period(workspace_id, id);
 
-ALTER TABLE ONLY public.sample_result
-    ADD CONSTRAINT fk_sample_result_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES public.course_subject(workspace_id, id);
+ALTER TABLE ONLY sample_result
+    ADD CONSTRAINT fk_sample_result_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-ALTER TABLE ONLY public.sample_result
-    ADD CONSTRAINT fk_sample_result_submission FOREIGN KEY (workspace_id, submission_id) REFERENCES public.sample_submission(workspace_id, id);
+ALTER TABLE ONLY sample_result
+    ADD CONSTRAINT fk_sample_result_submission FOREIGN KEY (workspace_id, submission_id) REFERENCES sample_submission(workspace_id, id);
 
-ALTER TABLE ONLY public.sample_submission
-    ADD CONSTRAINT fk_sample_submission_activity FOREIGN KEY (workspace_id, activity_id) REFERENCES public.sample_activity(workspace_id, id);
+ALTER TABLE ONLY sample_submission
+    ADD CONSTRAINT fk_sample_submission_activity FOREIGN KEY (workspace_id, activity_id) REFERENCES sample_activity(workspace_id, id);
 
-ALTER TABLE ONLY public.share_grant
-    ADD CONSTRAINT fk_share_grant_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES public.resource_version(resource_id, id);
+ALTER TABLE ONLY share_grant
+    ADD CONSTRAINT fk_share_grant_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY public.teaching_assignment
-    ADD CONSTRAINT fk_teaching_assignment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES public.course_subject(workspace_id, id);
+ALTER TABLE ONLY teaching_assignment
+    ADD CONSTRAINT fk_teaching_assignment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-ALTER TABLE ONLY public.workspace
-    ADD CONSTRAINT fk_workspace_center FOREIGN KEY (center_id, id) REFERENCES public.center(id, workspace_id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE ONLY workspace
+    ADD CONSTRAINT fk_workspace_center FOREIGN KEY (center_id, id) REFERENCES center(id, workspace_id) DEFERRABLE INITIALLY DEFERRED;
 
-ALTER TABLE ONLY public.guardian_link
-    ADD CONSTRAINT guardian_link_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.user_account(id);
+ALTER TABLE ONLY guardian_link
+    ADD CONSTRAINT guardian_link_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.guardian_link
-    ADD CONSTRAINT guardian_link_parent_user_id_fkey FOREIGN KEY (parent_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY guardian_link
+    ADD CONSTRAINT guardian_link_parent_user_id_fkey FOREIGN KEY (parent_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.guardian_link
-    ADD CONSTRAINT guardian_link_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.user_account(id);
+ALTER TABLE ONLY guardian_link
+    ADD CONSTRAINT guardian_link_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.guardian_link
-    ADD CONSTRAINT guardian_link_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY guardian_link
+    ADD CONSTRAINT guardian_link_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.guardian_link
-    ADD CONSTRAINT guardian_link_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY guardian_link
+    ADD CONSTRAINT guardian_link_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.homeroom_assignment
-    ADD CONSTRAINT homeroom_assignment_teacher_user_id_fkey FOREIGN KEY (teacher_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY homeroom_assignment
+    ADD CONSTRAINT homeroom_assignment_teacher_user_id_fkey FOREIGN KEY (teacher_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.homeroom_assignment
-    ADD CONSTRAINT homeroom_assignment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY homeroom_assignment
+    ADD CONSTRAINT homeroom_assignment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.invitation
-    ADD CONSTRAINT invitation_target_user_id_fkey FOREIGN KEY (target_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY invitation
+    ADD CONSTRAINT invitation_target_user_id_fkey FOREIGN KEY (target_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.invitation
-    ADD CONSTRAINT invitation_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY invitation
+    ADD CONSTRAINT invitation_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.library_item
-    ADD CONSTRAINT library_item_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY library_item
+    ADD CONSTRAINT library_item_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.membership_index
-    ADD CONSTRAINT membership_index_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY membership_index
+    ADD CONSTRAINT membership_index_user_id_fkey FOREIGN KEY (user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.membership_index
-    ADD CONSTRAINT membership_index_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY membership_index
+    ADD CONSTRAINT membership_index_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.membership_role
-    ADD CONSTRAINT membership_role_membership_id_fkey FOREIGN KEY (membership_id) REFERENCES public.center_membership(id);
+ALTER TABLE ONLY membership_role
+    ADD CONSTRAINT membership_role_membership_id_fkey FOREIGN KEY (membership_id) REFERENCES center_membership(id);
 
-ALTER TABLE ONLY public.notification_receipt
-    ADD CONSTRAINT notification_receipt_notice_id_fkey FOREIGN KEY (notice_id) REFERENCES public.correction_notice(id);
+ALTER TABLE ONLY notification_receipt
+    ADD CONSTRAINT notification_receipt_notice_id_fkey FOREIGN KEY (notice_id) REFERENCES correction_notice(id);
 
-ALTER TABLE ONLY public.notification_receipt
-    ADD CONSTRAINT notification_receipt_recipient_workspace_id_fkey FOREIGN KEY (recipient_workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY notification_receipt
+    ADD CONSTRAINT notification_receipt_recipient_workspace_id_fkey FOREIGN KEY (recipient_workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.recovery_mutation
-    ADD CONSTRAINT recovery_mutation_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY recovery_mutation
+    ADD CONSTRAINT recovery_mutation_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.recovery_mutation
-    ADD CONSTRAINT recovery_mutation_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.recovery_request(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE ONLY recovery_mutation
+    ADD CONSTRAINT recovery_mutation_request_id_fkey FOREIGN KEY (request_id) REFERENCES recovery_request(id) DEFERRABLE INITIALLY DEFERRED;
 
-ALTER TABLE ONLY public.recovery_request
-    ADD CONSTRAINT recovery_request_requester_user_id_fkey FOREIGN KEY (requester_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY recovery_request
+    ADD CONSTRAINT recovery_request_requester_user_id_fkey FOREIGN KEY (requester_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.recovery_request
-    ADD CONSTRAINT recovery_request_target_user_id_fkey FOREIGN KEY (target_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY recovery_request
+    ADD CONSTRAINT recovery_request_target_user_id_fkey FOREIGN KEY (target_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.recovery_request
-    ADD CONSTRAINT recovery_request_verified_by_fkey FOREIGN KEY (verified_by) REFERENCES public.user_account(id);
+ALTER TABLE ONLY recovery_request
+    ADD CONSTRAINT recovery_request_verified_by_fkey FOREIGN KEY (verified_by) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.recovery_request
-    ADD CONSTRAINT recovery_request_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY recovery_request
+    ADD CONSTRAINT recovery_request_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.resource_assignment
-    ADD CONSTRAINT resource_assignment_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES public.resource(id);
+ALTER TABLE ONLY resource_assignment
+    ADD CONSTRAINT resource_assignment_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES resource(id);
 
-ALTER TABLE ONLY public.resource_assignment
-    ADD CONSTRAINT resource_assignment_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.subject(id);
+ALTER TABLE ONLY resource_assignment
+    ADD CONSTRAINT resource_assignment_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES subject(id);
 
-ALTER TABLE ONLY public.resource_assignment
-    ADD CONSTRAINT resource_assignment_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY resource_assignment
+    ADD CONSTRAINT resource_assignment_user_id_fkey FOREIGN KEY (user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.resource_assignment
-    ADD CONSTRAINT resource_assignment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY resource_assignment
+    ADD CONSTRAINT resource_assignment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.resource
-    ADD CONSTRAINT resource_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY resource
+    ADD CONSTRAINT resource_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.resource_dependency
-    ADD CONSTRAINT resource_dependency_share_grant_id_fkey FOREIGN KEY (share_grant_id) REFERENCES public.share_grant(id);
+ALTER TABLE ONLY resource_dependency
+    ADD CONSTRAINT resource_dependency_share_grant_id_fkey FOREIGN KEY (share_grant_id) REFERENCES share_grant(id);
 
-ALTER TABLE ONLY public.resource
-    ADD CONSTRAINT resource_owner_workspace_id_fkey FOREIGN KEY (owner_workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY resource
+    ADD CONSTRAINT resource_owner_workspace_id_fkey FOREIGN KEY (owner_workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.resource_version
-    ADD CONSTRAINT resource_version_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES public.resource(id);
+ALTER TABLE ONLY resource_version
+    ADD CONSTRAINT resource_version_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES resource(id);
 
-ALTER TABLE ONLY public.sample_action_mutation
-    ADD CONSTRAINT sample_action_mutation_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY sample_action_mutation
+    ADD CONSTRAINT sample_action_mutation_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.sample_action_mutation
-    ADD CONSTRAINT sample_action_mutation_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY sample_action_mutation
+    ADD CONSTRAINT sample_action_mutation_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.sample_activity
-    ADD CONSTRAINT sample_activity_assigned_by_fkey FOREIGN KEY (assigned_by) REFERENCES public.user_account(id);
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT sample_activity_assigned_by_fkey FOREIGN KEY (assigned_by) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.sample_activity
-    ADD CONSTRAINT sample_activity_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES public.resource(id);
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT sample_activity_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES resource(id);
 
-ALTER TABLE ONLY public.sample_activity
-    ADD CONSTRAINT sample_activity_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT sample_activity_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.sample_result
-    ADD CONSTRAINT sample_result_graded_by_fkey FOREIGN KEY (graded_by) REFERENCES public.user_account(id);
+ALTER TABLE ONLY sample_result
+    ADD CONSTRAINT sample_result_graded_by_fkey FOREIGN KEY (graded_by) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.sample_result
-    ADD CONSTRAINT sample_result_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY sample_result
+    ADD CONSTRAINT sample_result_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.sample_result
-    ADD CONSTRAINT sample_result_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY sample_result
+    ADD CONSTRAINT sample_result_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.sample_submission
-    ADD CONSTRAINT sample_submission_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY sample_submission
+    ADD CONSTRAINT sample_submission_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.sample_submission
-    ADD CONSTRAINT sample_submission_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY sample_submission
+    ADD CONSTRAINT sample_submission_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.school_class
-    ADD CONSTRAINT school_class_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY school_class
+    ADD CONSTRAINT school_class_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.share_grant
-    ADD CONSTRAINT share_grant_grantor_user_id_fkey FOREIGN KEY (grantor_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY share_grant
+    ADD CONSTRAINT share_grant_grantor_user_id_fkey FOREIGN KEY (grantor_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.share_grant
-    ADD CONSTRAINT share_grant_recipient_workspace_id_fkey FOREIGN KEY (recipient_workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY share_grant
+    ADD CONSTRAINT share_grant_recipient_workspace_id_fkey FOREIGN KEY (recipient_workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.spring_session_attributes
-    ADD CONSTRAINT spring_session_attributes_fk FOREIGN KEY (session_primary_id) REFERENCES public.spring_session(primary_id) ON DELETE CASCADE;
+ALTER TABLE ONLY spring_session_attributes
+    ADD CONSTRAINT spring_session_attributes_fk FOREIGN KEY (session_primary_id) REFERENCES spring_session(primary_id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY public.subscription_period
-    ADD CONSTRAINT subscription_period_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.user_account(id);
+ALTER TABLE ONLY subscription_period
+    ADD CONSTRAINT subscription_period_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.subscription_period
-    ADD CONSTRAINT subscription_period_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY subscription_period
+    ADD CONSTRAINT subscription_period_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.system_practice_attempt_sample
-    ADD CONSTRAINT system_practice_attempt_sample_personal_workspace_id_fkey FOREIGN KEY (personal_workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY system_practice_attempt_sample
+    ADD CONSTRAINT system_practice_attempt_sample_personal_workspace_id_fkey FOREIGN KEY (personal_workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.system_practice_attempt_sample
-    ADD CONSTRAINT system_practice_attempt_sample_system_resource_id_fkey FOREIGN KEY (system_resource_id) REFERENCES public.resource(id);
+ALTER TABLE ONLY system_practice_attempt_sample
+    ADD CONSTRAINT system_practice_attempt_sample_system_resource_id_fkey FOREIGN KEY (system_resource_id) REFERENCES resource(id);
 
-ALTER TABLE ONLY public.system_practice_attempt_sample
-    ADD CONSTRAINT system_practice_attempt_sample_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY system_practice_attempt_sample
+    ADD CONSTRAINT system_practice_attempt_sample_user_id_fkey FOREIGN KEY (user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.system_practice_attempt_sample
-    ADD CONSTRAINT system_practice_attempt_sample_version_id_fkey FOREIGN KEY (version_id) REFERENCES public.resource_version(id);
+ALTER TABLE ONLY system_practice_attempt_sample
+    ADD CONSTRAINT system_practice_attempt_sample_version_id_fkey FOREIGN KEY (version_id) REFERENCES resource_version(id);
 
-ALTER TABLE ONLY public.teaching_assignment
-    ADD CONSTRAINT teaching_assignment_teacher_user_id_fkey FOREIGN KEY (teacher_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY teaching_assignment
+    ADD CONSTRAINT teaching_assignment_teacher_user_id_fkey FOREIGN KEY (teacher_user_id) REFERENCES user_account(id);
 
-ALTER TABLE ONLY public.teaching_assignment
-    ADD CONSTRAINT teaching_assignment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspace(id);
+ALTER TABLE ONLY teaching_assignment
+    ADD CONSTRAINT teaching_assignment_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES workspace(id);
 
-ALTER TABLE ONLY public.workspace
-    ADD CONSTRAINT workspace_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.user_account(id);
+ALTER TABLE ONLY workspace
+    ADD CONSTRAINT workspace_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES user_account(id);
 
 --
 --
@@ -2454,19 +2455,21 @@ ALTER TABLE ONLY public.workspace
 --
 
 -- Danh mục môn học hệ thống gieo sẵn (trước đây ở migration của bảng subject).
-INSERT INTO public.subject (id, code, name, state) VALUES
+INSERT INTO subject (id, code, name, state) VALUES
     (gen_random_uuid(), 'M1', 'Môn 1', 'ACTIVE'),
     (gen_random_uuid(), 'M2', 'Môn 2', 'ACTIVE'),
     (gen_random_uuid(), 'M3', 'Môn 3', 'ACTIVE');
 
 -- Tra cứu resource theo chủ sở hữu và môn học (danh mục cá nhân/trung tâm lọc theo môn).
-CREATE INDEX ix_resource_owner_subject ON public.resource (owner_workspace_id, subject_id);
+CREATE INDEX ix_resource_owner_subject ON resource (owner_workspace_id, subject_id);
 
 -- Grants cho role runtime (giaokhoa_runtime): ứng dụng chạy bằng role này, role chạy
--- migration giữ quyền sở hữu đối tượng. Mọi lệnh grant đều gắn tường minh với schema mà
--- migration đang chạy (current_schema(): public với dòng hệ thống, schema của workspace
--- với dòng tenant) thay vì phụ thuộc search_path của phiên. flyway_schema_history chỉ
--- được đọc: runtime không có quyền ghi lịch sử migration.
+-- migration giữ quyền sở hữu đối tượng. Mọi lệnh grant đều gắn tường minh với schema
+-- đích của lần migrate (placeholder ${flyway:defaultSchema} do Flyway thay trước khi
+-- chạy: public với dòng hệ thống ở deployment chuẩn, schema của workspace với dòng
+-- tenant, schema cô lập ở các môi trường kiểm thử) — không dùng current_schema() vì
+-- Flyway không đổi schema hiện hành của phiên theo schema đích. flyway_schema_history
+-- chỉ được đọc: runtime không có quyền ghi lịch sử migration.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'giaokhoa_runtime') THEN
@@ -2477,7 +2480,7 @@ $$;
 
 DO $$
 DECLARE
-    target_schema text := current_schema();
+    target_schema text := '${flyway:defaultSchema}';
 BEGIN
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO giaokhoa_runtime', target_schema);
     EXECUTE format(

@@ -1594,10 +1594,12 @@ ALTER TABLE ONLY resource_version
 CREATE INDEX ix_resource_owner_subject ON resource (owner_workspace_id, subject_id);
 
 -- Grants cho role runtime (giaokhoa_runtime): ứng dụng chạy bằng role này, role chạy
--- migration giữ quyền sở hữu đối tượng. Mọi lệnh grant đều gắn tường minh với schema mà
--- migration đang chạy (current_schema(): public với dòng hệ thống, schema của workspace
--- với dòng tenant) thay vì phụ thuộc search_path của phiên. flyway_schema_history chỉ
--- được đọc: runtime không có quyền ghi lịch sử migration.
+-- migration giữ quyền sở hữu đối tượng. Mọi lệnh grant đều gắn tường minh với schema
+-- đích của lần migrate (placeholder ${flyway:defaultSchema} do Flyway thay trước khi
+-- chạy: public với dòng hệ thống ở deployment chuẩn, schema của workspace với dòng
+-- tenant, schema cô lập ở các môi trường kiểm thử) — không dùng current_schema() vì
+-- Flyway không đổi schema hiện hành của phiên theo schema đích. flyway_schema_history
+-- chỉ được đọc: runtime không có quyền ghi lịch sử migration.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'giaokhoa_runtime') THEN
@@ -1608,7 +1610,7 @@ $$;
 
 DO $$
 DECLARE
-    target_schema text := current_schema();
+    target_schema text := '${flyway:defaultSchema}';
 BEGIN
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO giaokhoa_runtime', target_schema);
     EXECUTE format(

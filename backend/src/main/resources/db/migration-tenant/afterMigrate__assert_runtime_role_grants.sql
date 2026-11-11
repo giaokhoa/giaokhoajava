@@ -2,12 +2,14 @@
 -- SELECT/INSERT/UPDATE/DELETE trên mọi bảng của schema vừa migrate, trừ
 -- flyway_schema_history chỉ được đọc. Thiếu grants là lỗi hạ tầng phải lộ ngay tại
 -- migrate thay vì thành lỗi quyền khi ứng dụng chạy thật. Schema đích lấy từ
--- current_schema() (schema mà Flyway đang migrate) nên cùng một bản kiểm chứng áp cho
--- cả dòng hệ thống (public) và dòng tenant (schema của workspace). Bỏ qua khi role
--- chưa tồn tại (môi trường chỉ chạy migration thuần tuý).
+-- placeholder ${flyway:defaultSchema} do Flyway thay trước khi chạy (không dùng
+-- current_schema() vì Flyway không đổi schema hiện hành của phiên theo schema đích)
+-- nên cùng một bản kiểm chứng áp cho cả dòng hệ thống (public) và dòng tenant
+-- (schema của workspace). Bỏ qua khi role chưa tồn tại (môi trường chỉ chạy
+-- migration thuần tuý).
 DO $$
 DECLARE
-    target_schema text := current_schema();
+    target_schema text := '${flyway:defaultSchema}';
     missing text;
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'giaokhoa_runtime') THEN
