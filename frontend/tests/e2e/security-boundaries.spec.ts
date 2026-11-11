@@ -4,6 +4,7 @@ import {
   loginViaKeycloakForm,
   appRequestWhenReady,
   dongBoEligibility,
+  layPhienHienTai,
 } from "./support/test-environment";
 
 // Kiểm chứng biên bảo mật ở tầng trình duyệt mà session-security.spec.ts chưa giữ:
@@ -134,12 +135,16 @@ test("IDOR: thành viên không xem được danh sách membership của workspa
   const userB = await env.createUser();
   try {
     await dangNhapQuaUngDung(page, origin, userA);
+    // Trang chủ công khai không gọi phiên nên chưa chạy bước khởi tạo (bootstrap):
+    // phải đọc phiên trước thì tài khoản mới có, không thì chờ quyền cứ trả 503 mãi.
+    expect((await layPhienHienTai(page, origin)).authenticated).toBe(true);
     await dongBoEligibility(page, origin);
 
     const contextB = await browser.newContext();
     try {
       const pageB = await contextB.newPage();
       await dangNhapQuaUngDung(pageB, origin, userB);
+      expect((await layPhienHienTai(pageB, origin)).authenticated).toBe(true);
       await dongBoEligibility(pageB, origin);
       const personalB = await layPersonalWorkspaceId(pageB, origin);
 
@@ -177,6 +182,7 @@ test("người mất eligibility không đọc được danh sách workspace", a
   const user = await env.createUser();
   try {
     await dangNhapQuaUngDung(page, origin, user);
+    expect((await layPhienHienTai(page, origin)).authenticated).toBe(true);
     await dongBoEligibility(page, origin);
     const ready = await appRequestWhenReady(
       page,
