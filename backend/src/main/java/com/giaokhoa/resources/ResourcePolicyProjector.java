@@ -128,7 +128,6 @@ public class ResourcePolicyProjector {
     private final ResourcesUserAccountRepository userAccounts;
     private final ResourcesSampleActivityRepository activities;
     private final ResourcesAuthorizationPartitionRepository partitions;
-    private final ResourceCopies copies;
     private final ResourceScopePreconditions preconditions;
 
     public ResourcePolicyProjector(
@@ -144,7 +143,6 @@ public class ResourcePolicyProjector {
             ResourcesUserAccountRepository userAccounts,
             ResourcesSampleActivityRepository activities,
             ResourcesAuthorizationPartitionRepository partitions,
-            ResourceCopies copies,
             ResourceScopePreconditions preconditions) {
         this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -158,7 +156,6 @@ public class ResourcePolicyProjector {
         this.userAccounts = userAccounts;
         this.activities = activities;
         this.partitions = partitions;
-        this.copies = copies;
         this.preconditions = preconditions;
     }
 
@@ -667,11 +664,13 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Nhánh license: mỗi grant ACCEPTED cho workspace nhận trên đúng version cấp các scope do
-     * actions của grant quyết định, trong cửa sổ hiệu lực của grant và chỉ khi workspace nhận nằm
-     * trong phạm vi workspace cho phép (rỗng nghĩa là không giới hạn). Ngoại lệ copy-on-share:
-     * grant đã có bản sao tại workspace nhận thì chỉ còn scope {@code library.save} trên target của
-     * version nguồn — quyền đọc/dùng sống trên target của bản sao.
+     * Nhánh license: mỗi grant ACCEPTED cho workspace nhận trên đúng version cấp toàn bộ scope do
+     * actions của grant quyết định trên target của version nguồn, trong cửa sổ hiệu lực của grant
+     * và chỉ khi workspace nhận nằm trong phạm vi workspace cho phép (rỗng nghĩa là không giới
+     * hạn). Bản sao copy-on-share không đổi nhánh này: mọi đường đọc/dùng/fork đều hỏi quyết định
+     * trên target của version nguồn, nên quyền phải đủ ngay trên target nguồn; target của bản sao
+     * mang các scope phái sinh riêng qua {@link #derivedLicenseSources}. Thu hồi vẫn chặn cả hai
+     * target vì cả hai nhánh đều chỉ phát nguồn khi grant còn ACCEPTED.
      */
     private void licenseSources(
             List<String> descriptors,
@@ -680,7 +679,6 @@ public class ResourcePolicyProjector {
             UUID resourceId,
             UUID versionId,
             String targetKey) {
-        String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
         List<ShareGrant> applicable =
                 grants
                         .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
@@ -688,24 +686,8 @@ public class ResourcePolicyProjector {
                         .stream()
                         .filter(grant -> allowedHere(grant, workspaceId))
                         .toList();
-        Set<UUID> copiedGrantIds =
-                copies.grantsWithCopyAt(
-                        resourceId,
-                        versionId,
-                        applicable.stream().map(ShareGrant::getId).toList(),
-                        workspaceId);
         for (ShareGrant grant : applicable) {
-            List<String> scopes = mapActions(grant.getActions());
-            boolean copied = copiedGrantIds.contains(grant.getId());
-            if (copied) {
-                if (scopes.contains(saveScope)) {
-                    descriptors.add(
-                            licenseDescriptor(
-                                    workspaceId, contextKind, grant, targetKey, saveScope));
-                }
-                continue;
-            }
-            for (String scope : scopes) {
+            for (String scope : mapActions(grant.getActions())) {
                 descriptors.add(
                         licenseDescriptor(workspaceId, contextKind, grant, targetKey, scope));
             }

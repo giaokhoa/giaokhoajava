@@ -16,7 +16,6 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.resources.ResourceCopies;
 import com.giaokhoa.resources.repository.ResourceScopePreconditions;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
@@ -511,11 +510,6 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             runtime.resourcesAccounts,
                             runtime.resourcesActivities,
                             runtime.resourcesPartitions,
-                            new ResourceCopies(
-                                    runtime.resources,
-                                    runtime.resourceVersions,
-                                    runtime.resourceDependencies,
-                                    runtimeWorkspaceTx),
                             new ResourceScopePreconditions(
                                     runtime.periods,
                                     runtime.memberships,
