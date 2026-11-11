@@ -351,7 +351,7 @@ public class ResourceShareService {
         Set<VersionKey> frontier = Set.of(new VersionKey(resourceId, versionId));
         visited.addAll(frontier);
         while (!frontier.isEmpty()) {
-            List<UUID> frontierVersionIds = frontier.stream().map(VersionKey::versionId).toList();
+            List<UUID> frontierVersionIds = frontier.stream().map(key -> key.versionId()).toList();
             Set<VersionKey> next = new HashSet<>();
             for (ResourceDependency edge :
                     dependencies.findByDerivedVersionIdIn(frontierVersionIds)) {
@@ -505,7 +505,7 @@ public class ResourceShareService {
                         + (grant.getAllowedWorkspaceIds().isEmpty()
                                 ? "-"
                                 : grant.getAllowedWorkspaceIds().stream()
-                                        .map(UUID::toString)
+                                        .map(id -> id.toString())
                                         .reduce((a, b) -> a + "," + b)
                                         .orElse("-"));
         return copies.copyVersion(

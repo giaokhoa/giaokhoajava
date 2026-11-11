@@ -158,7 +158,7 @@ public class SourceRevocationCoordinator {
         return partitions
                 .findByKindAndOwnerKey(
                         AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
-                .map(AuthorizationPartition::getId)
+                .map(partition -> partition.getId())
                 .orElseThrow(() ->
                         new IllegalStateException(
                                 "Workspace authorization partition is missing: " + workspaceId));

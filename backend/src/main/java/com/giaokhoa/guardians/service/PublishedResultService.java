@@ -338,38 +338,40 @@ public class PublishedResultService {
                 courseSubjects
                         .findAllById(
                                 rows.stream()
-                                        .map(SampleResult::getCourseSubjectId)
+                                        .map(result -> result.getCourseSubjectId())
                                         .distinct()
                                         .toList())
                         .stream()
-                        .collect(Collectors.toMap(CourseSubject::getId, Function.identity()));
+                        .collect(Collectors.toMap(subject -> subject.getId(), Function.identity()));
         Map<UUID, Course> courseById =
                 courses
                         .findAllById(
                                 courseSubjectById.values().stream()
-                                        .map(CourseSubject::getCourseId)
+                                        .map(subject -> subject.getCourseId())
                                         .distinct()
                                         .toList())
                         .stream()
-                        .collect(Collectors.toMap(Course::getId, Function.identity()));
+                        .collect(Collectors.toMap(course -> course.getId(), Function.identity()));
         Map<UUID, SchoolClass> classById =
                 schoolClasses
                         .findAllById(
                                 courseById.values().stream()
-                                        .map(Course::getClassId)
+                                        .map(course -> course.getClassId())
                                         .distinct()
                                         .toList())
                         .stream()
-                        .collect(Collectors.toMap(SchoolClass::getId, Function.identity()));
+                        .collect(
+                                Collectors.toMap(
+                                        schoolClass -> schoolClass.getId(), Function.identity()));
         Map<UUID, Subject> subjectById =
                 subjects
                         .findAllById(
                                 courseSubjectById.values().stream()
-                                        .map(CourseSubject::getSubjectId)
+                                        .map(subject -> subject.getSubjectId())
                                         .distinct()
                                         .toList())
                         .stream()
-                        .collect(Collectors.toMap(Subject::getId, Function.identity()));
+                        .collect(Collectors.toMap(subject -> subject.getId(), Function.identity()));
         List<PublishedResultView> views = new ArrayList<>(rows.size());
         for (SampleResult row : rows) {
             CourseSubject courseSubject = courseSubjectById.get(row.getCourseSubjectId());

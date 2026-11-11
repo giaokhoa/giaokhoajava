@@ -67,8 +67,8 @@ public class ClassController {
     @GetMapping
     public ResponseEntity<TeachingRouteSupport.Page<ClassService.ClassView>> listClasses(
             @PathVariable UUID workspaceId,
-            @RequestParam(value = "cursor", required = false) @Nullable String cursor,
-            @RequestParam(value = "limit", required = false) @Nullable Integer limit,
+            @RequestParam(required = false) @Nullable String cursor,
+            @RequestParam(required = false) @Nullable Integer limit,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         return support.withEligibleActor(
@@ -219,8 +219,8 @@ public class ClassController {
     public ResponseEntity<TeachingRouteSupport.Page<ClassService.RosterEntryView>> listStudents(
             @PathVariable UUID workspaceId,
             @PathVariable UUID classId,
-            @RequestParam(value = "cursor", required = false) @Nullable String cursor,
-            @RequestParam(value = "limit", required = false) @Nullable Integer limit,
+            @RequestParam(required = false) @Nullable String cursor,
+            @RequestParam(required = false) @Nullable Integer limit,
             Authentication authentication,
             HttpServletRequest servletRequest) {
         return support.withEligibleActor(

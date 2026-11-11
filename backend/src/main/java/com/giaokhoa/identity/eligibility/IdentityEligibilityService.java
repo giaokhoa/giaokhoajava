@@ -174,7 +174,7 @@ public class IdentityEligibilityService {
         Long recordedRevision =
                 partitions
                         .findById(accountPartition)
-                        .map(AuthorizationPartition::getDesiredRevision)
+                        .map(partition -> partition.getDesiredRevision())
                         .orElse(null);
         if (recordedRevision == null) {
             throw AuthorizationFence.notReady();
@@ -233,7 +233,7 @@ public class IdentityEligibilityService {
         return partitions
                 .findByKindAndOwnerKey(
                         AuthorizationPartition.Kind.ACCOUNT, "account:" + actorUserId)
-                .map(AuthorizationPartition::getId)
+                .map(partition -> partition.getId())
                 .orElseThrow(AuthorizationFence::notReady);
     }
 

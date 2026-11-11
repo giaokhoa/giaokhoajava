@@ -22,7 +22,7 @@ import org.springframework.context.annotation.Configuration;
 public class JpaConfiguration {
 
     @Bean
-    public HibernatePropertiesCustomizer multiTenancyCustomizer(
+    HibernatePropertiesCustomizer multiTenancyCustomizer(
             WorkspaceTenantResolver tenantResolver, TenantConnectionProvider connectionProvider) {
         return properties -> {
             properties.put(AvailableSettings.MULTI_TENANT_CONNECTION_PROVIDER, connectionProvider);

@@ -67,7 +67,7 @@ public class WorkspaceDirectoryService {
                 memberships
                         .findByUserIdAndState(actorUserId, CenterMembership.State.ACTIVE)
                         .stream()
-                        .map(CenterMembership::getWorkspaceId)
+                        .map(membership -> membership.getWorkspaceId())
                         .distinct()
                         .toList();
         workspaces
@@ -86,7 +86,7 @@ public class WorkspaceDirectoryService {
         Objects.requireNonNull(actorUserId, "actorUserId");
         return workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, actorUserId).stream()
                 .findFirst()
-                .map(Workspace::getId);
+                .map(workspace -> workspace.getId());
     }
 
     /**

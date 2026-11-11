@@ -148,7 +148,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
         assertTrue(
                 results.stream()
                         .filter(result -> result.workspaceId().equals(workspaceId))
-                        .allMatch(TenantMigrationRunner.Result::success));
+                        .allMatch(result -> result.success()));
     }
 
     @Test

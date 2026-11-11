@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * đường đọc contextual.
  */
 @RestController
+@RequestMapping("/api/workspaces/{workspaceId}/samples/resources/{resourceId}/versions/{versionId}")
 public class SampleResourceController {
 
     private final ResourceLibraryService library;
@@ -29,7 +31,7 @@ public class SampleResourceController {
         this.library = library;
     }
 
-    @GetMapping("/api/workspaces/{workspaceId}/samples/resources/{resourceId}/versions/{versionId}")
+    @GetMapping
     public ResponseEntity<ResourceBodyView> readResourceBody(
             @PathVariable UUID workspaceId,
             @PathVariable UUID resourceId,
@@ -43,9 +45,7 @@ public class SampleResourceController {
                 .body(new ResourceBodyView(resourceId, versionId, body));
     }
 
-    @GetMapping(
-            "/api/workspaces/{workspaceId}/samples/resources/{resourceId}"
-                    + "/versions/{versionId}/answer")
+    @GetMapping("/answer")
     public ResponseEntity<ResourceAnswerView> readResourceAnswer(
             @PathVariable UUID workspaceId,
             @PathVariable UUID resourceId,

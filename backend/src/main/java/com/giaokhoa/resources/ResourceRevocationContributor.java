@@ -4,7 +4,6 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.repository.LibraryItemRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
@@ -76,13 +75,13 @@ public class ResourceRevocationContributor {
         affected.addAll(libraryItems.findWorkspaceIdsByShareGrantId(grantId));
         List<UUID> derivedResourceIds =
                 dependencies.findByShareGrantId(grantId).stream()
-                        .map(ResourceDependency::getDerivedResourceId)
+                        .map(dependency -> dependency.getDerivedResourceId())
                         .distinct()
                         .toList();
         if (!derivedResourceIds.isEmpty()) {
             affected.addAll(resources.findOwnerWorkspaceIdsByIdIn(derivedResourceIds));
         }
-        return affected.stream().sorted(Comparator.comparing(UUID::toString)).toList();
+        return affected.stream().sorted(Comparator.comparing(id -> id.toString())).toList();
     }
 
     /**
@@ -124,7 +123,7 @@ public class ResourceRevocationContributor {
         return partitions
                 .findByKindAndOwnerKey(
                         AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
-                .map(AuthorizationPartition::getId)
+                .map(partition -> partition.getId())
                 .orElseThrow(() ->
                         new IllegalStateException(
                                 "Workspace authorization partition is missing: " + workspaceId));

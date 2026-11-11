@@ -6,7 +6,6 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
-import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.subscriptions.model.SubscriptionPeriod;
 import com.giaokhoa.tenancy.model.CenterMembership;
@@ -170,7 +169,7 @@ public class ActivityPolicyProjector {
                         }
                         userAccounts
                                 .findById(studentUserId)
-                                .map(UserAccount::getKeycloakSub)
+                                .map(user -> user.getKeycloakSub())
                                 .ifPresent(subject ->
                                         descriptors.add(
                                                 actorDescriptor(
@@ -228,7 +227,7 @@ public class ActivityPolicyProjector {
                         .findByKindAndOwnerKey(
                                 AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
                         .stream()
-                        .map(AuthorizationPartition::getId)
+                        .map(partition -> partition.getId())
                         .toList();
         if (partitionIds.isEmpty()) {
             throw new IllegalStateException(
@@ -317,7 +316,7 @@ public class ActivityPolicyProjector {
             return workspaces
                     .findById(workspaceId)
                     .filter(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
-                    .map(Workspace::getOwnerUserId)
+                    .map(workspace -> workspace.getOwnerUserId())
                     .flatMap(userAccounts::findById)
                     .map(owner -> List.of(new ManagerSource(owner.getId(), owner.getKeycloakSub())))
                     .orElse(List.of());

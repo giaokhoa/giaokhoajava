@@ -259,7 +259,7 @@ class ResourcesJpaRepositoryIT extends IntegrationEnvironment {
                     assertThat(edge.getUsageConstraints()).startsWith("origin=SHARE");
                 });
         assertThat(edges)
-                .extracting(ResourceDependency::getSourceVersionId)
+                .extracting(dependency -> dependency.getSourceVersionId())
                 .containsExactlyInAnyOrder(
                         sourceVersionId, componentOneVersionId, componentTwoVersionId);
         assertThat(copies.findCopy(sourceId, sourceVersionId, grantId, recipientWorkspaceId))

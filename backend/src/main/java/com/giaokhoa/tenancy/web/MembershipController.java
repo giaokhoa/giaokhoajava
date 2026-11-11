@@ -142,8 +142,8 @@ public class MembershipController {
     @GetMapping("/workspaces/{workspaceId}/memberships")
     public ResponseEntity<MembershipPage> listMemberships(
             @PathVariable UUID workspaceId,
-            @RequestParam(value = "cursor", required = false) @Nullable String cursor,
-            @RequestParam(value = "limit", required = false) @Nullable Integer limit,
+            @RequestParam(required = false) @Nullable String cursor,
+            @RequestParam(required = false) @Nullable Integer limit,
             Authentication authentication,
             HttpServletRequest request) {
         return withEligibleActor(

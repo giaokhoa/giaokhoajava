@@ -57,8 +57,8 @@ public class EnrollmentController {
             listEnrollments(
                     @PathVariable UUID workspaceId,
                     @PathVariable UUID courseSubjectId,
-                    @RequestParam(value = "cursor", required = false) @Nullable String cursor,
-                    @RequestParam(value = "limit", required = false) @Nullable Integer limit,
+                    @RequestParam(required = false) @Nullable String cursor,
+                    @RequestParam(required = false) @Nullable Integer limit,
                     Authentication authentication,
                     HttpServletRequest servletRequest) {
         return support.withEligibleActor(

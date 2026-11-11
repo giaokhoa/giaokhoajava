@@ -238,7 +238,7 @@ class CenterServiceIT extends IntegrationEnvironment {
             List<UUID> ownerCenterIds =
                     directory.listWorkspaces(owner.userId()).stream()
                             .filter(workspace -> workspace.kind() == Workspace.Kind.CENTER)
-                            .map(WorkspaceDirectoryService.ListedWorkspace::id)
+                            .map(workspace -> workspace.id())
                             .toList();
             assertEquals(1, ownerCenterIds.size(), "Replay không tạo tenant thứ hai");
             assertEquals(

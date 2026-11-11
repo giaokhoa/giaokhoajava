@@ -15,7 +15,6 @@ import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
 import com.giaokhoa.resources.repository.ResourceVersionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.model.Subject;
 import com.giaokhoa.tenancy.service.WorkspaceDirectoryService;
 import com.giaokhoa.verification.repository.VerificationAuthorizationOperationRepository;
 import com.giaokhoa.verification.repository.VerificationSubjectRepository;
@@ -129,6 +128,7 @@ public class VerificationFixtureController {
                                                         insertFixtureSet(
                                                                 actorUserId, personalWorkspace)),
                                         "fixture"));
+        Objects.requireNonNull(view, "fixture");
         // Phân công vừa ghi là một nguồn quyền: bundle của version phải chiếu xong thì dữ kiện
         // mới dùng được qua các action mẫu, theo cùng kỷ luật chờ chiếu của các protected action.
         String targetKey =
@@ -151,7 +151,7 @@ public class VerificationFixtureController {
     private FixtureView insertFixtureSet(UUID actorUserId, UUID personalWorkspace) {
         UUID subjectId =
                 subjects.findFirstByOrderByCodeAsc()
-                        .map(Subject::getId)
+                        .map(subject -> subject.getId())
                         .orElseThrow(
                                 () -> new IllegalStateException("No subject exists for fixtures"));
         UUID resourceId = UUID.randomUUID();
