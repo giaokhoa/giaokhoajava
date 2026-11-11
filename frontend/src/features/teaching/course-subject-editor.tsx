@@ -273,6 +273,7 @@ export function CourseSubjectEditor({
   const [addDrafts, setAddDrafts] = useState<Record<string, string[]>>({});
   const [teacherDrafts, setTeacherDrafts] = useState<Record<string, string[]>>({});
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [loadingMoreCourses, setLoadingMoreCourses] = useState(false);
   const [openSubjectId, setOpenSubjectId] = useState<string | null>(null);
 
   const wid = encodeURIComponent(workspaceId);
@@ -314,8 +315,11 @@ export function CourseSubjectEditor({
     // refreshTick tăng sau mỗi thao tác hoàn tất ở trang cha để nạp lại danh sách khóa.
   }, [coursesPath, refreshTick]);
 
+  // Cờ đang bay của tải thêm: hai lượt cùng cursor chạy song song sẽ append trùng
+  // một trang, nên lượt gọi sau bị bỏ qua tới khi lượt trước xong (kể cả khi lỗi).
   async function loadMoreCourses() {
-    if (!nextCursor) return;
+    if (!nextCursor || loadingMoreCourses) return;
+    setLoadingMoreCourses(true);
     try {
       const result = await requestWhenReady<unknown>(
         `${coursesPath}?cursor=${encodeURIComponent(nextCursor)}`,
@@ -325,6 +329,8 @@ export function CourseSubjectEditor({
       setNextCursor(parsePage(result.data).nextCursor);
     } catch (error) {
       setLoadError(teachingErrorMessage(error, "Không tải thêm được danh sách khóa."));
+    } finally {
+      setLoadingMoreCourses(false);
     }
   }
 
@@ -643,7 +649,7 @@ export function CourseSubjectEditor({
         <button
           className="secondary-button"
           type="button"
-          disabled={busy}
+          disabled={busy || loadingMoreCourses}
           onClick={() => void loadMoreCourses()}
         >
           Tải thêm khóa
