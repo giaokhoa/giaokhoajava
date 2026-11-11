@@ -1,0 +1,72 @@
+# Nghiệm thu US8 — Hết hạn gói và bảo lưu dữ liệu (T093, issue #95)
+
+- **Main dùng để nghiệm thu:** `da8ba0719fa99b8f878c5a440c1a8845c8fe7a83` (PR #282 lõi US8 + PR #284 guard và frontend + PR #286 sửa OIDC đã land vào main)
+- **Stack:** TEST native làn 1 (PostgreSQL 18.6 `127.0.0.1:15432`, Keycloak 26.8.1 `127.0.0.1:18081`, realm `giaokhoa-it`), JDK 25, đồng hồ thật, không mock thời gian trong PDP.
+- **Phạm vi:** US8.1–US8.7 theo `spec.md` User Story 8 + checkpoint của issue #95; FR-042–FR-047; SC-007.
+- **Trạng thái:** KẾT LUẬN CUỐI (2026-11-11 ~19:15) — **ĐẠT, có điều kiện: merge PR #288 rồi đóng #95.** Xem "Kết luận" cuối tệp.
+- **Lưu ý phạm vi:** các scenario US8.1–US8.7 nằm ở PR #288 (chưa merge); nghiệm thu tính cả PR #288 vào bằng chứng theo lệnh điều phối. Đội test-first báo xanh toàn bộ trên làn 1 (238/238 unit test + các ca hết hạn/hoàn tất); gate kiểm chứng lại bằng đọc code + chạy độc lập (xem "Chạy kiểm chứng") — lượt chạy lại của gate bị chặn bởi 2 sự cố môi trường (chi tiết dưới), không phải lỗi sản phẩm.
+
+## Kết quả theo scenario (spec.md User Story 8)
+
+| # | Kịch bản | Kết quả | Bằng chứng |
+|---|----------|---------|------------|
+| US8.1 | Gói cá nhân hết hạn: đọc còn quyền được phép; tạo/sửa học liệu, tạo lớp, giao bài mới bị từ chối | ĐẠT | `SubscriptionExpiryIT.expiredKeepsReadsLosesCreates` (PR #288: 403 + `SUBSCRIPTION_INACTIVE` cho tạo học liệu); `PersonalEntitlementIT` 5/5 đạt trên main (Lượt A) |
+| US8.2 | Bài cá nhân đã giao trước hết hạn: nộp theo lịch cũ, chấm/nhận xét/công bố được phép; gia hạn hạn nộp, mở lượt mới, giao lại bị từ chối | ĐẠT | `CompletionAfterExpiryIT.completionSurvivesExpiry` (gói cá nhân) (PR #288); `extend/open/reassign` bị chặn 403 (chỉ ghim status — xem "Điểm lệch đã chốt") |
+| US8.3 | Gói trung tâm hết hạn: đọc theo quyền và phụ huynh xem kết quả đã công bố được phép; tạo lớp/khóa, thêm môn/ghi danh/phân công, tạo/sửa học liệu, giao bài mới bị từ chối | ĐẠT với lưu ý | `SubscriptionExpiryIT.expiredKeepsReadsLosesIncreases` (PR #288); `TeachingServiceIT.expiredSubscriptionBlocksExpansionButNotRevoke` 15/15 đạt (Lượt A); lưu ý: `CourseScope.UPDATE` không áp cổng kiểm tra gói (xem dưới) |
+| US8.4 | Bài tại trung tâm đã giao trước hết hạn: hoàn tất theo lịch cũ được phép (nộp/chấm/nhận xét/công bố) | ĐẠT | `CompletionAfterExpiryIT.completionSurvivesExpiry` (gói trung tâm) (PR #288); `due_at` cố ý không ép ở đường nộp theo Sổ B54(ii) |
+| US8.5 | Gói trung tâm hết hạn: chủ sở hữu/quản lý vẫn gỡ được thành viên, phân công, ghi danh, liên kết; thu hồi có hiệu lực từ yêu cầu tiếp theo | ĐẠT | `SubscriptionExpiryIT.revokeAfterExpiryStillWorks` (PR #288); `TeachingServiceIT.expiredSubscriptionBlocksExpansionButNotRevoke` đạt; `ResultSourceMutationIT` 5/5 đạt (Lượt A) — thu hồi lớp đã có hoạt động được giao trả 202 và lan truyền xuống ghi danh/phân công (`CLASS_CASCADE`) |
+| US8.6 | Gói cá nhân hết hạn nhưng trung tâm còn hiệu lực (và ngược lại): quyền ở nơi kia không đổi | ĐẠT | `SubscriptionExpiryIT.personalAndCenterIndependent` (PR #288); `PersonalEntitlementIT.centerMembershipOpensNoAuthoring` + `personalPlanOpensNoCenterClass` đạt (Lượt A) |
+| US8.7 | Gia hạn không phục hồi quan hệ đã gỡ; gói của grantor hết hạn không tự hủy share; nguồn đã thu hồi vẫn chặn hoàn tất bài | ĐẠT | `SubscriptionExpiryIT.renewalDoesNotResurrectRevoked` (PR #288); `CompletionAfterExpiryIT.enrollmentRevokeBlocksCompletion` (PR #288); `NativeGateAcceptanceIT.longTermGrantSurvivesGrantorExit` (cơ chế native, đã có trên main) |
+
+## Điểm lệch đã chốt
+
+### 1. extend / open-attempt / reassign sau hết hạn: 403 `PERMISSION_DENIED` ở tầng PDP (không phải `SUBSCRIPTION_INACTIVE`)
+
+- **Hành vi thực tế (đọc code trên main `da8ba071`):** `SampleActionService.extendDeadline` (`:853`), `openAttempt` (`:918`), `reassignActivity` (`:994`) đều gọi `executor.execute(...)` (PDP) **trước** khi lambda chứa `requireActivePeriod` (`:1074`, ném 403 `SUBSCRIPTION_INACTIVE`) chạy. Sau hết hạn, descriptor `ACTIVITY_ACTOR_PERIOD` của `ActivityPolicyProjector` hết cửa sổ hiệu lực → PDP từ chối → `ProtectedActionExecutor.java:133-134` ném 403 `PERMISSION_DENIED`; dòng kiểm tra ở tầng service không bao giờ tới được. Đây là **điểm lệch đã xác nhận**: vẫn là 403 (đúng checkpoint #95 và hợp đồng §5 về mã trạng thái), nhưng mã lỗi khác với `SUBSCRIPTION_INACTIVE` mà các đường mở rộng khác dùng.
+- **Phán quyết: ĐẠT, ghi nhận defect không chặn.** Tiêu chí #95/US8.2 chỉ đòi ba action này "bị từ chối" — chúng bị từ chối theo hướng fail-closed với 403. Mã lỗi chưa nhất quán được ghi thành defect riêng (khuyến nghị: khi PDP từ chối scope quản lý hoạt động do hết kỳ gói, ánh xạ về `SUBSCRIPTION_INACTIVE` để frontend hiển thị đúng lý do; hiện `blockedActionReason` trong `subscription-state.tsx` chỉ dịch `SUBSCRIPTION_INACTIVE`, còn `PERMISSION_DENIED` rơi về thông điệp chung).
+- **Bằng chứng test:** `CompletionAfterExpiryIT` (PR #288) khẳng định `EXTEND_DEADLINE`/`REASSIGN_ACTIVITY` sau hết hạn trả 403 (chỉ ghim status, không ghim mã); `ActivityPolicyProjectorTest` (unit test, trên main) khẳng định descriptor kỳ gói được phát cho cả ba scope.
+
+### 2. CREATE_RESOURCE sau hết hạn ở gói cá nhân: 403 `SUBSCRIPTION_INACTIVE` — đúng mã, giữ nguyên
+
+- `SampleActionService.createResource` kiểm tra kỳ gói bên trong lambda sau cổng PDP (`WorkspaceScope.ENTER` không chặn theo gói) → ném 403 `SUBSCRIPTION_INACTIVE`. Test viết trước `SubscriptionExpiryIT.expiredKeepsReadsLosesCreates` ghim đúng mã này. **Không thay đổi.**
+
+### 3. `CourseScope.UPDATE` không chặn theo gói (điểm ngỏ Sổ B105(iv))
+
+- `TeachingPolicyProjector.courseSources` và `PersonalTeachingPolicyProjector.courseSources` phát `CourseScope.UPDATE` với cờ chặn theo gói `false`, trong khi `ClassScope.UPDATE` có cờ `true` ở cả hai projector. `COURSE_CREATE` đã có cờ `true` nên "tạo khóa" vẫn bị chặn đúng US8.3. Đổi tên khóa sau hết hạn hiện vẫn qua PDP — tiêu chí US8.3 chỉ liệt kê "tạo lớp/khóa" (không liệt kê "sửa khóa") nên không tính là trượt; ghi lại để điều phối quyết: nên chặn `CourseScope.UPDATE` theo gói như `ClassScope.UPDATE` cho nhất quán (đổi một cờ + test đối chiếu).
+
+## Guard lịch sử (T091)
+
+- `HistoricalDataGuard`: định nghĩa "có lịch sử" dùng chung (chỉ chuỗi học tập: tồn tại `sample_activity` qua `TeachingSampleActivityRepository`); `requireClassDeletable`/`requireCourseDeletable`/`requireCourseSubjectDeletable` ném 409 `TEACHING_OBJECT_HAS_HISTORY`. **Không có điểm gọi trong code production** — guard đã được gỡ khỏi cả ba đường thu hồi (`ClassService.revokeClass`, `CourseService.revokeCourse`/`revokeCourseSubject`) vì thu hồi là chuyển trạng thái giữ lịch sử, không phải hard-delete (Sổ B106(i)); kiểm lại: không còn tham chiếu `HistoricalDataGuard` trong `backend/src/main` ngoài chính lớp đó. Unit test `HistoricalDataGuardTest` 4 test (đã đọc code test, khẳng định đúng mã 409; CI 8/8 tại `da8ba071` bao gồm toàn bộ unit test).
+- **Lỗi nhỏ (tài liệu):** javadoc của `HistoricalDataGuard` vẫn viết "thao tác xóa (hiện là các đường thu hồi ...) bị từ chối" — sai với hành vi hiện tại. Cần sửa javadoc cho khớp.
+- `ResourceHistoryGuard`: định nghĩa "có lịch sử" dùng chung của phân hệ tài nguyên (version: đã lưu kho/giao bài/phái sinh/dính đính chính; resource: có version có lịch sử hoặc đã từng chia sẻ); `requireVersionDeletable`/`requireResourceDeletable` ném 409 `RESOURCE_VERSION_HAS_HISTORY`/`RESOURCE_HAS_HISTORY`. **Chưa có điểm gọi trong code production** vì phân hệ không có đường xóa tài nguyên/phiên bản (Sổ B106(ii)). Unit test `ResourceHistoryGuardTest` 6 test (đã đọc code test, khẳng định đúng mã 409; CI 8/8 tại `da8ba071` bao gồm toàn bộ unit test).
+- **Kết luận guard:** đúng thiết kế đã chốt ở Sổ B106 — guard là định nghĩa dùng chung + điểm kiểm tra bắt buộc cho đường xóa tương lai, không phải đường đang chạy.
+
+## Frontend (T092)
+
+- `frontend/src/features/subscriptions/subscription-state.tsx`: `subscriptionPhase` (EFFECTIVE/LAPSED từ `subscription.effective`), `isExpansionBlocked`, `readOnlyNotice` theo loại workspace, `sampleActionExpiryBehavior` (cho phép khi hết hạn: `PRACTICE_SYSTEM_VERSION`, `RECEIVE_UPDATE`, `REVOKE_SHARE`, `SUBMIT_ACTIVITY`, `GRADE_RESULT`, `PUBLISH_RESULT`; còn lại chặn), `blockedActionReason` chỉ dịch `SUBSCRIPTION_INACTIVE`. Unit test `tests/unit/subscription-state.test.ts`: **10/10 đạt** trên main `da8ba071` (vitest, chạy lúc 17:24).
+- `class-management.tsx` re-export `subscriptionPhase`/`isExpansionBlocked` từ `subscription-state.tsx`; `sample-actions-panel.tsx` dùng `blockedActionReason` + `sampleActionExpiryBehavior`. Không còn suy `subscriptionExpired` nội tuyến ở các tệp T092 đã sửa.
+- Hai điểm còn suy nội tuyến ở tệp ngoài phạm vi T092 (`center-classes.tsx:84`, `personal-classes-content.tsx:453`) — đã ghi ở Sổ B106(iv), để đợt chạm các tệp đó.
+
+## Chạy kiểm chứng trên main `da8ba071` (làn 1)
+
+- **Unit test frontend:** `npx vitest run tests/unit/subscription-state.test.ts` → 10/10 đạt.
+- **Lượt A (Run A) — IT trên main (làn 1, log ở `~/workspace/logs-gate-us8/runA-main-it.log`):** 61 test, 54 đạt, 6 trượt, 1 lỗi, 1 bỏ qua.
+  - Đạt: `SubscriptionServiceIT` 9/9, `PersonalEntitlementIT` 5/5, `EnrollmentAssignmentIT` 6/6, `TeachingAccessIT` 3/3, `TeachingServiceIT` 15/15, `ResultSourceMutationIT` 5/5.
+  - `NativeGateAcceptanceIT#expiredEnrollmentCompletesOldAttemptOnly`: **bị skipped** — thiếu `NATIVE_GATE_KEYCLOAK_BASE_URL`; thuộc suite `infra/keycloak/verify-native.sh`, không chạy trong profile `-Pintegration`.
+  - `NativeTimePolicyIT`: **error** — cùng nguyên nhân (NPE tại `NativeGateClient.java:27`, yêu cầu chạy `verify-native.sh`).
+  - `TeachingAuthorizationIT`: 16 test, **6 trượt** — tất cả cùng chữ ký `Operation did not succeed in time` (timeout 90 giây của `awaitOperationSucceeded`) tại fixture `createClass`/`assignTeachers`/`addRoster`, không phải khẳng định hành vi. Cùng commit này CI 8/8 xanh (PR #284 merge với CI 8/8) nên đây là timeout do máy dùng chung quá tải lúc chạy (một JVM test khác chạy song song nửa đầu lượt; `ResultSourceMutationIT` một mình đã 855 giây). Chạy xác nhận 2/6 ca trên máy yên tĩnh đã bị gián đoạn bởi VM khởi động lại giữa chừng — **chưa có kết luận cuối**, xem "Việc còn lại".
+- **Lượt B (Run B) — IT của PR #288 trên nhánh `test/us8-expiry` (`fe449301`, worktree `gate-us8-pr288`, làn 1):** lượt 1: **10/10 trượt** — tất cả cùng chữ ký `POST /api/platform/subscriptions` trả 503 `IDENTITY_UNAVAILABLE` tại `confirmPeriod` (log `~/workspace/logs-gate-us8/runB-pr288-it.log`). Nguyên nhân gốc đã xác định: sau khi VM khởi động lại, stack làn 1 dựng lại từ `rebuild-stack.sh` — bước 5 của script cấp role cho service account `giaokhoa-it-fixtures` nhưng **thiếu `view-users` và `query-users`** so với CI (`ci.yml:112-119`) và `verify-native.sh:133`; kiểm chứng trực tiếp: token của client lấy được nhưng `GET /admin/realms/giaokhoa-it/users` trả 403. Đây là **lỗi của script dựng stack local, không phải lỗi sản phẩm hay lỗi test**. Gate đã sửa tại chỗ: cấp đủ 11 role qua `kcadm.sh` (đã kiểm chứng lại danh sách role + Admin API đọc được người dùng). Lượt 2 (sau khi sửa role): **bị OOM-kill giữa chừng** (máy dùng chung 6GB, lúc đó có 4 Keycloak + 3–4 lượt Maven của các đội khác chạy song song) — không có lớp nào hoàn tất, không kết luận được từ lượt này; **không chạy lại lần 3** vì nguy cơ hết bộ nhớ giết luôn lượt của đội khác. Bằng chứng cho 10 ca này vì vậy dựa vào: (a) báo cáo xanh của đội test-first trên làn 1 trước khi khởi động lại, (b) gate đã đọc toàn bộ 10 ca + khẳng định (ghim đúng trạng thái/mã), (c) đường code sản phẩm đã đọc xác nhận hành vi.
+- **Unit test backend:** không chạy lại độc lập — CI tại đúng commit `da8ba071` đã 8/8 xanh (kiểm chứng trực tiếp qua API: backend, backend-build, it-pure, e2e-backend, frontend, integration, chromium-core, chromium-teaching-guardians đều `completed/success`), bao gồm toàn bộ unit test (`ActivityPolicyProjectorTest`, `ResourcePolicyProjectorTest`, `HistoricalDataGuardTest` 4 test, `ResourceHistoryGuardTest` 6 test — đã đọc code test, khẳng định đúng mã 409). Chạy xác nhận 2 ca `TeachingAuthorizationIT` từng trượt: bị gián đoạn bởi VM khởi động lại giữa chừng, chưa hoàn tất — xem dưới.
+- **Việc chưa hoàn tất và lý do:** (1) Chạy lại 2 ca `TeachingAuthorizationIT` trên máy yên tĩnh — chưa xong do VM khởi động lại + máy quá tải sau đó (xem phân tích 6 ca trượt ở trên). (2) Chạy lại Lượt B tới xanh — chưa xong do hết bộ nhớ. (3) `bash infra/keycloak/verify-native.sh` cho `NativeGateAcceptanceIT`/`NativeTimePolicyIT` — chưa chạy (cần stack native riêng, máy đang quá tải). Cả ba đều là bằng chứng củng cố, không phải tiền đề chặn: các tiêu chí US8.1–US8.7 đã có bằng chứng từ đội test-first + đọc code + các lượt chạy trên main.
+
+## Kết luận
+
+**ĐẠT — đề nghị merge PR #288 (đợi CI 8/8 trên main mới) rồi đóng #95.**
+
+- 7/7 scenario US8.1–US8.7 đạt theo bằng chứng nêu trên. Hai điểm lệch/defect không chặn (ghi rõ để đội sửa sau, không giữ gate):
+  1. `extend`/`open-attempt`/`reassign` sau hết hạn trả 403 `PERMISSION_DENIED` thay vì `SUBSCRIPTION_INACTIVE` (đã phán quyết ĐẠT — tiêu chí chỉ đòi chặn + 403; khuyến nghị ánh xạ mã cho nhất quán để frontend hiển thị đúng lý do).
+  2. `CourseScope.UPDATE` không chặn theo gói trong khi `ClassScope.UPDATE` có chặn (điểm ngỏ B105(iv); khuyến nghị chặn cho nhất quán).
+  3. Javadoc của `HistoricalDataGuard` còn viết sai (nói thu hồi bị chặn) — sửa tài liệu.
+- Việc tồn đọng cho điều phối (không thuộc #95): sửa `rebuild-stack.sh` bước 5 — bổ sung `view-users` và `query-users` vào danh sách role cấp cho service account của fixtures (hiện thiếu so với CI), nếu không mọi lần dựng lại stack local đều gãy các test dùng `confirmPeriod`/đọc identity. Gate đã sửa tạm tại chỗ trên stack làn 1 (đủ 11 role), không sửa script (ngoài phạm vi gate, không sửa code sản phẩm).
+
+*Không đóng issue #95 trong lượt này (đúng brief). Tệp bằng chứng này đã được đưa vào PR #288 theo quyết định của điều phối.*
