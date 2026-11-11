@@ -59,7 +59,7 @@ import tools.jackson.databind.JsonNode;
  * </ul>
  *
  * <p>Không bao phủ ở đây: cạnh tranh thu hồi đồng thời nhiều partition (đã có {@code
- * ConcurrentRevocationIT}, tái dùng thay vì viết lại); khôi phục sau lỗi ở biên worker (đã có
+ * ConcurrentRevocationE2EIT}, tái dùng thay vì viết lại); khôi phục sau lỗi ở biên worker (đã có
  * {@code ProjectionRecoveryIT}); lỗi directory/graph/commit ép buộc (không lái được qua route HTTP
  * công khai — xem Sổ B62); action chấm/công bố mẫu là US7 (xem Sổ B63); case share hoãn sang gate
  * US7 (xem Sổ B64).

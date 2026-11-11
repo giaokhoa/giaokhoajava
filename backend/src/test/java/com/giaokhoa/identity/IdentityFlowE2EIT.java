@@ -6,15 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.identity.service.IdentityService;
 import com.giaokhoa.identity.service.RecoveryService;
+import com.giaokhoa.support.HttpTestClient;
 import com.giaokhoa.support.KeycloakSessionFixture;
 import com.giaokhoa.support.RealmFoundation;
 import com.giaokhoa.tenancy.model.Workspace;
@@ -33,8 +31,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -46,10 +44,10 @@ import tools.jackson.databind.JsonNode;
  * của role trong PDP (quản lý ở A, học sinh ở B) thuộc gate native của hợp đồng quyết định quyền;
  * class này khóa phần danh tính và thư mục mà các task triển khai US1 sẽ dựng lên trên.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class IdentityFlowIT extends KeycloakSessionFixture {
+class IdentityFlowE2EIT extends KeycloakSessionFixture {
     private static final String ELIGIBLE_GROUP = "/gk/identity/eligible";
 
     @BeforeAll
@@ -175,14 +173,11 @@ class IdentityFlowIT extends KeycloakSessionFixture {
             webContext.getBean(IdentityService.class).bootstrap(subject);
             awaitIdentity(actor);
             try (var session = openSession(username, password, subject)) {
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response response =
+                        realHttp().get("/api/me/workspaces", session.cookie());
 
-                assertEquals(200, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals(200, response.status());
+                JsonNode body = JSON.readTree(response.body());
                 assertTrue(body.isArray(), "Danh sách workspace là một mảng");
                 assertEquals(1, body.size(), "Tài khoản trung tính chỉ có workspace cá nhân");
                 assertEquals(personalWorkspace.toString(), body.get(0).get("id").stringValue());
@@ -336,18 +331,19 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     }
 
     @Test
-    void anonymousCallerReceivesProblemUnauthorized() throws Exception {
-        MockHttpServletResponse response =
-                mockMvc()
-                        .perform(get("/api/me/workspaces").accept(MediaType.APPLICATION_JSON))
-                        .andReturn()
-                        .getResponse();
+    void anonymousCallerReceivesProblemUnauthorized() {
+        HttpTestClient.Response response =
+                realHttp()
+                        .get(
+                                "/api/me/workspaces",
+                                null,
+                                Map.of("Accept", MediaType.APPLICATION_JSON_VALUE));
 
-        assertEquals(401, response.getStatus());
+        assertEquals(401, response.status());
         assertTrue(
-                Objects.requireNonNull(response.getContentType(), "Content-Type")
+                Objects.requireNonNull(response.header("Content-Type"), "Content-Type")
                         .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
-        JsonNode body = JSON.readTree(response.getContentAsString());
+        JsonNode body = JSON.readTree(response.body());
         assertEquals("UNAUTHORIZED", body.get("code").stringValue());
         assertFalse(
                 body.get("traceId").stringValue().isBlank(),
@@ -355,30 +351,25 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     }
 
     @Test
-    void forgedSessionCookieDoesNotAuthenticate() throws Exception {
-        MockHttpServletResponse response =
-                mockMvc()
-                        .perform(
-                                get("/api/me/workspaces")
-                                        .accept(MediaType.APPLICATION_JSON)
-                                        .cookie(
-                                                new Cookie(
-                                                        "SESSION", "forged-" + UUID.randomUUID())))
-                        .andReturn()
-                        .getResponse();
+    void forgedSessionCookieDoesNotAuthenticate() {
+        HttpTestClient.Response response =
+                realHttp()
+                        .get(
+                                "/api/me/workspaces",
+                                new Cookie("SESSION", "forged-" + UUID.randomUUID()),
+                                Map.of("Accept", MediaType.APPLICATION_JSON_VALUE));
 
-        assertEquals(401, response.getStatus());
-        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals(401, response.status());
+        JsonNode body = JSON.readTree(response.body());
         assertEquals("UNAUTHORIZED", body.get("code").stringValue());
     }
 
     @Test
-    void sessionEndpointDescribesAnonymousState() throws Exception {
-        MockHttpServletResponse response =
-                mockMvc().perform(get("/api/session")).andReturn().getResponse();
+    void sessionEndpointDescribesAnonymousState() {
+        HttpTestClient.Response response = realHttp().get("/api/session", null);
 
-        assertEquals(200, response.getStatus());
-        JsonNode body = JSON.readTree(response.getContentAsString());
+        assertEquals(200, response.status());
+        JsonNode body = JSON.readTree(response.body());
         assertFalse(body.get("authenticated").booleanValue());
         assertFalse(
                 body.get("csrf").get("token").stringValue().isBlank(),
@@ -397,30 +388,19 @@ class IdentityFlowIT extends KeycloakSessionFixture {
             awaitIdentity(actor);
             UUID center = seedCenter(actor);
             try (var session = openSession(username, password, subject)) {
+                assertEquals(200, realHttp().get("/api/me/workspaces", session.cookie()).status());
                 assertEquals(
-                        200,
-                        mockMvc()
-                                .perform(get("/api/me/workspaces").cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse()
-                                .getStatus());
-                assertEquals(
-                        200,
-                        mockMvc()
-                                .perform(get("/api/me/practice-history").cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse()
-                                .getStatus());
+                        200, realHttp().get("/api/me/practice-history", session.cookie()).status());
                 updateProfile(subject, "changed-" + UUID.randomUUID() + "@example.test", false);
                 for (String path : List.of("/api/me/workspaces", "/api/me/practice-history")) {
                     // Qua fence trước: còn 503 AUTHORIZATION_NOT_READY nghĩa là eligibility
                     // đang đồng bộ lại sau khi hồ sơ đổi; trạng thái cuối phải là PDP từ chối
                     // dứt khoát 403, không lẫn hai khả năng như khẳng định cũ.
-                    MockHttpServletResponse denied =
-                            requestWhenReady(mockMvc(), get(path).cookie(session.cookie()));
-                    assertEquals(403, denied.getStatus(), denied.getContentAsString());
-                    assertFalse(denied.getContentAsString().contains(center.toString()));
-                    assertFalse(denied.getContentAsString().contains("Flow test center"));
+                    HttpTestClient.Response denied =
+                            realHttp().whenReady(() -> realHttp().get(path, session.cookie()));
+                    assertEquals(403, denied.status(), denied.body());
+                    assertFalse(denied.body().contains(center.toString()));
+                    assertFalse(denied.body().contains("Flow test center"));
                 }
                 awaitIdentity(actor);
                 assertFalse(groupPathsOf(subject).contains(ELIGIBLE_GROUP));
@@ -428,25 +408,14 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                 webContext.getBean(IdentityService.class).bootstrap(subject);
                 awaitIdentity(actor);
                 assertEquals(
-                        200,
-                        mockMvc()
-                                .perform(get("/api/me/practice-history").cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse()
-                                .getStatus());
+                        200, realHttp().get("/api/me/practice-history", session.cookie()).status());
                 webContext
                         .getBean(
                                 com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient
                                         .class)
                         .setRealmGroupMembership(subject, ELIGIBLE_GROUP, false);
                 for (String path : List.of("/api/me/workspaces", "/api/me/practice-history")) {
-                    assertEquals(
-                            403,
-                            mockMvc()
-                                    .perform(get(path).cookie(session.cookie()))
-                                    .andReturn()
-                                    .getResponse()
-                                    .getStatus());
+                    assertEquals(403, realHttp().get(path, session.cookie()).status());
                 }
             }
         } finally {
@@ -470,13 +439,7 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                             state,
                             "workspace:" + actor.personalWorkspaceId());
                     for (String path : List.of("/api/me/workspaces", "/api/me/practice-history")) {
-                        assertEquals(
-                                503,
-                                mockMvc()
-                                        .perform(get(path).cookie(session.cookie()))
-                                        .andReturn()
-                                        .getResponse()
-                                        .getStatus());
+                        assertEquals(503, realHttp().get(path, session.cookie()).status());
                     }
                 }
             }
@@ -567,83 +530,72 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                         JSON.writeValueAsString(
                                 Map.of("targetUserId", actor, "reason", "Quên mật khẩu"));
                 String key = "retry-" + UUID.randomUUID();
-                MockHttpServletResponse missing =
-                        mockMvc()
-                                .perform(
-                                        post("/api/me/recovery-requests")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(body))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(428, missing.getStatus());
-                MockHttpServletResponse first =
-                        mockMvc()
-                                .perform(
-                                        post("/api/me/recovery-requests")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(body))
-                                .andReturn()
-                                .getResponse();
-                MockHttpServletResponse second =
-                        mockMvc()
-                                .perform(
-                                        post("/api/me/recovery-requests")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(body))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(202, first.getStatus(), first.getContentAsString());
-                assertEquals(first.getContentAsString(), second.getContentAsString());
+                HttpTestClient.Response missing =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/me/recovery-requests",
+                                        session.cookie(),
+                                        true,
+                                        body,
+                                        Map.of());
+                assertEquals(428, missing.status());
+                HttpTestClient.Response first =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/me/recovery-requests",
+                                        session.cookie(),
+                                        true,
+                                        body,
+                                        Map.of("Idempotency-Key", key));
+                HttpTestClient.Response second =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/me/recovery-requests",
+                                        session.cookie(),
+                                        true,
+                                        body,
+                                        Map.of("Idempotency-Key", key));
+                assertEquals(202, first.status(), first.body());
+                assertEquals(first.body(), second.body());
                 assertEquals(
                         1,
                         jdbc.queryForObject(
                                 "SELECT count(*) FROM recovery_request WHERE requester_user_id = ?",
                                 Integer.class,
                                 actor));
-                MockHttpServletResponse conflict =
-                        mockMvc()
-                                .perform(
-                                        post("/api/me/recovery-requests")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        JSON.writeValueAsString(
-                                                                Map.of(
-                                                                        "targetUserId",
-                                                                        UUID.randomUUID(),
-                                                                        "reason",
-                                                                        "Quên mật khẩu"))))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(409, conflict.getStatus());
+                HttpTestClient.Response conflict =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/me/recovery-requests",
+                                        session.cookie(),
+                                        true,
+                                        JSON.writeValueAsString(
+                                                Map.of(
+                                                        "targetUserId",
+                                                        UUID.randomUUID(),
+                                                        "reason",
+                                                        "Quên mật khẩu")),
+                                        Map.of("Idempotency-Key", key));
+                assertEquals(409, conflict.status());
                 var changedReason =
-                        mockMvc()
-                                .perform(
-                                        post("/api/me/recovery-requests")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        JSON.writeValueAsString(
-                                                                Map.of(
-                                                                        "targetUserId",
-                                                                        actor,
-                                                                        "reason",
-                                                                        "Lý do khác"))))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(409, changedReason.getStatus());
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/me/recovery-requests",
+                                        session.cookie(),
+                                        true,
+                                        JSON.writeValueAsString(
+                                                Map.of(
+                                                        "targetUserId",
+                                                        actor,
+                                                        "reason",
+                                                        "Lý do khác")),
+                                        Map.of("Idempotency-Key", key));
+                assertEquals(409, changedReason.status());
 
                 var service = webContext.getBean(RecoveryService.class);
                 var start = new java.util.concurrent.CountDownLatch(1);
@@ -714,91 +666,75 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                 String path = "/api/platform/recovery-requests/" + submitted.id() + "/resolve";
                 String key = "approve-" + UUID.randomUUID();
                 var early =
-                        requestWhenReady(
-                                mockMvc(),
-                                post(path)
-                                        .cookie(session.cookie())
-                                        .with(csrf())
-                                        .header("Idempotency-Key", "early-" + UUID.randomUUID())
-                                        .header("If-Match", "\"0\"")
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .content(
-                                                "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã bàn giao\"}"));
-                assertEquals(409, early.getStatus());
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .exchange(
+                                                        HttpMethod.POST,
+                                                        path,
+                                                        session.cookie(),
+                                                        true,
+                                                        "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã bàn giao\"}",
+                                                        Map.of(
+                                                                "Idempotency-Key",
+                                                                "early-" + UUID.randomUUID(),
+                                                                "If-Match",
+                                                                "\"0\"")));
+                assertEquals(409, early.status());
 
                 String approval =
                         "{\"decision\":\"APPROVE\",\"verificationNote\":\"Đã xác minh đúng chủ tài khoản\"}";
                 var missing =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(approval))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(428, missing.getStatus());
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        path,
+                                        session.cookie(),
+                                        true,
+                                        approval,
+                                        Map.of("Idempotency-Key", key));
+                assertEquals(428, missing.status());
                 var approved =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .header("If-Match", "\"0\"")
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(approval))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(202, approved.getStatus(), approved.getContentAsString());
-                assertFalse(
-                        JSON.readTree(approved.getContentAsString())
-                                .get("completed")
-                                .booleanValue());
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        path,
+                                        session.cookie(),
+                                        true,
+                                        approval,
+                                        Map.of("Idempotency-Key", key, "If-Match", "\"0\""));
+                assertEquals(202, approved.status(), approved.body());
+                assertFalse(JSON.readTree(approved.body()).get("completed").booleanValue());
                 assertEquals("VERIFIED", recoveryRequestState(session, submitted.id()));
                 var replay =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .header("If-Match", "\"0\"")
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(approval))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(approved.getContentAsString(), replay.getContentAsString());
-                var poll =
-                        mockMvc()
-                                .perform(
-                                        get("/api/me/operations/" + submitted.id())
-                                                .cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(200, poll.getStatus());
-                assertEquals(
-                        "PENDING",
-                        JSON.readTree(poll.getContentAsString()).get("state").stringValue());
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        path,
+                                        session.cookie(),
+                                        true,
+                                        approval,
+                                        Map.of("Idempotency-Key", key, "If-Match", "\"0\""));
+                assertEquals(approved.body(), replay.body());
+                var poll = realHttp().get("/api/me/operations/" + submitted.id(), session.cookie());
+                assertEquals(200, poll.status());
+                assertEquals("PENDING", JSON.readTree(poll.body()).get("state").stringValue());
                 String completion =
                         "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã khôi phục và bàn giao qua kênh riêng\"}";
                 var stale =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "stale-" + UUID.randomUUID())
-                                                .header("If-Match", "\"0\"")
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(completion))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(409, stale.getStatus());
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        path,
+                                        session.cookie(),
+                                        true,
+                                        completion,
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "stale-" + UUID.randomUUID(),
+                                                "If-Match",
+                                                "\"0\""));
+                assertEquals(409, stale.status());
                 // Mô phỏng công việc operator thực hiện ở console, không gửi credential qua app.
                 HTTP.put()
                         .uri(admin("/users/" + targetSubject + "/reset-password"))
@@ -815,24 +751,20 @@ class IdentityFlowIT extends KeycloakSessionFixture {
                         .retrieve()
                         .toBodilessEntity();
                 var completed =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "complete-" + UUID.randomUUID())
-                                                .header("If-Match", "\"1\"")
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(completion))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(200, completed.getStatus(), completed.getContentAsString());
-                assertTrue(
-                        JSON.readTree(completed.getContentAsString())
-                                .get("completed")
-                                .booleanValue());
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        path,
+                                        session.cookie(),
+                                        true,
+                                        completion,
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "complete-" + UUID.randomUUID(),
+                                                "If-Match",
+                                                "\"1\""));
+                assertEquals(200, completed.status(), completed.body());
+                assertTrue(JSON.readTree(completed.body()).get("completed").booleanValue());
                 assertEquals("RESOLVED", recoveryRequestState(session, submitted.id()));
             }
         } finally {
@@ -941,11 +873,13 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     }
 
     private String recoveryRequestState(RealSession session, UUID requestId) throws Exception {
-        MockHttpServletResponse response =
-                requestWhenReady(
-                        mockMvc(), get("/api/platform/recovery-requests").cookie(session.cookie()));
-        assertEquals(200, response.getStatus(), response.getContentAsString());
-        for (JsonNode item : JSON.readTree(response.getContentAsString())) {
+        HttpTestClient.Response response =
+                realHttp()
+                        .whenReady(() ->
+                                realHttp()
+                                        .get("/api/platform/recovery-requests", session.cookie()));
+        assertEquals(200, response.status(), response.body());
+        for (JsonNode item : JSON.readTree(response.body())) {
             if (requestId.toString().equals(item.get("id").stringValue())) {
                 return item.get("state").stringValue();
             }
@@ -1026,14 +960,15 @@ class IdentityFlowIT extends KeycloakSessionFixture {
     }
 
     private static void seedEligibilityGroup() {
-        RealmFoundation.ensureEligibilityTree(HTTP, admin(""), IdentityFlowIT::masterTokenStatic);
+        RealmFoundation.ensureEligibilityTree(
+                HTTP, admin(""), IdentityFlowE2EIT::masterTokenStatic);
     }
 
     private static void ensureApiClient() {
         RealmFoundation.ensureApiClient(
                 HTTP,
                 admin(""),
-                IdentityFlowIT::masterTokenStatic,
+                IdentityFlowE2EIT::masterTokenStatic,
                 fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE"));
     }
 }

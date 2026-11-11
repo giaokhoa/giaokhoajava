@@ -5,14 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.PlatformProjectionSeeder;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.identity.service.RecoveryService;
+import com.giaokhoa.support.HttpTestClient;
 import com.giaokhoa.support.KeycloakSessionFixture;
 import jakarta.servlet.http.Cookie;
 import java.net.URI;
@@ -30,9 +28,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -47,10 +45,10 @@ import tools.jackson.databind.JsonNode;
  * account có email đã xác minh nhận action email đặt lại mật khẩu; endpoint recovery của hợp đồng
  * HTTP xác thực vai trò và đăng nhập trước khi chạm nghiệp vụ.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class RecoveryFlowIT extends KeycloakSessionFixture {
+class RecoveryFlowE2EIT extends KeycloakSessionFixture {
     private static final String DIRECT_CLIENT = "recovery-flow-direct";
     private static final String WEB_CLIENT = "giaokhoa-it-web";
     private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_MAP =
@@ -234,25 +232,22 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
             UUID actor = seedActor(subject);
 
             try (var session = openSession(username, password, subject)) {
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/me/recovery-requests")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "recovery-flow-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"targetUserId\":\""
-                                                                + actor
-                                                                + "\",\"reason\":\"Quên mật khẩu\"}"))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/me/recovery-requests",
+                                        session.cookie(),
+                                        true,
+                                        "{\"targetUserId\":\""
+                                                + actor
+                                                + "\",\"reason\":\"Quên mật khẩu\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "recovery-flow-" + UUID.randomUUID()));
 
-                assertEquals(202, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals(202, response.status());
+                JsonNode body = JSON.readTree(response.body());
                 assertEquals("PENDING", body.get("state").stringValue());
                 assertFalse(body.get("completed").booleanValue());
             }
@@ -271,21 +266,19 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
             UUID actor = seedActor(subject);
 
             try (var session = openSession(username, password, subject)) {
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/me/recovery-requests")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "recovery-no-reason-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content("{\"targetUserId\":\"" + actor + "\"}"))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/me/recovery-requests",
+                                        session.cookie(),
+                                        true,
+                                        "{\"targetUserId\":\"" + actor + "\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "recovery-no-reason-" + UUID.randomUUID()));
 
-                assertEquals(400, response.getStatus());
+                assertEquals(400, response.status());
             }
         } finally {
             deleteUser(subject);
@@ -313,16 +306,11 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
                     operator, created.id(), RecoveryService.Decision.REJECT, "Không xác minh được");
 
             try (var session = openSession(requesterName, password, requesterSubject)) {
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        get("/api/me/operations/" + created.id())
-                                                .cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response response =
+                        realHttp().get("/api/me/operations/" + created.id(), session.cookie());
 
-                assertEquals(200, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals(200, response.status());
+                JsonNode body = JSON.readTree(response.body());
                 assertEquals("FAILED", body.get("state").stringValue());
                 assertTrue(body.get("completed").booleanValue());
                 assertEquals("RECOVERY_REJECTED", body.get("errorCode").stringValue());
@@ -342,36 +330,32 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
                 createUser(keycloakUser(username, username + "@example.test", true, password));
         try {
             try (var session = openSession(username, password, subject)) {
-                assertEquals(
-                        200,
-                        mockMvc()
-                                .perform(get("/api/session").cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse()
-                                .getStatus());
-                MockHttpServletResponse list =
-                        requestWhenReady(
-                                mockMvc(),
-                                get("/api/platform/recovery-requests").cookie(session.cookie()));
-                MockHttpServletResponse resolve =
-                        mockMvc()
-                                .perform(
-                                        post("/api/platform/recovery-requests/"
-                                                        + UUID.randomUUID()
-                                                        + "/resolve")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "recovery-resolve-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .header("If-Match", "\"0\"")
-                                                .content("{\"decision\":\"RESET_PASSWORD\"}"))
-                                .andReturn()
-                                .getResponse();
+                assertEquals(200, realHttp().get("/api/session", session.cookie()).status());
+                HttpTestClient.Response list =
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .get(
+                                                        "/api/platform/recovery-requests",
+                                                        session.cookie()));
+                HttpTestClient.Response resolve =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/platform/recovery-requests/"
+                                                + UUID.randomUUID()
+                                                + "/resolve",
+                                        session.cookie(),
+                                        true,
+                                        "{\"decision\":\"RESET_PASSWORD\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "recovery-resolve-" + UUID.randomUUID(),
+                                                "If-Match",
+                                                "\"0\""));
 
-                assertEquals(403, list.getStatus(), "Queue khôi phục chỉ dành cho operator");
-                assertEquals(403, resolve.getStatus());
+                assertEquals(403, list.status(), "Queue khôi phục chỉ dành cho operator");
+                assertEquals(403, resolve.status());
             }
         } finally {
             deleteUser(subject);
@@ -403,19 +387,14 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
             try (var session = openSession(operatorName, password, operatorSubject)) {
                 // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
                 // của operator trước khi chạm endpoint platform.
-                MockHttpServletResponse workspaces = getWorkspacesWhenReady(session);
-                assertEquals(200, workspaces.getStatus(), workspaces.getContentAsString());
+                HttpTestClient.Response workspaces = getWorkspacesWhenReadyHttp(session);
+                assertEquals(200, workspaces.status(), workspaces.body());
 
-                MockHttpServletResponse list =
-                        mockMvc()
-                                .perform(
-                                        get("/api/platform/recovery-requests")
-                                                .cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(200, list.getStatus(), list.getContentAsString());
+                HttpTestClient.Response list =
+                        realHttp().get("/api/platform/recovery-requests", session.cookie());
+                assertEquals(200, list.status(), list.body());
                 JsonNode item = null;
-                for (JsonNode candidate : JSON.readTree(list.getContentAsString())) {
+                for (JsonNode candidate : JSON.readTree(list.body())) {
                     if (created.id().toString().equals(candidate.get("id").stringValue())) {
                         item = candidate;
                         break;
@@ -425,43 +404,39 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
                 assertEquals("REQUESTED", item.get("state").stringValue());
 
                 String path = "/api/platform/recovery-requests/" + created.id() + "/resolve";
-                MockHttpServletResponse approved =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "recovery-approve-" + UUID.randomUUID())
-                                                .header("If-Match", "\"0\"")
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"decision\":\"APPROVE\",\"verificationNote\":\"Đã xác minh đúng chủ tài khoản\"}"))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(202, approved.getStatus(), approved.getContentAsString());
-                JsonNode approval = JSON.readTree(approved.getContentAsString());
+                HttpTestClient.Response approved =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        path,
+                                        session.cookie(),
+                                        true,
+                                        "{\"decision\":\"APPROVE\",\"verificationNote\":\"Đã xác minh đúng chủ tài khoản\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "recovery-approve-" + UUID.randomUUID(),
+                                                "If-Match",
+                                                "\"0\""));
+                assertEquals(202, approved.status(), approved.body());
+                JsonNode approval = JSON.readTree(approved.body());
                 assertEquals("PENDING", approval.get("state").stringValue());
                 assertFalse(approval.get("completed").booleanValue());
 
-                MockHttpServletResponse completed =
-                        mockMvc()
-                                .perform(
-                                        post(path)
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "recovery-complete-" + UUID.randomUUID())
-                                                .header("If-Match", "\"1\"")
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã khôi phục và bàn giao qua kênh riêng\"}"))
-                                .andReturn()
-                                .getResponse();
-                assertEquals(200, completed.getStatus(), completed.getContentAsString());
-                JsonNode receipt = JSON.readTree(completed.getContentAsString());
+                HttpTestClient.Response completed =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        path,
+                                        session.cookie(),
+                                        true,
+                                        "{\"decision\":\"COMPLETE\",\"verificationNote\":\"Đã khôi phục và bàn giao qua kênh riêng\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "recovery-complete-" + UUID.randomUUID(),
+                                                "If-Match",
+                                                "\"1\""));
+                assertEquals(200, completed.status(), completed.body());
+                JsonNode receipt = JSON.readTree(completed.body());
                 assertEquals("SUCCEEDED", receipt.get("state").stringValue());
                 assertTrue(receipt.get("completed").booleanValue());
                 assertEquals(requester.toString(), receipt.get("targetId").stringValue());
@@ -474,53 +449,53 @@ class RecoveryFlowIT extends KeycloakSessionFixture {
 
     @DisplayName("Yêu cầu khôi phục ẩn danh của khách API JSON bị từ chối bằng 401 ProblemDetail")
     @Test
-    void anonymousRequestReceivesProblemUnauthorized() throws Exception {
-        MockHttpServletResponse response =
-                mockMvc()
-                        .perform(
-                                post("/api/me/recovery-requests")
-                                        .accept(MediaType.APPLICATION_JSON)
-                                        .with(csrf())
-                                        .header(
-                                                "Idempotency-Key",
-                                                "recovery-anon-" + UUID.randomUUID())
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .content(
-                                                "{\"targetUserId\":\"" + UUID.randomUUID() + "\"}"))
-                        .andReturn()
-                        .getResponse();
+    void anonymousRequestReceivesProblemUnauthorized() {
+        HttpTestClient.Response response =
+                realHttp()
+                        .exchange(
+                                HttpMethod.POST,
+                                "/api/me/recovery-requests",
+                                null,
+                                true,
+                                "{\"targetUserId\":\"" + UUID.randomUUID() + "\"}",
+                                Map.of(
+                                        "Idempotency-Key",
+                                        "recovery-anon-" + UUID.randomUUID(),
+                                        "Accept",
+                                        MediaType.APPLICATION_JSON_VALUE));
 
-        assertEquals(401, response.getStatus());
-        JsonNode problem = JSON.readTree(response.getContentAsString());
+        assertEquals(401, response.status());
+        JsonNode problem = JSON.readTree(response.body());
         assertEquals(
                 "UNAUTHORIZED",
                 problem.get("code").stringValue(),
                 "Khôi phục ẩn danh bị từ chối bằng 401 ProblemDetail");
-        assertFalse(response.getContentAsString().contains("targetUserId"));
+        assertFalse(response.body().contains("targetUserId"));
     }
 
     @DisplayName("Request ẩn danh với cookie giả mạo vẫn không được xác thực")
     @Test
-    void forgedCookieStaysUnauthenticated() throws Exception {
-        MockHttpServletResponse response =
-                mockMvc()
-                        .perform(
-                                post("/api/me/recovery-requests")
-                                        .accept(MediaType.APPLICATION_JSON)
-                                        .cookie(
-                                                new Cookie(
-                                                        "SESSION", "forged-" + UUID.randomUUID()))
-                                        .with(csrf())
-                                        .header(
-                                                "Idempotency-Key",
-                                                "recovery-forged-" + UUID.randomUUID())
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .content(
-                                                "{\"targetUserId\":\"" + UUID.randomUUID() + "\"}"))
-                        .andReturn()
-                        .getResponse();
+    void forgedCookieStaysUnauthenticated() {
+        // Qua HTTP thật, cookie giả mạo không ứng với phiên nào trên server nên request chết ở
+        // lớp CSRF (403) trước khi tới điểm kiểm tra xác thực — khác tầng MockMvc, nơi token
+        // CSRF giả lập tách rời khỏi phiên nên request đi tiếp và nhận 401. Bất biến cần giữ
+        // là một: cookie giả mạo không xác thực được và không chạm được nghiệp vụ; tính chất
+        // 401-cho-cookie-giả trên đường đọc được khóa ở IdentityFlowE2EIT.
+        HttpTestClient.Response response =
+                realHttp()
+                        .exchange(
+                                HttpMethod.POST,
+                                "/api/me/recovery-requests",
+                                new Cookie("SESSION", "forged-" + UUID.randomUUID()),
+                                false,
+                                "{\"targetUserId\":\"" + UUID.randomUUID() + "\"}",
+                                Map.of(
+                                        "Idempotency-Key",
+                                        "recovery-forged-" + UUID.randomUUID(),
+                                        "Accept",
+                                        MediaType.APPLICATION_JSON_VALUE));
 
-        assertEquals(401, response.getStatus());
+        assertEquals(403, response.status());
     }
 
     // ---------- Dữ kiện thư mục ----------

@@ -2,18 +2,17 @@ package com.giaokhoa.authorization;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
+import com.giaokhoa.support.HttpTestClient;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -23,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.awaitility.core.ConditionTimeoutException;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,16 +31,13 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,10 +47,10 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Hợp đồng thu hồi: thứ tự commit của PostgreSQL cộng các hợp đồng HTTP Foundation. */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class ConcurrentRevocationIT extends IntegrationEnvironment {
+class ConcurrentRevocationE2EIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
 
     @Autowired JdbcTemplate jdbc;
@@ -67,6 +64,15 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
     @Autowired OAuth2AuthorizedClientRepository authorizedClients;
     @Autowired ClientRegistrationRepository clientRegistrations;
     @Autowired SessionRepository<?> sessions;
+
+    private @Nullable HttpTestClient httpClient;
+
+    private HttpTestClient realHttp() {
+        if (httpClient == null) {
+            httpClient = HttpTestClient.bind(webContext);
+        }
+        return httpClient;
+    }
 
     @DisplayName(
             "Ghi đang bay (in-flight) hoàn tất trước khi revocation chiếm được exclusive fence")
@@ -282,12 +288,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                     token, java.util.Objects.requireNonNull(keycloakResourceB)),
                             "Native independent READY B must allow via TEST API audience");
                 }
-                MockMvc mvc =
-                        MockMvcBuilders.webAppContextSetup(webContext)
-                                .addFilters(sessionFilter)
-                                .apply(springSecurity())
-                                .build();
-                MockHttpServletResponse readyA = capabilityResponse(mvc, fixture, session, targetA);
+                HttpTestClient.Response readyA = capabilityResponse(fixture, session, targetA);
                 if (affectedGrant != null) {
                     UUID grantPartition = affectedGrant.partition();
                     tx(() -> {
@@ -321,10 +322,9 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                         return null;
                     });
                 }
-                MockHttpServletResponse fencedA =
-                        capabilityResponse(mvc, fixture, session, targetA);
-                MockHttpServletResponse independentB =
-                        targetB == null ? null : capabilityResponse(mvc, fixture, session, targetB);
+                HttpTestClient.Response fencedA = capabilityResponse(fixture, session, targetA);
+                HttpTestClient.Response independentB =
+                        targetB == null ? null : capabilityResponse(fixture, session, targetB);
                 assertTrue(
                         apiGraph.allowed(token, apiGraph.resourceId()),
                         "Native A remains allowed; the DB fence must deny.");
@@ -339,11 +339,11 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                         () ->
                                 assertEquals(
                                         HttpStatus.SERVICE_UNAVAILABLE.value(),
-                                        fencedA.getStatus(),
+                                        fencedA.status(),
                                         "REVOCATION_CONTRACT_FENCED_EXPECT_503_"
                                                 + pending
                                                 + " actual HTTP="
-                                                + fencedA.getStatus()),
+                                                + fencedA.status()),
                         () -> {
                             if (independentB != null) {
                                 assertReadyAllowed(independentB, "INDEPENDENT_B_AFTER_" + pending);
@@ -364,25 +364,22 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                 .formatted(grant.resource(), grant.version());
     }
 
-    private MockHttpServletResponse capabilityResponse(
-            MockMvc mvc, ActorScope actor, NativeSpringSessionFixture session, String target)
-            throws Exception {
-        return mvc.perform(
-                        post("/api/workspaces/{wid}/capabilities", actor.workspace())
-                                .cookie(session.cookie())
-                                .with(csrf())
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .content("{\"targets\":[" + target + "]}"))
-                .andReturn()
-                .getResponse();
+    private HttpTestClient.Response capabilityResponse(
+            ActorScope actor, NativeSpringSessionFixture session, String target) {
+        return realHttp()
+                .exchange(
+                        HttpMethod.POST,
+                        "/api/workspaces/" + actor.workspace() + "/capabilities",
+                        session.cookie(),
+                        true,
+                        "{\"targets\":[" + target + "]}",
+                        Map.of());
     }
 
-    private void assertReadyAllowed(MockHttpServletResponse response, String scenario)
+    private void assertReadyAllowed(HttpTestClient.Response response, String scenario)
             throws Exception {
-        assertEquals(
-                200, response.getStatus(), "REVOCATION_CONTRACT_READY_EXPECT_ALLOW_" + scenario);
-        List<JsonNode> decisions =
-                JSON.readTree(response.getContentAsString()).findValues("allowed");
+        assertEquals(200, response.status(), "REVOCATION_CONTRACT_READY_EXPECT_ALLOW_" + scenario);
+        List<JsonNode> decisions = JSON.readTree(response.body()).findValues("allowed");
         assertEquals(1, decisions.size(), "One exact target/scope must be evaluated");
         assertTrue(
                 decisions.getFirst().isBoolean() && decisions.getFirst().booleanValue(),
@@ -400,11 +397,6 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                     nativeGate.partiallyProvisionApplicationResource(
                             "account:" + fixture.actor(), "workspace.list")) {
                 prepareEligibility(fixture, nativeGate, identityGraph);
-                MockMvc mvc =
-                        MockMvcBuilders.webAppContextSetup(webContext)
-                                .addFilters(sessionFilter)
-                                .apply(springSecurity())
-                                .build();
                 assertTrue(nativeGate.allowed(session.currentAccessToken(), "a"));
                 CountDownLatch revokeLocked = new CountDownLatch(1);
                 CountDownLatch finishRevoke = new CountDownLatch(1);
@@ -426,26 +418,21 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                     var writer =
                             pool.submit(() -> {
                                 writerStarted.countDown();
-                                return mvc.perform(
-                                                post(
-                                                                "/api/workspaces/{wid}/samples/actions",
-                                                                fixture.workspace())
-                                                        .with(csrf())
-                                                        .cookie(session.cookie())
-                                                        .header(
-                                                                "Idempotency-Key",
-                                                                "revocation-concurrent")
-                                                        .contentType(MediaType.APPLICATION_JSON)
-                                                        .content(
-                                                                ("{\"action\":\"CREATE_RESOURCE\","
-                                                                                + "\"subjectId\":\"%s\","
-                                                                                + "\"kind\":\"QUESTION\","
-                                                                                + "\"label\":\"Revocation contract protected\"}")
-                                                                        .formatted(
-                                                                                UUID.randomUUID())))
-                                        .andReturn()
-                                        .getResponse()
-                                        .getStatus();
+                                return realHttp()
+                                        .exchange(
+                                                HttpMethod.POST,
+                                                "/api/workspaces/"
+                                                        + fixture.workspace()
+                                                        + "/samples/actions",
+                                                session.cookie(),
+                                                true,
+                                                ("{\"action\":\"CREATE_RESOURCE\","
+                                                                + "\"subjectId\":\"%s\","
+                                                                + "\"kind\":\"QUESTION\","
+                                                                + "\"label\":\"Revocation contract protected\"}")
+                                                        .formatted(UUID.randomUUID()),
+                                                Map.of("Idempotency-Key", "revocation-concurrent"))
+                                        .status();
                             });
                     try {
                         assertTrue(writerStarted.await(10, TimeUnit.SECONDS));
@@ -553,37 +540,30 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                         target)
                                 .getFirst();
                 graph.cleanupProjectedPolicies(() -> projectionPolicies(projection));
-                MockMvc mvc =
-                        MockMvcBuilders.webAppContextSetup(webContext)
-                                .addFilters(sessionFilter)
-                                .apply(springSecurity())
-                                .build();
                 String request = workspaceTarget(actor.workspace());
-                assertReadyAllowed(
-                        capabilityResponse(mvc, actor, session, request), "verified actor");
+                assertReadyAllowed(capabilityResponse(actor, session, request), "verified actor");
                 nativeGate.setEmailVerified(false);
-                var response = capabilityResponse(mvc, actor, session, request);
+                var response = capabilityResponse(actor, session, request);
                 assertTrue(
-                        response.getStatus() == 503
-                                || (response.getStatus() == 200
-                                        && !JSON.readTree(response.getContentAsString())
+                        response.status() == 503
+                                || (response.status() == 200
+                                        && !JSON.readTree(response.body())
                                                 .at("/targets/0/scopes/0/allowed")
                                                 .booleanValue()),
                         "Same session must never receive a stale allow after verification is removed");
                 reconciler.reconcilePartition(actor.account());
                 reconciler.reconcilePartition(actor.workspacePartition());
-                response = capabilityResponse(mvc, actor, session, request);
-                assertEquals(200, response.getStatus());
+                response = capabilityResponse(actor, session, request);
+                assertEquals(200, response.status());
                 assertFalse(
-                        JSON.readTree(response.getContentAsString())
+                        JSON.readTree(response.body())
                                 .at("/targets/0/scopes/0/allowed")
                                 .booleanValue());
                 nativeGate.setEmailVerified(true);
                 eligibility.synchronizeEligibility(actor.actor());
                 reconciler.reconcilePartition(actor.account());
                 reconciler.reconcilePartition(actor.workspacePartition());
-                assertReadyAllowed(
-                        capabilityResponse(mvc, actor, session, request), "verified again");
+                assertReadyAllowed(capabilityResponse(actor, session, request), "verified again");
             }
         }
     }

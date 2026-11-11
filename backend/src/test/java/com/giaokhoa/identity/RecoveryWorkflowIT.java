@@ -60,8 +60,8 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
 
     private static final RestClient HTTP = RestClient.create();
     private static final String BASE =
-            IdentityFlowIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
-    private static final String REALM = IdentityFlowIT.fixture("TEST_KEYCLOAK_REALM");
+            IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
+    private static final String REALM = IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_REALM");
     private static @Nullable String ownedDirectClientId;
 
     private final List<String> createdKeycloakUsers = new ArrayList<>();
@@ -664,8 +664,8 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", "password");
         form.add("client_id", "admin-cli");
-        form.add("username", IdentityFlowIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
-        form.add("password", IdentityFlowIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
+        form.add("username", IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
+        form.add("password", IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
         Map<String, Object> response =
                 HTTP.post()
                         .uri(BASE + "/realms/master/protocol/openid-connect/token")
