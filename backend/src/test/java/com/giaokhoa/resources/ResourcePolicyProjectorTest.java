@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -140,6 +141,39 @@ class ResourcePolicyProjectorTest {
                                 Instant.parse("2026-01-01T00:00:00Z"),
                                 Instant.parse("2026-03-01T00:00:00Z"))),
                 ResourcePolicyProjector.gatesFor(descriptor));
+    }
+
+    @Test
+    @DisplayName(
+            "Mọi scope mức version mà phân công map được đều có phân loại gate gói: scope mở rộng"
+                    + " bị gate theo kỳ gói, hai scope đọc thì không")
+    void assignmentScopesAreClassifiedByPeriodGate() {
+        List<String> mapped =
+                ResourcePolicyProjector.mapActions(
+                        List.of(
+                                "content.read",
+                                "answer.read",
+                                "use",
+                                "review",
+                                "share",
+                                "fork",
+                                "library.save",
+                                "draft.edit"));
+        assertEquals(
+                List.of(
+                        "content.read",
+                        "answer.read",
+                        "use",
+                        "review",
+                        "share",
+                        "fork",
+                        "library.save"),
+                mapped);
+        for (String scope : mapped) {
+            boolean readScope = "content.read".equals(scope) || "answer.read".equals(scope);
+            assertEquals(
+                    !readScope, ResourcePolicyProjector.isAssignmentScopePeriodGated(scope), scope);
+        }
     }
 
     @Test

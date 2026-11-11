@@ -25,4 +25,7 @@ public interface VerificationSubscriptionPeriodRepository
                     + " where p.workspaceId = :workspaceId"
                     + " and p.validFrom <= current_timestamp and p.expiresAt > current_timestamp")
     long countCurrent(@Param("workspaceId") UUID workspaceId);
+
+    /** Mọi kỳ đã xác nhận của workspace, theo thứ tự bắt đầu rồi định danh. */
+    List<SubscriptionPeriod> findByWorkspaceIdOrderByValidFromAscIdAsc(UUID workspaceId);
 }

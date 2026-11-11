@@ -582,7 +582,11 @@ public class ResourcePolicyProjector {
      * Nhánh phân công tường minh: assignment ACTIVE của đúng workspace ngữ cảnh khớp resource hoặc
      * môn của resource; ở center người được phân công phải còn membership ACTIVE. Token lưu trữ map
      * sang scope mức version qua {@link #mapAction} — {@code draft.edit} thành {@code fork}, {@code
-     * content.read} giữ nguyên nhờ catalog đã nới ở migration V028.
+     * content.read} giữ nguyên nhờ catalog đã nới ở migration V028. Cùng kỷ luật gate gói của nhánh
+     * chủ sở hữu: các scope đọc ({@code content.read}, {@code answer.read}) không qua gate gói, còn
+     * mọi scope mở rộng mà phân công trao (dùng, fork, share, review, lưu thư viện) AND thêm cửa sổ
+     * hiệu lực của từng kỳ gói của workspace ngữ cảnh — gói hết hạn thì phân công không còn mở được
+     * thao tác tạo/sửa/dùng học liệu, dù assignment vẫn ACTIVE.
      */
     private void assignmentSources(
             List<String> descriptors,
@@ -608,6 +612,8 @@ public class ResourcePolicyProjector {
                         ? preconditions.centerMembershipActiveUserIds(
                                 workspaceId, subjects.keySet())
                         : Set.of();
+        List<ResourceScopePreconditions.SubscriptionPeriod> periods = List.of();
+        boolean periodsLoaded = false;
         for (ResourceAssignment assignment : matching) {
             if (CENTER_KIND.equals(contextKind)
                     && !activeMembers.contains(assignment.getUserId())) {
@@ -618,11 +624,40 @@ public class ResourcePolicyProjector {
                 continue;
             }
             for (String scope : mapActions(assignment.getActions())) {
-                descriptors.add(
-                        actorDescriptor(
-                                workspaceId, assignment.getUserId(), subject, targetKey, scope));
+                if (!isAssignmentScopePeriodGated(scope)) {
+                    descriptors.add(
+                            actorDescriptor(
+                                    workspaceId,
+                                    assignment.getUserId(),
+                                    subject,
+                                    targetKey,
+                                    scope));
+                    continue;
+                }
+                if (!periodsLoaded) {
+                    periods = preconditions.subscriptionPeriods(workspaceId);
+                    periodsLoaded = true;
+                }
+                for (ResourceScopePreconditions.SubscriptionPeriod period : periods) {
+                    descriptors.add(
+                            actorPeriodDescriptor(
+                                    workspaceId,
+                                    assignment.getUserId(),
+                                    subject,
+                                    period,
+                                    targetKey,
+                                    scope));
+                }
             }
         }
+    }
+
+    /**
+     * Một scope mức version do phân công trao có phải gate theo kỳ gói hay không: đúng các scope mở
+     * rộng của nhánh chủ sở hữu; hai scope đọc còn lại của catalog map được thì không gate.
+     */
+    static boolean isAssignmentScopePeriodGated(String scope) {
+        return OWNER_EXPANSION_SCOPES.contains(scope);
     }
 
     /**
