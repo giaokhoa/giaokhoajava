@@ -85,6 +85,8 @@ public final class ErrorCodes {
     public static final String RECOVERY_INVALID_STATE = "RECOVERY_INVALID_STATE";
     public static final String RECOVERY_REQUEST_NOT_FOUND = "RECOVERY_REQUEST_NOT_FOUND";
     public static final String RECOVERY_TARGET_NOT_FOUND = "RECOVERY_TARGET_NOT_FOUND";
+    public static final String RESOURCE_HAS_HISTORY = "RESOURCE_HAS_HISTORY";
+    public static final String RESOURCE_VERSION_HAS_HISTORY = "RESOURCE_VERSION_HAS_HISTORY";
     public static final String RESULT_NOT_DRAFT = "RESULT_NOT_DRAFT";
     public static final String ROSTER_ENTRY_ALREADY_REVOKED = "ROSTER_ENTRY_ALREADY_REVOKED";
     public static final String ROSTER_ENTRY_NOT_CURRENT = "ROSTER_ENTRY_NOT_CURRENT";
@@ -104,6 +106,7 @@ public final class ErrorCodes {
     public static final String TEACHING_ASSIGNMENT_ALREADY_REVOKED =
             "TEACHING_ASSIGNMENT_ALREADY_REVOKED";
     public static final String TEACHING_CONTEXT_NOT_ACTIVE = "TEACHING_CONTEXT_NOT_ACTIVE";
+    public static final String TEACHING_OBJECT_HAS_HISTORY = "TEACHING_OBJECT_HAS_HISTORY";
     public static final String UNAUTHORIZED = "UNAUTHORIZED";
     public static final String UNSUPPORTED_SAMPLE_ACTION = "UNSUPPORTED_SAMPLE_ACTION";
     public static final String USERNAME_MISMATCH = "USERNAME_MISMATCH";

@@ -14,6 +14,10 @@ public interface ResourceVersionRepository extends JpaRepository<ResourceVersion
 
     List<ResourceVersion> findByResourceIdIn(Collection<UUID> resourceIds);
 
+    /** Mọi định danh version của một resource, cho phép kiểm tra lịch sử theo từng version. */
+    @Query("select v.id from ResourceVersion v where v.resourceId = :resourceId")
+    List<UUID> findIdsByResourceId(@Param("resourceId") UUID resourceId);
+
     Optional<ResourceVersion> findByResourceIdAndId(UUID resourceId, UUID id);
 
     Optional<ResourceVersion> findByResourceIdAndVersionNo(UUID resourceId, int versionNo);

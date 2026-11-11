@@ -31,4 +31,7 @@ public interface ResourcesSampleActivityRepository extends Repository<SampleActi
     }
 
     List<ActivityPair> findDistinctByWorkspaceId(UUID workspaceId);
+
+    /** Version đã được giao làm bài ở bất kỳ workspace nào là lịch sử phải bảo lưu. */
+    boolean existsByResourceIdAndVersionId(UUID resourceId, UUID versionId);
 }
