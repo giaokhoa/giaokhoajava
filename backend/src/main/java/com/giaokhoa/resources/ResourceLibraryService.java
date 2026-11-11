@@ -15,12 +15,17 @@ import com.giaokhoa.resources.repository.GrantRef;
 import com.giaokhoa.resources.repository.LibraryItemRef;
 import com.giaokhoa.resources.repository.ResourceVersionRepository;
 import com.giaokhoa.resources.repository.ResourcesAuthorizationOperationRepository;
+import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
 import com.giaokhoa.resources.repository.VersionMetadata;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.model.SampleActionMutation;
+import com.giaokhoa.verification.model.SystemPracticeAttemptSample;
 import com.giaokhoa.verification.repository.SampleActionMutationRepository;
+import com.giaokhoa.verification.repository.SystemPracticeAttemptRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -35,13 +40,13 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Service thư viện resource của US7: đọc contextual (thân bài/đáp án), lưu version về kho, fork và
- * nhận cập nhật cho bản đã lưu — mọi thao tác đều qua canonical repository và chỉ sau quyết định
- * PDP trên target version tại workspace ngữ cảnh, theo đúng giao thức của hợp đồng authorization:
- * trước khi hỏi PDP, service ghi lại bundle hiện hành của target qua {@link
- * ResourcePolicyProjector} bằng operation dùng chung và chờ chiếu xong (chờ không xong thì
- * fail-closed 503); mutation ghi biên nhận idempotency của chính action trong cùng transaction với
- * mutation (bảng {@code sample_action_mutation}, cùng giao thức với các sample action khác) và ghi
- * lại bundle sau khi đổi dữ kiện nguồn để graph phản ánh trạng thái mới.
+ * nhận cập nhật cho bản đã lưu, luyện tập trên version hệ thống đã phát hành — mọi thao tác đều qua
+ * canonical repository và chỉ sau quyết định PDP trên target version tại workspace ngữ cảnh, theo
+ * đúng giao thức của hợp đồng authorization: trước khi hỏi PDP, service ghi lại bundle hiện hành
+ * của target qua {@link ResourcePolicyProjector} bằng operation dùng chung và chờ chiếu xong (chờ
+ * không xong thì fail-closed 503); mutation ghi biên nhận idempotency của chính action trong cùng
+ * transaction với mutation (bảng {@code sample_action_mutation}, cùng giao thức với các sample
+ * action khác) và ghi lại bundle sau khi đổi dữ kiện nguồn để graph phản ánh trạng thái mới.
  *
  * <p>Lưu không nhân bản resource/version và không đổi chủ sở hữu canonical: mục thư viện trỏ về
  * đúng version nguồn, custody OWNED khi workspace nhận là chủ sở hữu, LICENSED khi version đến từ
@@ -71,6 +76,8 @@ public class ResourceLibraryService {
     private final ResourceCopies copies;
     private final SampleActionMutationRepository receipts;
     private final ResourcesAuthorizationOperationRepository operationStates;
+    private final ResourcesWorkspaceRepository workspaceDirectory;
+    private final SystemPracticeAttemptRepository practiceAttempts;
     private final IdempotencyService idempotency;
     private final WorkspaceTransaction workspaces;
     private final TransactionTemplate transactions;
@@ -86,7 +93,9 @@ public class ResourceLibraryService {
             ResourceVersionRepository versions,
             ResourceCopies copies,
             SampleActionMutationRepository receipts,
-            ResourcesAuthorizationOperationRepository operationStates) {
+            ResourcesAuthorizationOperationRepository operationStates,
+            ResourcesWorkspaceRepository workspaceDirectory,
+            SystemPracticeAttemptRepository practiceAttempts) {
         this.executor = executor;
         this.projector = projector;
         this.notifications = notifications;
@@ -98,6 +107,8 @@ public class ResourceLibraryService {
         this.copies = copies;
         this.receipts = receipts;
         this.operationStates = operationStates;
+        this.workspaceDirectory = workspaceDirectory;
+        this.practiceAttempts = practiceAttempts;
     }
 
     /** Đọc thân bài của version tại workspace ngữ cảnh sau quyết định {@code content.read}. */
@@ -641,6 +652,95 @@ public class ResourceLibraryService {
                     reconcileReceiptTarget(actorUserId, idempotencyKey, targetItemId, savedId);
                     return savedId;
                 });
+    }
+
+    // ---------- PRACTICE_SYSTEM_VERSION ----------
+
+    /**
+     * Luyện tập trên version hệ thống đã phát hành sau quyết định {@code practice} trên target của
+     * version tại workspace của route: ghi thật một lượt luyện tập vào lịch sử mẫu của chính actor
+     * — hàng lịch sử luôn thuộc personal workspace của actor theo đúng ràng buộc của bảng mẫu, dù
+     * route được gọi ở workspace ngữ cảnh nào.
+     */
+    public UUID practice(
+            Authentication authentication,
+            HttpServletRequest httpRequest,
+            UUID workspaceId,
+            UUID resourceId,
+            UUID versionId,
+            String contentStub,
+            String idempotencyKey,
+            String payloadHash) {
+        UUID actorUserId = executor.actorUserId(authentication);
+        // Resolve metadata tối thiểu trước quyết định như mọi protected request: resource và
+        // version không tồn tại thì 404; luyện tập chỉ áp cho resource hệ thống, bản chưa phát
+        // hành thì bundle không có nguồn practice nên PDP từ chối ở bước quyết định.
+        VersionMetadata metadata =
+                repository
+                        .metadata(resourceId, versionId)
+                        .orElseThrow(ResourceLibraryService::notFound);
+        if (!"SYSTEM".equals(metadata.ownerKind())) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_SAMPLE_ACTION",
+                    "Chỉ luyện tập được tài nguyên hệ thống.");
+        }
+        String targetKey =
+                NativePolicyTemplates.resourceVersionKey(workspaceId, resourceId, versionId);
+        ensureProjection(actorUserId, workspaceId, idempotencyKey + "#practice", targetKey);
+        var target =
+                new ProtectedActionExecutor.Target(
+                        targetKey,
+                        List.of(PermissionCatalog.ResourceVersionScope.PRACTICE.scopeName()));
+        return executor.execute(
+                authentication,
+                httpRequest,
+                workspaceId,
+                List.of(target),
+                () -> {
+                    UUID attemptId = UUID.randomUUID();
+                    return claimReceipt(
+                                    actorUserId,
+                                    workspaceId,
+                                    idempotencyKey,
+                                    payloadHash,
+                                    "PRACTICE_ATTEMPT",
+                                    attemptId)
+                            .orElseGet(() ->
+                                    insertPractice(
+                                            actorUserId,
+                                            resourceId,
+                                            versionId,
+                                            contentStub,
+                                            attemptId));
+                });
+    }
+
+    private UUID insertPractice(
+            UUID actorUserId, UUID resourceId, UUID versionId, String contentStub, UUID attemptId) {
+        UUID personalWorkspace =
+                workspaceDirectory
+                        .findByOwnerUserIdAndKind(actorUserId, Workspace.Kind.PERSONAL)
+                        .map(Workspace::getId)
+                        .orElseThrow(ResourceLibraryService::notFound);
+        Objects.requireNonNull(
+                workspaces.inWorkspace(
+                        personalWorkspace,
+                        () -> {
+                            practiceAttempts.save(
+                                    new SystemPracticeAttemptSample(
+                                            attemptId,
+                                            personalWorkspace,
+                                            actorUserId,
+                                            resourceId,
+                                            versionId,
+                                            Instant.now(),
+                                            contentStub,
+                                            null));
+                            return attemptId;
+                        }),
+                "practice");
+        return attemptId;
     }
 
     // ---------- Biên nhận idempotency của chính action ----------

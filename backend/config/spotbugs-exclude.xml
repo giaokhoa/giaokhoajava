@@ -405,10 +405,22 @@
         <Field name="copies"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <!-- ResourceLibraryService là dependency singleton do Spring quản lý; không sao chép khi inject vào controller đọc tài nguyên mẫu. -->
+    <Match>
+        <Class name="com.giaokhoa.resources.SampleResourceController"/>
+        <Field name="library"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
     <!-- SampleActionService là dependency singleton do Spring quản lý; không sao chép khi inject vào controller sample action. -->
     <Match>
         <Class name="com.giaokhoa.verification.web.SampleActionController"/>
         <Field name="actions"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+    <!-- Các service singleton do Spring quản lý (SampleLearningActionService, ResourceLibraryService); không sao chép khi inject vào SampleActionService. -->
+    <Match>
+        <Class name="com.giaokhoa.verification.service.SampleActionService"/>
+        <Field name="~(learning|library)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Record kết quả mang entity AuthorizationOperation vừa được ghi cho phía gọi đọc trạng thái operation; entity do JPA quản lý trong cùng transaction, không sao chép được. -->
