@@ -78,8 +78,8 @@ public class TenantSchemaProvisioner {
      * vẫn ở schema hệ thống. Chuẩn bị tách khỏi kích hoạt vì các service hiện hành ghi dữ kiện
      * tenant của workspace vừa tạo trên schema hệ thống (ngoài context tenant); kích hoạt ngay lúc
      * tạo sẽ trỏ các luồng có context vào schema riêng còn rỗng trong khi dữ kiện nằm ở schema hệ
-     * thống, làm hỏng chính các luồng đó. Đợt di trú của module sở hữu dữ kiện sẽ kích hoạt bằng
-     * {@link #provisionSchema} khi chuyển dữ kiện vào schema riêng.
+     * thống, làm hỏng chính các luồng đó. Module sở hữu dữ kiện kích hoạt bằng {@link
+     * #provisionSchema} khi chuyển dữ kiện vào schema riêng.
      */
     public String prepareSchema(UUID workspaceId) {
         String schema = TenantContext.schemaNameFor(workspaceId);
@@ -122,8 +122,8 @@ public class TenantSchemaProvisioner {
      * riêng nên không thể nằm trong transaction nghiệp vụ; lỗi khi chuẩn bị được ghi log và
      * workspace ở lại trạng thái chưa có schema (phân giải về schema hệ thống như cũ) để {@link
      * TenantMigrationRunner} xử lý lại, thay vì làm hỏng yêu cầu tạo workspace đã commit. Công tắc
-     * {@code giaokhoa.tenancy.provisioning-enabled=false} tắt hẳn bước này: workspace mới ở mô hình
-     * cũ trên schema hệ thống như trước đợt di trú.
+     * {@code giaokhoa.tenancy.provisioning-enabled=false} tắt hẳn bước này: workspace mới ở lại
+     * trên schema hệ thống.
      */
     public void provisionAfterCommit(UUID workspaceId) {
         if (!provisioningEnabled) {

@@ -31,16 +31,11 @@ import tools.jackson.databind.JsonNode;
  * center khác đều bị chặn. DTO chỉ chứa các trường của PublishedResultView — không bài làm, không
  * đáp án, không trường bản nháp — và danh sách không lộ tổng số hàng.
  *
- * <p>Đây là task test-first: route kết quả, route guardian và các bảng mẫu chưa được triển khai nên
- * các test hiện đỏ ở lời gọi guardian/kết quả đầu tiên (404) — đỏ đó là có ý nghĩa, không phải lỗi
- * hạ tầng.
- *
- * <p>Điểm cần đối chiếu khi triển khai phía seed: kết quả mẫu được seed thẳng bằng JDBC theo đúng
- * cột của data-model ({@code sample_activity/sample_submission/sample_result}) vì chưa có API tạo
- * kết quả; seed chỉ chạy sau khi luồng liên kết đã chạy qua API thật, nên thứ tự task (schema mẫu
- * có trước read side) giữ cho seed hợp lệ khi tới lượt nó chạy. Nếu migration của bảng mẫu gắn thêm
- * FK bắt buộc vào resource stub, seed này cần tạo resource stub trước — phần khẳng định hợp đồng
- * không đổi.
+ * <p>Phía nạp dữ kiện sẵn: kết quả mẫu được nạp thẳng bằng JDBC theo đúng cột của data-model
+ * ({@code sample_activity/sample_submission/sample_result}). Việc nạp sẵn chỉ chạy sau khi luồng
+ * liên kết đã chạy qua API thật, nên dữ kiện nạp sẵn luôn hợp lệ khi tới lượt nó chạy. Nếu
+ * migration của bảng mẫu gắn thêm FK bắt buộc vào resource stub, phần nạp sẵn này cần tạo resource
+ * stub trước — phần khẳng định hợp đồng không đổi.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -185,7 +180,7 @@ class PublishedResultContractIT extends GuardianFixture {
         GuardianCenter center = seedGuardianCenter();
         try (var owner = openSession(center.owner());
                 var parent = openSession(center.parent())) {
-            // Center seed bằng SQL chưa có projection; mutation thật đưa WORKSPACE về READY.
+            // Trung tâm nạp sẵn bằng SQL chưa có projection; mutation thật đưa WORKSPACE về READY.
             createClass(owner, center.workspaceId(), CLASS_NAME);
             MockHttpServletResponse response =
                     getRaw(parent, resultsPath(center.workspaceId(), center.studentX()));
@@ -345,8 +340,8 @@ class PublishedResultContractIT extends GuardianFixture {
         try (var owner = openSession(center.owner());
                 var student = openSession(center.students().get(0))) {
             Scenario scenario = prepareScenario(owner, center, center.workspaceId());
-            // Đọc thăm endpoint trước khi seed: test phải đỏ vì route chưa có, không đỏ vì seed
-            // chạm bảng mẫu chưa tồn tại.
+            // Đọc thăm endpoint trước khi nạp dữ kiện sẵn: nếu route thiếu thì test đỏ ngay tại
+            // đây, không đỏ vì phần nạp sẵn chạm bảng mẫu chưa tồn tại.
             MockHttpServletResponse probe =
                     getRaw(student, resultsPath(center.workspaceId(), center.studentX()));
             assertEquals(200, probe.getStatus(), "Học sinh đọc kết quả công bố của chính mình");

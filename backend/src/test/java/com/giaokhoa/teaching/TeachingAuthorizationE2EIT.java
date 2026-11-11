@@ -25,10 +25,8 @@ import tools.jackson.databind.JsonNode;
  * danh, actor center khác không thấy dữ liệu center này, và cùng một phiên sau khi bị thu hồi phân
  * công thì lần gọi tiếp theo bị từ chối trong khi giáo viên còn lại vẫn hoạt động.
  *
- * <p>Đây là task test-first: các route và bảng giảng dạy chưa được triển khai nên test khẳng định
- * đúng hợp đồng HTTP và hiện đỏ với 404 vì route chưa tồn tại — đỏ đó là có ý nghĩa, không phải lỗi
- * hạ tầng. Trường hợp giáo viên tạo lớp center đã được khóa ở test hợp đồng US2 ({@code
- * CenterAdministrationE2EIT.teacherCannotCreateCenterClassEvenWithPersonalPackage}) nên không lặp
+ * <p>Trường hợp giáo viên tạo lớp center đã được khóa ở {@code
+ * CenterAdministrationE2EIT.teacherCannotCreateCenterClassEvenWithPersonalPackage} nên không lặp
  * lại ở đây.
  *
  * <p>Quyền đọc roster của từng môn: hợp đồng chốt "chỉ roster môn đó" nhưng không liệt kê đích danh
@@ -42,7 +40,7 @@ import tools.jackson.databind.JsonNode;
 @Tag("e2e-backend")
 class TeachingAuthorizationE2EIT extends TeachingFixture {
 
-    // Tầng e2e-backend (B107): mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
+    // Tầng e2e-backend: mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
     // vận chuyển của fixture sang biến thể HTTP để toàn bộ helper tổ hợp chảy qua server thật.
     @Override
     protected RealSession openSession(KeycloakLogin login) throws Exception {

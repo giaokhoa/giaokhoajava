@@ -10,13 +10,13 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Desired native policy graph cho một cặp target/scope. Root permission AND các common gate (áp
- * ngoài OR, identity eligibility trước hết) với OR của các source độc lập; mỗi source AND mọi
+ * ngoài OR, identity eligibility trước hết) với OR của các source độc lập. Mỗi source AND mọi
  * mandatory gate của nó. Một gate chỉ có thể là một realm group hiện hành, một actor cụ thể, hoặc
  * một validity window: prerequisite role được chiếu thành group, nên không gate nào tham chiếu được
  * global realm role. Một validity window {@code [validFrom, expiresAt)} được viết thành một
  * not-before POSITIVE tại đầu và một not-before NEGATIVE tại cuối của nó.
  *
- * <p>Canonical descriptor là dạng serialization xác định của graph; SHA-256 của nó là desired hash
+ * <p>Canonical descriptor là dạng serialization xác định của graph. SHA-256 của nó là desired hash
  * ghi trên projection, nên cùng các domain source luôn dựng lại cùng một graph.
  */
 public record PolicyGraph(

@@ -45,14 +45,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Kiểm chứng tầng service giảng dạy bằng lời gọi thẳng service (route HTTP thuộc task route riêng):
- * scope theo workspace, gói hết hạn chặn mở rộng nhưng không chặn thu hồi, roster của center đòi
- * membership ACTIVE và lô roster nguyên tử, thu hồi roster kéo theo thu hồi ghi danh phụ thuộc mà
- * giữ lịch sử, khóa phải có ít nhất một môn lúc tạo, và thêm môn không tự ghi danh. Seed chỉ bằng
- * JDBC trong schema dùng chung của suite; không cần Keycloak vì tầng service không quyết quyền và
- * không ghi operation. Riêng một phần chạy service qua một role tự tạo không phải chủ sở hữu bảng
- * với grant tối thiểu, để chứng minh tầng service vận hành đúng dưới đúng kỷ luật quyền của role
- * runtime thật thay vì quyền của chủ sở hữu.
+ * Kiểm chứng tầng service giảng dạy bằng lời gọi thẳng service: scope theo workspace, gói hết hạn
+ * chặn mở rộng nhưng không chặn thu hồi, roster của center đòi membership ACTIVE và lô roster
+ * nguyên tử, thu hồi roster kéo theo thu hồi ghi danh phụ thuộc mà giữ lịch sử, khóa phải có ít
+ * nhất một môn lúc tạo, và thêm môn không tự ghi danh. Seed chỉ bằng JDBC trong schema dùng chung
+ * của suite; không cần Keycloak vì tầng service không quyết quyền và không ghi operation. Riêng một
+ * phần chạy service qua một role tự tạo không phải chủ sở hữu bảng với grant tối thiểu, để chứng
+ * minh tầng service vận hành đúng dưới đúng kỷ luật quyền của role runtime thật thay vì quyền của
+ * chủ sở hữu.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -447,7 +447,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
         assertSubscriptionBlocked(
                 () -> courses.addSubjects(workspace, course.id(), List.of(subjects.get(1))));
 
-        // Đổi tên khóa cố ý không qua cổng gói (xem B39): gói đã hết hạn vẫn đổi tên được.
+        // Đổi tên khóa cố ý không qua cổng gói: gói đã hết hạn vẫn đổi tên được.
         CourseView renamed =
                 courses.renameCourse(workspace, course.id(), "Khóa đã đổi tên", "\"0\"");
         assertEquals("Khóa đã đổi tên", renamed.name());

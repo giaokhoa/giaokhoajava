@@ -8,10 +8,10 @@ import org.jspecify.annotations.Nullable;
  * nguồn context duy nhất cho tầng truy cập dữ liệu — {@link WorkspaceTransaction} đặt context này
  * khi vào phạm vi một workspace, {@link WorkspaceTenantResolver} đọc nó để Hibernate định tuyến
  * session. Workspace chưa được cấp schema riêng (cột {@code workspace.schema_name} còn NULL) được
- * phân giải về tenant hệ thống {@value #SYSTEM_SCHEMA} như trước đợt di trú schema-per-tenant;
- * tenant hệ thống nghĩa là "đi theo search_path pool đã cấu hình" — schema hệ thống vật lý là
- * {@code public} ở deployment chuẩn nhưng có thể là schema riêng ở môi trường kiểm thử cô lập, nên
- * tầng connection không ép một tên schema hệ thống cố định.
+ * phân giải về tenant hệ thống {@value #SYSTEM_SCHEMA}. Tenant hệ thống nghĩa là "đi theo
+ * search_path pool đã cấu hình" — schema hệ thống vật lý là {@code public} ở deployment chuẩn nhưng
+ * có thể là schema riêng ở môi trường kiểm thử cô lập, nên tầng connection không ép một tên schema
+ * hệ thống cố định.
  */
 public final class TenantContext {
     public static final String SYSTEM_SCHEMA = "public";

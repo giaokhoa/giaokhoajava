@@ -37,13 +37,13 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
     static final String TEST_DB_LANE_2 = "jdbc:postgresql://127.0.0.1:15433/giaokhoa_test";
     private static final String OPERATION_FAILED = "FAILED";
     static final String TEST_ISSUER_LANE_2 = "http://127.0.0.1:18082/realms/giaokhoa-it";
-    // Redirect URI callback dùng chung của các fixture Code+PKCE: khai báo duy nhất ở đây;
-    // client TEST đăng ký đúng URI này ở test-realm.json (tầng định nghĩa, giữ nguyên tại đó).
+    // Redirect URI callback dùng chung của các fixture Code+PKCE: khai báo duy nhất ở đây.
+    // Client TEST đăng ký đúng URI này ở test-realm.json (tầng định nghĩa, giữ nguyên tại đó).
     public static final String TEST_REDIRECT_URI = "http://127.0.0.1:18888/callback";
     // Redirect URI callback của native gate; client native đăng ký ở install-native-gate.sh.
     public static final String NATIVE_REDIRECT_URI = "http://127.0.0.1:18895/callback";
-    // Schema mặc định của kết nối TEST — schema dùng chung cho toàn bộ nhóm IT full-context
-    // (B1): các class không còn khai schema riêng, context được Spring cache và dùng lại giữa
+    // Schema mặc định của kết nối TEST — schema dùng chung cho toàn bộ nhóm IT full-context:
+    // các lớp kiểm thử không còn khai schema riêng, context được Spring cache và dùng lại giữa
     // các class cùng cấu hình; cô lập nằm ở dữ kiện, xem truncateSharedSchemaData.
     private static final String SHARED_SCHEMA = "public";
 
@@ -80,12 +80,12 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
     }
 
     /**
-     * Cô lập dữ kiện giữa các class dùng chung một context và một schema (B1 — một context dùng
+     * Cô lập dữ kiện giữa các lớp kiểm thử dùng chung một context và một schema (một context dùng
      * chung theo cơ chế cache của Spring TestContext): trước mỗi class, xoá toàn bộ dữ kiện còn lại
      * của class trước trong schema dùng chung. Mỗi class vẫn bắt đầu từ bảng rỗng như khi còn
      * schema riêng, nhưng ApplicationContext và schema đã migrate được dùng lại thay vì nạp và
      * migrate lại theo từng class. Chạy bằng connection độc lập vì ở thời điểm {@code @BeforeAll}
-     * context có thể chưa được nạp; trên DB trắng chưa migrate lần nào thì chưa có bảng nào để xoá
+     * context có thể chưa được nạp. Trên DB trắng chưa migrate lần nào thì chưa có bảng nào để xoá
      * nên bước này tự bỏ qua.
      *
      * <p>Các ngoại lệ không truncate như dữ kiện thường: {@code flyway_schema_history} (lịch sử
@@ -97,7 +97,7 @@ public abstract class IntegrationEnvironment { // NOPMD - Lớp base TEST để 
      * <p>Ngoại lệ nữa: hai dòng singleton của target {@code platform} trong {@code
      * authz_partition}/{@code authz_projection} — {@code PlatformProjectionSeeder} chỉ tạo chúng
      * một lần lúc context khởi động (sự kiện {@code ApplicationReadyEvent}) nên context dùng chung
-     * không tạo lại được sau khi xoá; hai bảng này chỉ xoá các dòng không thuộc platform.
+     * không tạo lại được sau khi xoá. Hai bảng này chỉ xoá các dòng không thuộc platform.
      *
      * <p>Connection dọn dẹp đặt {@code session_replication_role = 'replica'}: lịch sử audit của ứng
      * dụng là append-only (trigger {@code reject_audit_event_mutation} chặn cả DELETE/TRUNCATE lan

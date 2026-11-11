@@ -28,7 +28,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 
 /**
  * Khóa phân loại gate gói của bundle giảng dạy cá nhân: scope sửa (update) của khóa phải gate theo
- * kỳ gói như scope sửa của lớp (Sổ B105(iv)), còn scope đọc thì không.
+ * kỳ gói như scope sửa của lớp, còn scope đọc thì không.
  */
 class PersonalTeachingPolicyProjectorTest {
 

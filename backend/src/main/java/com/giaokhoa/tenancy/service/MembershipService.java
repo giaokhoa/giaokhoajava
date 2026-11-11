@@ -49,14 +49,13 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Service kiểm tra trước cùng các tiền điều kiện dữ kiện mà registrar sẽ ép khi ghi (workspace
  * là CENTER đang ACTIVE; người cấp là OWNER/MANAGER ACTIVE) để lời gọi chắc chắn bị từ chối không
- * tạo rồi xoá một user Keycloak vô ích; registrar vẫn là chốt chặn cuối khi ghi directory. Quyết
- * định cho phép ở các route thành viên không qua PDP: theo ngoại lệ mục 10 của
- * contracts/authorization.md, controller quyết bằng dữ kiện thư mục — {@link #requireAdmin} ép
- * OWNER/MANAGER ACTIVE và {@link #requireSubscriptionCurrent} ép gói còn hiệu lực bằng chính sách
- * gói trên dữ kiện kỳ gói — còn pipeline profile của executor chỉ đồng bộ eligibility hiện hành và
- * giữ ACCOUNT fence trước khi route chạy. Operation ghi cuối luồng qua {@link
- * MembershipPolicyProjector} mới là mốc hoàn tất bất đồng bộ: membership chỉ được coi là đã đồng bộ
- * khi operation SUCCEEDED.
+ * tạo rồi xoá một user Keycloak vô ích. Registrar vẫn là chốt chặn cuối khi ghi directory. Quyết
+ * định cho phép ở các route thành viên không qua PDP: theo ngoại lệ của contracts/authorization.md,
+ * controller quyết bằng dữ kiện thư mục — {@link #requireAdmin} ép OWNER/MANAGER ACTIVE và {@link
+ * #requireSubscriptionCurrent} ép gói còn hiệu lực bằng chính sách gói trên dữ kiện kỳ gói — còn
+ * pipeline profile của executor chỉ đồng bộ eligibility hiện hành và giữ ACCOUNT fence trước khi
+ * route chạy. Operation ghi cuối luồng qua {@link MembershipPolicyProjector} mới là mốc hoàn tất
+ * bất đồng bộ: membership chỉ được coi là đã đồng bộ khi operation SUCCEEDED.
  *
  * <p>Danh sách thành viên đọc hai bước theo ID: trang membership thuộc schema tenant trước, tên
  * đăng nhập của account thuộc schema hệ thống tra theo tập ID của trang sau — không join xuyên hai

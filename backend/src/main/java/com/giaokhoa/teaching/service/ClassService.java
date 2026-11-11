@@ -41,12 +41,14 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Service chỉ giữ bất biến dữ kiện và trạng thái, không tự quyết quyền thay Keycloak PDP và
  * không ghi authorization operation: quyết định cho phép ở route (PDP/fence hay biên SQL) và việc
  * ghi operation/projection thuộc lớp route và lớp projection riêng. Các kiểm tra trong service này
- * là tiền điều kiện dữ kiện mà tầng trên không thay được: workspace phải là CENTER hoặc PERSONAL
- * đang ACTIVE; mở rộng (tạo lớp, thêm roster, đổi tên lớp theo hợp đồng) bị chặn khi gói đã hết
- * hiệu lực, còn thu hồi thì không bị chặn bởi gói; học sinh vào roster của center phải có
- * membership ACTIVE của chính center đó (học sinh personal chỉ cần tài khoản tồn tại) — kiểm tra
- * trước ở đây để trả 400 nghiệp vụ, trigger ở DB chỉ là chốt chặn cuối. Thu hồi roster đồng thời
- * thu hồi ghi danh phụ thuộc trong cùng transaction và giữ nguyên toàn bộ lịch sử.
+ * là tiền điều kiện dữ kiện mà tầng trên không thay được. Workspace phải là CENTER hoặc PERSONAL
+ * đang ACTIVE. Mở rộng (tạo lớp, thêm roster, đổi tên lớp theo hợp đồng) bị chặn khi gói đã hết
+ * hiệu lực, còn thu hồi thì không bị chặn bởi gói. Học sinh vào roster của center phải có
+ * membership ACTIVE của chính center đó. Học sinh personal chỉ cần tài khoản tồn tại. Các tiền điều
+ * kiện này kiểm tra trước ở đây để trả 400 nghiệp vụ, trigger ở DB chỉ là chốt chặn cuối.
+ *
+ * <p>Thu hồi roster đồng thời thu hồi ghi danh phụ thuộc trong cùng transaction và giữ nguyên toàn
+ * bộ lịch sử.
  */
 @Service
 public class ClassService {

@@ -38,11 +38,12 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Contract US1 ở tầng danh tính: profile Keycloak hiện hành lái eligibility qua synchronizer và
- * worker production; quan hệ thư mục (membership, role, origin) giữ đúng ranh giới từng workspace;
- * các endpoint identity của hợp đồng HTTP được lái bằng phiên Code+PKCE thật. Phần hành vi native
- * của role trong PDP (quản lý ở A, học sinh ở B) thuộc gate native của hợp đồng quyết định quyền;
- * class này khóa phần danh tính và thư mục mà các task triển khai US1 sẽ dựng lên trên.
+ * Contract ở tầng danh tính: profile Keycloak hiện hành lái eligibility qua synchronizer và worker
+ * production. Quan hệ thư mục (membership, role, origin) giữ đúng ranh giới từng workspace. Các
+ * endpoint identity của hợp đồng HTTP được lái bằng phiên Code+PKCE thật.
+ *
+ * <p>Phần hành vi native của role trong PDP (quản lý ở A, học sinh ở B) thuộc kiểm chứng native của
+ * hợp đồng quyết định quyền. Lớp kiểm thử này khóa phần danh tính và thư mục của hợp đồng.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

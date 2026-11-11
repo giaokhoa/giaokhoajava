@@ -57,28 +57,46 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Nghiệp vụ của các sample action trong hợp đồng verification. Mọi action chạy qua cùng pipeline
- * manifest/fence/PDP như business action và không bao giờ chấp nhận actor thay thế. CREATE_RESOURCE
- * trả kết quả stub vì chưa có bảng sample-resource. ASSIGN_ACTIVITY, SUBMIT_ACTIVITY, GRADE_RESULT,
- * PUBLISH_RESULT cùng ba action quản lý hoạt động EXTEND_DEADLINE, OPEN_ATTEMPT, REASSIGN_ACTIVITY
- * ghi thật vào các bảng mẫu với target và scope đúng hợp đồng HTTP: giao bài còn đòi quyết định
- * {@code use} trên chính version được giao và mọi version thành phần trong closure phụ thuộc đệ quy
- * của nó (FR-041), và nộp bài được quyết bằng scope {@code submit} trên target hoạt động do {@link
- * ActivityPolicyProjector} chiếu cho học sinh đang ghi danh ở môn–khóa của hoạt động; dữ kiện nguồn
- * của một target có thể chưa từng được chiếu khi chuỗi được seed thẳng, nên trước khi hỏi PDP mỗi
- * action ghi lại bundle hiện hành của target qua cơ chế operation dùng chung và chờ chiếu xong —
- * chờ không xong thì fail-closed 503 như mọi protected request khác. Các action thư viện
- * SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE và action luyện tập trên version hệ thống
- * PRACTICE_SYSTEM_VERSION uỷ cho {@link ResourceLibraryService}, nơi giữ pipeline và giao thức biên
- * nhận của chúng; các action chia sẻ SHARE_VERSION, ACCEPT_SHARE, REVOKE_SHARE uỷ cho {@link
- * ResourceShareService} theo cùng mẫu; action phát hành đính chính CORRECT_SOURCE uỷ cho {@link
- * CorrectionService} và mang metadata của notice trong kết quả để phía gọi hiển thị đúng thông báo
- * vừa phát hành. Action lạ bị từ chối, không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên
- * nhận idempotency của chính mình trong cùng transaction với mutation (bảng sample_action_mutation,
- * theo tiền lệ recovery_mutation): retry cùng key và cùng payload trả lại kết quả đầu tiên thay vì
- * ghi thêm, cùng key khác payload trả 409 như quy tắc mutation chung của hợp đồng HTTP.
+ * manifest/fence/PDP như business action và không bao giờ chấp nhận actor thay thế.
  *
- * <p>Tầng dữ liệu của service chỉ đi qua các Spring Data repository: bảng mẫu qua repository của
- * chính module, dữ kiện của module khác (workspace, kỳ gói, môn–khóa, version, ghi danh) qua
+ * <p>CREATE_RESOURCE trả kết quả stub vì chưa có bảng sample-resource.
+ *
+ * <p>Các action ghi thật vào các bảng mẫu với target và scope đúng hợp đồng HTTP:
+ *
+ * <ul>
+ *   <li>ASSIGN_ACTIVITY, SUBMIT_ACTIVITY, GRADE_RESULT và PUBLISH_RESULT
+ *   <li>ba action quản lý hoạt động EXTEND_DEADLINE, OPEN_ATTEMPT và REASSIGN_ACTIVITY
+ * </ul>
+ *
+ * <p>Giao bài còn đòi quyết định {@code use} trên chính version được giao và mọi version thành phần
+ * trong closure phụ thuộc đệ quy của nó. Nộp bài được quyết bằng scope {@code submit} trên target
+ * hoạt động do {@link ActivityPolicyProjector} chiếu cho học sinh đang ghi danh ở môn–khóa của hoạt
+ * động.
+ *
+ * <p>Dữ kiện nguồn của một target có thể chưa từng được chiếu khi chuỗi được nạp sẵn thẳng. Vì vậy,
+ * trước khi hỏi PDP, mỗi action ghi lại bundle hiện hành của target qua cơ chế operation dùng chung
+ * và chờ chiếu xong. Chờ không xong thì fail-closed 503 như mọi protected request khác.
+ *
+ * <p>Ba nhóm action uỷ cho service sở tại, nơi giữ pipeline và giao thức biên nhận của chúng:
+ *
+ * <ul>
+ *   <li>các action thư viện SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE và action luyện tập trên
+ *       version hệ thống PRACTICE_SYSTEM_VERSION uỷ cho {@link ResourceLibraryService}
+ *   <li>các action chia sẻ SHARE_VERSION, ACCEPT_SHARE, REVOKE_SHARE uỷ cho {@link
+ *       ResourceShareService}
+ *   <li>action phát hành đính chính CORRECT_SOURCE uỷ cho {@link CorrectionService}, và mang
+ *       metadata của notice trong kết quả để phía gọi hiển thị đúng thông báo vừa phát hành
+ * </ul>
+ *
+ * <p>Action lạ bị từ chối, không bao giờ được lặng lẽ cho qua.
+ *
+ * <p>Mọi action đều ghi biên nhận idempotency của chính mình trong cùng transaction với mutation
+ * (bảng sample_action_mutation, theo tiền lệ recovery_mutation). Retry cùng key và cùng payload trả
+ * lại kết quả đầu tiên thay vì ghi thêm. Cùng key khác payload trả 409 như quy tắc mutation chung
+ * của hợp đồng HTTP.
+ *
+ * <p>Tầng dữ liệu của service chỉ đi qua các Spring Data repository. Bảng mẫu qua repository của
+ * chính module. Dữ kiện của module khác (workspace, kỳ gói, môn–khóa, version, ghi danh) qua
  * repository trên entity của module sở tại hoặc entity chuyển tiếp của module đó.
  */
 @Service
@@ -485,8 +503,8 @@ public class SampleActionService {
     /**
      * Target {@code use} của lượt giao: chính version được giao và mọi version thành phần trong
      * closure phụ thuộc đệ quy của nó (cạnh {@code resource_dependency} từ bản phái sinh về nguồn),
-     * tất cả tại workspace của route — quyết định dùng một version tổng hợp phải thỏa quyền dùng
-     * của từng thành phần cần dùng theo FR-041.
+     * tất cả tại workspace của route. Quyết định dùng một version tổng hợp phải thỏa quyền dùng của
+     * từng thành phần cần dùng.
      */
     private List<String> versionUseTargetKeys(UUID workspaceId, UUID resourceId, UUID versionId) {
         List<String> targetKeys = new ArrayList<>();
@@ -1294,8 +1312,8 @@ public class SampleActionService {
 
     /**
      * Chèn biên nhận của action trong cùng transaction với mutation, theo đúng mẫu {@code
-     * RecoveryService.replay}: chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp; đã có
-     * biên nhận cùng payload thì trả kết quả đầu tiên thay vì ghi lại; khác payload thì 409.
+     * RecoveryService.replay}. Chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp. Đã có
+     * biên nhận cùng payload thì trả kết quả đầu tiên thay vì ghi lại. Khác payload thì 409.
      * Mutation ném lỗi sẽ rollback cả biên nhận nên một lần thử thất bại không đốt key.
      */
     private Optional<SampleActionResult> claimActionReceipt(

@@ -68,13 +68,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Kiểm chứng tầng service của guardian link bằng lời gọi thẳng service (route HTTP thuộc task route
- * riêng): vòng đời request → approve → revoke đồng bộ membership thật của guardian group qua
- * operation và vòng reconcile; tiền đề role của cả hai phía được xét lúc gửi và xét lại lúc duyệt;
- * version lệch và quyết định trên link đã đóng đều 409; gỡ role PARENT hoặc thu hồi membership đóng
- * link đã duyệt trong cùng operation. Riêng một phần chạy service qua một role tự tạo không phải
- * chủ sở hữu bảng với grant tối thiểu theo mẫu TeachingServiceIT, để chứng minh tầng service vận
- * hành đúng dưới kỷ luật quyền của role runtime thật.
+ * Kiểm chứng tầng service của guardian link bằng lời gọi thẳng service. Vòng đời request → approve
+ * → revoke đồng bộ membership thật của guardian group qua operation và vòng reconcile. Tiền đề role
+ * của cả hai phía được xét lúc gửi và xét lại lúc duyệt. Version lệch và quyết định trên link đã
+ * đóng đều 409. Gỡ role PARENT hoặc thu hồi membership đóng link đã duyệt trong cùng operation.
+ *
+ * <p>Riêng một phần chạy service qua một role tự tạo không phải chủ sở hữu bảng, với grant tối
+ * thiểu theo mẫu TeachingServiceIT. Phần đó chứng minh tầng service vận hành đúng dưới kỷ luật
+ * quyền của role runtime thật.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
