@@ -211,6 +211,38 @@ public class ActivityPolicyProjector {
     }
 
     /**
+     * Mọi target hoạt động hiện có của workspace: mọi hàng {@code sample_activity} của workspace.
+     */
+    public List<String> allBundleTargetKeys(UUID workspaceId) {
+        List<String> targets =
+                transactions.execute(_ -> {
+                    workspaceTransaction.applyContext(workspaceId);
+                    return activities.findIdsByWorkspaceId(workspaceId).stream()
+                            .map(activityId ->
+                                    NativePolicyTemplates.activityKey(workspaceId, activityId))
+                            .toList();
+                });
+        return Objects.requireNonNull(targets, "targets");
+    }
+
+    /**
+     * Desired projection của mọi bundle hoạt động hiện có của workspace, để gắn vào một operation
+     * ghi kèm khi dữ kiện tiền đề của bundle (kỳ gói, phân công, ghi danh) thay đổi: descriptor
+     * quản lý nhúng từng kỳ gói nên thêm kỳ mà không ghi lại bundle sẽ làm reconcile chết {@code
+     * DESIRED_SOURCE_MISMATCH}.
+     */
+    public List<AuthorizationOperationService.DesiredProjection> allBundleProjections(
+            UUID workspaceId) {
+        List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
+        for (String targetKey : allBundleTargetKeys(workspaceId)) {
+            projections.add(
+                    new AuthorizationOperationService.DesiredProjection(
+                            targetKey, BUNDLE_SCOPE, bundleDescriptors(targetKey), List.of()));
+        }
+        return List.copyOf(projections);
+    }
+
+    /**
      * Ghi operation cho một thay đổi làm đổi nguồn của các bundle hoạt động vừa được ghi trong cùng
      * transaction của service gọi: bump desired revision của WORKSPACE partition của workspace,
      * fence nó và lưu bundle hiện hành của từng target bị ảnh hưởng. Replay cùng idempotency key và
