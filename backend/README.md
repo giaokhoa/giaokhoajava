@@ -145,6 +145,22 @@ export TEST_FRONTEND_ORIGIN=http://127.0.0.1:8080
 npm --prefix frontend run test:e2e
 ```
 
+Hai workflow CI chạy Chromium trong image Playwright chính thức có sẵn thư viện OS,
+khóa phiên bản theo package đã cài từ lockfile; không chạy `apt` hay tải browser lên host.
+Node, backend Java và Compose vẫn chạy trên host Linux. `PW_TEST_CONNECT_WS_ENDPOINT`
+được dùng chung bởi Playwright Test và fixture đăng nhập native Keycloak. Có thể kiểm tra
+cùng cách này trên Linux sau `npm --prefix frontend ci`:
+
+```sh
+bash infra/testing/start-playwright.sh
+export PW_TEST_CONNECT_WS_ENDPOINT=ws://127.0.0.1:3002/
+npm --prefix frontend run test:e2e
+docker rm -f giaokhoa-playwright
+```
+
+Workflow dọn browser container cả khi test thất bại. Local không đặt endpoint thì tiếp tục
+dùng Chromium đã cài trên máy như trước.
+
 Playwright tự chạy JAR backend ở 18080 với schema TEST ngẫu nhiên, build/chạy Next production
 ở 3001 và Caddy
 TEST ở 8080 theo cùng cách chia route của gateway DEV. Trình duyệt dùng duy nhất origin
