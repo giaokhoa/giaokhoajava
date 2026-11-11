@@ -14,16 +14,19 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
- * Guard bảo lưu lịch sử của module resources (FR-033, FR-037, FR-047, US8): một version đã được lưu
- * vào kho, đã giao làm bài, đã làm nguồn cho bản phái sinh hoặc đã dính thông báo đính chính là
- * canonical — không được xóa hay ghi đè; một resource đã có version như vậy hoặc đã từng được chia
- * sẻ cũng không được xóa. Module hiện không có đường xóa resource hay version (version bất biến
- * theo thiết kế, mục thư viện không bị gỡ, thu hồi share chỉ đóng grant và giữ nguyên lịch sử), nên
- * guard này là định nghĩa "có lịch sử" dùng chung của module và là điểm kiểm tra bắt buộc cho mọi
- * đường xóa/gỡ phát sinh về sau. Hai bất biến liên quan giữ bằng cấu trúc, không bằng kiểm tra tại
- * đây: hết hạn gói của người chia sẻ không tự hủy share vì không đường nào của module đọc kỳ gói
- * của grantor để thu hồi grant, và gia hạn không cấp lại quan hệ đã thu hồi vì các projector chỉ
- * dựng nguồn từ quan hệ còn hiệu lực hiện hành (FR-028).
+ * Guard bảo lưu lịch sử của module resources. Một version đã được lưu vào kho, đã giao làm bài, đã
+ * làm nguồn cho bản phái sinh hoặc đã dính thông báo đính chính là canonical: không được xóa hay
+ * ghi đè. Một resource đã có version như vậy hoặc đã từng được chia sẻ cũng không được xóa.
+ *
+ * <p>Module hiện không có đường xóa resource hay version. Version bất biến theo thiết kế, mục thư
+ * viện không bị gỡ, thu hồi share chỉ đóng grant và giữ nguyên lịch sử. Vì vậy guard này là định
+ * nghĩa "có lịch sử" dùng chung của module, và là điểm kiểm tra bắt buộc cho mọi đường xóa hoặc gỡ
+ * phát sinh về sau.
+ *
+ * <p>Hai bất biến liên quan giữ bằng cấu trúc chứ không bằng kiểm tra tại đây. Hết hạn gói của
+ * người chia sẻ không tự hủy share, vì không đường nào của module đọc kỳ gói của grantor để thu hồi
+ * grant. Gia hạn không cấp lại quan hệ đã thu hồi, vì các projector chỉ dựng nguồn từ quan hệ còn
+ * hiệu lực hiện hành.
  */
 @Component
 public class ResourceHistoryGuard {

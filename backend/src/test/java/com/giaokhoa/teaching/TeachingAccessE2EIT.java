@@ -31,7 +31,7 @@ class TeachingAccessE2EIT extends TeachingFixture {
     @Autowired private CenterService centers;
     @Autowired private ResourceMutationCoordinator coordinator;
 
-    // Tầng e2e-backend (B107): mở phiên kèm nạp workspace qua HTTP thật.
+    // Tầng e2e-backend : mở phiên kèm nạp workspace qua HTTP thật.
     @Override
     protected RealSession openSession(KeycloakLogin login) throws Exception {
         return openSessionHttp(login);

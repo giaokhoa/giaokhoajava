@@ -34,9 +34,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Gate của GET operation status: initiator đọc trạng thái operation của chính mình qua phiên JDBC
- * thật chứa token Code+PKCE thật; operation của người khác bị giấu thành 404; response chỉ chứa
- * metadata điều khiển, không chứa payload nội bộ hay secret.
+ * Cổng truy cập của GET operation status: initiator đọc trạng thái operation của chính mình qua
+ * phiên JDBC thật chứa token Code+PKCE thật. Operation của người khác bị giấu thành 404. Phản hồi
+ * chỉ chứa metadata điều khiển, không chứa payload nội bộ hay secret.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

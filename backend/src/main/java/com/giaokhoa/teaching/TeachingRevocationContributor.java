@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  * do đó cùng revision của operation) với thay đổi đã gỡ tiền đề đó. Đây là phía dữ kiện nguồn của
  * bất biến hợp đồng "gỡ role/class_student thì đóng dependent assignment/enrollment trong cùng
  * revision, không tái sinh ngầm": hàng phụ thuộc chuyển hẳn sang REVOKED kèm revoked_at, giữ nguyên
- * lịch sử; gán lại sau đó là hàng mới theo ngữ nghĩa hợp tập của các service, không bao giờ phục
+ * lịch sử. Gán lại sau đó là hàng mới theo ngữ nghĩa hợp tập của các service, không bao giờ phục
  * hồi hàng đã đóng ở đây.
  *
  * <p>Các điểm gỡ tiền đề gọi contributor này:
@@ -26,17 +26,17 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>Gỡ role TEACHER của một membership (đổi role hoặc thu hồi membership): đóng phân công giảng
  *       dạy và phân công chủ nhiệm của người đó trong center.
- *   <li>Gỡ role STUDENT: đóng ghi danh của người đó trong center; dòng roster giữ nguyên vì roster
+ *   <li>Gỡ role STUDENT: đóng ghi danh của người đó trong center. Dòng roster giữ nguyên vì roster
  *       là quan hệ tổ chức lớp (chỉ đòi membership ACTIVE), không phải nguồn theo role.
  *   <li>Thu hồi membership: đóng toàn bộ quan hệ giảng dạy của người đó trong center — roster, ghi
  *       danh, phân công giảng dạy, phân công chủ nhiệm — vì mọi tiền đề membership đều mất.
- *   <li>Thu hồi lớp/khóa/môn–khóa: đóng ghi danh và phân công phụ thuộc của đúng phạm vi đó; riêng
+ *   <li>Thu hồi lớp/khóa/môn–khóa: đóng ghi danh và phân công phụ thuộc của đúng phạm vi đó. Riêng
  *       lớp còn đóng phân công chủ nhiệm của lớp.
  * </ul>
  *
  * <p>Mỗi phép đóng trả lại các target mà bundle của chúng vừa đổi vì phép đóng, để lời gọi nào có
- * ghi operation (đổi role, thu hồi membership) ghi lại đúng các bundle đó trong cùng operation;
- * đường thu hồi lớp/khóa/môn–khóa ở tầng service chưa ghi operation nên bỏ qua giá trị trả về này —
+ * ghi operation (đổi role, thu hồi membership) ghi lại đúng các bundle đó trong cùng operation.
+ * Đường thu hồi lớp/khóa/môn–khóa ở tầng service chưa ghi operation nên bỏ qua giá trị trả về này:
  * route của chúng ghi bundle khi được cài. Thu hồi một dòng roster đóng ghi danh phụ thuộc của
  * chính dòng đó đã nằm ở {@code ClassService.revokeStudent} qua repository, theo hợp đồng của route
  * roster.revoke, nên không lặp lại ở đây.

@@ -31,8 +31,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * hữu ở personal — với scope {@code accept}; khi đã {@code ACCEPTED} và mode là {@code REVOCABLE},
  * nguồn duy nhất là chính người cấp với scope {@code revoke}. Grant {@code LONG_TERM} không có
  * nguồn revoke ở bất kỳ trạng thái nào, nên thu hồi đơn phương bị PDP từ chối ngay ở tầng graph,
- * đúng FR-037 và hợp đồng HTTP (REVOKE_SHARE chỉ dành cho REVOCABLE). Grant đã {@code REVOKED} hoặc
- * {@code EXPIRED} không còn nguồn nào: bundle rỗng nghĩa là target phải bị thu hồi.
+ * đúng hợp đồng HTTP (REVOKE_SHARE chỉ dành cho REVOCABLE). Grant đã {@code REVOKED} hoặc {@code
+ * EXPIRED} không còn nguồn nào: bundle rỗng nghĩa là target phải bị thu hồi.
  *
  * <p>Descriptor dùng lại đúng từ vựng canonical của họ resource ({@code RESOURCE_ACTOR} và {@code
  * RESOURCE_GROUP}) nên phép dựng gate native dùng chung một đường với bundle resource version.

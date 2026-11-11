@@ -28,12 +28,6 @@ import tools.jackson.databind.JsonNode;
  * roster, ghi danh từng môn (học sinh chỉ vào môn đã chọn), thêm môn không tự ghi danh, hai giáo
  * viên cùng môn, một môn ở hai khóa là hai phạm vi khác nhau, và ràng buộc FK chéo workspace/lớp.
  *
- * <p>Đây là task test-first: các route và bảng giảng dạy chưa được triển khai nên test khẳng định
- * đúng hợp đồng HTTP và hiện đỏ với 404 vì route chưa tồn tại — đỏ đó là có ý nghĩa, không phải lỗi
- * hạ tầng. Hai khóa biên an ninh (nặc danh bị chuyển hướng đăng nhập, mutation thiếu CSRF bị chặn)
- * và biên quyền tạo lớp khi gói hết hạn thì xanh ngay vì route tạo lớp đã có stub thực thi đúng
- * biên đó.
- *
  * <p>Trạng thái kỳ vọng từng test chưa được khóa bằng mã field danh sách roster/enrollment (hợp
  * đồng chưa chốt tên field của item): các khẳng định danh sách chỉ dùng số lượng item, không đọc
  * tên field item. Tên field của {@code CourseView} và danh mục môn thì hợp đồng đã chốt nên khẳng
@@ -45,7 +39,7 @@ import tools.jackson.databind.JsonNode;
 @Tag("e2e-backend")
 class TeachingStructureE2EIT extends TeachingFixture {
 
-    // Tầng e2e-backend (B107): mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
+    // Tầng e2e-backend : mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
     // vận chuyển của fixture sang biến thể HTTP để toàn bộ helper tổ hợp chảy qua server thật.
     @Override
     protected RealSession openSession(KeycloakLogin login) throws Exception {

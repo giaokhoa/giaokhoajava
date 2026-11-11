@@ -27,7 +27,7 @@ import tools.jackson.databind.JsonNode;
 @Tag("e2e-backend")
 class TeachingRenamePreconditionE2EIT extends TeachingFixture {
 
-    // Tầng e2e-backend (B107): mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
+    // Tầng e2e-backend : mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
     // vận chuyển của fixture sang biến thể HTTP để toàn bộ helper tổ hợp chảy qua server thật.
     @Override
     protected RealSession openSession(KeycloakLogin login) throws Exception {

@@ -7,20 +7,22 @@ import org.springframework.stereotype.Component;
 
 /**
  * Đường ghi projection cho các thay đổi bắt nguồn từ membership: invite, accept và cấp học sinh.
- * Mọi thay đổi dữ kiện nguồn về membership đều phải kết thúc bằng một authorization operation ghi
- * lại toàn bộ bundle desired của workspace tại dữ kiện nguồn hiện hành, vì bundle là thứ {@code
+ *
+ * <p>Mọi thay đổi dữ kiện nguồn về membership đều phải kết thúc bằng một authorization operation
+ * ghi lại toàn bộ bundle desired của workspace tại dữ kiện nguồn hiện hành. Bundle là thứ {@code
  * ProjectionReconciler} đối chiếu để áp native graph và đồng bộ membership thật vào các realm group
- * nguồn; không có operation thì thay đổi membership không bao giờ tới được Keycloak và cũng không
+ * nguồn. Không có operation thì thay đổi membership không bao giờ tới được Keycloak, và cũng không
  * có biên nhận để endpoint trả 202/poll.
  *
  * <p>Việc soạn closure (bundle workspace + toàn bộ bundle giảng dạy + toàn bộ bundle kết quả) thuộc
- * {@link SourceRevocationCoordinator}: gỡ role hay thu hồi membership làm bundle và group nguồn
- * thay đổi trong cùng revision, còn closure phụ thuộc của operation fence mọi projection đang dựa
- * vào các partition đã đổi trước khi mở lại — nguồn phụ thuộc (phân công, ghi danh ở các task sau)
- * không sống sót sau khi role tiền đề của nó bị gỡ, và các role còn lại của cùng người vẫn giữ
- * nguồn độc lập của chúng vì bundle tính lại từ toàn bộ dữ kiện nguồn hiện hành chứ không trừ dần.
- * Bundle kết quả được ghi kèm vì membership/role là tiền đề của nguồn học sinh và nguồn phụ huynh
- * trong bundle đó; thiếu nó, reconcile sẽ chết {@code DESIRED_SOURCE_MISMATCH} như B67.
+ * {@link SourceRevocationCoordinator}. Gỡ role hay thu hồi membership làm bundle và group nguồn
+ * thay đổi trong cùng revision. Closure phụ thuộc của operation fence mọi projection đang dựa vào
+ * các partition đã đổi trước khi mở lại. Nguồn phụ thuộc (phân công, ghi danh) không sống sót sau
+ * khi role tiền đề của nó bị gỡ. Các role còn lại của cùng người vẫn giữ nguồn độc lập của chúng,
+ * vì bundle tính lại từ toàn bộ dữ kiện nguồn hiện hành chứ không trừ dần.
+ *
+ * <p>Bundle kết quả được ghi kèm vì membership và role là tiền đề của nguồn học sinh và nguồn phụ
+ * huynh trong bundle đó. Thiếu nó, reconcile sẽ chết {@code DESIRED_SOURCE_MISMATCH}.
  */
 @Component
 public class MembershipPolicyProjector {

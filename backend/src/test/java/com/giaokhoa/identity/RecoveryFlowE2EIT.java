@@ -40,10 +40,10 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Contract US1 ở tầng khôi phục danh tính: account không email chỉ được khôi phục bằng quyền hành
- * trên server của nền tảng (operator), người thường không đặt lại được mật khẩu của người khác;
- * account có email đã xác minh nhận action email đặt lại mật khẩu; endpoint recovery của hợp đồng
- * HTTP xác thực vai trò và đăng nhập trước khi chạm nghiệp vụ.
+ * Contract ở tầng khôi phục danh tính: account không email chỉ được khôi phục bằng quyền hành trên
+ * server của nền tảng (operator). Người thường không đặt lại được mật khẩu của người khác. Account
+ * có email đã xác minh nhận action email đặt lại mật khẩu. Endpoint recovery của hợp đồng HTTP xác
+ * thực vai trò và đăng nhập trước khi chạm nghiệp vụ.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

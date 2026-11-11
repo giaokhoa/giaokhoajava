@@ -9,15 +9,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
- * Guard bảo lưu lịch sử của module giảng dạy (FR-047, US8): lớp, khóa hoặc môn–khóa đã phát sinh
- * hoạt động được giao thì không được xóa. Các phương thức {@code require*Deletable} chặn yêu cầu
- * xóa cứng đối tượng đã có lịch sử bằng 409 TEACHING_OBJECT_HAS_HISTORY, giữ nguyên dữ liệu của đối
- * tượng ở trạng thái chỉ đọc theo các nguồn quyền còn hiệu lực; đối tượng chưa có lịch sử thì cho
- * qua. Các đường thu hồi của {@link ClassService} và {@link CourseService} KHÔNG qua guard này: thu
- * hồi là chuyển trạng thái giữ lịch sử, không phải xóa, nên vẫn là đường hợp lệ kể cả sau khi gói
- * hết hạn (FR-046), và việc thu hồi không xóa dòng nào. Các quan hệ chưa phát sinh lịch sử học tập
- * (roster, ghi danh, phân công) không qua guard này. Bài nộp và kết quả luôn treo dưới một hoạt
- * động nên kiểm tra tồn tại hoạt động là đủ cho cả chuỗi lịch sử.
+ * Guard bảo lưu lịch sử của module giảng dạy: lớp, khóa hoặc môn–khóa đã phát sinh hoạt động được
+ * giao thì không được xóa. Các phương thức {@code require*Deletable} chặn yêu cầu xóa cứng đối
+ * tượng đã có lịch sử bằng 409 TEACHING_OBJECT_HAS_HISTORY. Dữ liệu của đối tượng được giữ nguyên ở
+ * trạng thái chỉ đọc theo các nguồn quyền còn hiệu lực. Đối tượng chưa có lịch sử thì cho qua.
+ *
+ * <p>Các đường thu hồi của {@link ClassService} và {@link CourseService} KHÔNG qua guard này. Thu
+ * hồi là chuyển trạng thái giữ lịch sử, không phải xóa. Nó vẫn là đường hợp lệ kể cả sau khi gói
+ * hết hạn, và việc thu hồi không xóa dòng nào.
+ *
+ * <p>Các quan hệ chưa phát sinh lịch sử học tập (roster, ghi danh, phân công) không qua guard này.
+ * Bài nộp và kết quả luôn treo dưới một hoạt động, nên kiểm tra tồn tại hoạt động là đủ cho cả
+ * chuỗi lịch sử.
  */
 @Component
 public class HistoricalDataGuard {

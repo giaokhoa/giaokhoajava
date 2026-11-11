@@ -38,9 +38,9 @@ import org.springframework.transaction.annotation.Transactional;
  * giáo viên thuộc môn–khóa hoặc group chủ nhiệm của lớp — nên mỗi mutation ghi một authorization
  * operation qua {@link SourceRevocationCoordinator} với bundle hiện hành của target bị ảnh hưởng
  * kèm toàn bộ bundle kết quả của workspace (phân công giảng dạy là nguồn của {@code read}/{@code
- * grade}/{@code publish}/{@code read.published} trên kết quả), và phân công chỉ được coi là đã đồng
- * bộ khi operation SUCCEEDED; service không tự quyết quyền thay Keycloak PDP và không báo hoàn tất
- * khi operation còn PENDING.
+ * grade}/{@code publish}/{@code read.published} trên kết quả). Phân công chỉ được coi là đã đồng bộ
+ * khi operation SUCCEEDED. Service không tự quyết quyền thay Keycloak PDP và không báo hoàn tất khi
+ * operation còn PENDING.
  *
  * <p>Tiền đề role đúng center được kiểm tra ở đây trước khi ghi để trả 400 nghiệp vụ (trigger ở DB
  * chỉ kiểm tra membership ACTIVE cho chủ nhiệm, không kiểm tra role): người được phân công phải có
@@ -48,7 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
  * không có role TEACHER và người ngoài center đều bị từ chối cho cả lô trước khi ghi bất cứ dòng
  * nào. Phân công theo ngữ nghĩa hợp tập như roster/ghi danh: cặp đã có dòng hiện hành thì giữ
  * nguyên, chưa có thì tạo dòng ACTIVE mới, không phục hồi dòng lịch sử. Phân công là thao tác mở
- * rộng nên bị chặn khi gói đã hết hiệu lực; thu hồi thì không bị chặn bởi gói. Môn– khóa/lớp đích
+ * rộng nên bị chặn khi gói đã hết hiệu lực. Thu hồi thì không bị chặn bởi gói. Môn– khóa/lớp đích
  * phải đang hoạt động tại thời điểm phân công: môn–khóa của khóa hay lớp đã thu hồi không nhận thêm
  * phân công.
  *

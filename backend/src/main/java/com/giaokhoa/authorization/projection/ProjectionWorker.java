@@ -26,6 +26,7 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
@@ -248,18 +249,26 @@ public class ProjectionWorker {
                 | DataAccessException
                 | IllegalStateException
                 | OAuth2AuthorizationException ex) {
+            boolean terminal = operation.attemptCount() >= MAX_ATTEMPTS;
             if (LOG.isWarnEnabled()) {
-                LOG.warn(
-                        "Operation {} failed reconciliation with code {}",
-                        operation.id(),
-                        ERROR_RECONCILE_FAILED,
-                        ex);
+                if (terminal) {
+                    // Stack trace chỉ ở lần thử cuối đã cạn ngân sách: các lần thử
+                    // còn retry ghi một dòng mã lỗi kèm tóm tắt ngoại lệ, tránh
+                    // một stack trace đầy đủ cho mỗi lần thử.
+                    LOG.warn(
+                            "Operation {} failed reconciliation with code {}",
+                            operation.id(),
+                            ERROR_RECONCILE_FAILED,
+                            ex);
+                } else {
+                    LOG.warn(
+                            "Operation {} failed reconciliation with code {}: {}",
+                            operation.id(),
+                            ERROR_RECONCILE_FAILED,
+                            ex.toString());
+                }
             }
-            recordFailure(
-                    operation,
-                    ERROR_RECONCILE_FAILED,
-                    operation.attemptCount() >= MAX_ATTEMPTS,
-                    true);
+            recordFailure(operation, ERROR_RECONCILE_FAILED, terminal, true);
         }
     }
 
@@ -380,7 +389,15 @@ public class ProjectionWorker {
         }
         Instant now = Instant.now();
         for (UUID partitionId : batch) {
-            ProjectionReconciler.PartitionRow partition = reconciler.partition(partitionId);
+            ProjectionReconciler.PartitionRow partition;
+            try {
+                partition = reconciler.partition(partitionId);
+            } catch (EmptyResultDataAccessException ex) {
+                // Partition bị xoá giữa lượt quét và lần đọc (dữ kiện bị dọn đồng
+                // thời): không còn gì để đối chiếu, bỏ qua thay vì để ngoại lệ
+                // thoát ra poll() thành ERROR của scheduled task.
+                continue;
+            }
             OrphanRetry retry = orphanRetries.get(partitionId);
             if (retry != null && retry.desiredRevision() == partition.desiredRevision()) {
                 if (retry.failures() >= MAX_ATTEMPTS || now.isBefore(retry.nextAttemptAt())) {

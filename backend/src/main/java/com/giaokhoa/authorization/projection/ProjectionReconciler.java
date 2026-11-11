@@ -575,7 +575,7 @@ public class ProjectionReconciler {
      * hai. Lỗi đã phân loại (mã lỗi bền vững, điều kiện được dự kiến trong thiết kế fail-closed)
      * ghi kèm mã và thông điệp, không kèm stack trace — theo quy tắc SLF4J, stack trace chỉ in khi
      * Throwable được truyền làm đối số cuối; riêng {@link #ERROR_NO_RECORDED_PROJECTION} ghi ở mức
-     * DEBUG. Lỗi hạ tầng chưa phân loại giữ WARN kèm stack trace như đường operation.
+     * DEBUG. Lỗi hạ tầng chưa phân loại giữ WARN kèm stack trace, cũng chỉ ở các mốc đó.
      */
     public boolean tryReconcilePartition(UUID partitionId, int consecutiveFailures) {
         try {
@@ -604,7 +604,9 @@ public class ProjectionReconciler {
                 | DataAccessException
                 | IllegalStateException
                 | OAuth2AuthorizationException ex) {
-            if (LOG.isWarnEnabled()) {
+            // Cùng quy tắc chống lặp như lỗi đã phân loại ở trên: stack trace
+            // chỉ in ở các mốc lũy thừa hai của chuỗi thất bại liên tiếp.
+            if (isLogMilestone(consecutiveFailures) && LOG.isWarnEnabled()) {
                 LOG.warn("Partition {} did not reconcile", partitionId, ex);
             }
             return false;
@@ -1118,7 +1120,8 @@ public class ProjectionReconciler {
                 + profileBundleDescriptor(targetKey, scope);
     }
 
-    // Hai scope đọc của US1 dùng cùng actor và eligibility; một checkpoint ghi theo target.
+    // Hai scope đọc của profile dùng cùng actor và eligibility nên được chiếu cùng nhau: một
+    // checkpoint ghi theo target.
     private static List<String> projectedScopes(String targetKey, String scope) {
         return targetKey.startsWith("account:")
                         && PermissionCatalog.ProfileScope.WORKSPACE_LIST.scopeName().equals(scope)

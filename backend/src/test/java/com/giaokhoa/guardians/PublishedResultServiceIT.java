@@ -57,8 +57,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * phụ huynh là descriptor canonical {@code GUARDIAN_GROUP}) và {@link PublishedResultService} hỏi
  * PDP cho từng hàng trước khi trả DTO. Liên kết phụ huynh và group của nó được seed ở tầng dữ kiện
  * bền đúng hình dạng mà tầng liên kết và phép đồng bộ group của nó bảo đảm (link APPROVED, cả hai
- * phía còn membership/role hiện hành, parent nằm trong guardian group của đúng học sinh), vì route
- * liên kết thuộc task phía sau.
+ * phía còn membership/role hiện hành, parent nằm trong guardian group của đúng học sinh).
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -603,8 +602,8 @@ class PublishedResultServiceIT extends GuardianFixture {
                     "APPROVED",
                     center.managerId());
             putParentInGuardianGroup(center, center.studentX());
-            // Chỉ có kết quả DRAFT: không ứng viên PUBLISHED nào nên nhánh đọc rỗng của B55
-            // phải chạy — phụ huynh đã duyệt và giáo viên đúng môn–khóa đều nhận 403.
+            // Chỉ có kết quả DRAFT: không ứng viên PUBLISHED nào nên nhánh đọc rỗng phải chạy.
+            // Phụ huynh đã duyệt và giáo viên đúng môn–khóa đều nhận 403.
             UUID draftId =
                     seedResult(
                             center,
@@ -634,11 +633,12 @@ class PublishedResultServiceIT extends GuardianFixture {
         UUID personalWid = personalWorkspaceOf(center.ownerId());
         // Kỳ gói personal phải đi qua đường xác nhận thật của SubscriptionService, không seed
         // thẳng bằng JDBC: danh tính owner dùng chung cho cả class nên lần đăng nhập đầu tiên
-        // ở một ca kiểm thử trước đã ghi bundle entitlement khi personal chưa có kỳ; đồng bộ
+        // ở một ca kiểm thử trước đã ghi bundle entitlement khi personal chưa có kỳ. Đồng bộ
         // eligibility chỉ ghi bundle khi chưa có projection row nên lần đăng nhập sau không ghi
-        // lại, seed JDBC làm desired đã ghi thiếu descriptor kỳ gói và reconcile chết
+        // lại. Việc nạp sẵn bằng JDBC làm trạng thái mong muốn đã ghi thiếu mô tả kỳ gói và phép
+        // đối chiếu chết
         // DESIRED_SOURCE_MISMATCH khi tạo lớp. Xác nhận qua service ghi kỳ kèm bundle mới
-        // trong cùng operation; chờ operation SUCCEEDED rồi mới tạo lớp.
+        // trong cùng operation. Chờ operation SUCCEEDED rồi mới tạo lớp.
         Instant from = OffsetDateTime.now(ZoneOffset.UTC).minusDays(1).toInstant();
         Instant until = OffsetDateTime.now(ZoneOffset.UTC).plusDays(365).toInstant();
         AuthorizationOperation confirmOperation =

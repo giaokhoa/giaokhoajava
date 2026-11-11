@@ -320,8 +320,8 @@ abstract class TeachingFixture extends IntegrationEnvironment {
     private @Nullable HttpTestClient httpClient;
 
     /**
-     * Client HTTP thật của tầng e2e-backend (B109), bind lười vào server RANDOM_PORT của context.
-     * Chỉ các class e2e dùng; các class it-pure giữ nguyên đường MockMvc.
+     * Client HTTP thật của tầng e2e-backend , bind lười vào server RANDOM_PORT của context. Chỉ các
+     * class e2e dùng; các class it-pure giữ nguyên đường MockMvc.
      */
     protected HttpTestClient realHttp() {
         if (httpClient == null) {
@@ -837,7 +837,7 @@ abstract class TeachingFixture extends IntegrationEnvironment {
      * Phiên Spring thật chứa token Code+PKCE thật của một user TEST. Đăng nhập đi qua form login
      * của Keycloak TEST bằng client BFF của ứng dụng; không dùng Direct Access Grants cho phiên
      * web. Login dùng helper dùng chung {@code OidcFormLogin} (đã biết hai bước identity-first),
-     * phần còn lại dựng phiên Spring từ token như bản gốc trong test hợp đồng US2.
+     * phần còn lại dựng phiên Spring từ token như bản gốc trong test hợp đồng.
      */
     static final class RealSession implements AutoCloseable {
         private final SessionRepository<?> sessions;

@@ -36,17 +36,20 @@ import tools.jackson.databind.JsonNode;
  * chối phải gửi mới, hiệu lực thu hồi trên phiên cũ được kiểm tra tại {@link
  * PublishedResultContractIT}.
  *
- * <p>Đây là task test-first: route, bảng và service guardian chưa được triển khai nên các test hiện
- * đỏ với 404 ở lời gọi guardian đầu tiên — đỏ đó là có ý nghĩa, không phải lỗi hạ tầng. Các test kỳ
- * vọng 404 cho đối tượng ngoài phạm vi được viết kèm một luồng hợp lệ chạy trước để không xanh giả
- * khi route chưa tồn tại.
+ * <p>Các test kỳ vọng 404 cho đối tượng ngoài phạm vi được viết kèm một luồng hợp lệ chạy trước, để
+ * khẳng định 404 không xanh giả.
  *
- * <p>Ba điểm hợp đồng test này chốt theo tài liệu hiện có và cần đối chiếu khi triển khai: item của
- * danh sách liên kết lộ {@code version} vì {@code GuardianDecision} bắt buộc mang {@code
- * expectedVersion}; học sinh ngoài phạm vi center trả 404 theo quy tắc không tiết lộ sự tồn tại
- * ngoài phạm vi của hợp đồng HTTP; body mang {@code parentUserId} của người khác chưa được hợp đồng
- * chốt là từ chối (400) hay bỏ qua trường lạ (202) nên test chấp nhận cả hai, chỉ chốt chặt không
- * bao giờ tạo liên kết cho phụ huynh khác.
+ * <p>Ba điểm hợp đồng test này chốt theo cách đọc tài liệu hiện có:
+ *
+ * <ul>
+ *   <li>item của danh sách liên kết lộ {@code version} vì {@code GuardianDecision} bắt buộc mang
+ *       {@code expectedVersion}
+ *   <li>học sinh ngoài phạm vi center trả 404 theo quy tắc không tiết lộ sự tồn tại ngoài phạm vi
+ *       của hợp đồng HTTP
+ *   <li>body mang {@code parentUserId} của người khác chưa được hợp đồng chốt là từ chối (400) hay
+ *       bỏ qua trường lạ (202), nên test chấp nhận cả hai và chỉ chốt chặt không bao giờ tạo liên
+ *       kết cho phụ huynh khác
+ * </ul>
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
