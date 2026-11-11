@@ -66,7 +66,7 @@ describe("dựng payload sample action", () => {
     expect(payload).toEqual({ action: "SAVE_VERSION", resourceId: "r-1", versionId: "v-1" });
   });
 
-  it("attemptLimit thành số và allowedWorkspaceIds thành mảng", () => {
+  it("attemptLimit thành số và actions/allowedWorkspaceIds thành mảng", () => {
     const payload = buildSampleActionPayload("SHARE_VERSION", {
       resourceId: "r-1",
       versionId: "v-1",
@@ -75,7 +75,7 @@ describe("dựng payload sample action", () => {
       actions: "use,content.read",
       allowedWorkspaceIds: "w-2, w-3",
     });
-    expect(payload.actions).toBe("use,content.read");
+    expect(payload.actions).toEqual(["use", "content.read"]);
     expect(payload.allowedWorkspaceIds).toEqual(["w-2", "w-3"]);
 
     const assign = buildSampleActionPayload("ASSIGN_ACTIVITY", {
