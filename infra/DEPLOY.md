@@ -68,11 +68,15 @@ riêng service `backend` trong Dokploy.
    quay lại được.
 
 4. **Cấu hình SMTP cho Keycloak.** Baseline để trống `smtpServer`: thư
-   verify email và đặt lại mật khẩu do Keycloak gửi. Trong Admin console
-   (`https://auth.fuckr.net`), Realm settings → Email: host `mailpit`,
-   port `1025`, tắt TLS và authentication (Mailpit nội bộ hứng toàn bộ thư
-   ở môi trường này; muốn gửi thư thật ra ngoài thì thay bằng SMTP ngoài và
-   bỏ service `mailpit`).
+   verify email và đặt lại mật khẩu do Keycloak gửi. Production gửi thư
+   thật qua SMTP của Resend. Trong Admin console
+   (`https://auth.fuckr.net`), Realm settings → Email: From
+   `noreply@fuckr.net`, host `smtp.resend.com`, port `587`, tắt SSL, bật
+   StartTLS, bật authentication, username `resend`; ô Password là API key
+   của Resend (chỉ nhập trong form này, không ghi giá trị key vào tài liệu
+   hay repo). Domain `fuckr.net` đã xác thực trong Resend (đã có bản ghi
+   DKIM/SPF). Service `mailpit` trong stack không còn là đường gửi thư của
+   production; nó chỉ phù hợp để hứng thư ở môi trường dev/local.
 
 ## Cập nhật và lưu ý
 
