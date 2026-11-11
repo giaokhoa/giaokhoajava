@@ -103,7 +103,7 @@ services:
     # Cổng host duy nhất của toàn stack: Cloudflare Tunnel trỏ cả bốn
     # hostname (giaokhoa, auth, trung-tam-1, trung-tam-2) vào cổng này.
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:30080:80"
     volumes:
       - ./gateway/Caddyfile.prod:/etc/caddy/Caddyfile:ro
     depends_on:

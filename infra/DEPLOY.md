@@ -5,7 +5,7 @@ Stack production nằm ở `infra/compose.prod.yaml` (service `app-db`,
 đóng gói bằng `backend/Dockerfile` và `frontend/Dockerfile`, gateway theo
 `infra/gateway/Caddyfile.prod`. Luồng request:
 
-Cloudflare Tunnel → `127.0.0.1:3000` (gateway, cổng host duy nhất của stack)
+Cloudflare Tunnel → `127.0.0.1:30080` (gateway, cổng host duy nhất của stack)
 → `giaokhoa.fuckr.net` và hai tenant test `trung-tam-1.fuckr.net`,
 `trung-tam-2.fuckr.net` vào backend (đường `/api`, `/oauth2`, `/login`,
 `/logout`, `/actuator`) và frontend; `auth.fuckr.net` vào Keycloak.
@@ -21,7 +21,7 @@ TLS kết thúc ở Cloudflare; trong stack chỉ có HTTP nội bộ.
    service. Mọi giá trị `replace-with-...` phải được thay bằng secret thật
    của môi trường; compose từ chối khởi động nếu thiếu secret bắt buộc.
 3. Cloudflare Tunnel: ingress của cả bốn hostname trỏ vào
-   `http://localhost:3000`. Hostname `dokploy.fuckr.net` giữ nguyên trỏ vào
+   `http://localhost:30080`. Hostname `dokploy.fuckr.net` giữ nguyên trỏ vào
    panel của Dokploy, không đi qua stack này.
 
 ## Dựng lần đầu
