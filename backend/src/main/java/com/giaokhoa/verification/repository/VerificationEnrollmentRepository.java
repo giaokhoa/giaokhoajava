@@ -33,4 +33,13 @@ public interface VerificationEnrollmentRepository extends JpaRepository<Enrollme
             @Param("workspaceId") UUID workspaceId,
             @Param("courseSubjectId") UUID courseSubjectId,
             @Param("studentUserId") UUID studentUserId);
+
+    /** Định danh học sinh của mọi ghi danh hiện hành của môn–khóa. */
+    @Query(
+            "select distinct cs.studentUserId from Enrollment e, ClassStudent cs"
+                    + " where cs.id = e.classStudentId"
+                    + " and e.workspaceId = :workspaceId and e.courseSubjectId = :courseSubjectId"
+                    + " and e.state in ('PENDING', 'ACTIVE')")
+    List<UUID> findEnrolledStudentIdsByCourseSubject(
+            @Param("workspaceId") UUID workspaceId, @Param("courseSubjectId") UUID courseSubjectId);
 }
