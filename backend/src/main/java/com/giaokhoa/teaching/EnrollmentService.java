@@ -52,9 +52,9 @@ import org.springframework.transaction.annotation.Transactional;
  * đi cùng đường này (owner tổ chức qua route), nguồn personal thuộc projector riêng.
  *
  * <p>Như các service giảng dạy khác, mỗi phương thức đặt context workspace cho transaction qua
- * {@link WorkspaceTransaction} ngay khi bắt đầu vì các bảng ghi danh nằm dưới RLS theo đúng context
- * đó. Các mutation trong cùng một workspace được tuần tự hoá bằng khóa workspace thống nhất (xem
- * {@link #lockWorkspace}) giữ tới commit, để bundle desired mà projector tính từ dữ kiện nguồn
+ * {@link WorkspaceTransaction} ngay khi bắt đầu vì các bảng ghi danh nằm trong schema tenant của
+ * đúng workspace đó. Các mutation trong cùng một workspace được tuần tự hoá bằng khóa workspace
+ * thống nhất (xem {@link #lockWorkspace}) giữ tới commit, để bundle desired mà projector tính từ
  * không bao giờ là ảnh chụp thiếu thay đổi của một mutation đang chạy đồng thời trong cùng
  * workspace.
  */

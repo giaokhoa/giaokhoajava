@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -16,9 +15,13 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.DesiredProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.identity.model.UserAccount;
@@ -34,7 +37,6 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.HttpServerErrorException;
 
 class IdentityEligibilityServiceTest {
@@ -44,7 +46,8 @@ class IdentityEligibilityServiceTest {
     private static final String EMAIL = "learner@example.test";
     private static final String TARGET = "account:" + ACTOR;
 
-    private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    private final AuthzProjectionRepository projections = mock(AuthzProjectionRepository.class);
+    private final AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
     private final UserAccountRepository accounts = mock(UserAccountRepository.class);
     private final WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
     private final CurrentIdentityClient identities = mock(CurrentIdentityClient.class);
@@ -52,7 +55,8 @@ class IdentityEligibilityServiceTest {
             mock(AuthorizationOperationService.class);
     private final IdentityEligibilityService synchronizer =
             new IdentityEligibilityService(
-                    jdbc,
+                    projections,
+                    partitions,
                     accounts,
                     workspaces,
                     identities,
@@ -168,11 +172,10 @@ class IdentityEligibilityServiceTest {
         account("SELF_REGISTERED", false, EMAIL);
         noRecordedProjection();
         current(new CurrentIdentity(SUBJECT, "learner", EMAIL, false, true));
-        when(jdbc.queryForObject(
-                        contains("applied_revision > 0"),
-                        eq(Boolean.class),
-                        eq("account:" + ACTOR)))
-                .thenReturn(true);
+        when(partitions.findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.ACCOUNT, "account:" + ACTOR))
+                .thenReturn(
+                        Optional.of(accountPartition(1L, 1L, AuthorizationPartition.State.READY)));
         assertTrue(synchronizer.synchronizeEligibility(ACTOR).isEmpty());
         verifyNoInteractions(operations);
     }
@@ -181,9 +184,7 @@ class IdentityEligibilityServiceTest {
     void aNullAccountRevisionFailsClosedBeforeRecordingAnOperation() {
         account("SELF_REGISTERED", false, EMAIL);
         current(new CurrentIdentity(SUBJECT, "learner", EMAIL, true, true));
-        when(jdbc.queryForObject(
-                        contains("desired_revision"), eq(Long.class), eq(ACCOUNT_PARTITION)))
-                .thenReturn(null);
+        when(partitions.findById(ACCOUNT_PARTITION)).thenReturn(Optional.empty());
         var failure =
                 assertThrows(
                         HttpProblemException.class,
@@ -266,19 +267,43 @@ class IdentityEligibilityServiceTest {
                                                 .eligibilityDescriptor(
                                                         ACTOR, SUBJECT, TARGET, "workspace.list"))
                                 : List.of());
-        when(jdbc.queryForList(contains("FROM authz_projection"), eq(String.class), eq(TARGET)))
-                .thenReturn(List.of(recordedHash));
-        when(jdbc.queryForList(
-                        contains("FROM authz_partition"), eq(UUID.class), eq("account:" + ACTOR)))
-                .thenReturn(List.of(ACCOUNT_PARTITION));
-        when(jdbc.queryForObject(
-                        contains("desired_revision"), eq(Long.class), eq(ACCOUNT_PARTITION)))
-                .thenReturn(0L);
+        when(projections.findByTargetKey(TARGET))
+                .thenReturn(Optional.of(recordedProjection(recordedHash)));
+        when(partitions.findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.ACCOUNT, "account:" + ACTOR))
+                .thenReturn(
+                        Optional.of(accountPartition(0L, 0L, AuthorizationPartition.State.READY)));
+        when(partitions.findById(ACCOUNT_PARTITION))
+                .thenReturn(
+                        Optional.of(accountPartition(0L, 0L, AuthorizationPartition.State.READY)));
+    }
+
+    private AuthorizationProjection recordedProjection(String desiredHash) {
+        return new AuthorizationProjection(
+                RandomIds.randomId(),
+                ACCOUNT_PARTITION,
+                TARGET,
+                null,
+                List.of(),
+                List.of(),
+                desiredHash,
+                null,
+                AuthorizationProjection.State.READY);
+    }
+
+    private AuthorizationPartition accountPartition(
+            long desiredRevision, long appliedRevision, AuthorizationPartition.State state) {
+        return new AuthorizationPartition(
+                ACCOUNT_PARTITION,
+                AuthorizationPartition.Kind.ACCOUNT,
+                "account:" + ACTOR,
+                desiredRevision,
+                appliedRevision,
+                state);
     }
 
     private void noRecordedProjection() {
-        when(jdbc.queryForList(contains("FROM authz_projection"), eq(String.class), eq(TARGET)))
-                .thenReturn(List.of());
+        when(projections.findByTargetKey(TARGET)).thenReturn(Optional.empty());
     }
 
     private void current(CurrentIdentity identity) {

@@ -44,7 +44,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * projector này tính tập descriptor để {@link
  * com.giaokhoa.authorization.projection.SourceRevocationCoordinator} ghi vào operation khi các
  * service lớp/khóa/roster/ghi danh đổi dữ kiện nguồn, và dựng lại đúng tập đó khi {@code
- * ProjectionReconciler} đối chiếu desired hash. Các bảng giảng dạy nằm dưới RLS theo context
+ * ProjectionReconciler} đối chiếu desired hash. Các bảng giảng dạy nằm trong schema tenant của
  * workspace nên mọi phép dựng bundle ở đây tự bọc trong một transaction ngắn có đặt context của
  * đúng workspace qua {@link WorkspaceTransaction}, cùng mẫu {@link TeachingPolicyProjector}; dữ
  * kiện thuộc mặt phẳng hệ thống (chủ sở hữu, subject của học sinh) được phân giải theo lô ở tầng

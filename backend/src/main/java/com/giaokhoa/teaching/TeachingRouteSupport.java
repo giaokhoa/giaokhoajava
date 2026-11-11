@@ -47,9 +47,9 @@ import tools.jackson.databind.json.JsonMapper;
  * Mỗi request đồng bộ eligibility hiện hành qua ACCOUNT/target fence trước khi quyết role bằng SQL;
  * khóa workspace bao trọn kiểm tra role, đọc/ghi nguồn và ghi operation tới commit.
  *
- * <p>Mọi đọc ghi chạm bảng giảng dạy (đang bật RLS theo context workspace) chạy trong {@link
+ * <p>Mọi đọc ghi chạm bảng giảng dạy (nằm trong schema tenant của workspace) chạy trong {@link
  * WorkspaceTransaction#inWorkspace} để context được đặt trước truy vấn đầu tiên; thiếu context thì
- * role runtime không BYPASSRLS không thấy hàng nào, kể cả khi quyết quyền.
+ * truy vấn không chạy trong schema tenant nên không thấy hàng nào, kể cả khi quyết quyền.
  */
 @Component
 public class TeachingRouteSupport {
@@ -140,7 +140,7 @@ public class TeachingRouteSupport {
                                 }));
     }
 
-    /** Chạy một thao tác trong transaction có context workspace cho RLS. */
+    /** Chạy một thao tác trong transaction có context workspace cho schema tenant. */
     private <T> T inWorkspace(UUID workspaceId, Supplier<T> work) {
         // Supplier của route luôn trả đáp án; inWorkspace chỉ trả null khi callback trả null.
         return Objects.requireNonNull(

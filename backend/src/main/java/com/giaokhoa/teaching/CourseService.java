@@ -32,10 +32,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Nghiệp vụ khóa, môn của khóa và danh mục môn ở tầng dữ kiện nguồn: tạo/đổi tên/thu hồi khóa,
  * gắn/gỡ môn của khóa, đọc danh mục môn tham chiếu. Mọi thao tác đi qua các repository đã khóa phạm
  * vi theo workspace và lớp cha. Như {@link ClassService}, mỗi phương thức có phạm vi workspace đặt
- * context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt đầu để RLS ở tầng
- * DB khóa đúng cùng phạm vi; riêng danh mục môn là dữ liệu dùng chung, không có RLS nên không cần
- * context. Mọi phương thức ghi giữ khóa workspace thống nhất qua {@link
- * ResourceMutationCoordinator} ngay sau khi đặt context, như {@link ClassService}.
+ * context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt đầu để truy vấn
+ * chạy đúng trong schema tenant cùng phạm vi; riêng danh mục môn là dữ liệu dùng chung, không nằm
+ * trong schema tenant nên không cần context. Mọi phương thức ghi giữ khóa workspace thống nhất qua
+ * {@link ResourceMutationCoordinator} ngay sau khi đặt context, như {@link ClassService}.
  *
  * <p>Như {@link ClassService}, service này chỉ giữ bất biến dữ kiện và trạng thái — không tự quyết
  * quyền thay Keycloak PDP, không ghi authorization operation. Bất biến riêng của khóa: danh sách
