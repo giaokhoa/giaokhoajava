@@ -1,66 +1,183 @@
 # Hướng dẫn chạy và nghiệm thu bộ khung
 
-**Trạng thái hiện tại**: Đây là hướng dẫn đích sau implementation. Repository hiện chưa có backend/frontend, wrapper, cấu hình infra bổ sung hoặc test suite; không thể coi các lệnh dưới đây là đã chạy hoặc các tiêu chí là đã đạt. Mục đích là thống nhất cách chứng minh [spec.md](spec.md) khi triển khai.
+**Trạng thái**: Đã triển khai. Mọi lệnh và cấu hình dưới đây trỏ tới file, script và
+workflow thật trong repository; chỗ nào repository chưa có cơ chế thì ghi rõ là chưa có,
+không mô tả như đã tồn tại. Kết quả nghiệm thu nằm ở thư mục `validation/` và chỉ được
+ghi từ lượt chạy thật, không tạo sẵn trạng thái đạt.
+
+Tài liệu liên quan: [README.md](../../README.md) ở thư mục gốc (điểm vào),
+[backend/README.md](../../backend/README.md) (cổng chất lượng backend, runbook stack
+TEST, khôi phục tài khoản), [infra/keycloak/README.md](../../infra/keycloak/README.md)
+(bootstrap/reconcile realm, kiểm chứng native, giao thức emergency console).
 
 ## 1. Điều kiện
 
-- Java 25, Node 24; Maven Wrapper trong backend và npm lockfile trong frontend.
-- PostgreSQL 18.6 app-db và keycloak-db riêng; Keycloak 26.8.1. Tận dụng `.devcontainer/` hiện có, không dùng app database DEV để chạy test phá dữ liệu.
-- Docker/Testcontainers nếu có; nếu không có Docker, cung cấp PostgreSQL test database và Keycloak realm test tách biệt qua môi trường. Không thay bằng H2 hoặc mock PDP cho acceptance cốt lõi.
-- SMTP test/Mailpit để nhận email xác minh/khôi phục; credential dev/test riêng, không commit secret.
-- Một issuer URL browser và Spring cùng truy cập được, đúng issuer token và callback URI. Nếu `localhost:8081` trong container không trỏ tới Keycloak, dùng dev gateway/network alias trong compose override; không tắt issuer validation hoặc sửa token để vượt vấn đề định tuyến.
+- JDK 25 và Node 24. DevContainer (`.devcontainer/devcontainer.json`) ghim đúng hai
+  phiên bản này qua features; CI cũng dùng JDK 25 / Node 24.
+- Docker và Docker Compose. Không có Docker thì không chạy được stack DEV/TEST của repo.
+- PostgreSQL 18.6 và Keycloak 26.8.1, image ghim trong `.devcontainer/compose.yml` và
+  `infra/compose.test.yaml`. Test tích hợp chạy trên PostgreSQL/Keycloak thật của stack
+  TEST; repository không dùng Testcontainers, H2 hay mock PDP cho nghiệm thu cốt lõi.
+- Mốc thời gian theo UTC: dữ kiện thời gian nghiệp vụ là `OffsetDateTime`/`Instant` theo
+  UTC và template policy native định dạng mốc hết hạn bằng UTC
+  (`NativePolicyTemplates`), Keycloak đánh giá time policy theo giờ hệ thống của nó.
+  Giữ đồng hồ host và container ở UTC; container Docker mặc định chạy UTC.
+- Giới hạn hiện tại: baseline vận hành **một instance Spring và một instance Next**
+  (xem `plan.md`). Projection worker claim operation bằng khoá cơ sở dữ liệu nên
+  operation không bị xử lý trùng khi khởi động lại, nhưng đa instance chưa được
+  nghiệm thu và không thuộc phạm vi bản này.
 
-## 2. Cấu hình dự kiến
+## 2. Cấu hình
 
-Các file được tạo ở implementation: `.env.example`, `frontend/.env.local.example`, `infra/compose.dev.yaml`, `infra/compose.test.yaml` và baseline/fixtures Keycloak. Copy root template thành `.env` cho compose/backend và frontend template thành `frontend/.env.local` chỉ chứa cấu hình frontend. File root dùng cú pháp biến shell tương thích để load vào terminal; không truyền secret Keycloak/DB sang Next. Cung cấp tối thiểu:
+Sao chép `.env.example` thành `.env` ở thư mục gốc và thay mọi giá trị
+`replace-with-...` bằng giá trị thật của môi trường; không commit `.env` hay secret.
+Nạp vào terminal chạy backend bằng:
+
+```bash
+set -a
+. ./.env
+set +a
+```
+
+Frontend không cần biến môi trường: trình duyệt chỉ gọi đường tương đối `/api` cùng
+origin (xem `frontend/.env.local.example`), và không biến nào được truyền secret
+Keycloak/DB sang Next.
 
 | Biến | Nội dung |
 | --- | --- |
 | `APP_ORIGIN` | Origin public của ứng dụng, thống nhất gateway/callback |
-| `OIDC_ISSUER_URI` | Issuer realm giaokhoa có thể truy cập từ browser và backend |
-| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Confidential web client; secret chỉ tại Spring |
-| `KEYCLOAK_AUTHZ_AUDIENCE` | giaokhoa-api |
-| `KEYCLOAK_ADMIN_BASE_URL` | Địa chỉ Admin/Protection API backend truy cập được |
-| `KEYCLOAK_PROVISIONER_CLIENT_ID` / `KEYCLOAK_PROVISIONER_CLIENT_SECRET` | Client provisioner quyền tối thiểu, không evaluate thay user |
-| `SPRING_DATASOURCE_URL` / `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | App database; runtime không owner/BYPASSRLS |
-| `SPRING_FLYWAY_USER` / `SPRING_FLYWAY_PASSWORD` | Migration role tách runtime |
-| `MAIL_HOST` / `MAIL_PORT` | SMTP xác minh/khôi phục trong Keycloak hoặc baseline bootstrap |
-| `TEST_DATABASE_URL` / `TEST_KEYCLOAK_BASE_URL` | Chỉ dùng khi test services external thay Testcontainers |
-| `COMPOSE_PROJECT_NAME` | Dùng đúng tên project của DevContainer hiện có cho dev; test dùng project/volumes khác |
-| `BACKEND_INTERNAL_URL` | Chỉ trong frontend/.env.local, địa chỉ Spring cho Server Components; không public và không có credential |
+| `OIDC_ISSUER_URI` | Issuer realm `giaokhoa` truy cập được từ browser và backend |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Confidential web client `giaokhoa-web`; secret chỉ tại Spring |
+| `KEYCLOAK_AUTHZ_AUDIENCE` | `giaokhoa-api` |
+| `KEYCLOAK_ADMIN_BASE_URL` | Địa chỉ Admin/Protection API backend truy cập được (`http://keycloak:8080` trong mạng DEV) |
+| `KEYCLOAK_PROVISIONER_CLIENT_ID` / `KEYCLOAK_PROVISIONER_CLIENT_SECRET` | Client `giaokhoa-provisioner` quyền tối thiểu; secret khác secret web client |
+| `SPRING_DATASOURCE_URL` / `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | App database bằng runtime role `giaokhoa_runtime`; không dùng role owner/BYPASSRLS |
+| `SPRING_FLYWAY_USER` / `SPRING_FLYWAY_PASSWORD` | Migration role tách runtime: ở DEV là role owner `giaokhoa` của compose. Giá trị `giaokhoa_migrator` trong file mẫu chỉ là tên gợi ý — repo không tạo role đó, phải thay bằng role owner thật của môi trường |
+| `MAIL_HOST` / `MAIL_PORT` | SMTP cho realm khi cần chạy luồng email ở DEV: `mailpit` / `1025` |
+| `COMPOSE_PROJECT_NAME` | Đúng tên project Compose của DevContainer đang chạy; không tạo stack/volume DEV thứ hai |
 
-Khi dùng `infra/compose.test.yaml` với test chạy **trên Docker host**, sử dụng `TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:15432/giaokhoa_test` và `TEST_KEYCLOAK_BASE_URL=http://auth.test.giaokhoa.localhost:18081`. Nếu runner **tham gia Docker network của TEST**, dùng `jdbc:postgresql://test-app-db:5432/giaokhoa_test` và `http://auth.test.giaokhoa.localhost:18081` (Keycloak nghe cổng `18081` cả trong container). Test chạy **trong DevContainer mặc định** không thuộc network TEST: `127.0.0.1` là chính DevContainer, còn service name TEST không phân giải được; cần chạy runner trong TEST network hoặc cấu hình kết nối riêng, không dùng database DEV.
+Role runtime do baseline tạo ở dạng `NOLOGIN` khi chưa tồn tại. Trước lần chạy backend
+đầu tiên, cấp LOGIN cho role bằng mật khẩu khớp `SPRING_DATASOURCE_PASSWORD` trong
+`.env`, chạy bằng role owner qua container `app-db`:
 
-Keycloak baseline phải có exact redirects/logout/back-channel, audience mapper phù hợp, no default wildcard allow, no group claim cho policy, không Direct Access Grants. `registrationEmailAsUsername=false`, email optional ở profile, verifyEmail bật; không default VERIFY_EMAIL/UPDATE_PROFILE lên mọi account. Nguồn cấp tài khoản chỉ server xác lập.
+```bash
+docker compose -f .devcontainer/compose.yml exec -T app-db \
+  psql -U giaokhoa -d giaokhoa \
+  -c "ALTER ROLE giaokhoa_runtime WITH LOGIN PASSWORD '<khớp SPRING_DATASOURCE_PASSWORD>'"
+```
 
-Origin local đề xuất là `http://giaokhoa.localhost:3000` và issuer `http://auth.giaokhoa.localhost:8081/realms/giaokhoa`. Gateway giữ các port public 3000/8081, Spring dev nghe 8080, Next dev/start nghe 3001. Compose override phải giải quyết network aliases cho cả host/container và bỏ mapping 8081 trực tiếp của service Keycloak để không xung đột gateway; không tạo thêm stack cùng port khi DevContainer đã chạy. Dùng HTTPS/cookie Secure ở production; local HTTP chỉ trong dev. Không dùng cookie `Domain=.giaokhoa.com`.
+Nếu role chưa tồn tại (chưa lần migrate nào chạy), tạo mới theo cùng mẫu lệnh
+`CREATE ROLE` như stack TEST ở [backend/README.md](../../backend/README.md).
 
-## 3. Khởi động dev sau implementation
+## 3. Khởi động DEV
 
-Từ repository root, với các file dự kiến đã được tạo:
+DevContainer dùng project Compose đã có; `infra/compose.dev.yaml` là override bổ sung
+gateway và Mailpit, bỏ mapping cổng trực tiếp của Keycloak — không chạy override như
+một stack độc lập và không xoá volume DEV.
 
 ```bash
 set -a
 . ./.env
 set +a
 docker compose -f .devcontainer/compose.yml -f infra/compose.dev.yaml up -d app-db keycloak-db keycloak mailpit gateway
-./backend/mvnw -f backend/pom.xml spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-Terminal frontend riêng:
+Gateway (Caddy, `infra/gateway/Caddyfile`) là lối vào duy nhất: `http://giaokhoa.localhost:3000`
+cho ứng dụng và `http://auth.giaokhoa.localhost:8081` cho Keycloak; Spring nghe 8080 và
+Next dev nghe 3001 bên trong container `app`.
+
+Bootstrap realm `giaokhoa` (bắt buộc trước khi đăng nhập; script idempotent, chạy lại
+được khi đổi `APP_ORIGIN`, secret hoặc baseline — chi tiết ở
+[infra/keycloak/README.md](../../infra/keycloak/README.md)). Các biến secret và
+`APP_ORIGIN` lấy từ `.env` đã nạp ở bước trên; chạy sau khi Keycloak đã khởi động xong
+— script báo lỗi kết nối nếu Keycloak chưa sẵn sàng, chạy lại khi sẵn sàng là an toàn:
+
+```bash
+export KEYCLOAK_ADMIN_BASE_URL=http://keycloak:8080
+export KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=admin   # mặc định DEV trong .devcontainer/compose.yml
+export KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=admin   # chỉ DEV; môi trường khác dùng credential riêng
+bash infra/keycloak/bootstrap.sh
+```
+
+Chạy backend và frontend (hai terminal trong DevContainer, đã nạp `.env` cho backend):
+
+```bash
+./backend/mvnw -f backend/pom.xml spring-boot:run
+```
 
 ```bash
 npm --prefix frontend ci
 npm --prefix frontend run dev
 ```
 
-Next tự đọc `frontend/.env.local` trong project frontend; script dev được định nghĩa dùng port 3001. Không dựa vào việc compose tự đọc root `.env` để nghĩ rằng lệnh Maven ở terminal đã nhận biến. Terminal kiểm thử backend cũng phải load các biến test được phép theo cách tương tự; frontend không nhận credential backend.
+Kiểm tra trước khi chạy nghiệp vụ: gateway tải được UI; `GET /actuator/health` của
+Spring trả trạng thái tổng (chỉ endpoint health được mở); browser đăng nhập qua
+Keycloak và callback về ứng dụng; `/api/session` không chứa bearer token. Session,
+authorized client và OIDC correlation lưu phía server (JDBC) nên sống qua restart
+Spring; Next không giữ token hay session riêng.
 
-Bootstrap realm/client/operator và fixtures test/review được cung cấp bằng entrypoint `infra/keycloak/` ở implementation; không dùng default password production, không reset volume hoặc import đè realm đang có. Cấu hình gateway/Next dev port thống nhất với APP_ORIGIN.
+## 4. Stack TEST và kiểm thử
 
-Kiểm tra trước chạy nghiệp vụ: gateway tải UI; Spring readiness xác nhận app-db/issuer/policy integration sẵn sàng; browser đến Keycloak đăng nhập, callback về ứng dụng, `/api/session` không có bearer tokens. Authorized client dùng HttpSessionOAuth2AuthorizedClientRepository để token tồn tại cùng session JDBC qua restart; OIDC session correlation lưu bền và handler dùng đúng cookie SESSION. Next không có token/localStorage/session riêng.
+Stack TEST độc lập hoàn toàn với DEV (project `giaokhoa-test`, cổng riêng, credential
+`test-only-password` chỉ cho TEST):
 
-## 4. Bộ dữ kiện nghiệm thu tối thiểu
+```bash
+docker compose -p giaokhoa-test -f infra/compose.test.yaml up -d
+# Datasource của suite là runtime role nên role phải có LOGIN trước khi chạy:
+docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-app-db \
+  psql -U giaokhoa_test -d giaokhoa_test \
+  -c "CREATE ROLE giaokhoa_runtime LOGIN PASSWORD 'test-only-password' NOSUPERUSER NOBYPASSRLS"
+set -a
+. ./.env.test   # bản sao đã điền từ .env.test.example, để ngoài Git
+set +a
+./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration verify
+```
+
+Với test chạy trên Docker host: `TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:15432/giaokhoa_test`
+và `TEST_KEYCLOAK_BASE_URL=http://127.0.0.1:18081` (đúng `.env.test.example`). Alias
+`auth.test.giaokhoa.localhost` chỉ phân giải được bên trong mạng TEST. Không bao giờ
+chạy `down -v` nhầm vào project DEV và không trỏ biến TEST vào database/realm DEV.
+
+Cổng chất lượng đầy đủ (đúng lệnh CI trong `.github/workflows/ci.yml`):
+
+```bash
+./backend/mvnw -B -ntp -f backend/pom.xml spotless:apply
+./backend/mvnw -B -ntp -f backend/pom.xml clean verify
+npm --prefix frontend ci
+npm --prefix frontend run lint
+npm --prefix frontend run test
+npm --prefix frontend run build
+npm --prefix frontend run test:e2e
+bash infra/keycloak/verify-native.sh
+node infra/keycloak/verify-oidc-logout.mjs
+```
+
+Ghi chú: `clean verify` là cổng tĩnh + unit test (compiler/NullAway, Spotless, PMD,
+SpotBugs); integration test cần profile `integration` và stack TEST như trên. E2E
+Playwright tự chạy JAR backend ở cổng 18080, Next production ở 3001 và gateway TEST ở
+8080 trên cùng stack TEST — tại một thời điểm chỉ chạy một lượt E2E giữ các cổng này.
+`verify-native.sh` dựng stack Keycloak native riêng (cổng 18091) cho realm `giaokhoa`,
+cần `npm --prefix frontend ci` và `npx playwright install chromium` trước; CI gọi
+script này với `--use-build-artifact`. `verify-oidc-logout.mjs` kiểm tra back-channel
+logout qua restart và cần các biến `TEST_*` đã nạp. Chi tiết từng cổng ở
+[backend/README.md](../../backend/README.md).
+
+## 5. Seed và bộ dữ kiện nghiệm thu
+
+- **Seed hệ thống tự động**: khi ứng dụng sẵn sàng, `PlatformProjectionSeeder` ghi
+  desired state của grant platform (một partition PLATFORM và một bundle platform)
+  bằng đúng projector và hàm băm mà reconciliation dùng. Idempotent: khởi động lại
+  khi desired đã khớp không sinh revision mới. Không có bước seed tay cho phần này.
+- **Không có script seed dữ kiện nghiệp vụ** cho DEV. Dữ kiện vận hành được tạo qua
+  chính API/UI của ứng dụng (platform operator tạo tenant/gói, owner bổ nhiệm
+  manager, …) để đi qua đúng đường quyền như vận hành thật.
+- **Fixture test/review**: thư mục `infra/keycloak/fixtures/` chứa fixture nghiệm thu
+  theo story cho môi trường test/review, không chạy trên production và không nhập đè
+  realm/dữ liệu DEV (xem `infra/keycloak/fixtures/README.md`). Realm TEST
+  `giaokhoa-it` được import tự động từ `infra/keycloak/test-realm.json` khi stack
+  TEST khởi động, kèm cấu hình SMTP tới Mailpit TEST (UI `http://127.0.0.1:18025`).
+
+Bộ dữ kiện nghiệm thu tối thiểu (dựng qua API/UI thật, chỉ chứa nội dung giả):
 
 | Nhóm | Dữ kiện |
 | --- | --- |
@@ -75,22 +192,72 @@ Kiểm tra trước chạy nghiệp vụ: gateway tải UI; Spring readiness xá
 | Hoạt động | Bài đã giao trước hết hạn có dueAt/attemptLimit cố định; result draft và published của các học sinh khác nhau |
 | Chia sẻ | Một REVOCABLE, một LONG_TERM; bản nhận và fork phụ thuộc nguồn |
 
-Dữ kiện chỉ chứa nội dung giả; actions đi qua cùng dịch vụ/quyền như vận hành. `fixture.manage` chỉ bật trong test/review; không mở endpoint cho phép đổi actor hoặc tự sửa permissions.
+`fixture.manage` chỉ bật trong test/review; không có endpoint công khai nào cho phép
+đổi actor hoặc tự sửa permissions.
 
-## 5. Lệnh kiểm tra đích
+## 6. Vận hành: reconcile, emergency console, khôi phục, backup
+
+### Reconcile
+
+- **Projection**: `ProjectionWorker` quét mỗi giây, claim operation tới hạn theo thứ
+  tự tạo bằng khoá ghi `SKIP LOCKED` và đối chiếu desired state với Keycloak qua
+  `ProjectionReconciler`. Operation ở trạng thái PENDING/FAILED là chưa hoàn tất —
+  không báo quyền đã đồng bộ cho tới khi operation SUCCEEDED.
+- **Realm baseline**: chạy lại `bash infra/keycloak/bootstrap.sh` để reconcile các
+  trường realm, client, audience mapper, cây group cố định và role của service
+  account provisioner theo `infra/keycloak/baseline/realm.json`. Script giữ nguyên
+  directory và policy graph sẵn có; không import đè realm.
+
+### Emergency console
+
+Khi buộc phải sửa membership/policy trực tiếp trên Keycloak Admin Console ngoài luồng
+ứng dụng, theo đúng giao thức ở `contracts/authorization.md`: **fence phạm vi trước,
+sửa, reconcile, kiểm tra rồi mới mở lại**. Không có listener đồng bộ tức thời cho thao
+tác ngoài luồng: phần desired state do ứng dụng sở hữu sẽ bị reconciler đưa về trạng
+thái mong muốn ở chu kỳ quét kế tiếp, nên sửa console không qua fence/reconcile có
+thể bị ghi đè hoặc làm lệch fence. Không sửa cây group `/gk` bằng tay ngoài giao
+thức này.
+
+### Credential ban đầu và khôi phục tài khoản không email
+
+- Trung tâm cấp danh tính học sinh mới qua `InitialCredentialService`: hệ thống tạo
+  user Keycloak kèm credential tạm và chỉ hiển thị credential **một lần** trong
+  response tạo đầu tiên — không lưu xuống DB, không ghi log. Mất kết quả bàn giao thì
+  đi qua khôi phục tập trung dưới đây, không cấp lại qua đường tạo.
+- Người dùng không có email gửi yêu cầu khôi phục (`POST /api/me/recovery-requests`,
+  form ở giao diện tài khoản). Platform operator xử lý tại `/platform/recovery-requests`:
+  xác minh danh tính ngoài hệ thống và ghi chú trước khi chọn **Đã xác minh danh tính**
+  (yêu cầu giữ `VERIFIED`, chưa báo hoàn tất); operator có thẩm quyền trên Keycloak đặt
+  credential tạm và bàn giao qua kênh riêng cho đúng người dùng; kiểm tra việc bàn giao
+  xong mới ghi chú và chọn **Xác nhận đã khôi phục và bàn giao** (`COMPLETE`). Không
+  nhập credential vào ghi chú, không gửi credential qua trung tâm hay danh sách.
+  `REJECT` không đổi credential. Mọi mutation dùng `Idempotency-Key`; resolve gửi
+  `If-Match` theo `version` của yêu cầu đang xem. Chi tiết ở
+  [backend/README.md](../../backend/README.md).
+
+### Backup — chỉ DEV/TEST
+
+Repository **không có công cụ backup tự động** và không có quy trình backup production.
+Ở DEV/TEST, dữ kiện nằm trong named volume của Compose (`app_data`, `keycloak_data`
+cho DEV; `test_app_data`, `test_keycloak_data` cho TEST). Sao lưu thủ công DEV/TEST
+bằng `pg_dump` qua container đang chạy, ví dụ với app database DEV:
 
 ```bash
-./backend/mvnw -f backend/pom.xml verify
-npm --prefix frontend ci
-npm --prefix frontend run lint
-npm --prefix frontend run test
-npm --prefix frontend run build
-npm --prefix frontend run test:e2e
+docker compose -f .devcontainer/compose.yml exec -T app-db \
+  pg_dump -U giaokhoa -d giaokhoa > backup-dev-app.sql
 ```
 
-Các script frontend trên là tên contract dự kiến của package scripts, chưa tồn tại. E2E dùng Playwright webServer, realm/database test riêng và login Authorization Code thật; không lấy token password grant hoặc mock JWT để thay flow.
+Không dùng `docker compose down -v` trên DEV vì lệnh xoá cả volume dữ kiện.
 
-## 6. Kịch bản và kết quả mong đợi
+### Email ở DEV
+
+Baseline realm chưa khai SMTP. Stack DEV có sẵn Mailpit (`infra/compose.dev.yaml`,
+UI tại `http://127.0.0.1:8025`, SMTP host `mailpit` cổng `1025` theo `MAIL_HOST`/
+`MAIL_PORT`); muốn chạy luồng thư xác minh/khôi phục ở DEV thì đặt SMTP của realm
+`giaokhoa` tới Mailpit đó trong Keycloak Admin Console (Realm settings → Email).
+Realm TEST đã khai sẵn SMTP tới Mailpit TEST trong `test-realm.json`.
+
+## 7. Kịch bản và kết quả mong đợi
 
 | Mã | Thao tác | Kết quả mong đợi / spec |
 | --- | --- | --- |
@@ -111,12 +278,13 @@ Các script frontend trên là tên contract dự kiến của package scripts, 
 | T15 | Truy vấn tenant tables bằng runtime role không workspace rồi workspace A; thử FK chéo lớp | Không context không thấy row; không thấy B; insert quan hệ sai bị từ chối; FR-013/051 |
 | T16 | Người nghiệm thu thao tác theo SC-001/002/009 | Đo thời gian/thành công, không báo đã đạt khi chỉ có test kỹ thuật |
 
-Mỗi case lưu actor/workspace/object/action, response, operation revision và bằng chứng truy vấn tối thiểu; không log secret/token/password/nội dung cá nhân. Kết quả test thất bại phải nêu cặp quyền/dữ kiện cụ thể, không gộp thành “Keycloak lỗi”.
+Mỗi case lưu actor/workspace/object/action, response, operation revision và bằng chứng
+truy vấn tối thiểu; không log secret/token/password/nội dung cá nhân. Kết quả test thất
+bại phải nêu cặp quyền/dữ kiện cụ thể, không gộp thành "Keycloak lỗi".
 
-## 7. Điều kiện chuyển bước
+## 8. Điều kiện chuyển bước
 
 - Gate native ở [authorization.md](contracts/authorization.md) qua bằng chứng thật trước khi mở rộng các module CRUD.
 - Toàn bộ 56 acceptance scenarios của spec phải có phép thử hoặc biên bản nghiệm thu tương ứng; các mục tiêu con người không được đánh dấu pass bằng unit test.
-- Không mở direct console membership edits ngoài giao thức fence/reconcile; cấu hình MFA khi vận hành vẫn độc lập.
+- Không mở direct console membership edits ngoài giao thức fence/reconcile ở mục 6; cấu hình MFA khi vận hành vẫn độc lập.
 - Không mở public fixture routes, Direct Access Grants, wildcard allow hoặc dùng database DEV trong cấu hình production/test nghiệm thu.
-- Hướng dẫn này không tự deploy hoặc yêu cầu khởi động lại hạ tầng đang chạy trong bước lập kế hoạch.
