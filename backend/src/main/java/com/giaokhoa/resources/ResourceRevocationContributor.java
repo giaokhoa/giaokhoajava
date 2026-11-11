@@ -1,53 +1,68 @@
 package com.giaokhoa.resources;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.resources.model.ResourceDependency;
+import com.giaokhoa.resources.repository.LibraryItemRepository;
+import com.giaokhoa.resources.repository.ResourceDependencyRepository;
+import com.giaokhoa.resources.repository.ResourceRepository;
+import com.giaokhoa.resources.repository.ResourcesAuthorizationPartitionRepository;
+import com.giaokhoa.resources.repository.ShareGrantRepository;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
-import javax.sql.DataSource;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
  * Đóng góp phần closure tài nguyên vào operation thu hồi một share grant: khi một grant bị thu hồi,
  * quyền suy ra từ nó không chỉ nằm ở workspace nhận trực tiếp — bản đã lưu theo grant và mọi bản
- * fork phái sinh từ grant (kể cả fork của fork, vì fork sao toàn bộ cạnh dependency của nguồn nên
- * cạnh mang grant luôn là cạnh trực tiếp của bản phái sinh) đều phải mất nguồn trong cùng một
- * operation, và operation chỉ đạt {@code SUCCEEDED} khi toàn bộ closure đó đã READY ở revision mới,
- * đúng giao thức thu hồi của hợp đồng authorization. Contributor tính tập workspace bị ảnh hưởng từ
- * dữ kiện bền (nơi nhận của grant, các kho đã lưu theo grant, workspace sở hữu các bản phái sinh
- * mang cạnh của grant), rồi ghi trong một operation: GRANT partition của grant với bundle đã rỗng,
- * cộng WORKSPACE partition của từng workspace bị ảnh hưởng với toàn bộ bundle resource version hiện
- * hành của workspace đó — bundle nào không đổi thì hash khớp nguyên nên chỉ là ghi lại, bundle nào
- * mất nhánh license thì được thu hồi đúng, theo cùng kỷ luật closure của {@code
- * SourceRevocationCoordinator} (một projection đổi nguồn mà desired hash không được ghi lại sẽ làm
- * operation chết {@code DESIRED_SOURCE_MISMATCH}). Lịch sử không bị đụng: grant chỉ chuyển trạng
- * thái, mục thư viện, cạnh truy vết và dữ liệu học tập đã phát sinh đều giữ nguyên.
+ * phái sinh từ grant (bản fork và bản sao copy-on-share, kể cả phái sinh của phái sinh, vì phép sao
+ * chép mang toàn bộ cạnh dependency của nguồn nên cạnh mang grant luôn là cạnh trực tiếp của bản
+ * phái sinh) đều phải mất nguồn trong cùng một operation, và operation chỉ đạt {@code SUCCEEDED}
+ * khi toàn bộ closure đó đã READY ở revision mới, đúng giao thức thu hồi của hợp đồng
+ * authorization. Contributor tính tập workspace bị ảnh hưởng từ dữ kiện bền (nơi nhận của grant,
+ * các kho đã lưu theo grant, workspace sở hữu các bản phái sinh mang cạnh của grant), rồi ghi trong
+ * một operation: GRANT partition của grant với bundle đã rỗng, cộng WORKSPACE partition của từng
+ * workspace bị ảnh hưởng với toàn bộ bundle resource version hiện hành của workspace đó — bundle
+ * nào không đổi thì hash khớp nguyên nên chỉ là ghi lại, bundle nào mất nhánh license thì được thu
+ * hồi đúng, theo cùng kỷ luật closure của {@code SourceRevocationCoordinator} (một projection đổi
+ * nguồn mà desired hash không được ghi lại sẽ làm operation chết {@code DESIRED_SOURCE_MISMATCH}).
+ * Lịch sử không bị xóa ở bất kỳ bước nào.
  */
 @Component
 public class ResourceRevocationContributor {
 
-    private final JdbcTemplate jdbc;
     private final AuthorizationOperationService operations;
     private final ResourcePolicyProjector resourceProjector;
     private final SharePolicyProjector shareProjector;
+    private final ShareGrantRepository grants;
+    private final LibraryItemRepository libraryItems;
+    private final ResourceDependencyRepository dependencies;
+    private final ResourceRepository resources;
+    private final ResourcesAuthorizationPartitionRepository partitions;
 
-    /**
-     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} dựng sẵn, cùng mẫu EI_EXPOSE_REP2 của
-     * các projector họ resource.
-     */
     public ResourceRevocationContributor(
-            DataSource dataSource,
             AuthorizationOperationService operations,
             ResourcePolicyProjector resourceProjector,
-            SharePolicyProjector shareProjector) {
-        this.jdbc = new JdbcTemplate(dataSource);
+            SharePolicyProjector shareProjector,
+            ShareGrantRepository grants,
+            LibraryItemRepository libraryItems,
+            ResourceDependencyRepository dependencies,
+            ResourceRepository resources,
+            ResourcesAuthorizationPartitionRepository partitions) {
         this.operations = operations;
         this.resourceProjector = resourceProjector;
         this.shareProjector = shareProjector;
+        this.grants = grants;
+        this.libraryItems = libraryItems;
+        this.dependencies = dependencies;
+        this.resources = resources;
+        this.partitions = partitions;
     }
 
     /**
@@ -56,22 +71,18 @@ public class ResourceRevocationContributor {
      * của grant. Thứ tự ổn định theo UUID để operation ghi nhất quán.
      */
     public List<UUID> affectedWorkspaces(UUID grantId) {
-        return jdbc
-                .queryForList(
-                        "SELECT recipient_workspace_id AS workspace_id FROM share_grant"
-                                + " WHERE id = ?"
-                                + " UNION SELECT workspace_id FROM library_item"
-                                + " WHERE share_grant_id = ?"
-                                + " UNION SELECT r.owner_workspace_id FROM resource_dependency d"
-                                + " JOIN resource r ON r.id = d.derived_resource_id"
-                                + " WHERE d.share_grant_id = ?",
-                        UUID.class,
-                        grantId,
-                        grantId,
-                        grantId)
-                .stream()
-                .sorted(Comparator.comparing(UUID::toString))
-                .toList();
+        Set<UUID> affected = new LinkedHashSet<>();
+        grants.findRecipientWorkspaceIdById(grantId).ifPresent(affected::add);
+        affected.addAll(libraryItems.findWorkspaceIdsByShareGrantId(grantId));
+        List<UUID> derivedResourceIds =
+                dependencies.findByShareGrantId(grantId).stream()
+                        .map(ResourceDependency::getDerivedResourceId)
+                        .distinct()
+                        .toList();
+        if (!derivedResourceIds.isEmpty()) {
+            affected.addAll(resources.findOwnerWorkspaceIdsByIdIn(derivedResourceIds));
+        }
+        return affected.stream().sorted(Comparator.comparing(UUID::toString)).toList();
     }
 
     /**
@@ -110,16 +121,12 @@ public class ResourceRevocationContributor {
     }
 
     private UUID workspacePartition(UUID workspaceId) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
-        return partitions.getFirst();
+        return partitions
+                .findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
+                .map(AuthorizationPartition::getId)
+                .orElseThrow(() ->
+                        new IllegalStateException(
+                                "Workspace authorization partition is missing: " + workspaceId));
     }
 }

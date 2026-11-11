@@ -65,8 +65,9 @@ class KeycloakDecisionClientTest {
         RequestContextHolder.resetRequestAttributes();
     }
 
+    @DisplayName("Mọi cặp quyền bắt buộc đều được Keycloak cấp thì cho phép truy cập")
     @Test
-    void allowsOnlyWhenEveryRequiredPairIsAllowed() {
+    void allowsAllGrantedPairs() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
@@ -85,8 +86,9 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Một cặp quyền bị Keycloak từ chối thì chặn truy cập dù cặp trước đã được cấp")
     @Test
-    void deniesWhenOnePairIsDeniedByThePdp() {
+    void deniesPartialGrant() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(300));

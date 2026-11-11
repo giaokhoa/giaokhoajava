@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
@@ -55,15 +56,16 @@ public class ShareGrant {
     @Column(name = "state", nullable = false, length = 16)
     private State state;
 
-    // Tên scope cố định theo PermissionCatalog; DB khóa đúng danh mục bằng CHECK,
-    // entity giữ nguyên dạng mảng như cột text[] (cùng mẫu resource_assignment).
+    // Tên scope cố định theo PermissionCatalog; DB khóa đúng danh mục bằng CHECK. Cột mảng được
+    // ánh xạ thành basic collection List ngay trên cột (Hibernate User Guide, ánh xạ kiểu mảng),
+    // không sinh bảng phụ như @ElementCollection.
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "actions", nullable = false, columnDefinition = "text[]")
-    private String[] actions;
+    private List<String> actions;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "allowed_workspace_ids", nullable = false, columnDefinition = "uuid[]")
-    private UUID[] allowedWorkspaceIds;
+    private List<UUID> allowedWorkspaceIds;
 
     @Column(name = "valid_from", nullable = false)
     private Instant validFrom;
@@ -98,8 +100,8 @@ public class ShareGrant {
             UUID grantorUserId,
             UUID recipientWorkspaceId,
             Mode mode,
-            String[] actions,
-            UUID[] allowedWorkspaceIds,
+            List<String> actions,
+            List<UUID> allowedWorkspaceIds,
             Instant validFrom,
             @Nullable Instant expiresAt) {
         this.id = id;
@@ -108,9 +110,9 @@ public class ShareGrant {
         this.grantorUserId = grantorUserId;
         this.recipientWorkspaceId = recipientWorkspaceId;
         this.mode = mode;
-        this.actions = Objects.requireNonNull(actions, "actions").clone();
+        this.actions = List.copyOf(Objects.requireNonNull(actions, "actions"));
         this.allowedWorkspaceIds =
-                Objects.requireNonNull(allowedWorkspaceIds, "allowedWorkspaceIds").clone();
+                List.copyOf(Objects.requireNonNull(allowedWorkspaceIds, "allowedWorkspaceIds"));
         this.validFrom = validFrom;
         this.expiresAt = expiresAt;
         this.state = State.OFFERED;
@@ -144,12 +146,12 @@ public class ShareGrant {
         return state;
     }
 
-    public String[] getActions() {
-        return actions.clone();
+    public List<String> getActions() {
+        return List.copyOf(actions);
     }
 
-    public UUID[] getAllowedWorkspaceIds() {
-        return allowedWorkspaceIds.clone();
+    public List<UUID> getAllowedWorkspaceIds() {
+        return List.copyOf(allowedWorkspaceIds);
     }
 
     public Instant getValidFrom() {

@@ -1,35 +1,32 @@
 package com.giaokhoa.subscriptions;
 
+import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
+import java.time.Instant;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
 
 /**
  * Quy tắc gói theo loại workspace: gói là entitlement bắt buộc của personal, còn center chỉ khóa
- * khi đã có gói mà hết hiệu lực.
+ * khi đã có gói mà hết hiệu lực. Điều kiện hiệu lực đọc qua repository kỳ gói với mốc thời gian lấy
+ * tại lúc gọi, đúng cửa sổ [valid_from, expires_at) của dữ kiện đã ghi.
  */
-public final class SubscriptionPolicy {
-    private SubscriptionPolicy() {}
+@Component
+public class SubscriptionPolicy {
+    private final SubscriptionPeriodRepository periods;
 
-    /** Có một kỳ gói đang hiệu lực tại thời điểm gọi; chưa từng có kỳ nào thì không đạt. */
-    public static boolean current(JdbcTemplate jdbc, UUID workspaceId) {
-        return Boolean.TRUE.equals(
-                jdbc.queryForObject(
-                        "SELECT EXISTS (SELECT 1 FROM subscription_period"
-                                + " WHERE workspace_id = ? AND valid_from <= now()"
-                                + " AND expires_at > now())",
-                        Boolean.class,
-                        workspaceId));
+    public SubscriptionPolicy(SubscriptionPeriodRepository periods) {
+        this.periods = periods;
     }
 
-    /** Một snapshot SQL cho cả điều kiện chưa có gói và có gói đang hiệu lực. */
-    public static boolean currentOrUnconfirmed(JdbcTemplate jdbc, UUID workspaceId) {
-        return Boolean.TRUE.equals(
-                jdbc.queryForObject(
-                        "SELECT NOT EXISTS (SELECT 1 FROM subscription_period WHERE workspace_id = ?)"
-                                + " OR EXISTS (SELECT 1 FROM subscription_period"
-                                + " WHERE workspace_id = ? AND valid_from <= now() AND expires_at > now())",
-                        Boolean.class,
-                        workspaceId,
-                        workspaceId));
+    /** Có một kỳ gói đang hiệu lực tại thời điểm gọi; chưa từng có kỳ nào thì không đạt. */
+    public boolean current(UUID workspaceId) {
+        Instant now = Instant.now();
+        return periods.existsByWorkspaceIdAndValidFromLessThanEqualAndExpiresAtGreaterThan(
+                workspaceId, now, now);
+    }
+
+    /** Chưa từng có kỳ gói nào, hoặc có một kỳ đang hiệu lực tại thời điểm gọi. */
+    public boolean currentOrUnconfirmed(UUID workspaceId) {
+        return !periods.existsByWorkspaceId(workspaceId) || current(workspaceId);
     }
 }

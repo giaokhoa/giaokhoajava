@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -123,6 +124,83 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
                     409,
                     outdated.getStatus(),
                     "Version cũ sau lần đổi tên thành công phải trả 409");
+        } finally {
+            deleteFixture(fixture);
+        }
+    }
+
+    @Test
+    @DisplayName("Đổi tên lớp trùng tên hiện tại vẫn thành công và version tăng đúng một ở DB")
+    void renameClassToSameNameAdvancesVersion() throws Exception {
+        Fixture fixture = seedTeachingCenter();
+        try (var session = openSession(fixture.owner())) {
+            UUID classId = createClass(session, fixture.workspaceId(), "Lớp giữ tên");
+            String uri = "/api/workspaces/" + fixture.workspaceId() + "/classes/" + classId;
+
+            MockHttpServletResponse renamed = patchRename(session, uri, "Lớp giữ tên", "\"0\"");
+            assertEquals(
+                    202,
+                    renamed.getStatus(),
+                    "Đổi tên trùng tên hiện tại vẫn là đổi tên thành công");
+            awaitOperationSucceeded(
+                    jdbc,
+                    UUID.fromString(
+                            JSON.readTree(renamed.getContentAsString())
+                                    .get("operationId")
+                                    .stringValue()));
+
+            JsonNode after = getJson(session, uri, 200);
+            assertEquals("Lớp giữ tên", after.get("name").stringValue());
+            assertEquals(
+                    1,
+                    after.get("version").longValue(),
+                    "Version phải tăng ở DB dù tên không đổi, như SQL cũ tăng vô điều kiện");
+
+            MockHttpServletResponse outdated = patchRename(session, uri, "Tên khác", "\"0\"");
+            assertEquals(
+                    409,
+                    outdated.getStatus(),
+                    "Version cũ phải bị từ chối sau lần đổi tên trùng tên");
+        } finally {
+            deleteFixture(fixture);
+        }
+    }
+
+    @Test
+    @DisplayName("Đổi tên khóa trùng tên hiện tại vẫn thành công và version tăng đúng một ở DB")
+    void renameCourseToSameNameAdvancesVersion() throws Exception {
+        Fixture fixture = seedTeachingCenter();
+        try (var session = openSession(fixture.owner())) {
+            UUID classId = createClass(session, fixture.workspaceId(), "Lớp chứa khóa");
+            List<UUID> subjects = subjectIds(session, 1);
+            UUID courseId =
+                    createCourse(session, fixture.workspaceId(), classId, "Khóa giữ tên", subjects);
+            String uri = "/api/workspaces/" + fixture.workspaceId() + "/courses/" + courseId;
+
+            MockHttpServletResponse renamed = patchRename(session, uri, "Khóa giữ tên", "\"0\"");
+            assertEquals(
+                    202,
+                    renamed.getStatus(),
+                    "Đổi tên trùng tên hiện tại vẫn là đổi tên thành công");
+            awaitOperationSucceeded(
+                    jdbc,
+                    UUID.fromString(
+                            JSON.readTree(renamed.getContentAsString())
+                                    .get("operationId")
+                                    .stringValue()));
+
+            JsonNode after = getJson(session, uri, 200);
+            assertEquals("Khóa giữ tên", after.get("name").stringValue());
+            assertEquals(
+                    1,
+                    after.get("version").longValue(),
+                    "Version phải tăng ở DB dù tên không đổi, như SQL cũ tăng vô điều kiện");
+
+            MockHttpServletResponse outdated = patchRename(session, uri, "Tên khác", "\"0\"");
+            assertEquals(
+                    409,
+                    outdated.getStatus(),
+                    "Version cũ phải bị từ chối sau lần đổi tên trùng tên");
         } finally {
             deleteFixture(fixture);
         }

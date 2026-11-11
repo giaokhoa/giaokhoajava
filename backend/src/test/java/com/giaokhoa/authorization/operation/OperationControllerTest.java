@@ -5,25 +5,27 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
+import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.identity.repository.RecoveryMutationRepository;
+import com.giaokhoa.identity.repository.RecoveryRequestRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 
 class OperationControllerTest {
@@ -31,11 +33,20 @@ class OperationControllerTest {
     private static final UUID OPERATION = RandomIds.randomId();
     private static final UUID WORKSPACE = RandomIds.randomId();
     private static final UUID GRANT = RandomIds.randomId();
+    private static final UUID PRIMARY_PARTITION = RandomIds.randomId();
 
     private final ProtectedActionExecutor executor = mock(ProtectedActionExecutor.class);
-    private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    private final AuthorizationOperationRepository operations =
+            mock(AuthorizationOperationRepository.class);
+    private final AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
     private final Authentication authentication = mock(Authentication.class);
-    private final OperationController controller = new OperationController(executor, jdbc);
+    private final RecoveryRequestRepository recoveryRequests =
+            mock(RecoveryRequestRepository.class);
+    private final RecoveryMutationRepository recoveryMutations =
+            mock(RecoveryMutationRepository.class);
+    private final OperationController controller =
+            new OperationController(
+                    executor, operations, partitions, recoveryRequests, recoveryMutations);
 
     @BeforeEach
     void actorResolvedFromSession() {
@@ -87,7 +98,8 @@ class OperationControllerTest {
 
     @Test
     void operationOutsideTheInitiatorScopeIsNotFound() {
-        when(jdbc.queryForList(anyString(), eq(OPERATION), eq(ACTOR))).thenReturn(List.of());
+        when(operations.findByIdAndInitiatorUserId(OPERATION, ACTOR)).thenReturn(Optional.empty());
+        when(recoveryRequests.findById(OPERATION)).thenReturn(Optional.empty());
 
         HttpProblemException problem =
                 assertThrows(
@@ -100,12 +112,29 @@ class OperationControllerTest {
 
     private void operationRow(
             String state, @Nullable String errorCode, String primaryKind, String primaryOwnerKey) {
-        Map<String, Object> row = new HashMap<>();
-        row.put("state", state);
-        row.put("last_error_code", errorCode);
-        row.put("workspace_id", WORKSPACE);
-        row.put("primary_kind", primaryKind);
-        row.put("primary_owner_key", primaryOwnerKey);
-        when(jdbc.queryForList(anyString(), eq(OPERATION), eq(ACTOR))).thenReturn(List.of(row));
+        var operation =
+                new AuthorizationOperation(
+                        OPERATION,
+                        ACTOR,
+                        WORKSPACE,
+                        "key",
+                        "a".repeat(64),
+                        List.of(PRIMARY_PARTITION),
+                        List.of(1L),
+                        1L);
+        operation.setState(AuthorizationOperation.State.valueOf(state));
+        operation.setLastErrorCode(errorCode);
+        when(operations.findByIdAndInitiatorUserId(OPERATION, ACTOR))
+                .thenReturn(Optional.of(operation));
+        when(partitions.findById(PRIMARY_PARTITION))
+                .thenReturn(
+                        Optional.of(
+                                new AuthorizationPartition(
+                                        PRIMARY_PARTITION,
+                                        AuthorizationPartition.Kind.valueOf(primaryKind),
+                                        primaryOwnerKey,
+                                        1,
+                                        1,
+                                        AuthorizationPartition.State.READY)));
     }
 }

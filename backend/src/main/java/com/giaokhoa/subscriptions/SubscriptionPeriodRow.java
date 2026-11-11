@@ -1,11 +1,16 @@
 package com.giaokhoa.subscriptions;
 
+import com.giaokhoa.subscriptions.model.SubscriptionPeriod;
 import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Một kỳ gói của workspace đọc từ bảng {@code subscription_period}: cửa sổ hiệu lực mà các
- * projector dùng để gate descriptor theo gói. Type thuộc domain subscriptions — nơi sở hữu bảng —
- * và được các projector của teaching/tenancy dùng chung thay vì khai báo trùng ở từng nơi.
+ * Ảnh chụp tối thiểu của một kỳ gói mà các projector dùng để dựng descriptor bị gate bởi kỳ gói:
+ * một định nghĩa dùng chung cho mọi projector thay cho các bản sao theo module trước đây.
  */
-public record SubscriptionPeriodRow(UUID id, Instant validFrom, Instant expiresAt) {}
+public record SubscriptionPeriodRow(UUID id, Instant validFrom, Instant expiresAt) {
+    public static SubscriptionPeriodRow from(SubscriptionPeriod period) {
+        return new SubscriptionPeriodRow(
+                period.getId(), period.getValidFrom(), period.getExpiresAt());
+    }
+}

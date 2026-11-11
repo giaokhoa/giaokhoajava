@@ -1,9 +1,13 @@
 package com.giaokhoa.tenancy;
 
+import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -12,9 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,13 +26,22 @@ import org.springframework.transaction.annotation.Transactional;
  * danh sách này là dữ kiện điều hướng của actor, không phải kênh lộ thông tin center cho người
  * ngoài. Role luôn trả theo từng workspace: cùng một account có thể là MANAGER ở A và STUDENT ở B
  * mà hai vai trò không cộng thành quyền tổng.
+ *
+ * <p>Membership là dữ kiện thuộc schema tenant còn workspace thuộc schema hệ thống, nên các đường
+ * đọc ở đây luôn hai bước theo ID (membership hiện hành trước, workspace sau) thay vì một join
+ * xuyên hai mặt phẳng như trước.
  */
 @Service
 public class WorkspaceDirectoryService {
-    private final JdbcTemplate jdbc;
+    private static final String ACTIVE = "ACTIVE";
 
-    public WorkspaceDirectoryService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    private final WorkspaceRepository workspaces;
+    private final CenterMembershipRepository memberships;
+
+    public WorkspaceDirectoryService(
+            WorkspaceRepository workspaces, CenterMembershipRepository memberships) {
+        this.workspaces = workspaces;
+        this.memberships = memberships;
     }
 
     /** Một nơi hợp lệ trong thư mục của actor: chỉ id, kind, state và center liên kết. */
@@ -45,35 +56,37 @@ public class WorkspaceDirectoryService {
     @Transactional(readOnly = true)
     public List<ListedWorkspace> listWorkspaces(UUID actorUserId) {
         Objects.requireNonNull(actorUserId, "actorUserId");
-        return jdbc.query(
-                "SELECT w.id, w.kind, w.state, w.center_id FROM workspace w WHERE w.state = 'ACTIVE'"
-                        + " AND ((w.kind = 'PERSONAL' AND w.owner_user_id = ?)"
-                        + " OR (w.kind = 'CENTER' AND EXISTS (SELECT 1 FROM center_membership m"
-                        + " WHERE m.workspace_id = w.id AND m.user_id = ? AND m.state = 'ACTIVE')))"
-                        + " ORDER BY CASE w.kind WHEN 'PERSONAL' THEN 0 ELSE 1 END, w.id",
-                (rows, _) ->
-                        new ListedWorkspace(
-                                (UUID) Objects.requireNonNull(rows.getObject("id"), "id"),
-                                Workspace.Kind.valueOf(
-                                        (String)
-                                                Objects.requireNonNull(
-                                                        rows.getObject("kind"), "kind")),
-                                (String) Objects.requireNonNull(rows.getObject("state"), "state"),
-                                (UUID) rows.getObject("center_id")),
-                actorUserId,
-                actorUserId);
+        List<ListedWorkspace> listed = new ArrayList<>();
+        for (Workspace personal :
+                workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, actorUserId)) {
+            if (ACTIVE.equals(personal.getState())) {
+                listed.add(listed(personal));
+            }
+        }
+        List<UUID> centerWorkspaceIds =
+                memberships
+                        .findByUserIdAndState(actorUserId, CenterMembership.State.ACTIVE)
+                        .stream()
+                        .map(CenterMembership::getWorkspaceId)
+                        .distinct()
+                        .toList();
+        workspaces
+                .findByIdInAndKindAndState(centerWorkspaceIds, Workspace.Kind.CENTER, ACTIVE)
+                .stream()
+                // Thứ tự id theo đúng cách PostgreSQL so sánh uuid (theo byte), không theo
+                // UUID.compareTo của Java vốn so sánh long có dấu.
+                .sorted(Comparator.comparing(workspace -> workspace.getId().toString()))
+                .forEach(workspace -> listed.add(listed(workspace)));
+        return List.copyOf(listed);
     }
 
     /** Personal workspace của actor, nếu account đã được bootstrap. */
     @Transactional(readOnly = true)
     public Optional<UUID> personalWorkspace(UUID actorUserId) {
         Objects.requireNonNull(actorUserId, "actorUserId");
-        List<UUID> found =
-                jdbc.queryForList(
-                        "SELECT id FROM workspace WHERE kind = 'PERSONAL' AND owner_user_id = ?",
-                        UUID.class,
-                        actorUserId);
-        return found.isEmpty() ? Optional.empty() : Optional.of(found.getFirst());
+        return workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, actorUserId).stream()
+                .findFirst()
+                .map(Workspace::getId);
     }
 
     /**
@@ -84,24 +97,16 @@ public class WorkspaceDirectoryService {
     public Set<MembershipRole.Role> rolesIn(UUID actorUserId, UUID workspaceId) {
         Objects.requireNonNull(actorUserId, "actorUserId");
         Objects.requireNonNull(workspaceId, "workspaceId");
-        return Set.copyOf(
-                jdbc
-                        .queryForList(
-                                "SELECT r.role FROM center_membership m"
-                                        + " JOIN membership_role r ON r.membership_id = m.id"
-                                        + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                        + " AND m.state = 'ACTIVE'",
-                                String.class,
-                                workspaceId,
-                                actorUserId)
-                        .stream()
-                        .map(MembershipRole.Role::valueOf)
-                        .toList());
+        return memberships
+                .findByWorkspaceIdAndUserIdAndState(
+                        workspaceId, actorUserId, CenterMembership.State.ACTIVE)
+                .map(membership -> Set.copyOf(membership.getRoles()))
+                .orElse(Set.of());
     }
 
     /**
-     * Role của actor tại nhiều workspace bằng một truy vấn duy nhất, cho các màn hình liệt kê:
-     * workspace không có membership ACTIVE thì vắng mặt trong map trả về.
+     * Role của actor tại nhiều workspace trong một lần đọc, cho các màn hình liệt kê: workspace
+     * không có membership ACTIVE thì vắng mặt trong map trả về.
      */
     @Transactional(readOnly = true)
     public Map<UUID, Set<MembershipRole.Role>> rolesIn(
@@ -111,25 +116,25 @@ public class WorkspaceDirectoryService {
         if (workspaceIds.isEmpty()) {
             return Map.of();
         }
-        String placeholders = workspaceIds.stream().map(_ -> "?").collect(Collectors.joining(", "));
-        List<Object> args = new ArrayList<>(workspaceIds.size() + 1);
-        args.add(actorUserId);
-        args.addAll(workspaceIds);
         Map<UUID, Set<MembershipRole.Role>> roles = new HashMap<>();
-        jdbc.query(
-                "SELECT m.workspace_id, r.role FROM center_membership m"
-                        + " JOIN membership_role r ON r.membership_id = m.id"
-                        + " WHERE m.user_id = ? AND m.state = 'ACTIVE' AND m.workspace_id IN ("
-                        + placeholders
-                        + ")",
-                rs -> {
-                    UUID workspaceId = (UUID) rs.getObject("workspace_id");
-                    MembershipRole.Role role = MembershipRole.Role.valueOf(rs.getString("role"));
-                    roles.computeIfAbsent(
-                                    workspaceId, _ -> EnumSet.noneOf(MembershipRole.Role.class))
-                            .add(role);
-                },
-                args.toArray());
+        for (CenterMembership membership :
+                memberships.findByUserIdAndStateAndWorkspaceIdIn(
+                        actorUserId, CenterMembership.State.ACTIVE, workspaceIds)) {
+            if (!membership.getRoles().isEmpty()) {
+                roles.computeIfAbsent(
+                                membership.getWorkspaceId(),
+                                _ -> EnumSet.noneOf(MembershipRole.Role.class))
+                        .addAll(membership.getRoles());
+            }
+        }
         return roles;
+    }
+
+    private static ListedWorkspace listed(Workspace workspace) {
+        return new ListedWorkspace(
+                workspace.getId(),
+                workspace.getKind(),
+                workspace.getState(),
+                workspace.getCenterId());
     }
 }

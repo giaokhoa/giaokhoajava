@@ -6,15 +6,19 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.model.SubscriptionPeriod;
+import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
-import java.sql.Timestamp;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -24,7 +28,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,19 +46,20 @@ import org.springframework.transaction.annotation.Transactional;
  * lock trong chính transaction rồi mới kiểm tra replay, nên hai lời gọi đồng thời cùng key không
  * thể cùng đi qua điểm kiểm tra. Kỳ gói là lịch sử bất biến: chỉ INSERT, không sửa hay xoá; gia hạn
  * là một kỳ mới, không mở lại kỳ cũ và không phục hồi nguồn đã thu hồi.
+ *
+ * <p>Dữ kiện directory/gói đọc/ghi qua repository JPA; {@link JdbcOperations} chỉ còn phục vụ
+ * advisory lock và điểm tra partition thuộc mặt phẳng authorization, cho tới khi repository của mặt
+ * phẳng đó land cùng đợt chuyển đổi của module authorization.
  */
 @Service
 public class SubscriptionService {
     /** Khớp độ dài cột confirmation_ref VARCHAR(255) ở migration. */
     private static final int MAX_CONFIRMATION_REF_LENGTH = 255;
 
-    /** Giá trị cột workspace.kind cho không gian trung tâm. */
-    private static final String CENTER_KIND = "CENTER";
-
-    /** Giá trị cột workspace.kind cho không gian cá nhân. */
-    private static final String PERSONAL_KIND = "PERSONAL";
-
-    private final JdbcTemplate jdbc;
+    private final JdbcOperations locks;
+    private final UserAccountRepository accounts;
+    private final WorkspaceRepository workspaces;
+    private final SubscriptionPeriodRepository periods;
     private final IdempotencyService idempotency;
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
@@ -67,7 +72,10 @@ public class SubscriptionService {
     private final ResourceMutationCoordinator coordinator;
 
     public SubscriptionService(
-            JdbcTemplate jdbc,
+            JdbcOperations locks,
+            UserAccountRepository accounts,
+            WorkspaceRepository workspaces,
+            SubscriptionPeriodRepository periods,
             IdempotencyService idempotency,
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
@@ -77,7 +85,10 @@ public class SubscriptionService {
             PersonalTeachingPolicyProjector personalTeachingProjector,
             AuditRecorder audit,
             ResourcePolicyProjector resourceProjector) {
-        this.jdbc = jdbc;
+        this.locks = locks;
+        this.accounts = accounts;
+        this.workspaces = workspaces;
+        this.periods = periods;
         this.idempotency = idempotency;
         this.operations = operations;
         this.centerProjector = centerProjector;
@@ -117,7 +128,7 @@ public class SubscriptionService {
             return existing.get();
         }
         requireAccount(operatorUserId);
-        String kind = workspaceKind(workspaceId);
+        Workspace.Kind kind = workspaceKind(workspaceId);
         String ref = normalizeConfirmationRef(confirmationRef);
         Instant from = validFrom.truncatedTo(ChronoUnit.SECONDS);
         Instant until = expiresAt.truncatedTo(ChronoUnit.SECONDS);
@@ -129,27 +140,19 @@ public class SubscriptionService {
         }
         // confirmation_ref là neo audit duy nhất theo cột UNIQUE: chặn trùng ở tầng service để
         // trả 409 rõ ràng thay vì lỗi constraint thô, và một ref không bao giờ trỏ hai kỳ.
-        if (!jdbc.queryForList(
-                        "SELECT id FROM subscription_period WHERE confirmation_ref = ?",
-                        UUID.class,
-                        ref)
-                .isEmpty()) {
+        if (periods.existsByConfirmationRef(ref)) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "SUBSCRIPTION_CONFIRMATION_REF_USED",
                     "Confirmation ref đã được ghi cho một kỳ gói khác.");
         }
         UUID periodId = UUID.randomUUID();
-        jdbc.update(
-                "INSERT INTO subscription_period"
-                        + " (id, workspace_id, valid_from, expires_at, confirmation_ref,"
-                        + " confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?, ?, now())",
-                periodId,
-                workspaceId,
-                Timestamp.from(from),
-                Timestamp.from(until),
-                ref,
-                operatorUserId);
+        periods.save(
+                new SubscriptionPeriod(
+                        periodId, workspaceId, from, until, ref, operatorUserId, Instant.now()));
+        // Các projector đọc kỳ gói bằng đường đọc riêng của chúng: flush để kỳ vừa ghi nhìn
+        // thấy được trong cùng transaction trước khi dựng bundle.
+        periods.flush();
         Optional<AuthorizationOperationService.PartitionChange> change =
                 partitionChange(workspaceId, kind);
         if (change.isPresent()) {
@@ -184,9 +187,9 @@ public class SubscriptionService {
      * cùng operation. Rỗng khi partition chưa tồn tại.
      */
     private Optional<AuthorizationOperationService.PartitionChange> partitionChange(
-            UUID workspaceId, String kind) {
+            UUID workspaceId, Workspace.Kind kind) {
         List<UUID> partitions =
-                jdbc.queryForList(
+                locks.queryForList(
                         "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
                                 + " AND owner_key = ?",
                         UUID.class,
@@ -195,7 +198,7 @@ public class SubscriptionService {
             return Optional.empty();
         }
         List<AuthorizationOperationService.DesiredProjection> projections = new ArrayList<>();
-        if (CENTER_KIND.equals(kind)) {
+        if (kind == Workspace.Kind.CENTER) {
             projections.add(
                     new AuthorizationOperationService.DesiredProjection(
                             NativePolicyTemplates.workspaceKey(workspaceId),
@@ -219,9 +222,7 @@ public class SubscriptionService {
     }
 
     private void requireAccount(UUID userId) {
-        List<UUID> accounts =
-                jdbc.queryForList("SELECT id FROM user_account WHERE id = ?", UUID.class, userId);
-        if (accounts.isEmpty()) {
+        if (!accounts.existsById(userId)) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     "ACCOUNT_NOT_FOUND",
@@ -229,16 +230,17 @@ public class SubscriptionService {
         }
     }
 
-    private String workspaceKind(UUID workspaceId) {
-        List<String> kinds =
-                jdbc.queryForList(
-                        "SELECT kind FROM workspace WHERE id = ?", String.class, workspaceId);
-        if (kinds.isEmpty()) {
-            throw new HttpProblemException(
-                    HttpStatus.NOT_FOUND, "WORKSPACE_NOT_FOUND", "Không tìm thấy workspace.");
-        }
-        String kind = kinds.getFirst();
-        if (!CENTER_KIND.equals(kind) && !PERSONAL_KIND.equals(kind)) {
+    private Workspace.Kind workspaceKind(UUID workspaceId) {
+        Workspace workspace =
+                workspaces
+                        .findById(workspaceId)
+                        .orElseThrow(() ->
+                                new HttpProblemException(
+                                        HttpStatus.NOT_FOUND,
+                                        "WORKSPACE_NOT_FOUND",
+                                        "Không tìm thấy workspace."));
+        Workspace.Kind kind = workspace.getKind();
+        if (kind != Workspace.Kind.CENTER && kind != Workspace.Kind.PERSONAL) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
                     "SUBSCRIPTION_WORKSPACE_KIND",
@@ -270,6 +272,6 @@ public class SubscriptionService {
      * khoá riêng, và hai instance của ứng dụng vẫn tôn trọng nhau.
      */
     private void lockOn(String key) {
-        AdvisoryLocks.lock(jdbc, "giaokhoa:subscription-service:", key);
+        AdvisoryLocks.lock(locks, "giaokhoa:subscription-service:", key);
     }
 }

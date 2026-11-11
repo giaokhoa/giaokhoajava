@@ -6,20 +6,27 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.resources.data.CanonicalResourceRepository;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.resources.model.LibraryItem;
+import com.giaokhoa.resources.model.ResourceDependency;
+import com.giaokhoa.resources.model.ResourceVersion;
+import com.giaokhoa.resources.repository.CanonicalResourceRepository;
+import com.giaokhoa.resources.repository.GrantRef;
+import com.giaokhoa.resources.repository.LibraryItemRef;
+import com.giaokhoa.resources.repository.ResourceVersionRepository;
+import com.giaokhoa.resources.repository.ResourcesAuthorizationOperationRepository;
+import com.giaokhoa.resources.repository.VersionMetadata;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.verification.model.SampleActionMutation;
+import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -38,52 +45,59 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Lưu không nhân bản resource/version và không đổi chủ sở hữu canonical: mục thư viện trỏ về
  * đúng version nguồn, custody OWNED khi workspace nhận là chủ sở hữu, LICENSED khi version đến từ
- * hệ thống hoặc một grant. Fork tạo resource mới thuộc workspace nhận với người tạo là actor, giữ
- * đúng môn và nội dung của version nguồn, ghi cạnh provenance về version nguồn kèm grant đã cấp
- * quyền fork (nếu căn cứ là license) và sao toàn bộ dependency của version nguồn; fork không bao
- * giờ ghi đè quyền của chủ sở hữu nguồn. Nhận cập nhật tạo mục thư viện mới trỏ version thay thế
- * của cùng resource, giữ nguyên custody và grant của mục gốc, không đụng hoạt động hay lịch sử đã
- * giao trên version cũ.
+ * hệ thống hoặc một grant. Ngoại lệ duy nhất là copy-on-share: version đến từ một grant
+ * tenant–tenant đã được vật chất hoá thành bản sao trong mặt phẳng của workspace nhận thì mục thư
+ * viện trỏ bản sao đó (vẫn LICENSED theo grant), vì phía nhận giữ dữ liệu ở mặt phẳng của mình thay
+ * vì tham chiếu sống sang mặt phẳng của tenant khác. Fork tạo resource mới thuộc workspace nhận với
+ * người tạo là actor, giữ đúng môn và nội dung của version nguồn, ghi cạnh provenance về version
+ * nguồn kèm grant đã cấp quyền fork (nếu căn cứ là license) và sao toàn bộ dependency của version
+ * nguồn; fork không bao giờ ghi đè quyền của chủ sở hữu nguồn. Nhận cập nhật tạo mục thư viện mới
+ * trỏ version thay thế của cùng resource, giữ nguyên custody và grant của mục gốc, không đụng hoạt
+ * động hay lịch sử đã giao trên version cũ — riêng mục trỏ bản sao copy-on-share thì bản cập nhật
+ * được ghi thành một version sao mới trên resource sao, để phía nhận không bao giờ phải trỏ sang
+ * version sống của tenant nguồn.
  */
 @Service
 public class ResourceLibraryService {
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Duration PROJECTION_WAIT = Duration.ofSeconds(60);
-    private static final String OPERATION_SUCCEEDED = "SUCCEEDED";
-    private static final String OPERATION_FAILED = "FAILED";
 
     private final ProtectedActionExecutor executor;
     private final ResourcePolicyProjector projector;
-    private final CanonicalResourceRepository repository;
     private final CorrectionNotificationService notifications;
+    private final CanonicalResourceRepository repository;
+    private final ResourceVersionRepository versions;
+    private final ResourceCopies copies;
+    private final SampleActionMutationRepository receipts;
+    private final ResourcesAuthorizationOperationRepository operationStates;
     private final IdempotencyService idempotency;
-    private final JdbcTemplate jdbc;
     private final WorkspaceTransaction workspaces;
     private final TransactionTemplate transactions;
 
-    /**
-     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} và repository dựng sẵn: template và
-     * repository đều được tạo trong constructor nên service không giữ tham chiếu tới đối tượng
-     * mutable từ bên ngoài (SpotBugs EI_EXPOSE_REP2); {@code DataSource} là singleton do Spring
-     * quản lý, repository không trạng thái và chỉ service này dùng.
-     */
     public ResourceLibraryService(
             ProtectedActionExecutor executor,
             ResourcePolicyProjector projector,
             CorrectionNotificationService notifications,
             IdempotencyService idempotency,
-            DataSource dataSource,
             WorkspaceTransaction workspaces,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            CanonicalResourceRepository repository,
+            ResourceVersionRepository versions,
+            ResourceCopies copies,
+            SampleActionMutationRepository receipts,
+            ResourcesAuthorizationOperationRepository operationStates) {
         this.executor = executor;
         this.projector = projector;
         this.notifications = notifications;
-        this.repository = new CanonicalResourceRepository(dataSource);
         this.idempotency = idempotency;
-        this.jdbc = new JdbcTemplate(dataSource);
         this.workspaces = workspaces;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.repository = repository;
+        this.versions = versions;
+        this.copies = copies;
+        this.receipts = receipts;
+        this.operationStates = operationStates;
     }
 
     /** Đọc thân bài của version tại workspace ngữ cảnh sau quyết định {@code content.read}. */
@@ -133,16 +147,19 @@ public class ResourceLibraryService {
                     if (!decisions.allowed(targetKey, scope)) {
                         throw forbidden();
                     }
-                    CanonicalResourceRepository.VersionContent content =
-                            Objects.requireNonNull(
-                                            workspaces.inWorkspace(
-                                                    workspaceId,
-                                                    () ->
-                                                            repository.content(
-                                                                    resourceId, versionId)),
-                                            "content")
-                                    .orElseThrow(ResourceLibraryService::notFound);
-                    return body ? content.body() : content.answer();
+                    return workspaces.inWorkspace(
+                            workspaceId,
+                            () -> {
+                                if (body) {
+                                    return repository
+                                            .body(resourceId, versionId)
+                                            .orElseThrow(ResourceLibraryService::notFound);
+                                }
+                                if (!versions.existsByResourceIdAndId(resourceId, versionId)) {
+                                    throw notFound();
+                                }
+                                return repository.answer(resourceId, versionId);
+                            });
                 });
     }
 
@@ -177,6 +194,15 @@ public class ResourceLibraryService {
                                         workspaces.inWorkspace(
                                                 workspaceId,
                                                 () -> {
+                                                    VersionMetadata metadata =
+                                                            repository
+                                                                    .metadata(resourceId, versionId)
+                                                                    .orElseThrow(
+                                                                            ResourceLibraryService
+                                                                                    ::notFound);
+                                                    SaveResolution resolution =
+                                                            resolveSaveTarget(
+                                                                    workspaceId, metadata);
                                                     // Định danh đích phải chốt trước khi ghi biên
                                                     // nhận: mục đã có thì biên nhận trỏ đúng mục
                                                     // đó, chưa có thì sinh trước để applySave
@@ -186,8 +212,8 @@ public class ResourceLibraryService {
                                                             repository
                                                                     .findLibraryItem(
                                                                             workspaceId,
-                                                                            resourceId,
-                                                                            versionId)
+                                                                            resolution.resourceId(),
+                                                                            resolution.versionId())
                                                                     .orElseGet(UUID::randomUUID);
                                                     return claimReceipt(
                                                                     actorUserId,
@@ -200,8 +226,8 @@ public class ResourceLibraryService {
                                                                 UUID savedId =
                                                                         applySave(
                                                                                 workspaceId,
-                                                                                resourceId,
-                                                                                versionId,
+                                                                                metadata,
+                                                                                resolution,
                                                                                 targetItemId);
                                                                 reconcileReceiptTarget(
                                                                         actorUserId,
@@ -216,21 +242,63 @@ public class ResourceLibraryService {
         return itemId;
     }
 
+    /**
+     * Đích hiệu lực của một lượt lưu: cặp (resource, version) mà mục thư viện phải trỏ tới và căn
+     * cứ quyền của nó. Version nguồn là đích mặc định; riêng grant tenant–tenant đã có bản sao
+     * copy-on-share tại workspace nhận thì đích là chính bản sao đó theo grant đã sao.
+     */
+    private record SaveResolution(
+            UUID resourceId,
+            UUID versionId,
+            @Nullable UUID shareGrantId,
+            boolean owned,
+            boolean grantBased) {}
+
+    private SaveResolution resolveSaveTarget(UUID workspaceId, VersionMetadata metadata) {
+        boolean owned = metadata.ownerWorkspaceId().equals(workspaceId);
+        List<GrantRef> grants =
+                repository.acceptedGrants(workspaceId, metadata.resourceId(), metadata.versionId());
+        if (!owned) {
+            for (GrantRef grant : grants) {
+                Optional<ResourceCopies.CopyRef> copy =
+                        copies.findCopy(
+                                metadata.resourceId(),
+                                metadata.versionId(),
+                                grant.id(),
+                                workspaceId);
+                if (copy.isPresent()) {
+                    return new SaveResolution(
+                            copy.get().resourceId(),
+                            copy.get().versionId(),
+                            grant.id(),
+                            false,
+                            true);
+                }
+            }
+        }
+        UUID shareGrantId = grants.isEmpty() ? null : grants.getFirst().id();
+        return new SaveResolution(
+                metadata.resourceId(),
+                metadata.versionId(),
+                shareGrantId,
+                owned,
+                !grants.isEmpty());
+    }
+
     private UUID applySave(
-            UUID workspaceId, UUID resourceId, UUID versionId, UUID candidateItemId) {
-        CanonicalResourceRepository.VersionMetadata metadata =
-                repository
-                        .metadata(resourceId, versionId)
-                        .orElseThrow(ResourceLibraryService::notFound);
-        Optional<UUID> existing = repository.findLibraryItem(workspaceId, resourceId, versionId);
+            UUID workspaceId,
+            VersionMetadata metadata,
+            SaveResolution resolution,
+            UUID candidateItemId) {
+        Optional<UUID> existing =
+                repository.findLibraryItem(
+                        workspaceId, resolution.resourceId(), resolution.versionId());
         if (existing.isPresent()) {
             return existing.get();
         }
-        boolean owned = metadata.ownerWorkspaceId().equals(workspaceId);
-        List<CanonicalResourceRepository.GrantRef> grants =
-                repository.acceptedGrants(workspaceId, resourceId, versionId);
-        UUID shareGrantId = grants.isEmpty() ? null : grants.getFirst().id();
-        if (!owned && !"SYSTEM".equals(metadata.ownerKind()) && grants.isEmpty()) {
+        if (!resolution.owned()
+                && !"SYSTEM".equals(metadata.ownerKind())
+                && !resolution.grantBased()) {
             // PDP đã cho qua nhưng không có căn cứ license tường minh cho version này tại
             // workspace nhận: fail-closed thay vì ghi mục thư viện không nguồn.
             throw forbidden();
@@ -238,10 +306,10 @@ public class ResourceLibraryService {
         return repository.insertLibraryItem(
                 candidateItemId,
                 workspaceId,
-                resourceId,
-                versionId,
-                shareGrantId,
-                owned ? "OWNED" : "LICENSED");
+                resolution.resourceId(),
+                resolution.versionId(),
+                resolution.shareGrantId(),
+                resolution.owned() ? LibraryItem.Custody.OWNED : LibraryItem.Custody.LICENSED);
     }
 
     /**
@@ -323,19 +391,18 @@ public class ResourceLibraryService {
             UUID versionId,
             String label,
             UUID forkResourceId) {
-        CanonicalResourceRepository.VersionMetadata metadata =
+        VersionMetadata metadata =
                 repository
                         .metadata(resourceId, versionId)
                         .orElseThrow(ResourceLibraryService::notFound);
-        CanonicalResourceRepository.VersionContent content =
+        String body =
                 repository
-                        .content(resourceId, versionId)
+                        .body(resourceId, versionId)
                         .orElseThrow(ResourceLibraryService::notFound);
         // Căn cứ license của fork: grant ACCEPTED đầu tiên cấp scope fork cho workspace nhận và
         // cho phép dùng tại chính workspace này; provenance và giới hạn của bản fork bám grant đó.
-        CanonicalResourceRepository.GrantRef authorizingGrant = null;
-        for (CanonicalResourceRepository.GrantRef grant :
-                repository.acceptedGrants(workspaceId, resourceId, versionId)) {
+        GrantRef authorizingGrant = null;
+        for (GrantRef grant : repository.acceptedGrants(workspaceId, resourceId, versionId)) {
             boolean grantsFork =
                     ResourcePolicyProjector.mapActions(grant.actions())
                             .contains(PermissionCatalog.ResourceVersionScope.FORK.scopeName());
@@ -364,26 +431,34 @@ public class ResourceLibraryService {
                                                 .reduce((a, b) -> a + "," + b)
                                                 .orElse("-"));
         UUID forkVersionId = UUID.randomUUID();
-        repository.insertFork(
-                forkResourceId,
-                forkVersionId,
-                actorUserId,
-                workspaceId,
-                metadata,
-                label,
-                content,
-                authorizingGrant == null ? null : authorizingGrant.id(),
-                usageConstraints);
-        return new ForkCreated(forkResourceId, forkVersionId);
+        ResourceCopies.CopyRef forked =
+                copies.copyVersion(
+                        forkResourceId,
+                        forkVersionId,
+                        actorUserId,
+                        workspaceId,
+                        metadata,
+                        label,
+                        body,
+                        repository.answer(resourceId, versionId),
+                        ResourceVersion.ReviewState.DRAFT,
+                        null,
+                        1,
+                        authorizingGrant == null ? null : authorizingGrant.id(),
+                        usageConstraints);
+        return new ForkCreated(forked.resourceId(), forked.versionId());
     }
 
     /**
      * Nhận cập nhật cho một mục đã lưu: mục phải thuộc đúng workspace của route (mục của workspace
      * khác thì 403), version thay thế phải thuộc cùng resource với version của mục, và quyết định
      * {@code library.save} trên target của version thay thế phải cho phép. Trả định danh mục thư
-     * viện mới trỏ version thay thế, giữ custody và grant của mục gốc. Nếu version thay thế là bản
-     * đính chính của một notice, việc nhận này cũng ghi mốc xác nhận đã biết đính chính cho
-     * workspace trên receipt của notice đó, trong cùng transaction.
+     * viện mới trỏ version thay thế, giữ custody và grant của mục gốc. Riêng mục trỏ bản sao
+     * copy-on-share: "cùng resource" được kiểm theo resource nguồn của cạnh provenance, và bản cập
+     * nhật được vật chất hoá thành một version sao mới trên resource sao thay vì trỏ sang version
+     * sống của tenant nguồn. Nếu version thay thế là bản đính chính của một notice, việc nhận này
+     * cũng ghi mốc xác nhận đã biết đính chính cho workspace trên receipt của notice đó, trong cùng
+     * transaction.
      */
     public UUID receiveUpdate(
             Authentication authentication,
@@ -394,18 +469,22 @@ public class ResourceLibraryService {
             String idempotencyKey,
             String payloadHash) {
         UUID actorUserId = executor.actorUserId(authentication);
-        CanonicalResourceRepository.LibraryItemRef item =
+        LibraryItemRef item =
                 repository.libraryItem(libraryItemId).orElseThrow(ResourceLibraryService::notFound);
         if (!item.workspaceId().equals(workspaceId)) {
             throw forbidden();
         }
-        CanonicalResourceRepository.VersionMetadata replacement =
+        Optional<ResourceDependency> provenance =
+                copies.shareProvenanceOf(item.resourceId(), item.versionId());
+        UUID sourceResourceId =
+                provenance.map(ResourceDependency::getSourceResourceId).orElse(item.resourceId());
+        VersionMetadata replacement =
                 repository
-                        .metadata(item.resourceId(), replacementVersionId)
+                        .metadata(sourceResourceId, replacementVersionId)
                         .orElseThrow(ResourceLibraryService::invalid);
         String targetKey =
                 NativePolicyTemplates.resourceVersionKey(
-                        workspaceId, replacement.resourceId(), replacement.versionId());
+                        workspaceId, sourceResourceId, replacementVersionId);
         ensureProjection(actorUserId, workspaceId, idempotencyKey + "#update", targetKey);
         var target =
                 new ProtectedActionExecutor.Target(
@@ -422,61 +501,151 @@ public class ResourceLibraryService {
                                         workspaces.inWorkspace(
                                                 workspaceId,
                                                 () -> {
-                                                    // Định danh đích chốt trước khi ghi biên
-                                                    // nhận như ở saveVersion, để replay trả
-                                                    // đúng kết quả đầu tiên.
-                                                    UUID targetItemId =
-                                                            repository
-                                                                    .findLibraryItem(
-                                                                            workspaceId,
-                                                                            item.resourceId(),
-                                                                            replacementVersionId)
-                                                                    .orElseGet(UUID::randomUUID);
-                                                    UUID receivedItemId =
-                                                            claimReceipt(
+                                                    UUID receivedId =
+                                                            provenance.isPresent()
+                                                                    ? applyCopyUpdate(
                                                                             actorUserId,
                                                                             workspaceId,
+                                                                            item,
+                                                                            provenance.get(),
+                                                                            replacement,
                                                                             idempotencyKey,
-                                                                            payloadHash,
-                                                                            "LIBRARY_ITEM",
-                                                                            targetItemId)
-                                                                    .orElseGet(() -> {
-                                                                        UUID savedId =
-                                                                                repository
-                                                                                        .findLibraryItem(
-                                                                                                workspaceId,
-                                                                                                item
-                                                                                                        .resourceId(),
-                                                                                                replacementVersionId)
-                                                                                        .orElseGet(
-                                                                                                () ->
-                                                                                                        repository
-                                                                                                                .insertLibraryItem(
-                                                                                                                        targetItemId,
-                                                                                                                        workspaceId,
-                                                                                                                        item
-                                                                                                                                .resourceId(),
-                                                                                                                        replacementVersionId,
-                                                                                                                        item
-                                                                                                                                .shareGrantId(),
-                                                                                                                        item
-                                                                                                                                .custody()));
-                                                                        reconcileReceiptTarget(
-                                                                                actorUserId,
-                                                                                idempotencyKey,
-                                                                                targetItemId,
-                                                                                savedId);
-                                                                        return savedId;
-                                                                    });
+                                                                            payloadHash)
+                                                                    : applyLiveUpdate(
+                                                                            actorUserId,
+                                                                            workspaceId,
+                                                                            item,
+                                                                            replacementVersionId,
+                                                                            idempotencyKey,
+                                                                            payloadHash);
                                                     notifications.acknowledgeReceivedUpdate(
                                                             workspaceId,
-                                                            item.resourceId(),
+                                                            sourceResourceId,
                                                             replacementVersionId);
-                                                    return receivedItemId;
+                                                    return receivedId;
                                                 }),
                                         "library item"));
         ensureProjection(actorUserId, workspaceId, idempotencyKey + "#update-sync", targetKey);
         return updatedItemId;
+    }
+
+    /** Nhận cập nhật trên mục tham chiếu sống: mục mới trỏ thẳng version thay thế của nguồn. */
+    private UUID applyLiveUpdate(
+            UUID actorUserId,
+            UUID workspaceId,
+            LibraryItemRef item,
+            UUID replacementVersionId,
+            String idempotencyKey,
+            String payloadHash) {
+        // Định danh đích chốt trước khi ghi biên nhận như ở saveVersion, để replay trả
+        // đúng kết quả đầu tiên.
+        UUID targetItemId =
+                repository
+                        .findLibraryItem(workspaceId, item.resourceId(), replacementVersionId)
+                        .orElseGet(UUID::randomUUID);
+        return claimReceipt(
+                        actorUserId,
+                        workspaceId,
+                        idempotencyKey,
+                        payloadHash,
+                        "LIBRARY_ITEM",
+                        targetItemId)
+                .orElseGet(() -> {
+                    UUID savedId =
+                            repository
+                                    .findLibraryItem(
+                                            workspaceId, item.resourceId(), replacementVersionId)
+                                    .orElseGet(() ->
+                                            repository.insertLibraryItem(
+                                                    targetItemId,
+                                                    workspaceId,
+                                                    item.resourceId(),
+                                                    replacementVersionId,
+                                                    item.shareGrantId(),
+                                                    LibraryItem.Custody.valueOf(item.custody())));
+                    reconcileReceiptTarget(actorUserId, idempotencyKey, targetItemId, savedId);
+                    return savedId;
+                });
+    }
+
+    /**
+     * Nhận cập nhật trên mục trỏ bản sao copy-on-share: version thay thế của nguồn được sao thành
+     * một version sao mới trên resource sao (kèm provenance và closure của chính nó), mục mới trỏ
+     * version sao đó. Version thay thế đã từng được sao thì tái dùng đúng version sao và mục của
+     * nó, không vật chất hoá trùng.
+     */
+    private UUID applyCopyUpdate(
+            UUID actorUserId,
+            UUID workspaceId,
+            LibraryItemRef item,
+            ResourceDependency provenance,
+            VersionMetadata replacement,
+            String idempotencyKey,
+            String payloadHash) {
+        UUID grantId = Objects.requireNonNull(provenance.getShareGrantId(), "share_grant_id");
+        Optional<UUID> existingCopyVersionId =
+                copies.copyVersionIdForSourceVersion(
+                        item.resourceId(),
+                        provenance.getSourceResourceId(),
+                        replacement.versionId(),
+                        grantId);
+        UUID targetItemId =
+                existingCopyVersionId
+                        .flatMap(copyVersionId ->
+                                repository.findLibraryItem(
+                                        workspaceId, item.resourceId(), copyVersionId))
+                        .orElseGet(UUID::randomUUID);
+        return claimReceipt(
+                        actorUserId,
+                        workspaceId,
+                        idempotencyKey,
+                        payloadHash,
+                        "LIBRARY_ITEM",
+                        targetItemId)
+                .orElseGet(() -> {
+                    Optional<UUID> existingItem =
+                            existingCopyVersionId.flatMap(copyVersionId ->
+                                    repository.findLibraryItem(
+                                            workspaceId, item.resourceId(), copyVersionId));
+                    if (existingItem.isPresent()) {
+                        return existingItem.get();
+                    }
+                    UUID copyVersionId =
+                            existingCopyVersionId.orElseGet(() -> {
+                                ResourceVersion sourceVersion =
+                                        versions.findById(replacement.versionId())
+                                                .orElseThrow(ResourceLibraryService::notFound);
+                                UUID newCopyVersionId = UUID.randomUUID();
+                                copies.appendVersion(
+                                        item.resourceId(),
+                                        newCopyVersionId,
+                                        replacement,
+                                        sourceVersion.getLabel(),
+                                        repository
+                                                .body(
+                                                        replacement.resourceId(),
+                                                        replacement.versionId())
+                                                .orElseThrow(ResourceLibraryService::notFound),
+                                        repository.answer(
+                                                replacement.resourceId(), replacement.versionId()),
+                                        sourceVersion.getReviewState(),
+                                        sourceVersion.getLockedAt(),
+                                        copies.nextVersionNo(item.resourceId()),
+                                        grantId,
+                                        provenance.getUsageConstraints());
+                                return newCopyVersionId;
+                            });
+                    UUID savedId =
+                            repository.insertLibraryItem(
+                                    targetItemId,
+                                    workspaceId,
+                                    item.resourceId(),
+                                    copyVersionId,
+                                    item.shareGrantId(),
+                                    LibraryItem.Custody.valueOf(item.custody()));
+                    reconcileReceiptTarget(actorUserId, idempotencyKey, targetItemId, savedId);
+                    return savedId;
+                });
     }
 
     // ---------- Biên nhận idempotency của chính action ----------
@@ -494,11 +663,7 @@ public class ResourceLibraryService {
             String targetType,
             UUID candidateTargetId) {
         int inserted =
-                jdbc.update(
-                        "INSERT INTO sample_action_mutation(actor_user_id, idempotency_key,"
-                                + " payload_hash, workspace_id, target_type, target_id)"
-                                + " VALUES (?,?,?,?,?,?)"
-                                + " ON CONFLICT (actor_user_id, idempotency_key) DO NOTHING",
+                receipts.claim(
                         actorUserId,
                         idempotencyKey,
                         payloadHash,
@@ -508,19 +673,18 @@ public class ResourceLibraryService {
         if (inserted != 0) {
             return Optional.empty();
         }
-        Map<String, Object> previous =
-                jdbc.queryForMap(
-                        "SELECT payload_hash, target_id FROM sample_action_mutation"
-                                + " WHERE actor_user_id = ? AND idempotency_key = ?",
-                        actorUserId,
-                        idempotencyKey);
-        if (!payloadHash.equals(previous.get("payload_hash"))) {
+        SampleActionMutation previous =
+                receipts.findById(new SampleActionMutation.Id(actorUserId, idempotencyKey))
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Idempotency receipt is missing after a claim conflict"));
+        if (!payloadHash.equals(previous.getPayloadHash())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     "IDEMPOTENCY_CONFLICT",
                     "Idempotency-Key đã dùng với yêu cầu khác.");
         }
-        return Optional.of(Objects.requireNonNull((UUID) previous.get("target_id"), "target_id"));
+        return Optional.of(previous.getTargetId());
     }
 
     /**
@@ -533,12 +697,7 @@ public class ResourceLibraryService {
     private void reconcileReceiptTarget(
             UUID actorUserId, String idempotencyKey, UUID targetItemId, UUID savedId) {
         if (!savedId.equals(targetItemId)) {
-            jdbc.update(
-                    "UPDATE sample_action_mutation SET target_id = ?"
-                            + " WHERE actor_user_id = ? AND idempotency_key = ?",
-                    savedId,
-                    actorUserId,
-                    idempotencyKey);
+            receipts.retarget(actorUserId, idempotencyKey, savedId);
         }
     }
 
@@ -569,15 +728,17 @@ public class ResourceLibraryService {
     private void awaitProjection(AuthorizationOperation operation) {
         long deadline = System.nanoTime() + PROJECTION_WAIT.toNanos();
         while (true) {
-            String state =
-                    jdbc.queryForObject(
-                            "SELECT state FROM authorization_operation WHERE id = ?",
-                            String.class,
-                            operation.getId());
-            if (OPERATION_SUCCEEDED.equals(state)) {
+            AuthorizationOperation.State state =
+                    operationStates
+                            .findStateById(operation.getId())
+                            .orElseThrow(() ->
+                                    new IllegalStateException(
+                                            "Authorization operation is missing: "
+                                                    + operation.getId()));
+            if (state == AuthorizationOperation.State.SUCCEEDED) {
                 return;
             }
-            if (OPERATION_FAILED.equals(state) || System.nanoTime() > deadline) {
+            if (state == AuthorizationOperation.State.FAILED || System.nanoTime() > deadline) {
                 throw AuthorizationFence.notReady();
             }
             try {

@@ -96,6 +96,7 @@ public class KeycloakDecisionClient {
             HttpServletRequest request,
             RequiredPermissions required) {
         String accessToken = userAccessToken(authentication, request);
+        // UMA decision gộp nhiều cặp có thể true khi chỉ một cặp được cấp, nên hỏi từng cặp.
         for (RequiredPermissions.Permission permission : required.permissions()) {
             if (!decide(accessToken, permission)) {
                 return false;

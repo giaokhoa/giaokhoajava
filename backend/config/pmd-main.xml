@@ -30,7 +30,7 @@
                  và trim từng entry (đã kiểm chứng bằng PMD 7.29.0) nên 9 mảnh SQL chứa dấu phẩy
                  và 3 mảnh bắt đầu bằng khoảng trắng nằm ở violationSuppressXPath bên dưới thay
                  vì ở đây. -->
-            <property name="exceptionList" value="name, logic, decisionStrategy, type, scopes, _id, /permission/scope, /resource, time, notBefore, /permission/scope/, /policy/, resources, groups, sid, read, workspaceId, initiatorUserId, classId, courseId, actorUserId, REVOKED, state, workspace_id, version, class_id"/>
+            <property name="exceptionList" value="name, logic, decisionStrategy, type, scopes, _id, /permission/scope, /resource, time, notBefore, /permission/scope/, /policy/, resources, groups, sid, read, workspaceId, initiatorUserId, classId, courseId, actorUserId, REVOKED, state, workspace_id, version, class_id, states, versionId, resourceId"/>
             <!-- 12 mệnh đề khớp chính xác từng literal (Image gồm dấu ngoáy), giới hạn trong class
                  sở hữu, để không che literal mới ở file khác: 9 mảnh SQL chứa dấu phẩy và 3 mảnh
                  bắt đầu bằng khoảng trắng (đều ở TeachingRepository, trừ 2 mảnh ở

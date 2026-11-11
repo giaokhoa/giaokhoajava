@@ -2,16 +2,22 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
-import com.giaokhoa.teaching.data.TeachingRepository.ClassRow;
-import com.giaokhoa.teaching.data.TeachingRepository.RosterRow;
-import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
+import com.giaokhoa.teaching.model.ClassStudent;
+import com.giaokhoa.teaching.model.SchoolClass;
+import com.giaokhoa.teaching.repository.ClassStudentRepository;
+import com.giaokhoa.teaching.repository.EnrollmentRepository;
+import com.giaokhoa.teaching.repository.RosterListItem;
+import com.giaokhoa.teaching.repository.SchoolClassRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -21,14 +27,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Nghiệp vụ lớp và roster ở tầng dữ kiện nguồn: tạo/đổi tên/thu hồi lớp, thêm/thu hồi học sinh
- * trong roster của đúng một lớp thuộc đúng một workspace. Mọi thao tác đi qua {@link
- * TeachingRepository} đã khóa phạm vi theo workspace nên dữ kiện của workspace khác không tồn tại
- * đối với service này. Mỗi phương thức đặt context workspace cho transaction qua {@link
- * WorkspaceTransaction} ngay khi bắt đầu: các bảng giảng dạy nằm dưới RLS theo đúng context đó,
- * thiếu nó thì runtime role không BYPASSRLS không thấy và không ghi được hàng nào. Mọi phương thức
- * ghi giữ khóa workspace thống nhất qua {@link ResourceMutationCoordinator} ngay sau khi đặt
- * context — cùng mẫu các writer dữ kiện nguồn khác — để dữ kiện nguồn mà projector chiếu không bao
- * giờ thiếu một mutation đang chạy đồng thời của cùng workspace.
+ * trong roster của đúng một lớp thuộc đúng một workspace. Mọi thao tác đi qua các repository đã
+ * khóa phạm vi theo workspace nên dữ kiện của workspace khác không tồn tại đối với service này. Mỗi
+ * phương thức đặt context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt
+ * đầu: các bảng giảng dạy nằm dưới RLS theo đúng context đó, thiếu nó thì runtime role không
+ * BYPASSRLS không thấy và không ghi được hàng nào. Mọi phương thức ghi giữ khóa workspace thống
+ * nhất qua {@link ResourceMutationCoordinator} ngay sau khi đặt context — cùng mẫu các writer dữ
+ * kiện nguồn khác — để dữ kiện nguồn mà projector chiếu không bao giờ thiếu một mutation đang chạy
+ * đồng thời của cùng workspace.
  *
  * <p>Service chỉ giữ bất biến dữ kiện và trạng thái, không tự quyết quyền thay Keycloak PDP và
  * không ghi authorization operation: quyết định cho phép ở route (PDP/fence hay biên SQL) và việc
@@ -42,17 +48,31 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ClassService {
-    private final TeachingRepository repository;
+    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
+
+    private final SchoolClassRepository schoolClasses;
+    private final ClassStudentRepository classStudents;
+    private final EnrollmentRepository enrollments;
+    private final TeachingPageRepository pages;
+    private final TeachingScopePreconditions preconditions;
     private final WorkspaceTransaction workspaceTransaction;
     private final ResourceMutationCoordinator coordinator;
     private final TeachingRevocationContributor revocationContributor;
 
     public ClassService(
-            TeachingRepository repository,
+            SchoolClassRepository schoolClasses,
+            ClassStudentRepository classStudents,
+            EnrollmentRepository enrollments,
+            TeachingPageRepository pages,
+            TeachingScopePreconditions preconditions,
             WorkspaceTransaction workspaceTransaction,
             ResourceMutationCoordinator coordinator,
             TeachingRevocationContributor revocationContributor) {
-        this.repository = repository;
+        this.schoolClasses = schoolClasses;
+        this.classStudents = classStudents;
+        this.enrollments = enrollments;
+        this.pages = pages;
+        this.preconditions = preconditions;
         this.workspaceTransaction = workspaceTransaction;
         this.coordinator = coordinator;
         this.revocationContributor = revocationContributor;
@@ -72,10 +92,10 @@ public class ClassService {
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
         String trimmed = normalizeName(name);
-        TeachingRouteSupport.requireTeachingWorkspace(repository, workspaceId);
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
+        preconditions.requireTeachingWorkspace(workspaceId);
+        preconditions.requireSubscriptionCurrent(workspaceId);
         UUID classId = UUID.randomUUID();
-        repository.insertClass(classId, workspaceId, trimmed);
+        schoolClasses.save(new SchoolClass(classId, workspaceId, trimmed));
         return new ClassView(classId, workspaceId, trimmed, "ACTIVE", 0);
     }
 
@@ -86,19 +106,26 @@ public class ClassService {
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
         return toView(
-                repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound()));
+                schoolClasses
+                        .findByWorkspaceIdAndId(workspaceId, classId)
+                        .orElseThrow(() -> classNotFound()));
     }
 
     @Transactional(readOnly = true)
-    public TeachingRepository.Page<ClassView> pageClasses(
+    public Page<ClassView> pageClasses(
             UUID workspaceId,
             @Nullable String cursor,
             @Nullable Integer limit,
             @Nullable UUID homeroomTeacherId) {
         workspaceTransaction.applyContext(workspaceId);
-        return repository
-                .pageClasses(workspaceId, cursor, limit, homeroomTeacherId)
-                .map(ClassService::toView);
+        return pages.pageClasses(workspaceId, cursor, limit, homeroomTeacherId)
+                .map(item ->
+                        new ClassView(
+                                item.getId(),
+                                item.getWorkspaceId(),
+                                item.getName(),
+                                item.getState(),
+                                item.getVersion()));
     }
 
     /** Các lớp hiện hành của workspace, cũ nhất trước; chỉ metadata, không kèm roster. */
@@ -106,7 +133,11 @@ public class ClassService {
     public List<ClassView> listClasses(UUID workspaceId) {
         Objects.requireNonNull(workspaceId, "workspaceId");
         workspaceTransaction.applyContext(workspaceId);
-        return repository.listClasses(workspaceId).stream().map(ClassService::toView).toList();
+        return schoolClasses
+                .findByWorkspaceIdAndStateOrderByCreatedAtAscIdAsc(workspaceId, "ACTIVE")
+                .stream()
+                .map(ClassService::toView)
+                .toList();
     }
 
     /**
@@ -122,19 +153,22 @@ public class ClassService {
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
         String trimmed = normalizeName(name);
-        ClassRow row =
-                repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        SchoolClass row =
+                schoolClasses
+                        .lockByWorkspaceIdAndId(workspaceId, classId)
+                        .orElseThrow(() -> classNotFound());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CLASS_ALREADY_REVOKED,
                     "Lớp đã bị thu hồi trước đó.");
         }
-        IdempotencyService.requireIfMatch(ifMatch, row.version());
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
-        repository.renameClass(classId, trimmed);
-        return new ClassView(row.id(), row.workspaceId(), trimmed, row.state(), row.version() + 1);
+        IdempotencyService.requireIfMatch(ifMatch, row.getVersion());
+        preconditions.requireSubscriptionCurrent(workspaceId);
+        row.rename(trimmed);
+        return new ClassView(
+                row.getId(), row.getWorkspaceId(), trimmed, row.getState(), row.getVersion() + 1);
     }
 
     /**
@@ -148,18 +182,21 @@ public class ClassService {
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
-        ClassRow row =
-                repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        SchoolClass row =
+                schoolClasses
+                        .lockByWorkspaceIdAndId(workspaceId, classId)
+                        .orElseThrow(() -> classNotFound());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CLASS_ALREADY_REVOKED,
                     "Lớp đã bị thu hồi trước đó.");
         }
-        repository.revokeClass(classId);
+        row.revoke();
         revocationContributor.revokeDependentsOfClass(workspaceId, classId);
-        return new ClassView(row.id(), row.workspaceId(), row.name(), "REVOKED", row.version() + 1);
+        return new ClassView(
+                row.getId(), row.getWorkspaceId(), row.getName(), "REVOKED", row.getVersion() + 1);
     }
 
     /**
@@ -183,48 +220,62 @@ public class ClassService {
                     ErrorCodes.ROSTER_STUDENTS_REQUIRED,
                     "Danh sách học sinh thêm vào roster không được rỗng.");
         }
-        ClassRow clazz =
-                repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        boolean classRevoked = "REVOKED".equals(clazz.state());
+        SchoolClass clazz =
+                schoolClasses
+                        .lockByWorkspaceIdAndId(workspaceId, classId)
+                        .orElseThrow(() -> classNotFound());
+        boolean classRevoked = "REVOKED".equals(clazz.getState());
         if (classRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CLASS_NOT_ACTIVE,
                     "Lớp đã bị thu hồi, không thêm học sinh được nữa.");
         }
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
-        WorkspaceInfo workspace =
-                TeachingRouteSupport.requireTeachingWorkspace(repository, workspaceId);
+        preconditions.requireSubscriptionCurrent(workspaceId);
+        WorkspaceInfo workspace = preconditions.requireTeachingWorkspace(workspaceId);
         for (UUID studentUserId : students) {
             requireStudentEligible(workspace, studentUserId);
         }
-        List<RosterEntryView> result = new ArrayList<>();
+        List<ClassStudent> entries = new ArrayList<>();
         for (UUID studentUserId : students) {
-            RosterRow entry =
-                    repository
-                            .findCurrentRosterEntry(workspaceId, classId, studentUserId)
-                            .orElseGet(() -> {
-                                repository.insertRosterEntry(
-                                        UUID.randomUUID(), workspaceId, classId, studentUserId);
-                                return repository
-                                        .findCurrentRosterEntry(workspaceId, classId, studentUserId)
-                                        .orElseThrow(() ->
-                                                new IllegalStateException(
-                                                        "Roster entry missing"
-                                                                + " after"
-                                                                + " insert"));
-                            });
-            result.add(toView(entry));
+            ClassStudent entry =
+                    classStudents
+                            .findByWorkspaceIdAndClassIdAndStudentUserIdAndStateIn(
+                                    workspaceId, classId, studentUserId, CURRENT_STATES)
+                            .orElseGet(() ->
+                                    classStudents.save(
+                                            new ClassStudent(
+                                                    UUID.randomUUID(),
+                                                    workspaceId,
+                                                    classId,
+                                                    studentUserId)));
+            entries.add(entry);
         }
-        return List.copyOf(result);
+        // Tên hiển thị thuộc mặt phẳng hệ thống nên phân giải một lần cho cả lô từ danh sách ID.
+        Map<UUID, String> usernames =
+                preconditions.usernamesByIds(
+                        entries.stream().map(ClassStudent::getStudentUserId).toList());
+        return entries.stream().map(entry -> toView(entry, usernames)).toList();
     }
 
     @Transactional(readOnly = true)
-    public TeachingRepository.Page<RosterEntryView> pageStudents(
+    public Page<RosterEntryView> pageStudents(
             UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
         workspaceTransaction.applyContext(workspaceId);
-        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        return repository.pageRoster(workspaceId, classId, cursor, limit).map(ClassService::toView);
+        schoolClasses
+                .findByWorkspaceIdAndId(workspaceId, classId)
+                .orElseThrow(() -> classNotFound());
+        Page<RosterListItem> page = pages.pageRoster(workspaceId, classId, cursor, limit);
+        Map<UUID, String> usernames =
+                preconditions.usernamesByIds(
+                        page.items().stream().map(RosterListItem::getStudentUserId).toList());
+        return page.map(item ->
+                new RosterEntryView(
+                        item.getId(),
+                        item.getStudentUserId(),
+                        requireUsername(usernames, item.getStudentUserId()),
+                        item.getState(),
+                        item.getVersion()));
     }
 
     /** Roster hiện hành của lớp; đọc roster là thao tác riêng, không suy ra từ đọc lớp. */
@@ -233,10 +284,16 @@ public class ClassService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
-        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        return repository.listRoster(workspaceId, classId).stream()
-                .map(ClassService::toView)
-                .toList();
+        schoolClasses
+                .findByWorkspaceIdAndId(workspaceId, classId)
+                .orElseThrow(() -> classNotFound());
+        List<ClassStudent> entries =
+                classStudents.findByWorkspaceIdAndClassIdAndStateInOrderByCreatedAtAscIdAsc(
+                        workspaceId, classId, CURRENT_STATES);
+        Map<UUID, String> usernames =
+                preconditions.usernamesByIds(
+                        entries.stream().map(ClassStudent::getStudentUserId).toList());
+        return entries.stream().map(entry -> toView(entry, usernames)).toList();
     }
 
     /**
@@ -250,31 +307,37 @@ public class ClassService {
         Objects.requireNonNull(classStudentId, "classStudentId");
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
-        RosterRow row =
-                repository
-                        .lockRosterEntry(workspaceId, classId, classStudentId)
+        ClassStudent row =
+                classStudents
+                        .lockByWorkspaceIdAndClassIdAndId(workspaceId, classId, classStudentId)
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
                                         ErrorCodes.ROSTER_ENTRY_NOT_FOUND,
                                         "Không tìm thấy học sinh trong roster của lớp" + " này."));
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.ROSTER_ENTRY_ALREADY_REVOKED,
                     "Dòng roster đã bị thu hồi trước đó.");
         }
-        repository.revokeRosterEntry(classStudentId);
-        repository.revokeEnrollmentsOfRosterEntry(workspaceId, classStudentId);
+        row.revoke();
+        enrollments.revokeCurrentByClassStudentId(workspaceId, classStudentId, CURRENT_STATES);
         return new RosterEntryView(
-                row.id(), row.studentUserId(), row.username(), "REVOKED", row.version() + 1);
+                row.getId(),
+                row.getStudentUserId(),
+                requireUsername(
+                        preconditions.usernamesByIds(List.of(row.getStudentUserId())),
+                        row.getStudentUserId()),
+                "REVOKED",
+                row.getVersion() + 1);
     }
 
     private void requireStudentEligible(WorkspaceInfo workspace, UUID studentUserId) {
         boolean center = "CENTER".equals(workspace.kind());
         if (center) {
-            if (!repository.hasActiveCenterMembershipWithRole(
+            if (!preconditions.hasActiveCenterMembershipWithRole(
                     workspace.id(), studentUserId, "STUDENT")) {
                 throw new HttpProblemException(
                         HttpStatus.BAD_REQUEST,
@@ -284,7 +347,7 @@ public class ClassService {
             }
             return;
         }
-        if (!repository.accountExists(studentUserId)) {
+        if (!preconditions.accountExists(studentUserId)) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     ErrorCodes.STUDENT_ACCOUNT_NOT_FOUND,
@@ -309,12 +372,22 @@ public class ClassService {
                 "Không tìm thấy lớp trong workspace này.");
     }
 
-    private static ClassView toView(ClassRow row) {
-        return new ClassView(row.id(), row.workspaceId(), row.name(), row.state(), row.version());
+    private static ClassView toView(SchoolClass row) {
+        return new ClassView(
+                row.getId(), row.getWorkspaceId(), row.getName(), row.getState(), row.getVersion());
     }
 
-    private static RosterEntryView toView(RosterRow row) {
+    private static RosterEntryView toView(ClassStudent entry, Map<UUID, String> usernames) {
         return new RosterEntryView(
-                row.id(), row.studentUserId(), row.username(), row.state(), row.version());
+                entry.getId(),
+                entry.getStudentUserId(),
+                requireUsername(usernames, entry.getStudentUserId()),
+                entry.getState(),
+                entry.getVersion());
+    }
+
+    private static String requireUsername(Map<UUID, String> usernames, UUID studentUserId) {
+        // FK của dòng roster bảo đảm tài khoản của học sinh luôn tồn tại để phân giải tên.
+        return Objects.requireNonNull(usernames.get(studentUserId), "username");
     }
 }

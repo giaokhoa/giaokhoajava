@@ -5,15 +5,17 @@ import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.repository.UserAccountRepository;
+import com.giaokhoa.infrastructure.tenancy.TenantSchemaProvisioner;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,21 +31,27 @@ import org.springframework.web.client.RestClientException;
 @Service
 public class IdentityService {
 
-    private final JdbcTemplate jdbc;
+    private final UserAccountRepository accounts;
+    private final WorkspaceRepository workspaces;
     private final CurrentIdentityClient identities;
 
     private final ResourceMutationCoordinator coordinator;
     private final IdentityEligibilityService eligibility;
+    private final TenantSchemaProvisioner tenantProvisioner;
 
     public IdentityService(
-            JdbcTemplate jdbc,
+            UserAccountRepository accounts,
+            WorkspaceRepository workspaces,
             CurrentIdentityClient identities,
             ResourceMutationCoordinator coordinator,
-            IdentityEligibilityService eligibility) {
-        this.jdbc = jdbc;
+            IdentityEligibilityService eligibility,
+            TenantSchemaProvisioner tenantProvisioner) {
+        this.accounts = accounts;
+        this.workspaces = workspaces;
         this.identities = identities;
         this.coordinator = coordinator;
         this.eligibility = eligibility;
+        this.tenantProvisioner = tenantProvisioner;
     }
 
     /** Kết quả bootstrap: user và personal workspace của actor, kèm cờ account mới tạo. */
@@ -88,33 +96,27 @@ public class IdentityService {
                 "identity-bootstrap:" + keycloakSub,
                 () -> {
                     BootstrapResult result = bootstrapCurrent(keycloakSub, current);
+                    // Eligibility đọc partition do trigger cơ sở dữ liệu tạo khi INSERT
+                    // account/workspace bằng JDBC thuần, nên hai thay đổi trên phải xuống cơ
+                    // sở dữ liệu trước lời gọi đó: entity vừa save đã nằm trong persistence
+                    // context nên findById ở eligibility không kích hoạt flush tự động.
+                    accounts.flush();
+                    workspaces.flush();
                     eligibility.synchronizeEligibility(result.userId());
                     return result;
                 });
     }
 
     private BootstrapResult bootstrapCurrent(String keycloakSub, CurrentIdentity current) {
-        List<Map<String, Object>> accounts =
-                jdbc.queryForList(
-                        "SELECT id, username, origin FROM user_account WHERE keycloak_sub = ?",
-                        keycloakSub);
-        if (!accounts.isEmpty()) {
-            Map<String, Object> account = accounts.getFirst();
-            UUID userId = (UUID) Objects.requireNonNull(account.get("id"), "id");
-            jdbc.update(
-                    "UPDATE user_account SET email = ?, email_verified = ? WHERE id = ?",
-                    current.email(),
-                    current.emailVerified(),
-                    userId);
-            return new BootstrapResult(userId, personalWorkspaceOf(userId), false);
+        var existing = accounts.findByKeycloakSub(keycloakSub);
+        if (existing.isPresent()) {
+            UserAccount account = existing.get();
+            account.syncEmail(current.email(), current.emailVerified());
+            return new BootstrapResult(
+                    account.getId(), personalWorkspaceOf(account.getId()), false);
         }
 
-        List<String> takenUsernames =
-                jdbc.queryForList(
-                        "SELECT keycloak_sub FROM user_account WHERE username = ?",
-                        String.class,
-                        current.username());
-        if (!takenUsernames.isEmpty()) {
+        if (accounts.existsByUsername(current.username())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.USERNAME_TAKEN,
@@ -122,20 +124,18 @@ public class IdentityService {
         }
         UUID userId = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        jdbc.update(
-                "INSERT INTO user_account"
-                        + " (id, keycloak_sub, username, email, email_verified, origin,"
-                        + " identity_state) VALUES (?, ?, ?, ?, ?, 'SELF_REGISTERED', 'ACTIVE')",
-                userId,
-                keycloakSub,
-                current.username(),
-                current.email(),
-                current.emailVerified());
-        jdbc.update(
-                "INSERT INTO workspace (id, kind, owner_user_id, state)"
-                        + " VALUES (?, 'PERSONAL', ?, 'ACTIVE')",
-                workspaceId,
-                userId);
+        accounts.save(
+                new UserAccount(
+                        userId,
+                        keycloakSub,
+                        current.username(),
+                        current.email(),
+                        current.emailVerified(),
+                        UserAccount.Origin.SELF_REGISTERED,
+                        "ACTIVE"));
+        workspaces.save(
+                new Workspace(workspaceId, Workspace.Kind.PERSONAL, userId, null, "ACTIVE"));
+        tenantProvisioner.provisionAfterCommit(workspaceId);
         return new BootstrapResult(userId, workspaceId, true);
     }
 
@@ -143,35 +143,26 @@ public class IdentityService {
     @Transactional(readOnly = true)
     public CurrentUser currentUser(UUID actorUserId) {
         Objects.requireNonNull(actorUserId, "actorUserId");
-        List<Map<String, Object>> accounts =
-                jdbc.queryForList(
-                        "SELECT username, email, email_verified, origin, identity_state"
-                                + " FROM user_account WHERE id = ?",
-                        actorUserId);
-        if (accounts.isEmpty()) {
-            throw new HttpProblemException(
-                    HttpStatus.NOT_FOUND,
-                    ErrorCodes.ACCOUNT_NOT_FOUND,
-                    "Chưa có tài khoản cho danh tính này.");
-        }
-        Map<String, Object> account = accounts.getFirst();
+        UserAccount account =
+                accounts.findById(actorUserId)
+                        .orElseThrow(() ->
+                                new HttpProblemException(
+                                        HttpStatus.NOT_FOUND,
+                                        ErrorCodes.ACCOUNT_NOT_FOUND,
+                                        "Chưa có tài khoản cho danh tính này."));
         return new CurrentUser(
                 actorUserId,
-                (String) Objects.requireNonNull(account.get("username"), "username"),
-                (String) account.get("email"),
-                Boolean.TRUE.equals(account.get("email_verified")),
-                UserAccount.Origin.valueOf(
-                        (String) Objects.requireNonNull(account.get("origin"), "origin")),
-                (String) Objects.requireNonNull(account.get("identity_state"), "identity_state"),
+                account.getUsername(),
+                account.getEmail(),
+                account.isEmailVerified(),
+                account.getOrigin(),
+                account.getIdentityState(),
                 personalWorkspaceOf(actorUserId));
     }
 
     private UUID personalWorkspaceOf(UUID userId) {
-        List<UUID> found =
-                jdbc.queryForList(
-                        "SELECT id FROM workspace WHERE kind = 'PERSONAL' AND owner_user_id = ?",
-                        UUID.class,
-                        userId);
+        List<Workspace> found =
+                workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, userId);
         if (found.isEmpty()) {
             // Bất biến DB đáng lẽ ngăn trạng thái này; thấy nó là dữ liệu hỏng, không đoán.
             throw new HttpProblemException(
@@ -179,7 +170,7 @@ public class IdentityService {
                     ErrorCodes.IDENTITY_UNAVAILABLE,
                     "Không xác minh được danh tính hiện hành, thử lại sau.");
         }
-        return found.getFirst();
+        return found.getFirst().getId();
     }
 
     private CurrentIdentity readCurrent(String keycloakSub) {

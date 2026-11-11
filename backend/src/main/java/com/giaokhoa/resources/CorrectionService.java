@@ -6,9 +6,10 @@ import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.resources.data.CanonicalResourceRepository;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.resources.repository.CanonicalResourceRepository;
+import com.giaokhoa.resources.repository.VersionMetadata;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -66,8 +67,8 @@ public class CorrectionService {
     private final TransactionTemplate transactions;
 
     /**
-     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} và repository dựng sẵn, cùng mẫu
-     * EI_EXPOSE_REP2 của {@link ResourceLibraryService}.
+     * Nhận {@link DataSource} thay vì {@code JdbcTemplate} dựng sẵn, cùng mẫu EI_EXPOSE_REP2 của
+     * {@link ResourceLibraryService}.
      */
     public CorrectionService(
             ProtectedActionExecutor executor,
@@ -76,10 +77,11 @@ public class CorrectionService {
             IdempotencyService idempotency,
             DataSource dataSource,
             WorkspaceTransaction workspaces,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            CanonicalResourceRepository repository) {
         this.executor = executor;
         this.projector = projector;
-        this.repository = new CanonicalResourceRepository(dataSource);
+        this.repository = repository;
         this.notifications = notifications;
         this.idempotency = idempotency;
         this.jdbc = new JdbcTemplate(dataSource);
@@ -111,7 +113,7 @@ public class CorrectionService {
             String idempotencyKey,
             String payloadHash) {
         UUID actorUserId = executor.actorUserId(authentication);
-        CanonicalResourceRepository.VersionMetadata affected =
+        VersionMetadata affected =
                 repository
                         .metadata(resourceId, affectedVersionId)
                         .orElseThrow(CorrectionService::notFound);
@@ -162,7 +164,7 @@ public class CorrectionService {
 
     private CorrectionNoticeView applyCorrection(
             UUID resourceId,
-            CanonicalResourceRepository.VersionMetadata affected,
+            VersionMetadata affected,
             UUID replacementVersionId,
             String reason,
             UUID noticeId) {

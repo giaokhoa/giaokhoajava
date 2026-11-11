@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.support.IntegrationEnvironment;
 import jakarta.persistence.EntityManager;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -146,8 +147,8 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
         AuthorizationProjection projected = entities.find(AuthorizationProjection.class, id);
         assertEquals(AuthorizationPartition.State.READY, loaded.getState());
         assertEquals(AuthorizationProjection.State.READY, projected.getState());
-        assertArrayEquals(new String[] {"scope.permission"}, projected.getPolicyNames());
-        assertArrayEquals(new UUID[0], projected.getDependencyPartitionIds());
+        assertEquals(List.of("scope.permission"), projected.getPolicyNames());
+        assertEquals(List.of(), projected.getDependencyPartitionIds());
     }
 
     @DisplayName("Thay đổi nguồn (source) bắt buộc fence các projection phụ thuộc")
@@ -234,8 +235,27 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                 id);
         AuthorizationOperation entity = entities.find(AuthorizationOperation.class, id);
         assertEquals(AuthorizationOperation.State.RETRYABLE_FAILURE, entity.getState());
-        assertArrayEquals(new UUID[] {partition}, entity.getAffectedPartitions());
+        assertEquals(List.of(partition), entity.getAffectedPartitions());
         assertEquals(1, entity.getAttemptCount());
+    }
+
+    @DisplayName(
+            "Bốn cột mảng của projection và operation đều NOT NULL nên trạng thái mảng null"
+                    + " không thể tồn tại qua bất kỳ đường ghi nào")
+    @Test
+    void arrayColumnsAreNotNull() {
+        var columns =
+                jdbc.queryForList(
+                        "SELECT table_name, column_name, is_nullable FROM information_schema.columns"
+                                + " WHERE table_schema = current_schema()"
+                                + " AND (table_name, column_name) IN"
+                                + " (('authz_projection', 'dependency_partition_ids'),"
+                                + " ('authz_projection', 'policy_names'),"
+                                + " ('authorization_operation', 'affected_partitions'),"
+                                + " ('authorization_operation', 'affected_revisions'))");
+        // Đủ 4 dòng để khẳng định không âm thầm khớp 0 dòng khi tên bảng/cột sai.
+        assertEquals(4, columns.size());
+        assertTrue(columns.stream().allMatch(column -> "NO".equals(column.get("is_nullable"))));
     }
 
     @DisplayName("Idempotency key trùng lặp bị từ chối đối với cùng một actor")
@@ -415,8 +435,8 @@ class AuthorizationControlSchemaIT extends IntegrationEnvironment {
                         "SELECT state FROM authorization_operation WHERE id = ?",
                         String.class,
                         operation));
-        assertArrayEquals(
-                new Long[] {1L, 2L},
+        assertEquals(
+                List.of(1L, 2L),
                 entities.find(AuthorizationOperation.class, operation).getAffectedRevisions());
     }
 

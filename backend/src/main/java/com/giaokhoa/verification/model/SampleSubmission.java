@@ -2,13 +2,17 @@ package com.giaokhoa.verification.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.jspecify.annotations.Nullable;
 
 @Entity
 @Table(name = "sample_submission")
@@ -23,6 +27,11 @@ public class SampleSubmission {
 
     @Column(name = "activity_id", nullable = false)
     private UUID activityId;
+
+    // Quan hệ chỉ đọc: cột FK do trường activityId ở trên ghi; chiều này chỉ để điều hướng.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "activity_id", insertable = false, updatable = false)
+    private @Nullable SampleActivity activity;
 
     @Column(name = "student_user_id", nullable = false)
     private UUID studentUserId;
@@ -82,6 +91,10 @@ public class SampleSubmission {
 
     public UUID getActivityId() {
         return activityId;
+    }
+
+    public @Nullable SampleActivity getActivity() {
+        return activity;
     }
 
     public UUID getStudentUserId() {

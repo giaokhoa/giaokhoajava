@@ -4,7 +4,6 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -44,13 +43,10 @@ public class ClassController {
     private static final String CLASSES_SEGMENT = "/classes/";
 
     private final ClassService classes;
-    private final TeachingRepository repository;
     private final TeachingRouteSupport support;
 
-    public ClassController(
-            ClassService classes, TeachingRepository repository, TeachingRouteSupport support) {
+    public ClassController(ClassService classes, TeachingRouteSupport support) {
         this.classes = classes;
-        this.repository = repository;
         this.support = support;
     }
 
@@ -80,7 +76,7 @@ public class ClassController {
                 workspaceId,
                 actor -> {
                     boolean admin = support.isAdmin(actor, workspaceId);
-                    if (!admin && !repository.hasCurrentHomeroomClass(workspaceId, actor)) {
+                    if (!admin && !support.hasCurrentHomeroomClass(workspaceId, actor)) {
                         // Không có lớp được đọc: không trả danh sách trống như một center admin.
                         throw TeachingRouteSupport.denied();
                     }
@@ -202,14 +198,12 @@ public class ClassController {
                     // và mọi môn–khóa của lớp phải được ghi lại trong cùng operation.
                     List<String> targets = new ArrayList<>();
                     targets.add(TeachingRouteSupport.classTarget(workspaceId, classId));
-                    repository
-                            .courseIdsOfClass(workspaceId, classId)
+                    support.courseIdsOfClass(workspaceId, classId)
                             .forEach(courseId ->
                                     targets.add(
                                             TeachingRouteSupport.courseTarget(
                                                     workspaceId, courseId)));
-                    repository
-                            .courseSubjectIdsOfClass(workspaceId, classId)
+                    support.courseSubjectIdsOfClass(workspaceId, classId)
                             .forEach(courseSubjectId ->
                                     targets.add(
                                             TeachingRouteSupport.courseSubjectTarget(
@@ -311,8 +305,7 @@ public class ClassController {
                     // đó phải được ghi lại trong cùng operation, tính trước khi service đóng.
                     List<String> targets = new ArrayList<>();
                     targets.add(TeachingRouteSupport.classTarget(workspaceId, classId));
-                    repository
-                            .courseSubjectIdsOfRosterEntry(workspaceId, classStudentId)
+                    support.courseSubjectIdsOfRosterEntry(workspaceId, classStudentId)
                             .forEach(courseSubjectId ->
                                     targets.add(
                                             TeachingRouteSupport.courseSubjectTarget(

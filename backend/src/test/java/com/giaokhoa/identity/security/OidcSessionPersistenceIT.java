@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
+import com.giaokhoa.identity.repository.OidcSessionCorrelationRepository;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.time.Instant;
 import java.util.List;
@@ -59,6 +60,8 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
 
     @Autowired JdbcTemplate jdbc;
 
+    @Autowired OidcSessionCorrelationRepository correlations;
+
     @Autowired SessionRepository<?> sessions;
 
     @Autowired OidcSessionRegistry registry;
@@ -82,7 +85,7 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
             registry.saveSessionInformation(info(session.getId(), "user-1", "sid-1", "csrf-1"));
 
             // Đối tượng mới: không có registry trong bộ nhớ dùng chung với instance gốc.
-            var restarted = new JdbcOidcSessionRegistry(jdbc, CLIENT);
+            var restarted = new JpaOidcSessionRegistry(correlations, jdbc, CLIENT);
             assertFalse(
                     restarted
                             .removeSessionInformation(
@@ -139,7 +142,7 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
             registry.saveSessionInformation(info(b.getId(), "user-2", "sid-b", null));
             registry.saveSessionInformation(info(other.getId(), "user-3", "sid-c", null));
 
-            var restarted = new JdbcOidcSessionRegistry(jdbc, CLIENT);
+            var restarted = new JpaOidcSessionRegistry(correlations, jdbc, CLIENT);
             var removed = restarted.removeSessionInformation(token(ISSUER, CLIENT, "user-2", null));
             var ids = new java.util.HashSet<String>();
             removed.forEach(value -> ids.add(value.getSessionId()));
@@ -298,7 +301,7 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
                     oldOrphan,
                     active.getId());
 
-            ((JdbcOidcSessionRegistry) registry).cleanUpOrphanedCorrelations();
+            ((JpaOidcSessionRegistry) registry).cleanUpOrphanedCorrelations();
             assertNull(registry.removeSessionInformation(oldOrphan));
             assertNotNull(registry.removeSessionInformation(freshOrphan));
             assertNotNull(registry.removeSessionInformation(active.getId()));

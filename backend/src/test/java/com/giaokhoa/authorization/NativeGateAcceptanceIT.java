@@ -244,6 +244,11 @@ class NativeGateAcceptanceIT {
     }
 
     private boolean allowed(Actor actor, String resourceId, String scope) {
+        return allowed(
+                actor, RequiredPermissions.of(RequiredPermissions.require(resourceId, scope)));
+    }
+
+    private boolean allowed(Actor actor, RequiredPermissions required) {
         var subject =
                 UsernamePasswordAuthenticationToken.authenticated(
                         actor.username(), null, List.of());
@@ -276,10 +281,7 @@ class NativeGateAcceptanceIT {
                                             AUDIENCE,
                                             new GiaokhoaProperties.Keycloak.Provisioner(
                                                     PROVISIONER_CLIENT, ""))));
-            return decision.isAllowed(
-                    subject,
-                    request,
-                    RequiredPermissions.of(RequiredPermissions.require(resourceId, scope)));
+            return decision.isAllowed(subject, request, required);
         } finally {
             RequestContextHolder.resetRequestAttributes();
         }
@@ -573,6 +575,35 @@ class NativeGateAcceptanceIT {
         assertTrue(allowed(homeroom, assignTwo, "activity.assign"));
         assertTrue(allowed(student, readTwo, "read"));
         assertFalse(allowed(student, readOne, "read"));
+
+        assertTrue(
+                allowed(
+                        teacherOne,
+                        RequiredPermissions.of(
+                                RequiredPermissions.require(completionOne, "completion.read"),
+                                RequiredPermissions.require(completionTwo, "completion.read"))),
+                "Đủ cả hai quyền bắt buộc thì được phép");
+        assertFalse(
+                allowed(
+                        teacherOne,
+                        RequiredPermissions.of(
+                                RequiredPermissions.require(completionOne, "completion.read"),
+                                RequiredPermissions.require(completionThree, "completion.read"))),
+                "Một quyền được cấp không được che quyền bị từ chối ở tài nguyên khác");
+        assertFalse(
+                allowed(
+                        teacherOne,
+                        RequiredPermissions.of(
+                                RequiredPermissions.require(completionThree, "completion.read"),
+                                RequiredPermissions.require(completionOne, "completion.read"))),
+                "Quyền bị từ chối phải chặn truy cập dù đứng trước quyền được cấp");
+        assertFalse(
+                allowed(
+                        teacherOne,
+                        RequiredPermissions.of(
+                                RequiredPermissions.require(completionTwo, "completion.read"),
+                                RequiredPermissions.require(assignTwo, "activity.assign"))),
+                "Được đọc không đồng nghĩa được giao hoạt động trên cùng tài nguyên");
 
         UUID resultId = UUID.randomUUID();
         UUID otherResultId = UUID.randomUUID();

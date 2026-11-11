@@ -4,17 +4,22 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
-import com.giaokhoa.subscriptions.SubscriptionPeriodRow;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.teaching.TeachingScopePreconditions.SubscriptionPeriod;
+import com.giaokhoa.teaching.TeachingScopePreconditions.UserAccountRef;
+import com.giaokhoa.teaching.repository.CourseRepository;
+import com.giaokhoa.teaching.repository.CourseSubjectRepository;
+import com.giaokhoa.teaching.repository.EnrollmentRepository;
+import com.giaokhoa.teaching.repository.SchoolClassRepository;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -41,7 +46,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * service lớp/khóa/roster/ghi danh đổi dữ kiện nguồn, và dựng lại đúng tập đó khi {@code
  * ProjectionReconciler} đối chiếu desired hash. Các bảng giảng dạy nằm dưới RLS theo context
  * workspace nên mọi phép dựng bundle ở đây tự bọc trong một transaction ngắn có đặt context của
- * đúng workspace, cùng mẫu {@link TeachingPolicyProjector}.
+ * đúng workspace qua {@link WorkspaceTransaction}, cùng mẫu {@link TeachingPolicyProjector}; dữ
+ * kiện thuộc mặt phẳng hệ thống (chủ sở hữu, subject của học sinh) được phân giải theo lô ở tầng
+ * ứng dụng qua {@link TeachingScopePreconditions}, không join xuyên mặt phẳng.
  */
 @Component
 public class PersonalTeachingPolicyProjector {
@@ -50,13 +57,30 @@ public class PersonalTeachingPolicyProjector {
     private static final String OWNER_PERIOD_DESCRIPTOR = "PERSONAL_TEACHING_OWNER_PERIOD";
     private static final String ENROLLMENT_DESCRIPTOR = "PERSONAL_TEACHING_ENROLLMENT";
     private static final String BUNDLE_SCOPE = PermissionCatalog.ClassScope.READ.scopeName();
+    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
 
-    private final JdbcTemplate jdbc;
+    private final SchoolClassRepository schoolClasses;
+    private final CourseRepository courses;
+    private final CourseSubjectRepository courseSubjects;
+    private final EnrollmentRepository enrollments;
+    private final TeachingScopePreconditions preconditions;
+    private final WorkspaceTransaction workspaceTransaction;
     private final TransactionTemplate transactions;
 
     public PersonalTeachingPolicyProjector(
-            JdbcTemplate jdbc, PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+            SchoolClassRepository schoolClasses,
+            CourseRepository courses,
+            CourseSubjectRepository courseSubjects,
+            EnrollmentRepository enrollments,
+            TeachingScopePreconditions preconditions,
+            WorkspaceTransaction workspaceTransaction,
+            PlatformTransactionManager transactionManager) {
+        this.schoolClasses = schoolClasses;
+        this.courses = courses;
+        this.courseSubjects = courseSubjects;
+        this.enrollments = enrollments;
+        this.preconditions = preconditions;
+        this.workspaceTransaction = workspaceTransaction;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
@@ -90,7 +114,7 @@ public class PersonalTeachingPolicyProjector {
         UUID workspaceId = workspaceIdOf(targetKey);
         List<String> bundle =
                 transactions.execute(_ -> {
-                    applyContext(workspaceId);
+                    workspaceTransaction.applyContext(workspaceId);
                     if (!isPersonal(workspaceId)) {
                         return List.of();
                     }
@@ -124,26 +148,19 @@ public class PersonalTeachingPolicyProjector {
     public List<String> allBundleTargetKeys(UUID workspaceId) {
         List<String> targets =
                 transactions.execute(_ -> {
-                    applyContext(workspaceId);
+                    workspaceTransaction.applyContext(workspaceId);
                     List<String> keys = new ArrayList<>();
-                    jdbc.queryForList(
-                                    "SELECT id FROM school_class WHERE workspace_id = ?",
-                                    UUID.class,
-                                    workspaceId)
+                    schoolClasses
+                            .findIdsByWorkspaceId(workspaceId)
                             .forEach(classId ->
                                     keys.add(NativePolicyTemplates.classKey(workspaceId, classId)));
-                    jdbc.queryForList(
-                                    "SELECT id FROM course WHERE workspace_id = ?",
-                                    UUID.class,
-                                    workspaceId)
+                    courses.findIdsByWorkspaceId(workspaceId)
                             .forEach(courseId ->
                                     keys.add(
                                             NativePolicyTemplates.courseKey(
                                                     workspaceId, courseId)));
-                    jdbc.queryForList(
-                                    "SELECT id FROM course_subject WHERE workspace_id = ?",
-                                    UUID.class,
-                                    workspaceId)
+                    courseSubjects
+                            .findIdsByWorkspaceId(workspaceId)
                             .forEach(courseSubjectId ->
                                     keys.add(
                                             NativePolicyTemplates.courseSubjectKey(
@@ -214,10 +231,7 @@ public class PersonalTeachingPolicyProjector {
     // ---------- Dựng nguồn theo từng loại target ----------
 
     private Map<String, List<String>> classSources(UUID workspaceId, UUID classId) {
-        if (!rowExists(
-                "SELECT id FROM school_class WHERE workspace_id = ? AND id = ?",
-                workspaceId,
-                classId)) {
+        if (!schoolClasses.existsByWorkspaceIdAndId(workspaceId, classId)) {
             return Map.of();
         }
         Sources sources =
@@ -237,8 +251,7 @@ public class PersonalTeachingPolicyProjector {
     }
 
     private Map<String, List<String>> courseSources(UUID workspaceId, UUID courseId) {
-        if (!rowExists(
-                "SELECT id FROM course WHERE workspace_id = ? AND id = ?", workspaceId, courseId)) {
+        if (!courses.existsByWorkspaceIdAndId(workspaceId, courseId)) {
             return Map.of();
         }
         Sources sources =
@@ -253,10 +266,7 @@ public class PersonalTeachingPolicyProjector {
     }
 
     private Map<String, List<String>> courseSubjectSources(UUID workspaceId, UUID courseSubjectId) {
-        if (!rowExists(
-                "SELECT id FROM course_subject WHERE workspace_id = ? AND id = ?",
-                workspaceId,
-                courseSubjectId)) {
+        if (!courseSubjects.existsByWorkspaceIdAndId(workspaceId, courseSubjectId)) {
             return Map.of();
         }
         String targetKey = NativePolicyTemplates.courseSubjectKey(workspaceId, courseSubjectId);
@@ -279,16 +289,22 @@ public class PersonalTeachingPolicyProjector {
 
     /** Học sinh đang ghi danh hiện hành vào môn–khóa: ghi danh còn hiệu lực qua roster của lớp. */
     private List<ActorRow> enrolledStudents(UUID workspaceId, UUID courseSubjectId) {
-        return jdbc.query(
-                "SELECT DISTINCT u.id, u.keycloak_sub FROM enrollment e"
-                        + " JOIN class_student cs ON cs.id = e.class_student_id"
-                        + " JOIN user_account u ON u.id = cs.student_user_id"
-                        + " WHERE e.workspace_id = ? AND e.course_subject_id = ?"
-                        + " AND e.state IN ('PENDING', 'ACTIVE') ORDER BY u.id",
-                (rs, _) ->
-                        new ActorRow(rs.getObject("id", UUID.class), rs.getString("keycloak_sub")),
-                workspaceId,
-                courseSubjectId);
+        // ID học sinh lấy ở mặt phẳng tenant theo đúng thứ tự định danh của tầng JDBC cũ,
+        // subject Keycloak của họ được phân giải theo lô ở mặt phẳng hệ thống.
+        List<UUID> studentIds =
+                enrollments.findEnrolledStudentIds(workspaceId, courseSubjectId, CURRENT_STATES);
+        Map<UUID, UserAccountRef> accounts = new HashMap<>();
+        preconditions
+                .userAccountsByIds(studentIds)
+                .forEach(account -> accounts.put(account.id(), account));
+        List<ActorRow> students = new ArrayList<>();
+        for (UUID studentId : studentIds) {
+            UserAccountRef account = accounts.get(studentId);
+            if (account != null) {
+                students.add(new ActorRow(account.id(), account.keycloakSub()));
+            }
+        }
+        return students;
     }
 
     // ---------- Tiện ích dựng descriptor ----------
@@ -301,7 +317,7 @@ public class PersonalTeachingPolicyProjector {
         private final String targetKey;
         private final Map<String, List<String>> sourcesByScope = new LinkedHashMap<>();
         private final @Nullable ActorRow owner;
-        private List<SubscriptionPeriodRow> loadedPeriods = List.of();
+        private List<SubscriptionPeriod> loadedPeriods = List.of();
         private boolean periodsLoaded;
 
         private Sources(UUID workspaceId, String targetKey) {
@@ -318,7 +334,7 @@ public class PersonalTeachingPolicyProjector {
                 descriptors.add(ownerDescriptor(workspaceId, current, targetKey, scope));
                 return;
             }
-            for (SubscriptionPeriodRow period : periods()) {
+            for (SubscriptionPeriod period : periods()) {
                 descriptors.add(
                         ownerPeriodDescriptor(workspaceId, current, period, targetKey, scope));
             }
@@ -330,26 +346,9 @@ public class PersonalTeachingPolicyProjector {
                     .add(enrollmentDescriptor(workspaceId, student, targetKey, scope));
         }
 
-        private List<SubscriptionPeriodRow> periods() {
+        private List<SubscriptionPeriod> periods() {
             if (!periodsLoaded) {
-                loadedPeriods =
-                        jdbc.query(
-                                "SELECT id, valid_from, expires_at FROM subscription_period"
-                                        + " WHERE workspace_id = ? ORDER BY valid_from, id",
-                                (rs, _) ->
-                                        new SubscriptionPeriodRow(
-                                                rs.getObject("id", UUID.class),
-                                                Objects.requireNonNull(
-                                                                rs.getObject(
-                                                                        "valid_from",
-                                                                        OffsetDateTime.class))
-                                                        .toInstant(),
-                                                Objects.requireNonNull(
-                                                                rs.getObject(
-                                                                        "expires_at",
-                                                                        OffsetDateTime.class))
-                                                        .toInstant()),
-                                workspaceId);
+                loadedPeriods = preconditions.subscriptionPeriods(workspaceId);
                 periodsLoaded = true;
             }
             return loadedPeriods;
@@ -361,17 +360,10 @@ public class PersonalTeachingPolicyProjector {
     }
 
     private @Nullable ActorRow ownerOf(UUID workspaceId) {
-        List<ActorRow> rows =
-                jdbc.query(
-                        "SELECT u.id, u.keycloak_sub FROM workspace w"
-                                + " JOIN user_account u ON u.id = w.owner_user_id"
-                                + " WHERE w.id = ? AND w.kind = 'PERSONAL'",
-                        (rs, _) ->
-                                new ActorRow(
-                                        rs.getObject("id", UUID.class),
-                                        rs.getString("keycloak_sub")),
-                        workspaceId);
-        return rows.isEmpty() ? null : rows.getFirst();
+        return preconditions
+                .personalOwnerAccount(workspaceId)
+                .map(account -> new ActorRow(account.id(), account.keycloakSub()))
+                .orElse(null);
     }
 
     private static String ownerDescriptor(
@@ -392,7 +384,7 @@ public class PersonalTeachingPolicyProjector {
     private static String ownerPeriodDescriptor(
             UUID workspaceId,
             ActorRow owner,
-            SubscriptionPeriodRow period,
+            SubscriptionPeriod period,
             String targetKey,
             String scope) {
         return OWNER_PERIOD_DESCRIPTOR
@@ -429,20 +421,11 @@ public class PersonalTeachingPolicyProjector {
                 + scope;
     }
 
-    private boolean rowExists(String sql, Object... args) {
-        return !jdbc.queryForList(sql, UUID.class, args).isEmpty();
-    }
-
     private boolean isPersonal(UUID workspaceId) {
-        return rowExists(
-                "SELECT id FROM workspace WHERE id = ? AND kind = 'PERSONAL'", workspaceId);
-    }
-
-    private void applyContext(UUID workspaceId) {
-        jdbc.queryForObject(
-                "SELECT set_config('app.workspace_id', ?, true)",
-                String.class,
-                workspaceId.toString());
+        return preconditions
+                .workspaceInfo(workspaceId)
+                .map(info -> "PERSONAL".equals(info.kind()))
+                .orElse(false);
     }
 
     private static UUID workspaceIdOf(String targetKey) {

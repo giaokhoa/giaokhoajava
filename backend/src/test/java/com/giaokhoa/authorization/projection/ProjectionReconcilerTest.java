@@ -20,6 +20,8 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
 import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.resources.SharePolicyProjector;
@@ -33,14 +35,16 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 class ProjectionReconcilerTest {
     private static final UUID WORKSPACE = RandomIds.randomId();
@@ -172,20 +176,18 @@ class ProjectionReconcilerTest {
     @Test
     void noRecordedProjectionLogsDebugWithoutStackTraceAndOnlyAtMilestones() {
         UUID partitionId = RandomIds.randomId();
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.queryForObject(
-                        anyString(),
-                        ArgumentMatchers.<RowMapper<ProjectionReconciler.PartitionRow>>any(),
-                        any(UUID.class)))
+        AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
+        AuthzProjectionRepository projections = mock(AuthzProjectionRepository.class);
+        when(partitions.findById(partitionId))
                 .thenReturn(
-                        new ProjectionReconciler.PartitionRow(
-                                partitionId, 1L, 0L, AuthorizationPartition.State.PENDING));
-        when(jdbc.query(
-                        anyString(),
-                        ArgumentMatchers.<RowMapper<ProjectionReconciler.ProjectionRow>>any(),
-                        any(UUID.class)))
-                .thenReturn(List.of());
-        ProjectionReconciler reconciler = reconcilerWithInlineLock(jdbc);
+                        Optional.of(
+                                partition(
+                                        partitionId,
+                                        1L,
+                                        0L,
+                                        AuthorizationPartition.State.PENDING)));
+        when(projections.findByPartitionIdOrderByTargetKeyAsc(partitionId)).thenReturn(List.of());
+        ProjectionReconciler reconciler = reconcilerWithInlineLock(partitions, projections);
 
         Logger logger = (Logger) LoggerFactory.getLogger(ProjectionReconciler.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
@@ -218,15 +220,14 @@ class ProjectionReconcilerTest {
     @Test
     void supersededRevisionLogsWarnWithCodeAndNoStackTrace() {
         UUID partitionId = RandomIds.randomId();
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.queryForObject(
-                        anyString(),
-                        ArgumentMatchers.<RowMapper<ProjectionReconciler.PartitionRow>>any(),
-                        any(UUID.class)))
+        AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
+        AuthzProjectionRepository projections = mock(AuthzProjectionRepository.class);
+        when(partitions.findById(partitionId))
                 .thenReturn(
-                        new ProjectionReconciler.PartitionRow(
-                                partitionId, 1L, 0L, AuthorizationPartition.State.READY));
-        ProjectionReconciler reconciler = reconcilerWithInlineLock(jdbc);
+                        Optional.of(
+                                partition(
+                                        partitionId, 1L, 0L, AuthorizationPartition.State.READY)));
+        ProjectionReconciler reconciler = reconcilerWithInlineLock(partitions, projections);
 
         Logger logger = (Logger) LoggerFactory.getLogger(ProjectionReconciler.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
@@ -246,10 +247,26 @@ class ProjectionReconcilerTest {
         assertNull(event.getThrowableProxy());
     }
 
+    private static AuthorizationPartition partition(
+            UUID id,
+            long desiredRevision,
+            long appliedRevision,
+            AuthorizationPartition.State state) {
+        return new AuthorizationPartition(
+                id,
+                AuthorizationPartition.Kind.WORKSPACE,
+                "owner:" + id,
+                desiredRevision,
+                appliedRevision,
+                state);
+    }
+
     /**
-     * Reconciler với coordinator chạy thẳng action trong luồng gọi, các cộng tác còn lại là mock.
+     * Reconciler với coordinator và transaction chạy thẳng action trong luồng gọi, các cộng tác còn
+     * lại là mock.
      */
-    private static ProjectionReconciler reconcilerWithInlineLock(JdbcTemplate jdbc) {
+    private static ProjectionReconciler reconcilerWithInlineLock(
+            AuthzPartitionRepository partitions, AuthzProjectionRepository projections) {
         ResourceMutationCoordinator coordinator = mock(ResourceMutationCoordinator.class);
         when(coordinator.withResourceLock(anyString(), any()))
                 .thenAnswer(invocation -> {
@@ -257,7 +274,8 @@ class ProjectionReconcilerTest {
                     return action.get();
                 });
         return new ProjectionReconciler(
-                jdbc,
+                partitions,
+                projections,
                 mock(PolicyGraphWriter.class),
                 mock(AuthorizationProvisioningClient.class),
                 mock(CenterPolicyProjector.class),
@@ -268,8 +286,23 @@ class ProjectionReconcilerTest {
                 mock(SharePolicyProjector.class),
                 mock(PersonalEntitlementProjector.class),
                 mock(PersonalTeachingPolicyProjector.class),
-                mock(PlatformTransactionManager.class),
+                stubTransactions(),
                 coordinator);
+    }
+
+    private static PlatformTransactionManager stubTransactions() {
+        return new PlatformTransactionManager() {
+            @Override
+            public TransactionStatus getTransaction(@Nullable TransactionDefinition definition) {
+                return new SimpleTransactionStatus();
+            }
+
+            @Override
+            public void commit(TransactionStatus status) {}
+
+            @Override
+            public void rollback(TransactionStatus status) {}
+        };
     }
 
     private static String sha256(String value) throws Exception {

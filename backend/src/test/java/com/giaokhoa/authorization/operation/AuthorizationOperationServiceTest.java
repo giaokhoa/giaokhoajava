@@ -3,27 +3,24 @@ package com.giaokhoa.authorization.operation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.DesiredProjection;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepositoryCustom.DependentProjection;
 import com.giaokhoa.support.RandomIds;
-import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.PreparedStatementSetter;
-import org.springframework.jdbc.core.RowMapper;
 
 class AuthorizationOperationServiceTest {
     private static final UUID PARTITION = RandomIds.randomId();
@@ -31,7 +28,9 @@ class AuthorizationOperationServiceTest {
 
     private final AuthorizationOperationService service =
             new AuthorizationOperationService(
-                    mock(JdbcTemplate.class), mock(IdempotencyService.class));
+                    mock(AuthzPartitionRepository.class),
+                    mock(AuthzProjectionRepository.class),
+                    mock(IdempotencyService.class));
 
     private void apply(List<PartitionChange> changes) {
         service.applyDesiredState(UUID.randomUUID(), null, "key-1", "a".repeat(64), changes);
@@ -67,11 +66,12 @@ class AuthorizationOperationServiceTest {
     }
 
     @Test
-    void primariesAndClosurePartitionsAreLockedInOneGlobalOrder() throws Exception {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    void primariesAndClosurePartitionsAreLockedInOneGlobalOrder() {
+        AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
+        AuthzProjectionRepository projections = mock(AuthzProjectionRepository.class);
         IdempotencyService idempotency = mock(IdempotencyService.class);
         AuthorizationOperationService lockingService =
-                new AuthorizationOperationService(jdbc, idempotency);
+                new AuthorizationOperationService(partitions, projections, idempotency);
         UUID closurePartition = RandomIds.randomId();
         UUID primary = RandomIds.randomId();
         // Thứ tự khóa toàn cục ở main là thứ tự chuỗi của UUID: xếp lại để partition của
@@ -81,32 +81,47 @@ class AuthorizationOperationServiceTest {
             closurePartition = primary;
             primary = swap;
         }
-        // Bản chốt sau khi xếp thứ tự: lambda stub ResultSet bên dưới chỉ bắt được biến
-        // effectively final.
+        // Bản chốt sau khi xếp thứ tự: lambda stub bên dưới chỉ bắt được biến effectively
+        // final.
         UUID orderedPartition = closurePartition;
         List<UUID> lockOrder = new ArrayList<>();
-        when(jdbc.queryForList(contains("FOR UPDATE"), eq(Long.class), any(UUID.class)))
+        when(partitions.lockById(any()))
                 .thenAnswer(invocation -> {
-                    lockOrder.add(invocation.getArgument(2, UUID.class));
-                    return List.of(0L);
+                    UUID id = invocation.getArgument(0, UUID.class);
+                    lockOrder.add(id);
+                    return Optional.of(
+                            new AuthorizationPartition(
+                                    id,
+                                    AuthorizationPartition.Kind.WORKSPACE,
+                                    "owner:" + id,
+                                    0,
+                                    0,
+                                    AuthorizationPartition.State.PENDING));
                 });
         AtomicInteger closureQueries = new AtomicInteger();
-        when(jdbc.query(
-                        anyString(),
-                        ArgumentMatchers.<PreparedStatementSetter>any(),
-                        ArgumentMatchers.<RowMapper<Object>>any()))
+        UUID dependentProjection = UUID.randomUUID();
+        when(projections.findReadyDependentsOfAny(any()))
                 .thenAnswer(invocation -> {
                     if (closureQueries.getAndIncrement() > 0) {
                         return List.of();
                     }
-                    RowMapper<Object> mapper = invocation.getArgument(2);
-                    ResultSet rs = mock(ResultSet.class);
-                    when(rs.getObject("id", UUID.class)).thenReturn(UUID.randomUUID());
-                    when(rs.getObject("partition_id", UUID.class)).thenReturn(orderedPartition);
-                    return List.of(mapper.mapRow(rs, 0));
+                    return List.of(
+                            new DependentProjection(
+                                    dependentProjection, orderedPartition, List.of()));
                 });
-        when(jdbc.queryForList(startsWith("SELECT id, partition_id"), anyString()))
-                .thenReturn(List.of());
+        when(projections.findAllById(any()))
+                .thenReturn(
+                        List.of(
+                                new AuthorizationProjection(
+                                        dependentProjection,
+                                        orderedPartition,
+                                        "workspace:" + orderedPartition,
+                                        null,
+                                        List.of(),
+                                        List.of(),
+                                        "a".repeat(64),
+                                        "a".repeat(64),
+                                        AuthorizationProjection.State.READY)));
         when(idempotency.executeOnce(any(AuthorizationOperation.class), any(Runnable.class)))
                 .thenAnswer(invocation -> {
                     invocation.getArgument(1, Runnable.class).run();

@@ -1,6 +1,8 @@
 package com.giaokhoa.identity.eligibility;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -9,7 +11,6 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -20,10 +21,13 @@ import com.giaokhoa.authorization.operation.AuthorizationOperationService.Desire
 import com.giaokhoa.authorization.operation.AuthorizationOperationService.PartitionChange;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.RandomIds;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -41,15 +45,21 @@ class IdentityEligibilityServiceTest {
     private static final String TARGET = "account:" + ACTOR;
 
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    private final UserAccountRepository accounts = mock(UserAccountRepository.class);
+    private final WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
     private final CurrentIdentityClient identities = mock(CurrentIdentityClient.class);
     private final AuthorizationOperationService operations =
             mock(AuthorizationOperationService.class);
     private final IdentityEligibilityService synchronizer =
             new IdentityEligibilityService(
                     jdbc,
+                    accounts,
+                    workspaces,
                     identities,
                     operations,
                     mock(com.giaokhoa.subscriptions.PersonalEntitlementProjector.class));
+
+    private @Nullable UserAccount accountFixture;
 
     @Test
     void verifiedSelfRegisteredAccountRecordsTheEligibilitySourceThroughTheAccountFence() {
@@ -76,7 +86,9 @@ class IdentityEligibilityServiceTest {
                                 + TARGET
                                 + "|scope=workspace.list|scopes=workspace.list,history.read"),
                 projection.sourceDescriptors());
-        verify(jdbc).update(contains("UPDATE user_account"), eq(EMAIL), eq(true), eq(ACTOR));
+        // Input eligibility mới được đồng bộ lên chính account đã nạp.
+        assertEquals(EMAIL, account().getEmail());
+        assertTrue(account().isEmailVerified());
     }
 
     @Test
@@ -91,7 +103,8 @@ class IdentityEligibilityServiceTest {
         PartitionChange change = capturedChange();
         assertEquals(1, change.projections().size());
         assertEquals(List.of(), change.projections().getFirst().sourceDescriptors());
-        verify(jdbc).update(contains("UPDATE user_account"), eq(EMAIL), eq(false), eq(ACTOR));
+        assertEquals(EMAIL, account().getEmail());
+        assertFalse(account().isEmailVerified());
     }
 
     @Test
@@ -103,7 +116,9 @@ class IdentityEligibilityServiceTest {
 
         assertTrue(operation.isEmpty());
         verifyNoInteractions(operations);
-        verify(jdbc, never()).update(contains("UPDATE user_account"), any(), any(), any());
+        // Profile khớp dữ kiện đã ghi: account không bị đồng bộ đổi gì.
+        assertNull(account().getEmail());
+        assertFalse(account().isEmailVerified());
     }
 
     @Test
@@ -118,6 +133,8 @@ class IdentityEligibilityServiceTest {
         DesiredProjection projection = capturedChange().projections().getFirst();
         assertEquals(1, projection.sourceDescriptors().size());
         assertTrue(projection.sourceDescriptors().getFirst().startsWith("IDENTITY_ELIGIBILITY|"));
+        assertEquals(EMAIL, account().getEmail());
+        assertTrue(account().isEmailVerified());
     }
 
     @Test
@@ -142,7 +159,8 @@ class IdentityEligibilityServiceTest {
 
         assertTrue(operation.isEmpty());
         verifyNoInteractions(operations);
-        verify(jdbc, never()).update(contains("UPDATE user_account"), any(), any(), any());
+        assertEquals(EMAIL, account().getEmail());
+        assertTrue(account().isEmailVerified());
     }
 
     @Test
@@ -188,7 +206,7 @@ class IdentityEligibilityServiceTest {
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.getStatus());
         assertEquals("IDENTITY_UNAVAILABLE", failure.getCode());
         verifyNoInteractions(operations);
-        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        assertFalse(account().isEmailVerified());
     }
 
     @Test
@@ -203,12 +221,12 @@ class IdentityEligibilityServiceTest {
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, failure.getStatus());
         verifyNoInteractions(operations);
-        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        assertFalse(account().isEmailVerified());
     }
 
     @Test
     void anAccountWithoutADirectoryRowFailsClosed() {
-        when(jdbc.queryForList(contains("FROM user_account"), eq(ACTOR))).thenReturn(List.of());
+        when(accounts.findById(ACTOR)).thenReturn(Optional.empty());
 
         HttpProblemException failure =
                 assertThrows(
@@ -220,13 +238,23 @@ class IdentityEligibilityServiceTest {
         verifyNoInteractions(operations);
     }
 
+    private UserAccount account() {
+        return java.util.Objects.requireNonNull(accountFixture, "account");
+    }
+
     private void account(String origin, boolean emailVerified, @Nullable String email) {
-        Map<String, Object> row = new java.util.HashMap<>();
-        row.put("keycloak_sub", SUBJECT);
-        row.put("email", email);
-        row.put("email_verified", emailVerified);
-        row.put("origin", origin);
-        when(jdbc.queryForList(contains("FROM user_account"), eq(ACTOR))).thenReturn(List.of(row));
+        accountFixture =
+                new UserAccount(
+                        ACTOR,
+                        SUBJECT,
+                        "learner",
+                        email,
+                        emailVerified,
+                        UserAccount.Origin.valueOf(origin),
+                        "ACTIVE");
+        when(accounts.findById(ACTOR)).thenReturn(Optional.of(accountFixture));
+        when(workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, ACTOR))
+                .thenReturn(List.of());
         boolean recordedEligible = "CENTER_ISSUED".equals(origin) || emailVerified;
         String recordedHash =
                 com.giaokhoa.authorization.projection.ProjectionReconciler.desiredHash(

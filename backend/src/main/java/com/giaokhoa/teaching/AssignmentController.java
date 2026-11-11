@@ -5,7 +5,6 @@ import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.shared.http.Violation;
-import com.giaokhoa.teaching.data.TeachingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -39,15 +38,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces/{workspaceId}")
 public class AssignmentController {
     private final AssignmentService assignments;
-    private final TeachingRepository repository;
     private final TeachingRouteSupport support;
 
-    public AssignmentController(
-            AssignmentService assignments,
-            TeachingRepository repository,
-            TeachingRouteSupport support) {
+    public AssignmentController(AssignmentService assignments, TeachingRouteSupport support) {
         this.assignments = assignments;
-        this.repository = repository;
         this.support = support;
     }
 
@@ -73,13 +67,12 @@ public class AssignmentController {
                 servletRequest,
                 workspaceId,
                 actor -> {
-                    repository
-                            .findCourseSubjectScope(workspaceId, courseSubjectId)
-                            .orElseThrow(() ->
-                                    new HttpProblemException(
-                                            HttpStatus.NOT_FOUND,
-                                            ErrorCodes.COURSE_SUBJECT_NOT_FOUND,
-                                            "Không tìm thấy môn–khóa trong workspace" + " này."));
+                    if (!support.courseSubjectExists(workspaceId, courseSubjectId)) {
+                        throw new HttpProblemException(
+                                HttpStatus.NOT_FOUND,
+                                ErrorCodes.COURSE_SUBJECT_NOT_FOUND,
+                                "Không tìm thấy môn–khóa trong workspace" + " này.");
+                    }
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
                         throw TeachingRouteSupport.denied();
                     }
@@ -166,13 +159,12 @@ public class AssignmentController {
                 actor -> {
                     if (!support.canReadClass(actor, workspaceId, classId)) {
                         // Lớp không tồn tại trả 404; lớp tồn tại nhưng không được đọc trả 403.
-                        repository
-                                .findClass(workspaceId, classId)
-                                .orElseThrow(() ->
-                                        new HttpProblemException(
-                                                HttpStatus.NOT_FOUND,
-                                                ErrorCodes.CLASS_NOT_FOUND,
-                                                "Không tìm thấy lớp trong workspace" + " này."));
+                        if (!support.classExists(workspaceId, classId)) {
+                            throw new HttpProblemException(
+                                    HttpStatus.NOT_FOUND,
+                                    ErrorCodes.CLASS_NOT_FOUND,
+                                    "Không tìm thấy lớp trong workspace" + " này.");
+                        }
                         throw TeachingRouteSupport.denied();
                     }
                     return support.page(

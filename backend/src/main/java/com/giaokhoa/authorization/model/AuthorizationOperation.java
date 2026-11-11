@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
@@ -43,16 +44,23 @@ public class AuthorizationOperation {
     @Column(name = "payload_hash", nullable = false, length = 64)
     private String payloadHash;
 
+    // Hai mảng giữ vị trí tương ứng theo data-model (phần tử thứ i của affected_revisions là
+    // revision của partition thứ i), ánh xạ basic collection trên cột mảng có sẵn.
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "affected_partitions", nullable = false, columnDefinition = "uuid[]")
-    private UUID[] affectedPartitions;
+    private List<UUID> affectedPartitions;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "affected_revisions", nullable = false, columnDefinition = "bigint[]")
-    private Long[] affectedRevisions;
+    private List<Long> affectedRevisions;
 
     @Column(name = "desired_revision", nullable = false)
     private long desiredRevision;
+
+    // Cột sinh bởi database (GENERATED ALWAYS AS IDENTITY ở V005) ghi thứ tự ghi nhận
+    // toàn cục của operation; entity chỉ đọc, không bao giờ tự ghi.
+    @Column(name = "recorded_seq", nullable = false, insertable = false, updatable = false)
+    private long recordedSeq;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "state", nullable = false, length = 24)
@@ -62,10 +70,10 @@ public class AuthorizationOperation {
     private int attemptCount;
 
     @Column(name = "next_attempt_at")
-    private Instant nextAttemptAt;
+    private @Nullable Instant nextAttemptAt;
 
     @Column(name = "last_error_code", length = 64)
-    private String lastErrorCode;
+    private @Nullable String lastErrorCode;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
@@ -87,8 +95,8 @@ public class AuthorizationOperation {
             @Nullable UUID workspaceId,
             String idempotencyKey,
             String payloadHash,
-            UUID[] affectedPartitions,
-            Long[] affectedRevisions,
+            List<UUID> affectedPartitions,
+            List<Long> affectedRevisions,
             long desiredRevision) {
         this.id = id;
         this.initiatorUserId = initiatorUserId;
@@ -96,9 +104,9 @@ public class AuthorizationOperation {
         this.idempotencyKey = idempotencyKey;
         this.payloadHash = payloadHash;
         this.affectedPartitions =
-                Objects.requireNonNull(affectedPartitions, "affectedPartitions").clone();
+                List.copyOf(Objects.requireNonNull(affectedPartitions, "affectedPartitions"));
         this.affectedRevisions =
-                Objects.requireNonNull(affectedRevisions, "affectedRevisions").clone();
+                List.copyOf(Objects.requireNonNull(affectedRevisions, "affectedRevisions"));
         this.desiredRevision = desiredRevision;
         this.state = State.PENDING;
     }
@@ -123,32 +131,52 @@ public class AuthorizationOperation {
         return payloadHash;
     }
 
-    public UUID[] getAffectedPartitions() {
-        return affectedPartitions.clone();
+    public List<UUID> getAffectedPartitions() {
+        return List.copyOf(affectedPartitions);
     }
 
-    public Long[] getAffectedRevisions() {
-        return affectedRevisions.clone();
+    public List<Long> getAffectedRevisions() {
+        return List.copyOf(affectedRevisions);
     }
 
     public long getDesiredRevision() {
         return desiredRevision;
     }
 
+    public long getRecordedSeq() {
+        return recordedSeq;
+    }
+
     public State getState() {
         return state;
+    }
+
+    public void setState(State state) {
+        this.state = state;
     }
 
     public int getAttemptCount() {
         return attemptCount;
     }
 
-    public Instant getNextAttemptAt() {
+    public void setAttemptCount(int attemptCount) {
+        this.attemptCount = attemptCount;
+    }
+
+    public @Nullable Instant getNextAttemptAt() {
         return nextAttemptAt;
     }
 
-    public String getLastErrorCode() {
+    public void setNextAttemptAt(@Nullable Instant nextAttemptAt) {
+        this.nextAttemptAt = nextAttemptAt;
+    }
+
+    public @Nullable String getLastErrorCode() {
         return lastErrorCode;
+    }
+
+    public void setLastErrorCode(@Nullable String lastErrorCode) {
+        this.lastErrorCode = lastErrorCode;
     }
 
     public Instant getCreatedAt() {

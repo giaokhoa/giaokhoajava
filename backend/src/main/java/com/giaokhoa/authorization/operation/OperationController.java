@@ -5,16 +5,18 @@ import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates.TargetType;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.identity.model.RecoveryMutation;
+import com.giaokhoa.identity.repository.RecoveryMutationRepository;
+import com.giaokhoa.identity.repository.RecoveryRequestRepository;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,11 +32,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class OperationController {
     private final ProtectedActionExecutor executor;
-    private final JdbcTemplate jdbc;
+    private final AuthorizationOperationRepository operations;
+    private final AuthzPartitionRepository partitions;
+    private final RecoveryRequestRepository recoveryRequests;
+    private final RecoveryMutationRepository recoveryMutations;
 
-    public OperationController(ProtectedActionExecutor executor, JdbcTemplate jdbc) {
+    public OperationController(
+            ProtectedActionExecutor executor,
+            AuthorizationOperationRepository operations,
+            AuthzPartitionRepository partitions,
+            RecoveryRequestRepository recoveryRequests,
+            RecoveryMutationRepository recoveryMutations) {
         this.executor = executor;
-        this.jdbc = jdbc;
+        this.operations = operations;
+        this.partitions = partitions;
+        this.recoveryRequests = recoveryRequests;
+        this.recoveryMutations = recoveryMutations;
     }
 
     public record OperationView(
@@ -49,33 +62,28 @@ public class OperationController {
     public ResponseEntity<OperationView> getStatus(
             @PathVariable UUID operationId, Authentication authentication) {
         UUID actorUserId = executor.actorUserId(authentication);
-        List<Map<String, Object>> rows =
-                jdbc.queryForList(
-                        "SELECT o.state AS state, o.last_error_code AS last_error_code,"
-                                + " o.workspace_id AS workspace_id, p.kind AS primary_kind,"
-                                + " p.owner_key AS primary_owner_key"
-                                + " FROM authorization_operation o"
-                                + " LEFT JOIN authz_partition p"
-                                + " ON p.id = o.affected_partitions[1]"
-                                + " WHERE o.id = ? AND o.initiator_user_id = ?",
-                        operationId,
-                        actorUserId);
-        if (rows.isEmpty()) {
+        var found = operations.findByIdAndInitiatorUserId(operationId, actorUserId);
+        if (found.isEmpty()) {
             return ResponseEntity.ok()
                     .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                     .body(recoveryStatus(operationId, actorUserId));
         }
-        Map<String, Object> row = rows.getFirst();
-        String state = String.valueOf(row.get("state"));
-        TargetRef target = targetOf(row, actorUserId);
+        AuthorizationOperation operation = found.get();
+        AuthorizationPartition primary =
+                operation.getAffectedPartitions().isEmpty()
+                        ? null
+                        : partitions
+                                .findById(operation.getAffectedPartitions().getFirst())
+                                .orElse(null);
+        TargetRef target = targetOf(primary, operation.getWorkspaceId(), actorUserId);
         OperationView view =
                 new OperationView(
                         operationId,
-                        state,
-                        AuthorizationOperation.State.SUCCEEDED.name().equals(state),
+                        operation.getState().name(),
+                        operation.getState() == AuthorizationOperation.State.SUCCEEDED,
                         target.type().name(),
                         target.id(),
-                        row.get("last_error_code") instanceof String code ? code : null);
+                        operation.getLastErrorCode());
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .body(view);
@@ -89,28 +97,28 @@ public class OperationController {
      * hỗ trợ.
      */
     private OperationView recoveryStatus(UUID operationId, UUID actorUserId) {
-        List<Map<String, Object>> rows =
-                jdbc.queryForList(
-                        "SELECT state, target_user_id FROM recovery_request"
-                                + " WHERE id = ? AND (requester_user_id = ? OR EXISTS"
-                                + " (SELECT 1 FROM recovery_mutation m WHERE m.request_id = recovery_request.id"
-                                + " AND m.actor_user_id = ? AND m.kind = 'RESOLVE'))",
-                        operationId,
-                        actorUserId,
-                        actorUserId);
-        if (rows.isEmpty()) {
+        var found =
+                recoveryRequests
+                        .findById(operationId)
+                        .filter(request ->
+                                request.getRequesterUserId().equals(actorUserId)
+                                        || recoveryMutations.existsByRequestIdAndActorAndKind(
+                                                operationId,
+                                                actorUserId,
+                                                RecoveryMutation.Kind.RESOLVE));
+        if (found.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND, ErrorCodes.NOT_FOUND, "Không tìm thấy tài nguyên.");
         }
-        Map<String, Object> row = rows.getFirst();
-        String requestState = String.valueOf(row.get("state"));
+        var request = found.get();
+        String requestState = request.getState().name();
         String state =
                 switch (requestState) {
                     case "RESOLVED" -> "SUCCEEDED";
                     case "REJECTED" -> "FAILED";
                     default -> "PENDING";
                 };
-        UUID targetId = row.get("target_user_id") instanceof UUID id ? id : actorUserId;
+        UUID targetId = request.getTargetUserId();
         return new OperationView(
                 operationId,
                 state,
@@ -130,34 +138,25 @@ public class OperationController {
      * của operation — và owner key của nó chính là target key gốc: account của initiator, workspace
      * đích hoặc grant đích.
      */
-    private static TargetRef targetOf(Map<String, Object> row, UUID actorUserId) {
-        AuthorizationPartition.Kind kind = partitionKind(row.get("primary_kind"));
-        UUID ownerId =
-                row.get("primary_owner_key") instanceof String key ? trailingUuid(key) : null;
+    private static TargetRef targetOf(
+            @Nullable AuthorizationPartition primary,
+            @Nullable UUID workspaceId,
+            UUID actorUserId) {
+        AuthorizationPartition.@Nullable Kind kind = primary == null ? null : primary.getKind();
+        UUID ownerId = primary == null ? null : trailingUuid(primary.getOwnerKey());
         if (kind == AuthorizationPartition.Kind.ACCOUNT) {
             return new TargetRef(TargetType.PROFILE, ownerId != null ? ownerId : actorUserId);
         }
         if (kind == AuthorizationPartition.Kind.GRANT && ownerId != null) {
             return new TargetRef(TargetType.GRANT, ownerId);
         }
-        if (row.get("workspace_id") instanceof UUID workspaceId) {
+        if (workspaceId != null) {
             return new TargetRef(TargetType.WORKSPACE, workspaceId);
         }
         if (kind == AuthorizationPartition.Kind.WORKSPACE && ownerId != null) {
             return new TargetRef(TargetType.WORKSPACE, ownerId);
         }
         return new TargetRef(TargetType.PROFILE, actorUserId);
-    }
-
-    private static AuthorizationPartition.@Nullable Kind partitionKind(@Nullable Object value) {
-        if (value instanceof String name) {
-            try {
-                return AuthorizationPartition.Kind.valueOf(name);
-            } catch (IllegalArgumentException ex) {
-                return null;
-            }
-        }
-        return null;
     }
 
     private static @Nullable UUID trailingUuid(String ownerKey) {

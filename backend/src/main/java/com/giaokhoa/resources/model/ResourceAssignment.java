@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
@@ -43,9 +44,10 @@ public class ResourceAssignment {
 
     // Tên scope cố định theo PermissionCatalog; DB khóa đúng danh mục bằng CHECK,
     // entity giữ nguyên dạng mảng như cột text[] (cùng mẫu intended_roles).
+    // Cột mảng ánh xạ thành basic collection List ngay trên cột, cùng mẫu share_grant.
     @JdbcTypeCode(SqlTypes.ARRAY)
     @Column(name = "actions", nullable = false, columnDefinition = "text[]")
-    private String[] actions;
+    private List<String> actions;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "state", nullable = false, length = 16)
@@ -74,13 +76,13 @@ public class ResourceAssignment {
             UUID userId,
             @Nullable UUID resourceId,
             @Nullable UUID subjectId,
-            String... actions) {
+            List<String> actions) {
         this.id = id;
         this.workspaceId = workspaceId;
         this.userId = userId;
         this.resourceId = resourceId;
         this.subjectId = subjectId;
-        this.actions = Objects.requireNonNull(actions, "actions").clone();
+        this.actions = List.copyOf(Objects.requireNonNull(actions, "actions"));
         this.state = State.PENDING;
     }
 
@@ -104,8 +106,8 @@ public class ResourceAssignment {
         return subjectId;
     }
 
-    public String[] getActions() {
-        return actions.clone();
+    public List<String> getActions() {
+        return List.copyOf(actions);
     }
 
     public State getState() {

@@ -310,9 +310,10 @@ class CenterServiceIT extends IntegrationEnvironment {
                                     "SELECT version FROM center_membership WHERE id = ?",
                                     Long.class,
                                     membershipId));
-            assertTrue(
-                    versionAfter > versionBefore,
-                    "Đổi role phải chạm row membership để version tăng");
+            assertEquals(
+                    versionBefore + 1,
+                    versionAfter,
+                    "Đổi role phải tăng version của membership đúng một lần");
             Set<String> groups = groupPathsOf(member.subject());
             assertTrue(groups.contains("/gk/workspaces/" + workspaceId + "/managers"));
             assertFalse(

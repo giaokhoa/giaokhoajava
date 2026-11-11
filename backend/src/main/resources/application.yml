@@ -13,7 +13,11 @@ spring:
     password: ${SPRING_FLYWAY_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: validate
+      # Không validate toàn cục: validate lúc khởi động chỉ kiểm được schema hệ thống
+      # (Hibernate User Guide §24.3.4 — schema export/validate không làm việc với
+      # multitenancy), không kiểm được schema tenant. Tính đúng đắn của schema do
+      # Flyway bảo đảm theo từng dòng migration (hệ thống + tenant) và IT cách ly.
+      ddl-auto: none
     open-in-view: false
   session:
     # Chốt tường minh bằng đúng mặc định của Spring Session (30 phút).
@@ -64,6 +68,10 @@ logging:
 
 giaokhoa:
   app-origin: ${APP_ORIGIN}
+  tenancy:
+    # Công tắc điểm dừng của đợt di trú schema-per-tenant: false thì workspace mới không được
+    # cấp schema riêng nữa và toàn hệ thống chạy như trước đợt di trú (schema hệ thống).
+    provisioning-enabled: ${TENANCY_PROVISIONING_ENABLED:true}
   keycloak:
     authorization-audience: ${KEYCLOAK_AUTHZ_AUDIENCE}
     admin-base-url: ${KEYCLOAK_ADMIN_BASE_URL}

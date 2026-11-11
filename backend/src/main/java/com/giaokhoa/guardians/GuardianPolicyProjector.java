@@ -2,20 +2,26 @@ package com.giaokhoa.guardians;
 
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.guardians.model.GuardianLink;
+import com.giaokhoa.guardians.repository.GuardianAuthorizationPartitionRepository;
+import com.giaokhoa.guardians.repository.GuardianLinkRepository;
+import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.tenancy.MembershipService;
+import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -41,7 +47,11 @@ public class GuardianPolicyProjector {
 
     private static final String GROUP_DESCRIPTOR = "GUARDIAN_GROUP";
 
-    private final JdbcTemplate jdbc;
+    private final GuardianLinkRepository links;
+    private final GuardianUserAccountRepository userAccounts;
+    private final GuardianAuthorizationPartitionRepository partitions;
+    private final MembershipService memberships;
+    private final WorkspaceTransaction workspaceTransaction;
     private final AuthorizationProvisioningClient directory;
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
@@ -49,13 +59,21 @@ public class GuardianPolicyProjector {
     private final TransactionTemplate transactions;
 
     public GuardianPolicyProjector(
-            JdbcTemplate jdbc,
+            GuardianLinkRepository links,
+            GuardianUserAccountRepository userAccounts,
+            GuardianAuthorizationPartitionRepository partitions,
+            MembershipService memberships,
+            WorkspaceTransaction workspaceTransaction,
             AuthorizationProvisioningClient directory,
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
             ResultPolicyProjector resultProjector,
             PlatformTransactionManager transactionManager) {
-        this.jdbc = jdbc;
+        this.links = links;
+        this.userAccounts = userAccounts;
+        this.partitions = partitions;
+        this.memberships = memberships;
+        this.workspaceTransaction = workspaceTransaction;
         this.directory = directory;
         this.operations = operations;
         this.centerProjector = centerProjector;
@@ -78,13 +96,14 @@ public class GuardianPolicyProjector {
      */
     public AuthorizationOperation recordGuardianChange(
             UUID initiatorUserId, UUID workspaceId, String idempotencyKey, String payloadHash) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
+        List<UUID> partitionIds =
+                partitions
+                        .findByKindAndOwnerKey(
+                                AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
+                        .stream()
+                        .map(AuthorizationPartition::getId)
+                        .toList();
+        if (partitionIds.isEmpty()) {
             throw new IllegalStateException(
                     "Workspace authorization partition is missing: " + workspaceId);
         }
@@ -103,7 +122,7 @@ public class GuardianPolicyProjector {
                 payloadHash,
                 List.of(
                         new AuthorizationOperationService.PartitionChange(
-                                partitions.getFirst(), List.copyOf(projections))));
+                                partitionIds.getFirst(), List.copyOf(projections))));
     }
 
     /**
@@ -116,13 +135,8 @@ public class GuardianPolicyProjector {
      */
     public void syncGroupMemberships(UUID workspaceId) {
         transactions.executeWithoutResult(_ -> {
-            applyContext(workspaceId);
-            List<UUID> studentIds =
-                    jdbc.queryForList(
-                            "SELECT DISTINCT student_user_id FROM guardian_link"
-                                    + " WHERE workspace_id = ?",
-                            UUID.class,
-                            workspaceId);
+            workspaceTransaction.applyContext(workspaceId);
+            List<UUID> studentIds = links.findDistinctStudentUserIds(workspaceId);
             if (studentIds.isEmpty()) {
                 return;
             }
@@ -133,20 +147,14 @@ public class GuardianPolicyProjector {
                                             NativePolicyTemplates.guardiansGroup(
                                                     workspaceId, studentId))
                                     .toList());
-            List<Map<String, Object>> parents =
-                    jdbc.queryForList(
-                            "SELECT DISTINCT gl.parent_user_id, u.keycloak_sub"
-                                    + " FROM guardian_link gl"
-                                    + " JOIN user_account u ON u.id = gl.parent_user_id"
-                                    + " WHERE gl.workspace_id = ?",
-                            workspaceId);
-            for (Map<String, Object> parent : parents) {
-                UUID parentUserId =
-                        (UUID)
-                                Objects.requireNonNull(
-                                        parent.get("parent_user_id"), "parent_user_id");
-                String subject =
-                        Objects.requireNonNull((String) parent.get("keycloak_sub"), "keycloak_sub");
+            for (UUID parentUserId : links.findDistinctParentUserIds(workspaceId)) {
+                // Join với directory ở tầng ứng dụng: parent không còn tài khoản thì không có
+                // subject nào để đồng bộ, đúng như join nội bộ trước đây loại hàng đó.
+                var account = userAccounts.findById(parentUserId).orElse(null);
+                if (account == null) {
+                    continue;
+                }
+                String subject = Objects.requireNonNull(account.getKeycloakSub(), "keycloak_sub");
                 Set<String> desired = desiredGroups(workspaceId, parentUserId);
                 // Một request nhóm cho mỗi phụ huynh, thay vì N_student lần cùng GET.
                 Set<String> current = directory.realmGroupPaths(subject);
@@ -162,23 +170,21 @@ public class GuardianPolicyProjector {
 
     private Set<String> desiredGroups(UUID workspaceId, UUID parentUserId) {
         Set<String> groups = new TreeSet<>();
-        jdbc.queryForList(
-                        "SELECT gl.student_user_id FROM guardian_link gl"
-                                + " WHERE gl.workspace_id = ? AND gl.parent_user_id = ?"
-                                + " AND gl.state = 'APPROVED'"
-                                + " AND EXISTS (SELECT 1 FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = gl.workspace_id"
-                                + " AND m.user_id = gl.parent_user_id AND m.state = 'ACTIVE'"
-                                + " AND r.role = 'PARENT')"
-                                + " AND EXISTS (SELECT 1 FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = gl.workspace_id"
-                                + " AND m.user_id = gl.student_user_id AND m.state = 'ACTIVE'"
-                                + " AND r.role = 'STUDENT')",
-                        UUID.class,
-                        workspaceId,
-                        parentUserId)
+        if (!memberships
+                .activeRoles(parentUserId, workspaceId)
+                .contains(MembershipRole.Role.PARENT)) {
+            return groups;
+        }
+        links
+                .findByWorkspaceIdAndParentUserIdAndState(
+                        workspaceId, parentUserId, GuardianLink.APPROVED)
+                .stream()
+                .map(GuardianLink::getStudentUserId)
+                .distinct()
+                .filter(studentId ->
+                        memberships
+                                .activeRoles(studentId, workspaceId)
+                                .contains(MembershipRole.Role.STUDENT))
                 .forEach(studentId ->
                         groups.add(NativePolicyTemplates.guardiansGroup(workspaceId, studentId)));
         return groups;
@@ -218,12 +224,5 @@ public class GuardianPolicyProjector {
             throw new IllegalArgumentException("Guardian descriptor has no group: " + descriptor);
         }
         return List.of(new PolicyGraph.Gate.GroupMembership(groupPath));
-    }
-
-    private void applyContext(UUID workspaceId) {
-        jdbc.queryForObject(
-                "SELECT set_config('app.workspace_id', ?, true)",
-                String.class,
-                workspaceId.toString());
     }
 }

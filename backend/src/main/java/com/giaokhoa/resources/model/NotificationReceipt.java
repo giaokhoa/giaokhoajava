@@ -1,9 +1,9 @@
 package com.giaokhoa.resources.model;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import java.io.Serializable;
 import java.time.Instant;
@@ -14,15 +14,9 @@ import org.jspecify.annotations.Nullable;
 
 @Entity
 @Table(name = "notification_receipt")
-@IdClass(NotificationReceipt.Key.class)
 public class NotificationReceipt {
-    @Id
-    @Column(name = "notice_id", nullable = false)
-    private UUID noticeId;
 
-    @Id
-    @Column(name = "recipient_workspace_id", nullable = false)
-    private UUID recipientWorkspaceId;
+    @EmbeddedId private Key id;
 
     @Column(name = "acknowledged_at")
     private @Nullable Instant acknowledgedAt;
@@ -34,30 +28,48 @@ public class NotificationReceipt {
     protected NotificationReceipt() {}
 
     public NotificationReceipt(UUID noticeId, UUID recipientWorkspaceId) {
-        this.noticeId = noticeId;
-        this.recipientWorkspaceId = recipientWorkspaceId;
+        this.id = new Key(noticeId, recipientWorkspaceId);
+    }
+
+    public Key getId() {
+        return id;
     }
 
     public UUID getNoticeId() {
-        return noticeId;
+        return id.getNoticeId();
     }
 
     public UUID getRecipientWorkspaceId() {
-        return recipientWorkspaceId;
+        return id.getRecipientWorkspaceId();
     }
 
     public @Nullable Instant getAcknowledgedAt() {
         return acknowledgedAt;
     }
 
+    /**
+     * Ghi mốc bên nhận đã nhận cập nhật: guard của schema chỉ cho ghi một lần, nên lần ghi sau khi
+     * đã có mốc là không-op thay vì ghi đè.
+     */
+    public void acknowledge(Instant acknowledgedAt) {
+        if (this.acknowledgedAt == null) {
+            this.acknowledgedAt = Objects.requireNonNull(acknowledgedAt, "acknowledgedAt");
+        }
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
 
+    /** Khóa ghép của receipt: đúng cặp (notice, nơi nhận) là định danh duy nhất của một receipt. */
+    @Embeddable
     public static class Key implements Serializable {
         private static final long serialVersionUID = 1L;
 
+        @Column(name = "notice_id", nullable = false)
         private UUID noticeId;
+
+        @Column(name = "recipient_workspace_id", nullable = false)
         private UUID recipientWorkspaceId;
 
         public Key() {}
@@ -65,6 +77,14 @@ public class NotificationReceipt {
         public Key(UUID noticeId, UUID recipientWorkspaceId) {
             this.noticeId = noticeId;
             this.recipientWorkspaceId = recipientWorkspaceId;
+        }
+
+        public UUID getNoticeId() {
+            return noticeId;
+        }
+
+        public UUID getRecipientWorkspaceId() {
+            return recipientWorkspaceId;
         }
 
         @Override

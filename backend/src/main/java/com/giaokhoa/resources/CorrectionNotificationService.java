@@ -11,12 +11,12 @@ import org.springframework.stereotype.Service;
  * workspace từng nhận version bị lỗi nhận đúng một {@code notification_receipt} — receipt chỉ là dữ
  * kiện thông báo gồm định danh notice và nơi nhận, không mang nội dung, không tham chiếu nguồn
  * quyền nào và không tự cấp quyền xem version thay thế (data-model của correction). Tập nơi nhận
- * chốt tại thời điểm phát hành từ bốn bề mặt đã nhận version đó: mục thư viện đã lưu đúng version,
+ * chốt tại thời điểm phát hành từ năm bề mặt đã nhận version đó: mục thư viện đã lưu đúng version,
  * lượt cấp share của đúng version còn {@code OFFERED} hoặc đã {@code ACCEPTED}, phân công tài
- * nguyên {@code ACTIVE} khớp resource hoặc môn của resource, và hoạt động đã giao trên đúng
- * version; workspace sở hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính tập
- * nơi nhận đọc xuyên workspace theo đúng tiền lệ {@code
- * ResourceRevocationContributor.affectedWorkspaces}.
+ * nguyên {@code ACTIVE} khớp resource hoặc môn của resource, hoạt động đã giao trên đúng version,
+ * và workspace đang giữ bản sao hoặc bản phái sinh của version theo cạnh provenance; workspace sở
+ * hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính tập nơi nhận đọc xuyên
+ * workspace theo đúng tiền lệ {@code ResourceRevocationContributor.affectedWorkspaces}.
  *
  * <p>Xác nhận đã biết đính chính không có action riêng trong danh mục: mốc {@code acknowledged_at}
  * được ghi khi nơi nhận chủ động nhận version thay thế của notice qua {@code RECEIVE_UPDATE} — đúng
@@ -57,7 +57,10 @@ public class CorrectionNotificationService {
                                 + " AND (resource_id = ?"
                                 + " OR (resource_id IS NULL AND subject_id = ?))"
                                 + " UNION SELECT workspace_id FROM sample_activity"
-                                + " WHERE resource_id = ? AND version_id = ?)"
+                                + " WHERE resource_id = ? AND version_id = ?"
+                                + " UNION SELECT r.owner_workspace_id FROM resource_dependency d"
+                                + " JOIN resource r ON r.id = d.derived_resource_id"
+                                + " WHERE d.source_resource_id = ? AND d.source_version_id = ?)"
                                 + " recipients WHERE recipient <> ?",
                         UUID.class,
                         resourceId,
@@ -66,6 +69,8 @@ public class CorrectionNotificationService {
                         affectedVersionId,
                         resourceId,
                         subjectId,
+                        resourceId,
+                        affectedVersionId,
                         resourceId,
                         affectedVersionId,
                         ownerWorkspaceId)
@@ -80,13 +85,15 @@ public class CorrectionNotificationService {
      * CONFLICT DO NOTHING} giữ phép ghi an toàn khi tính lại tập nơi nhận.
      */
     public void notifyRecipients(UUID noticeId, List<UUID> recipients) {
-        for (UUID recipient : recipients) {
-            jdbc.update(
-                    "INSERT INTO notification_receipt(notice_id, recipient_workspace_id)"
-                            + " VALUES (?,?) ON CONFLICT DO NOTHING",
-                    noticeId,
-                    recipient);
-        }
+        jdbc.batchUpdate(
+                "INSERT INTO notification_receipt(notice_id, recipient_workspace_id)"
+                        + " VALUES (?,?) ON CONFLICT DO NOTHING",
+                recipients,
+                recipients.size(),
+                (statement, recipient) -> {
+                    statement.setObject(1, noticeId);
+                    statement.setObject(2, recipient);
+                });
     }
 
     /**

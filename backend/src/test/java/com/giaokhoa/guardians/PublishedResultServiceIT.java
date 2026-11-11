@@ -9,13 +9,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.doAnswer;
 
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.guardians.dto.PublishedResultView;
+import com.giaokhoa.guardians.service.GuardianLinkService;
+import com.giaokhoa.guardians.service.PublishedResultService;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionService;
 import com.giaokhoa.verification.ResultPolicyProjector;
@@ -36,12 +39,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContext;
@@ -72,7 +72,7 @@ class PublishedResultServiceIT extends GuardianFixture {
     @Autowired private AuthorizationProvisioningClient directory;
     @Autowired private IdempotencyService idempotency;
     @Autowired private GuardianLinkService links;
-    @MockitoSpyBean private JdbcTemplate guardedJdbc;
+    @MockitoSpyBean private WorkspaceTransaction guardedWorkspaces;
 
     private record Scenario(UUID classId, UUID courseSubjectId, SubjectRef subject) {}
 
@@ -726,18 +726,42 @@ class PublishedResultServiceIT extends GuardianFixture {
                             "9.5",
                             "Kết quả được bảo vệ");
             recordResults(center, resultId);
+            // Điểm dừng tương đương câu SQL DTO của tầng JDBC cũ: lời gọi applyContext trực
+            // tiếp ngay trước khi đọc DTO trong fence chốt của evaluateAndRead. Spy trên
+            // repository interface không gọi được method thật, nên điểm dừng đặt ở bean
+            // class này và chỉ chặn đúng lời gọi từ callback của PublishedResultService:
+            // các lời gọi qua inWorkspace và lời gọi của luồng thu hồi đều cho qua ngay.
             doAnswer(
                             invocation -> {
-                                readerPid.set(backendPid());
-                                atDtoRead.countDown();
-                                awaitLatch(releaseDto);
+                                boolean fromReadCallback = false;
+                                boolean viaInWorkspace = false;
+                                boolean fromRevocation = false;
+                                for (StackTraceElement frame :
+                                        Thread.currentThread().getStackTrace()) {
+                                    if (WorkspaceTransaction.class
+                                                    .getName()
+                                                    .equals(frame.getClassName())
+                                            && "inWorkspace".equals(frame.getMethodName())) {
+                                        viaInWorkspace = true;
+                                    }
+                                    if (frame.getClassName()
+                                            .startsWith(PublishedResultService.class.getName())) {
+                                        fromReadCallback = true;
+                                    }
+                                    if (frame.getClassName()
+                                            .startsWith(GuardianLinkService.class.getName())) {
+                                        fromRevocation = true;
+                                    }
+                                }
+                                if (fromReadCallback && !viaInWorkspace && !fromRevocation) {
+                                    readerPid.set(backendPid());
+                                    atDtoRead.countDown();
+                                    awaitLatch(releaseDto);
+                                }
                                 return invocation.callRealMethod();
                             })
-                    .when(guardedJdbc)
-                    .query(
-                            contains("FROM sample_result r"),
-                            ArgumentMatchers.<RowMapper<PublishedResultView>>any(),
-                            any(Object[].class));
+                    .when(guardedWorkspaces)
+                    .applyContext(any());
 
             try (var pool = Executors.newFixedThreadPool(2)) {
                 try {

@@ -4,7 +4,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -14,23 +13,36 @@ import static org.mockito.Mockito.when;
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.guardians.model.GuardianLink;
+import com.giaokhoa.guardians.repository.GuardianAuthorizationPartitionRepository;
+import com.giaokhoa.guardians.repository.GuardianLinkRepository;
+import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.tenancy.MembershipService;
+import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.verification.ResultPolicyProjector;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 class GuardianPolicyProjectorTest {
     private static final UUID WORKSPACE = UUID.randomUUID();
-    private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    private final GuardianLinkRepository links = mock(GuardianLinkRepository.class);
+    private final GuardianUserAccountRepository userAccounts =
+            mock(GuardianUserAccountRepository.class);
+    private final MembershipService memberships = mock(MembershipService.class);
     private final AuthorizationProvisioningClient directory =
             mock(AuthorizationProvisioningClient.class);
 
@@ -39,21 +51,13 @@ class GuardianPolicyProjectorTest {
     @Test
     void historyReadsOneSnapshotPerParent() {
         List<UUID> students = IntStream.range(0, 100).mapToObj(_ -> UUID.randomUUID()).toList();
-        List<Map<String, Object>> parents =
+        Map<UUID, String> parents =
                 IntStream.range(0, 100)
-                        .mapToObj(i ->
-                                Map.<String, Object>of(
-                                        "parent_user_id",
-                                        UUID.randomUUID(),
-                                        "keycloak_sub",
-                                        "parent-" + i))
-                        .toList();
+                        .boxed()
+                        .collect(Collectors.toMap(_ -> UUID.randomUUID(), i -> "parent-" + i));
         sources(students, parents);
-        when(jdbc.queryForList(
-                        startsWith("SELECT gl.student_user_id FROM guardian_link gl"),
-                        eq(UUID.class),
-                        eq(WORKSPACE),
-                        any(UUID.class)))
+        when(links.findByWorkspaceIdAndParentUserIdAndState(
+                        eq(WORKSPACE), any(UUID.class), eq(GuardianLink.APPROVED)))
                 .thenReturn(List.of());
         when(directory.realmGroupPaths(anyString())).thenReturn(Set.of());
 
@@ -74,16 +78,17 @@ class GuardianPolicyProjectorTest {
         String firstGroup = NativePolicyTemplates.guardiansGroup(WORKSPACE, first);
         String secondGroup = NativePolicyTemplates.guardiansGroup(WORKSPACE, second);
         String otherWorkspaceGroup = NativePolicyTemplates.guardiansGroup(UUID.randomUUID(), first);
-        sources(
-                List.of(first, second),
-                List.of(Map.of("parent_user_id", parent, "keycloak_sub", "parent")));
-        when(jdbc.queryForList(
-                        startsWith("SELECT gl.student_user_id FROM guardian_link gl"),
-                        eq(UUID.class),
-                        eq(WORKSPACE),
-                        eq(parent)))
-                .thenReturn(List.of(first))
-                .thenReturn(List.of(second));
+        sources(List.of(first, second), Map.of(parent, "parent"));
+        when(memberships.activeRoles(parent, WORKSPACE))
+                .thenReturn(Set.of(MembershipRole.Role.PARENT));
+        when(memberships.activeRoles(first, WORKSPACE))
+                .thenReturn(Set.of(MembershipRole.Role.STUDENT));
+        when(memberships.activeRoles(second, WORKSPACE))
+                .thenReturn(Set.of(MembershipRole.Role.STUDENT));
+        when(links.findByWorkspaceIdAndParentUserIdAndState(
+                        WORKSPACE, parent, GuardianLink.APPROVED))
+                .thenReturn(List.of(approvedLink(parent, first)))
+                .thenReturn(List.of(approvedLink(parent, second)));
         when(directory.realmGroupPaths("parent"))
                 .thenReturn(Set.of(secondGroup, otherWorkspaceGroup))
                 .thenReturn(Set.of(firstGroup, otherWorkspaceGroup));
@@ -100,17 +105,20 @@ class GuardianPolicyProjectorTest {
                 .setRealmGroupMembership(eq("parent"), eq(otherWorkspaceGroup), anyBoolean());
     }
 
-    private void sources(List<UUID> students, List<Map<String, Object>> parents) {
-        when(jdbc.queryForList(
-                        "SELECT DISTINCT student_user_id FROM guardian_link WHERE workspace_id = ?",
-                        UUID.class,
-                        WORKSPACE))
-                .thenReturn(students);
-        when(jdbc.queryForList(
-                        "SELECT DISTINCT gl.parent_user_id, u.keycloak_sub FROM guardian_link gl"
-                                + " JOIN user_account u ON u.id = gl.parent_user_id WHERE gl.workspace_id = ?",
-                        WORKSPACE))
-                .thenReturn(parents);
+    private void sources(List<UUID> students, Map<UUID, String> parents) {
+        when(links.findDistinctStudentUserIds(WORKSPACE)).thenReturn(students);
+        when(links.findDistinctParentUserIds(WORKSPACE)).thenReturn(List.copyOf(parents.keySet()));
+        parents.forEach((parentId, subject) -> {
+            UserAccount account = mock(UserAccount.class);
+            when(account.getKeycloakSub()).thenReturn(subject);
+            when(userAccounts.findById(parentId)).thenReturn(Optional.of(account));
+        });
+    }
+
+    private static GuardianLink approvedLink(UUID parent, UUID student) {
+        GuardianLink link = new GuardianLink(UUID.randomUUID(), WORKSPACE, parent, student, parent);
+        link.approve(parent, Instant.now());
+        return link;
     }
 
     private GuardianPolicyProjector projector() {
@@ -118,7 +126,11 @@ class GuardianPolicyProjectorTest {
         when(transactions.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
         return new GuardianPolicyProjector(
-                jdbc,
+                links,
+                userAccounts,
+                mock(GuardianAuthorizationPartitionRepository.class),
+                memberships,
+                mock(WorkspaceTransaction.class),
                 directory,
                 mock(AuthorizationOperationService.class),
                 mock(CenterPolicyProjector.class),

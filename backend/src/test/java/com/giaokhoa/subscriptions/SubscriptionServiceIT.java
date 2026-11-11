@@ -64,11 +64,17 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
         java.util.concurrent.CompletableFuture<AuthorizationOperation> second;
         try (var connection = Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
             connection.setAutoCommit(false);
+            int blockerPid;
             try (var statement =
                     connection.prepareStatement(
-                            "SELECT id FROM authz_partition WHERE id = ? FOR UPDATE")) {
+                            "SELECT pg_backend_pid() FROM authz_partition WHERE id = ? FOR UPDATE")) {
                 statement.setObject(1, partition);
-                statement.executeQuery().close();
+                try (var result = statement.executeQuery()) {
+                    if (!result.next()) {
+                        throw new IllegalStateException("Partition của fixture không tồn tại");
+                    }
+                    blockerPid = result.getInt(1);
+                }
             }
             first =
                     java.util.concurrent.CompletableFuture.supplyAsync(() ->
@@ -90,15 +96,40 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                                     "review-ref-b-" + workspace,
                                     "review-key-b-" + workspace,
                                     HASH_B));
-            org.awaitility.Awaitility.await()
-                    .atMost(java.time.Duration.ofSeconds(20))
-                    .until(() ->
-                            Objects.requireNonNull(
-                                            jdbc.queryForObject(
-                                                    "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
-                                                            + " AND (query LIKE 'SELECT desired_revision FROM authz_partition WHERE id = % FOR UPDATE' OR query LIKE 'SELECT pg_advisory_xact_lock%')",
-                                                    Integer.class))
-                                    >= 2);
+            // Cả hai confirm phải nằm trong chuỗi chờ khóa của đúng connection giữ partition;
+            // pg_blocking_pids không phụ thuộc cú pháp SQL hay loại khóa Hibernate sinh ra.
+            try {
+                org.awaitility.Awaitility.await()
+                        .atMost(java.time.Duration.ofSeconds(20))
+                        .until(() ->
+                                Objects.requireNonNull(
+                                                jdbc.queryForObject(
+                                                        """
+                                                        WITH RECURSIVE blocked(pid) AS (
+                                                          VALUES (CAST(? AS integer))
+                                                          UNION
+                                                          SELECT a.pid FROM pg_stat_activity a
+                                                          JOIN blocked b ON b.pid = ANY(pg_blocking_pids(a.pid))
+                                                        )
+                                                        SELECT count(*) FROM blocked WHERE pid <> ?
+                                                        """,
+                                                        Integer.class,
+                                                        blockerPid,
+                                                        blockerPid))
+                                        >= 2);
+            } catch (org.awaitility.core.ConditionTimeoutException timeout) {
+                String waiting =
+                        jdbc.queryForList(
+                                                "SELECT pid, wait_event, query"
+                                                        + " FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
+                                                        + " AND wait_event_type = 'Lock'")
+                                        .toString()
+                                + " firstDone="
+                                + first.isDone()
+                                + " secondDone="
+                                + second.isDone();
+                throw new AssertionError("Lock observation diagnostics: " + waiting, timeout);
+            }
             connection.commit();
         }
         first.get(30, java.util.concurrent.TimeUnit.SECONDS);

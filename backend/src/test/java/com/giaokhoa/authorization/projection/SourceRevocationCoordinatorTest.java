@@ -3,8 +3,6 @@ package com.giaokhoa.authorization.projection;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -12,16 +10,19 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 class SourceRevocationCoordinatorTest {
     private static final UUID ACTOR = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -93,13 +94,14 @@ class SourceRevocationCoordinatorTest {
 
     @Test
     void missingWorkspacePartitionFailsBeforeRecordingAnything() {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        when(jdbc.queryForList(contains("authz_partition"), eq(UUID.class), anyString()))
-                .thenReturn(List.of());
+        AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
+        when(partitions.findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.WORKSPACE, "workspace:" + WORKSPACE))
+                .thenReturn(Optional.empty());
         AuthorizationOperationService operations = mock(AuthorizationOperationService.class);
         var coordinator =
                 new SourceRevocationCoordinator(
-                        jdbc,
+                        partitions,
                         operations,
                         mock(CenterPolicyProjector.class),
                         mock(TeachingPolicyProjector.class),
@@ -121,14 +123,14 @@ class SourceRevocationCoordinatorTest {
     }
 
     private static final class Fixture {
-        final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        final AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
         final AuthorizationOperationService operations = mock(AuthorizationOperationService.class);
         final CenterPolicyProjector center = mock(CenterPolicyProjector.class);
         final TeachingPolicyProjector teaching = mock(TeachingPolicyProjector.class);
         final ResultPolicyProjector results = mock(ResultPolicyProjector.class);
         final SourceRevocationCoordinator coordinator =
                 new SourceRevocationCoordinator(
-                        jdbc,
+                        partitions,
                         operations,
                         center,
                         teaching,
@@ -137,8 +139,20 @@ class SourceRevocationCoordinatorTest {
                         mock(com.giaokhoa.resources.ResourcePolicyProjector.class));
 
         Fixture() {
-            when(jdbc.queryForList(contains("authz_partition"), eq(UUID.class), anyString()))
-                    .thenReturn(List.of(WORKSPACE_PARTITION));
+            when(partitions.findByKindAndOwnerKey(
+                            AuthorizationPartition.Kind.WORKSPACE, "workspace:" + WORKSPACE))
+                    .thenReturn(
+                            Optional.of(
+                                    new AuthorizationPartition(
+                                            WORKSPACE_PARTITION,
+                                            AuthorizationPartition.Kind.WORKSPACE,
+                                            "workspace:" + WORKSPACE,
+                                            0,
+                                            0,
+                                            AuthorizationPartition.State.PENDING)));
+            Workspace workspace = mock(Workspace.class);
+            when(workspace.getKind()).thenReturn(Workspace.Kind.CENTER);
+            when(partitions.findWorkspaceById(WORKSPACE)).thenReturn(Optional.of(workspace));
             AuthorizationOperation operation =
                     new AuthorizationOperation(
                             UUID.randomUUID(),
@@ -146,8 +160,8 @@ class SourceRevocationCoordinatorTest {
                             WORKSPACE,
                             "key",
                             "hash",
-                            new UUID[] {WORKSPACE_PARTITION},
-                            new Long[] {2L},
+                            List.of(WORKSPACE_PARTITION),
+                            List.of(2L),
                             2L);
             when(operations.applyDesiredState(
                             eq(ACTOR), eq(WORKSPACE), eq("key"), eq("hash"), anyList()))

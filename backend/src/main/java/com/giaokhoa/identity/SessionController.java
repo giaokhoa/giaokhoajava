@@ -7,10 +7,15 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.identity.IdentityService.BootstrapResult;
 import com.giaokhoa.identity.IdentityService.CurrentUser;
 import com.giaokhoa.identity.keycloak.IdentityProvisioningClient;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.repository.UserAccountRepository;
+import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
 import com.giaokhoa.tenancy.WorkspaceDirectoryService;
 import com.giaokhoa.tenancy.WorkspaceDirectoryService.ListedWorkspace;
+import com.giaokhoa.tenancy.model.Center;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.CenterRepository;
 import com.giaokhoa.verification.SystemPracticeService;
 import com.giaokhoa.verification.SystemPracticeService.PracticeEntry;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,6 +52,9 @@ public class SessionController {
     private final SystemPracticeService practice;
     private final IdentityProvisioningClient provisioning;
     private final ProtectedActionExecutor executor;
+    private final UserAccountRepository accounts;
+    private final CenterRepository centers;
+    private final SubscriptionPeriodRepository periods;
     private final JdbcTemplate jdbc;
 
     public SessionController(
@@ -55,12 +63,18 @@ public class SessionController {
             SystemPracticeService practice,
             IdentityProvisioningClient provisioning,
             ProtectedActionExecutor executor,
+            UserAccountRepository accounts,
+            CenterRepository centers,
+            SubscriptionPeriodRepository periods,
             JdbcTemplate jdbc) {
         this.identities = identities;
         this.directory = directory;
         this.practice = practice;
         this.provisioning = provisioning;
         this.executor = executor;
+        this.accounts = accounts;
+        this.centers = centers;
+        this.periods = periods;
         this.jdbc = jdbc;
     }
 
@@ -164,14 +178,12 @@ public class SessionController {
     @PostMapping("/identity/verification")
     public ResponseEntity<OperationReceipt> requestVerification(Authentication authentication) {
         UUID actor = executor.actorUserId(authentication);
-        List<String> subjects =
-                jdbc.queryForList(
-                        "SELECT keycloak_sub FROM user_account WHERE id = ?", String.class, actor);
-        if (subjects.isEmpty()) {
-            throw new IllegalStateException(
-                    "Account row without Keycloak subject for actor " + actor);
-        }
-        provisioning.sendVerifyEmail(subjects.getFirst());
+        UserAccount account =
+                accounts.findById(actor)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Account row without Keycloak subject for actor " + actor));
+        provisioning.sendVerifyEmail(account.getKeycloakSub());
         // Gửi email là tác vụ phụ trợ đồng bộ, không có thực thể operation để poll: biên nhận hoàn
         // tất ngay mang chính định danh của actor theo hình dạng tracked operation của hợp đồng.
         return ResponseEntity.ok()
@@ -225,35 +237,23 @@ public class SessionController {
                         .distinct()
                         .toList();
         Map<UUID, String> names = new HashMap<>();
-        if (centerIds.isEmpty()) {
-            return names;
+        for (Center center : centers.findAllById(centerIds)) {
+            names.put(center.getId(), center.getName());
         }
-        jdbc.query(
-                "SELECT id, name FROM center WHERE id IN (" + placeholders(centerIds) + ")",
-                rs -> {
-                    names.put((UUID) rs.getObject("id"), rs.getString("name"));
-                },
-                centerIds.toArray());
         return names;
     }
 
     private Map<UUID, Instant> subscriptionExpiriesOf(List<UUID> workspaceIds) {
         Map<UUID, Instant> expiries = new HashMap<>();
-        jdbc.query(
-                "SELECT workspace_id, MAX(expires_at) AS expires_at FROM subscription_period"
-                        + " WHERE workspace_id IN ("
-                        + placeholders(workspaceIds)
-                        + ") AND valid_from <= now() AND expires_at > now()"
-                        + " GROUP BY workspace_id",
-                rs -> {
-                    expiries.put(
-                            (UUID) rs.getObject("workspace_id"),
-                            rs.getTimestamp("expires_at").toInstant());
-                },
-                workspaceIds.toArray());
+        for (SubscriptionPeriodRepository.WorkspaceExpiry expiry :
+                periods.findCurrentExpiries(workspaceIds, Instant.now())) {
+            expiries.put(expiry.getWorkspaceId(), expiry.getExpiresAt());
+        }
         return expiries;
     }
 
+    // authz_projection thuộc mặt phẳng authorization: điểm đọc này giữ SQL cho tới khi
+    // repository của mặt phẳng đó land cùng đợt chuyển đổi của module authorization.
     private Map<String, String> syncStatesOf(List<UUID> workspaceIds) {
         List<String> targetKeys = workspaceIds.stream().map(id -> "workspace:" + id).toList();
         Map<String, String> states = new HashMap<>();

@@ -3,29 +3,33 @@ package com.giaokhoa.tenancy;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.Sha256;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.tenancy.model.CenterMembership;
+import com.giaokhoa.tenancy.model.Invitation;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
+import com.giaokhoa.tenancy.repository.InvitationRepository;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,19 +55,22 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Idempotency theo đúng mẫu operation dùng chung: mỗi mutation tuần tự hoá trên (actor,
  * idempotency key) hoặc trên token bằng advisory lock trong transaction hiện hành rồi mới kiểm tra
  * replay, nên replay cùng key và payload trả lại đúng operation đã ghi — token thô không tái tạo
- * được ở lần replay, kết quả replay vì vậy không mang token.
+ * được ở lần replay, kết quả replay vì vậy không mang token. {@link JdbcOperations} chỉ còn phục vụ
+ * advisory lock (hạ tầng khóa), dữ kiện đọc/ghi qua repository JPA.
  */
 @Service
 public class InvitationService {
     /** Thời hạn của một lời mời; hết hạn được ép tại lúc chấp nhận theo mốc này. */
     private static final Duration INVITATION_TTL = Duration.ofDays(7);
 
-    private static final String PENDING_STATE = "PENDING";
-    private static final int SINGLE_ROW = 1;
-
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final JdbcTemplate jdbc;
+    private final JdbcOperations locks;
+    private final UserAccountRepository accounts;
+    private final WorkspaceRepository workspaces;
+    private final CenterMembershipRepository memberships;
+    private final InvitationRepository invitations;
+    private final MembershipIndexSynchronizer membershipIndex;
     private final IdempotencyService idempotency;
     private final MembershipPolicyProjector projector;
     private final AuditRecorder audit;
@@ -71,12 +78,22 @@ public class InvitationService {
     private final ResourceMutationCoordinator coordinator;
 
     public InvitationService(
-            JdbcTemplate jdbc,
+            JdbcOperations locks,
+            UserAccountRepository accounts,
+            WorkspaceRepository workspaces,
+            CenterMembershipRepository memberships,
+            InvitationRepository invitations,
+            MembershipIndexSynchronizer membershipIndex,
             IdempotencyService idempotency,
             MembershipPolicyProjector projector,
             ResourceMutationCoordinator coordinator,
             AuditRecorder audit) {
-        this.jdbc = jdbc;
+        this.locks = locks;
+        this.accounts = accounts;
+        this.workspaces = workspaces;
+        this.memberships = memberships;
+        this.invitations = invitations;
+        this.membershipIndex = membershipIndex;
         this.idempotency = idempotency;
         this.projector = projector;
         this.coordinator = coordinator;
@@ -163,23 +180,16 @@ public class InvitationService {
         String token = generateToken();
         UUID invitationId = UUID.randomUUID();
         Instant expiresAt = Instant.now().plus(INVITATION_TTL);
-        String[] roleNames =
-                roles.stream().map(role -> role.name()).sorted().toArray(String[]::new);
-        String tokenHash = tokenHash(token);
-        jdbc.update(
-                "INSERT INTO invitation"
-                        + " (id, workspace_id, target_email, target_user_id, token_hash,"
-                        + " intended_roles, expires_at, state)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')",
-                ps -> {
-                    ps.setObject(1, invitationId);
-                    ps.setObject(2, workspaceId);
-                    ps.setString(3, email);
-                    ps.setObject(4, targetUserId);
-                    ps.setString(5, tokenHash);
-                    ps.setArray(6, ps.getConnection().createArrayOf("text", roleNames));
-                    ps.setObject(7, OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC));
-                });
+        List<String> roleNames = roles.stream().map(role -> role.name()).sorted().toList();
+        invitations.save(
+                new Invitation(
+                        invitationId,
+                        workspaceId,
+                        email,
+                        targetUserId,
+                        tokenHash(token),
+                        roleNames,
+                        expiresAt));
         AuthorizationOperation operation =
                 projector.recordMembershipChange(
                         initiatorUserId, workspaceId, idempotencyKey, payloadHash);
@@ -207,75 +217,51 @@ public class InvitationService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        List<InvitationRow> rows =
-                jdbc.query(
-                        "SELECT id, workspace_id, target_email, target_user_id, intended_roles,"
-                                + " expires_at, state FROM invitation WHERE token_hash = ?"
-                                + " FOR UPDATE",
-                        INVITATION_MAPPER,
-                        hash);
-        if (rows.isEmpty()) {
-            // Token lạ và token không tồn tại trả cùng một 404: không lộ lời mời nào.
-            throw new HttpProblemException(
-                    HttpStatus.NOT_FOUND,
-                    ErrorCodes.INVITATION_NOT_FOUND,
-                    "Không tìm thấy lời mời.");
-        }
-        InvitationRow invitation = rows.getFirst();
-        coordinator.lockWorkspace(invitation.workspaceId());
-        if (!PENDING_STATE.equals(invitation.state())) {
+        Invitation invitation =
+                invitations
+                        .findForUpdateByTokenHash(hash)
+                        .orElseThrow(() ->
+                                new HttpProblemException(
+                                        HttpStatus.NOT_FOUND,
+                                        ErrorCodes.INVITATION_NOT_FOUND,
+                                        "Không tìm thấy lời mời."));
+        // Token lạ và token không tồn tại trả cùng một 404: không lộ lời mời nào.
+        coordinator.lockWorkspace(invitation.getWorkspaceId());
+        if (invitation.getState() != Invitation.State.PENDING) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.INVITATION_NOT_PENDING,
                     "Lời mời không còn chờ chấp nhận.");
         }
-        if (!invitation.expiresAt().isAfter(Instant.now())) {
+        if (!invitation.getExpiresAt().isAfter(Instant.now())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, ErrorCodes.INVITATION_EXPIRED, "Lời mời đã hết hạn.");
         }
         requireTargetMatch(invitation, acceptorUserId);
 
         MembershipActivation activation =
-                activateMembership(invitation.workspaceId(), acceptorUserId);
-        UUID membershipId = activation.membershipId();
+                activateMembership(invitation.getWorkspaceId(), acceptorUserId);
+        CenterMembership membership = activation.membership();
+        UUID membershipId = membership.getId();
         boolean addedNewRole = false;
-        for (String role : invitation.intendedRoles()) {
-            addedNewRole |=
-                    jdbc.update(
-                                    "INSERT INTO membership_role (membership_id, role)"
-                                            + " VALUES (?, ?)"
-                                            + " ON CONFLICT (membership_id, role) DO NOTHING",
-                                    membershipId,
-                                    role)
-                            > 0;
+        for (String role : invitation.getIntendedRoles()) {
+            addedNewRole |= membership.getRoles().add(MembershipRole.Role.valueOf(role));
         }
         if (activation.preExisting() && addedNewRole) {
             // Role nằm ở bảng riêng nên phải chạm row membership thì version mới tăng: nếu
             // không, một writer khác giữ If-Match cũ vẫn ghi đè được và làm mất role vừa cộng.
-            jdbc.update(
-                    "UPDATE center_membership SET version = version + 1, updated_at = now()"
-                            + " WHERE id = ?",
-                    membershipId);
+            memberships.incrementVersionById(membershipId);
         }
-        int accepted =
-                jdbc.update(
-                        "UPDATE invitation SET state = 'ACCEPTED', version = version + 1"
-                                + " WHERE id = ? AND state = 'PENDING'",
-                        invitation.id());
-        if (accepted != SINGLE_ROW) {
-            throw new HttpProblemException(
-                    HttpStatus.CONFLICT,
-                    ErrorCodes.INVITATION_NOT_PENDING,
-                    "Lời mời không còn chờ chấp nhận.");
-        }
+        invitation.accept();
+        memberships.flush();
         AuthorizationOperation operation =
                 projector.recordMembershipChange(
-                        acceptorUserId, invitation.workspaceId(), idempotencyKey, payloadHash);
+                        acceptorUserId, invitation.getWorkspaceId(), idempotencyKey, payloadHash);
         // Chỉ chấp nhận mới đổi đặc quyền (tạo membership hoặc cộng role); tạo lời mời chưa
         // tạo membership nào nên không ghi audit ở đường invite.
         audit.record(
                 acceptorUserId,
-                invitation.workspaceId(),
+                invitation.getWorkspaceId(),
                 AuditEvent.Action.PRIVILEGE_CHANGE,
                 AuditEvent.TargetType.MEMBERSHIP,
                 membershipId,
@@ -284,98 +270,72 @@ public class InvitationService {
         return operation;
     }
 
-    /** Một dòng lời mời như accept cần dùng, mọi cột đã đọc theo kiểu đích. */
-    private record InvitationRow(
-            UUID id,
-            UUID workspaceId,
-            @Nullable String targetEmail,
-            @Nullable UUID targetUserId,
-            List<String> intendedRoles,
-            Instant expiresAt,
-            String state) {}
-
-    // Đọc thẳng theo kiểu đích để pgjdbc tự chuyển cột TIMESTAMPTZ và mảng, thay vì nhận
-    // java.sql.Timestamp/Array qua Map rồi quy đổi thủ công.
-    private static final RowMapper<InvitationRow> INVITATION_MAPPER =
-            (rs, _) ->
-                    new InvitationRow(
-                            rs.getObject("id", UUID.class),
-                            rs.getObject("workspace_id", UUID.class),
-                            rs.getString("target_email"),
-                            rs.getObject("target_user_id", UUID.class),
-                            stringArray(rs.getArray("intended_roles")),
-                            Objects.requireNonNull(rs.getObject("expires_at", OffsetDateTime.class))
-                                    .toInstant(),
-                            rs.getString("state"));
-
-    private void requireTargetMatch(InvitationRow invitation, UUID acceptorUserId) {
-        UUID targetUserId = invitation.targetUserId();
+    private void requireTargetMatch(Invitation invitation, UUID acceptorUserId) {
+        UUID targetUserId = invitation.getTargetUserId();
         if (targetUserId != null) {
             if (!targetUserId.equals(acceptorUserId)) {
                 throw targetMismatch();
             }
             return;
         }
-        String targetEmail = Objects.requireNonNull(invitation.targetEmail(), "target_email");
-        List<Map<String, Object>> accounts =
-                jdbc.queryForList(
-                        "SELECT email, email_verified FROM user_account WHERE id = ?",
-                        acceptorUserId);
-        if (accounts.isEmpty()) {
-            throw new HttpProblemException(
-                    HttpStatus.NOT_FOUND,
-                    ErrorCodes.ACCOUNT_NOT_FOUND,
-                    "Chưa có tài khoản cho danh tính này.");
-        }
-        Map<String, Object> account = accounts.getFirst();
-        String email = (String) account.get("email");
-        boolean verified = Boolean.TRUE.equals(account.get("email_verified"));
+        String targetEmail = Objects.requireNonNull(invitation.getTargetEmail(), "target_email");
+        UserAccount account =
+                accounts.findById(acceptorUserId)
+                        .orElseThrow(() ->
+                                new HttpProblemException(
+                                        HttpStatus.NOT_FOUND,
+                                        "ACCOUNT_NOT_FOUND",
+                                        "Chưa có tài khoản cho danh tính này."));
         // Email đích chỉ ghép được khi account hiện hành mang đúng email đó và email đã xác
         // minh: khớp tên hay email chưa xác minh đều không chứng minh được quyền sở hữu đích.
-        if (!verified || email == null || !email.equalsIgnoreCase(targetEmail)) {
+        String email = account.getEmail();
+        if (!account.isEmailVerified() || email == null || !email.equalsIgnoreCase(targetEmail)) {
             throw targetMismatch();
         }
     }
 
-    /** Membership sau bước kích hoạt: id của row và cờ cho biết row đã tồn tại từ trước. */
-    private record MembershipActivation(UUID membershipId, boolean preExisting) {}
+    /** Membership sau bước kích hoạt, kèm cờ cho biết membership đã tồn tại từ trước. */
+    private record MembershipActivation(CenterMembership membership, boolean preExisting) {}
 
     private MembershipActivation activateMembership(UUID workspaceId, UUID userId) {
-        List<Map<String, Object>> current =
-                jdbc.queryForList(
-                        "SELECT id, state FROM center_membership WHERE workspace_id = ?"
-                                + " AND user_id = ? AND state IN ('PENDING', 'ACTIVE')",
+        Optional<CenterMembership> current =
+                memberships.findByWorkspaceIdAndUserIdAndStateIn(
                         workspaceId,
-                        userId);
-        if (!current.isEmpty()) {
-            Map<String, Object> membership = current.getFirst();
-            UUID membershipId = (UUID) Objects.requireNonNull(membership.get("id"), "id");
-            if (PENDING_STATE.equals(membership.get("state"))) {
+                        userId,
+                        List.of(CenterMembership.State.PENDING, CenterMembership.State.ACTIVE));
+        if (current.isPresent()) {
+            CenterMembership membership = current.get();
+            if (membership.getState() == CenterMembership.State.PENDING) {
                 // Chỉ đổi state, giữ nguyên joined_at vì trigger guard_directory_history
                 // cấm sửa lịch sử tham gia.
-                jdbc.update(
-                        "UPDATE center_membership SET state = 'ACTIVE', version = version + 1,"
-                                + " updated_at = now() WHERE id = ? AND state = 'PENDING'",
-                        membershipId);
+                membership.activate();
+                membershipIndex.sync(userId, workspaceId, CenterMembership.State.ACTIVE);
             }
-            return new MembershipActivation(membershipId, true);
+            return new MembershipActivation(membership, true);
         }
-        UUID membershipId = UUID.randomUUID();
-        jdbc.update(
-                "INSERT INTO center_membership (id, workspace_id, user_id, state, joined_at)"
-                        + " VALUES (?, ?, ?, 'ACTIVE', now())",
-                membershipId,
-                workspaceId,
-                userId);
-        return new MembershipActivation(membershipId, false);
+        // save() trên entity đã có id là merge: bản được quản lý là giá trị trả về, nên giữ
+        // đúng tham chiếu đó — sửa roles trên đối tượng gốc sẽ không bao giờ được flush.
+        CenterMembership membership =
+                memberships.save(
+                        new CenterMembership(
+                                UUID.randomUUID(),
+                                workspaceId,
+                                userId,
+                                CenterMembership.State.ACTIVE,
+                                Instant.now()));
+        membershipIndex.sync(userId, workspaceId, CenterMembership.State.ACTIVE);
+        return new MembershipActivation(membership, false);
     }
 
     private void requireCenter(UUID workspaceId) {
-        List<Map<String, Object>> workspaces =
-                jdbc.queryForList("SELECT kind, state FROM workspace WHERE id = ?", workspaceId);
-        if (workspaces.isEmpty()
-                || !"CENTER".equals(workspaces.getFirst().get("kind"))
-                || !"ACTIVE".equals(workspaces.getFirst().get("state"))) {
+        boolean centerActive =
+                workspaces
+                        .findById(workspaceId)
+                        .filter(workspace ->
+                                workspace.getKind() == Workspace.Kind.CENTER
+                                        && "ACTIVE".equals(workspace.getState()))
+                        .isPresent();
+        if (!centerActive) {
             // Không phân biệt thiếu/không phải center/không ACTIVE: không lộ sự tồn tại.
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
@@ -385,9 +345,7 @@ public class InvitationService {
     }
 
     private void requireAccount(UUID userId) {
-        List<UUID> accounts =
-                jdbc.queryForList("SELECT id FROM user_account WHERE id = ?", UUID.class, userId);
-        if (accounts.isEmpty()) {
+        if (!accounts.existsById(userId)) {
             throw new HttpProblemException(
                     HttpStatus.NOT_FOUND,
                     ErrorCodes.ACCOUNT_NOT_FOUND,
@@ -396,19 +354,11 @@ public class InvitationService {
     }
 
     private Set<MembershipRole.Role> activeRolesOf(UUID userId, UUID workspaceId) {
-        return Set.copyOf(
-                jdbc
-                        .queryForList(
-                                "SELECT r.role FROM center_membership m"
-                                        + " JOIN membership_role r ON r.membership_id = m.id"
-                                        + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                        + " AND m.state = 'ACTIVE'",
-                                String.class,
-                                workspaceId,
-                                userId)
-                        .stream()
-                        .map(MembershipRole.Role::valueOf)
-                        .toList());
+        return memberships
+                .findByWorkspaceIdAndUserIdAndState(
+                        workspaceId, userId, CenterMembership.State.ACTIVE)
+                .map(membership -> Set.copyOf(membership.getRoles()))
+                .orElse(Set.of());
     }
 
     private static HttpProblemException targetMismatch() {
@@ -440,36 +390,12 @@ public class InvitationService {
         return Sha256.hex(rawToken);
     }
 
-    private static List<String> stringArray(@Nullable Object value) {
-        if (value == null) {
-            return List.of();
-        }
-        Object[] raw;
-        if (value instanceof java.sql.Array array) {
-            try {
-                raw = (Object[]) array.getArray();
-            } catch (java.sql.SQLException ex) {
-                throw new IllegalStateException("Cannot read invitation roles", ex);
-            }
-        } else if (value instanceof Object[] objects) {
-            raw = objects;
-        } else {
-            throw new IllegalStateException(
-                    "Unexpected invitation roles value: " + value.getClass());
-        }
-        List<String> out = new java.util.ArrayList<>(raw.length);
-        for (Object item : raw) {
-            out.add(String.valueOf(item));
-        }
-        return List.copyOf(out);
-    }
-
     /**
      * Tuần tự hoá trong phạm vi transaction hiện hành bằng advisory lock của PostgreSQL, cùng cách
      * CenterService khoá: lock tự nhả khi transaction kết thúc nên không cần đường mở khoá riêng,
      * và hai instance của ứng dụng vẫn tôn trọng nhau.
      */
     private void lockOn(String key) {
-        AdvisoryLocks.lock(jdbc, "giaokhoa:invitation-service:", key);
+        AdvisoryLocks.lock(locks, "giaokhoa:invitation-service:", key);
     }
 }

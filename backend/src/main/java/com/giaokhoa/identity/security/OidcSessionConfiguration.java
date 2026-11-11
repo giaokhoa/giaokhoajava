@@ -1,5 +1,6 @@
 package com.giaokhoa.identity.security;
 
+import com.giaokhoa.identity.repository.OidcSessionCorrelationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,9 +22,10 @@ public class OidcSessionConfiguration {
 
     @Bean
     OidcSessionRegistry oidcSessionRegistry(
+            OidcSessionCorrelationRepository correlations,
             JdbcTemplate jdbc,
             @Value("${spring.security.oauth2.client.registration.keycloak.client-id}")
                     String clientId) {
-        return new JdbcOidcSessionRegistry(jdbc, clientId);
+        return new JpaOidcSessionRegistry(correlations, jdbc, clientId);
     }
 }

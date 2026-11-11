@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
@@ -239,9 +238,11 @@ class InvitationMembershipServiceIT extends IntegrationEnvironment {
                         Object.class,
                         membership),
                 "Kích hoạt membership đang chờ phải giữ nguyên joined_at");
-        assertTrue(
-                membershipVersion(membership) > versionBefore,
-                "Kích hoạt kèm cộng role phải làm tăng version của membership");
+        assertEquals(
+                versionBefore + 2,
+                membershipVersion(membership),
+                "Kích hoạt membership đang chờ kèm cộng role phải tăng version đúng hai lần:"
+                        + " một lần cho kích hoạt, một lần cho cộng role");
     }
 
     @Test

@@ -60,6 +60,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
     @Autowired IdempotencyService idempotency;
     @Autowired IdentityEligibilityService eligibility;
     @Autowired ProjectionReconciler reconciler;
+    @Autowired PersonalEntitlementProjector entitlementProjector;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired WebApplicationContext webContext;
     @Autowired SessionRepositoryFilter<?> sessionFilter;
@@ -538,8 +539,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             ProjectionReconciler.desiredHash(
                                     target,
                                     "enter",
-                                    new PersonalEntitlementProjector(jdbc)
-                                            .bundleDescriptors(actor.workspace())),
+                                    entitlementProjector.bundleDescriptors(actor.workspace())),
                             actor.account(),
                             actor.workspacePartition(),
                             target);
@@ -712,8 +712,7 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                     ProjectionReconciler.desiredHash(
                             targetKey,
                             scope,
-                            new PersonalEntitlementProjector(jdbc)
-                                    .bundleDescriptors(actor.workspace()));
+                            entitlementProjector.bundleDescriptors(actor.workspace()));
             try (var graph = nativeGate.partiallyProvisionApplicationResource(targetKey, scope)) {
                 UUID projection = UUID.randomUUID();
                 var operation =
@@ -723,8 +722,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                 actor.workspace(),
                                 "revocation-partial-provision-retry",
                                 desiredHash,
-                                new UUID[] {actor.account(), actor.workspacePartition()},
-                                new Long[] {0L, 1L},
+                                List.of(actor.account(), actor.workspacePartition()),
+                                List.of(0L, 1L),
                                 0L);
                 tx(() -> {
                     // Đây là một nguồn thật graph writer dựng lại được: user
@@ -904,8 +903,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                             fixture.workspace(),
                             "revocation-native-crash-retry",
                             "a".repeat(64),
-                            new UUID[] {fixture.account(), fixture.workspacePartition()},
-                            new Long[] {0L, 1L},
+                            List.of(fixture.account(), fixture.workspacePartition()),
+                            List.of(0L, 1L),
                             0L);
             tx(() -> {
                 idempotency.executeOnce(operation, () -> fence(fixture.workspacePartition(), 1));
@@ -1061,8 +1060,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                     workspace,
                                     "crash-retry",
                                     "a".repeat(64),
-                                    new UUID[] {account, scope, grant},
-                                    new Long[] {0L, 0L, 1L},
+                                    List.of(account, scope, grant),
+                                    List.of(0L, 0L, 1L),
                                     0L);
                     idempotency.executeOnce(operation, () -> fence(grant, 1));
                     jdbc.update(
@@ -1160,8 +1159,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                     null,
                                     "ordering-older",
                                     "a".repeat(64),
-                                    new UUID[] {partition},
-                                    new Long[] {1L},
+                                    List.of(partition),
+                                    List.of(1L),
                                     1L);
                     idempotency.executeOnce(older, () -> {});
                     jdbc.update(
@@ -1177,8 +1176,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                     null,
                                     "ordering-younger",
                                     "b".repeat(64),
-                                    new UUID[] {partition},
-                                    new Long[] {1L},
+                                    List.of(partition),
+                                    List.of(1L),
                                     1L);
                     idempotency.executeOnce(younger, () -> {});
                     return new UUID[] {older.getId(), younger.getId()};
@@ -1237,8 +1236,8 @@ class ConcurrentRevocationIT extends IntegrationEnvironment {
                                     null,
                                     "superseded-operation",
                                     "a".repeat(64),
-                                    new UUID[] {partition},
-                                    new Long[] {1L},
+                                    List.of(partition),
+                                    List.of(1L),
                                     1L);
                     idempotency.executeOnce(recorded, () -> {});
                     jdbc.update(

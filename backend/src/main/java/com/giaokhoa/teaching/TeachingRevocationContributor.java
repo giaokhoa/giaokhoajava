@@ -1,8 +1,12 @@
 package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.teaching.data.TeachingRepository;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.teaching.repository.ClassStudentRepository;
+import com.giaokhoa.teaching.repository.CourseSubjectRepository;
+import com.giaokhoa.teaching.repository.EnrollmentRepository;
+import com.giaokhoa.teaching.repository.HomeroomAssignmentRepository;
+import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -47,12 +51,27 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class TeachingRevocationContributor {
-    private final TeachingRepository repository;
+    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
+
+    private final ClassStudentRepository classStudents;
+    private final CourseSubjectRepository courseSubjects;
+    private final EnrollmentRepository enrollments;
+    private final TeachingAssignmentRepository teachingAssignments;
+    private final HomeroomAssignmentRepository homeroomAssignments;
     private final WorkspaceTransaction workspaceTransaction;
 
     public TeachingRevocationContributor(
-            TeachingRepository repository, WorkspaceTransaction workspaceTransaction) {
-        this.repository = repository;
+            ClassStudentRepository classStudents,
+            CourseSubjectRepository courseSubjects,
+            EnrollmentRepository enrollments,
+            TeachingAssignmentRepository teachingAssignments,
+            HomeroomAssignmentRepository homeroomAssignments,
+            WorkspaceTransaction workspaceTransaction) {
+        this.classStudents = classStudents;
+        this.courseSubjects = courseSubjects;
+        this.enrollments = enrollments;
+        this.teachingAssignments = teachingAssignments;
+        this.homeroomAssignments = homeroomAssignments;
         this.workspaceTransaction = workspaceTransaction;
     }
 
@@ -62,18 +81,22 @@ public class TeachingRevocationContributor {
         Objects.requireNonNull(teacherUserId, "teacherUserId");
         workspaceTransaction.applyContext(workspaceId);
         List<String> targets = new ArrayList<>();
-        repository
-                .currentHomeroomClassIdsOfUser(workspaceId, teacherUserId)
+        homeroomAssignments
+                .findClassIdByWorkspaceIdAndTeacherUserIdAndStateIn(
+                        workspaceId, teacherUserId, CURRENT_STATES)
                 .forEach(classId ->
                         targets.add(NativePolicyTemplates.classKey(workspaceId, classId)));
-        repository
-                .currentTeachingCourseSubjectIdsOfUser(workspaceId, teacherUserId)
+        teachingAssignments
+                .findCourseSubjectIdByWorkspaceIdAndTeacherUserIdAndStateIn(
+                        workspaceId, teacherUserId, CURRENT_STATES)
                 .forEach(courseSubjectId ->
                         targets.add(
                                 NativePolicyTemplates.courseSubjectKey(
                                         workspaceId, courseSubjectId)));
-        repository.revokeTeachingAssignmentsOfUser(workspaceId, teacherUserId);
-        repository.revokeHomeroomAssignmentsOfUser(workspaceId, teacherUserId);
+        teachingAssignments.revokeCurrentByTeacherUserId(
+                workspaceId, teacherUserId, CURRENT_STATES);
+        homeroomAssignments.revokeCurrentByTeacherUserId(
+                workspaceId, teacherUserId, CURRENT_STATES);
         return List.copyOf(targets);
     }
 
@@ -83,13 +106,13 @@ public class TeachingRevocationContributor {
         Objects.requireNonNull(studentUserId, "studentUserId");
         workspaceTransaction.applyContext(workspaceId);
         List<String> targets = new ArrayList<>();
-        repository
-                .currentEnrolledCourseSubjectIdsOfStudent(workspaceId, studentUserId)
+        enrollments
+                .findCourseSubjectIdsByStudentUserId(workspaceId, studentUserId, CURRENT_STATES)
                 .forEach(courseSubjectId ->
                         targets.add(
                                 NativePolicyTemplates.courseSubjectKey(
                                         workspaceId, courseSubjectId)));
-        repository.revokeEnrollmentsOfStudent(workspaceId, studentUserId);
+        enrollments.revokeCurrentByStudentUserId(workspaceId, studentUserId, CURRENT_STATES);
         return List.copyOf(targets);
     }
 
@@ -99,7 +122,8 @@ public class TeachingRevocationContributor {
         Objects.requireNonNull(userId, "userId");
         List<String> targets = new ArrayList<>(revokeEnrollmentsOfStudent(workspaceId, userId));
         targets.addAll(revokeAssignmentsOfTeacher(workspaceId, userId));
-        repository.revokeRosterEntriesOfUser(workspaceId, userId);
+        classStudents.revokeCurrentByWorkspaceIdAndStudentUserId(
+                workspaceId, userId, CURRENT_STATES);
         return List.copyOf(targets);
     }
 
@@ -110,15 +134,15 @@ public class TeachingRevocationContributor {
         workspaceTransaction.applyContext(workspaceId);
         List<String> targets = new ArrayList<>();
         targets.add(NativePolicyTemplates.classKey(workspaceId, classId));
-        repository
-                .courseSubjectIdsOfClass(workspaceId, classId)
+        courseSubjects
+                .findIdsByWorkspaceIdAndClassId(workspaceId, classId)
                 .forEach(courseSubjectId ->
                         targets.add(
                                 NativePolicyTemplates.courseSubjectKey(
                                         workspaceId, courseSubjectId)));
-        repository.revokeEnrollmentsOfClass(workspaceId, classId);
-        repository.revokeTeachingAssignmentsOfClass(workspaceId, classId);
-        repository.revokeHomeroomAssignmentsOfClass(workspaceId, classId);
+        enrollments.revokeCurrentByClassId(workspaceId, classId, CURRENT_STATES);
+        teachingAssignments.revokeCurrentByClassId(workspaceId, classId, CURRENT_STATES);
+        homeroomAssignments.revokeCurrentByClassId(workspaceId, classId, CURRENT_STATES);
         return List.copyOf(targets);
     }
 
@@ -128,14 +152,14 @@ public class TeachingRevocationContributor {
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
         List<String> targets = new ArrayList<>();
-        repository
-                .courseSubjectIdsOfCourse(workspaceId, courseId)
+        courseSubjects
+                .findIdsByWorkspaceIdAndCourseId(workspaceId, courseId)
                 .forEach(courseSubjectId ->
                         targets.add(
                                 NativePolicyTemplates.courseSubjectKey(
                                         workspaceId, courseSubjectId)));
-        repository.revokeEnrollmentsOfCourse(workspaceId, courseId);
-        repository.revokeTeachingAssignmentsOfCourse(workspaceId, courseId);
+        enrollments.revokeCurrentByCourseId(workspaceId, courseId, CURRENT_STATES);
+        teachingAssignments.revokeCurrentByCourseId(workspaceId, courseId, CURRENT_STATES);
         return List.copyOf(targets);
     }
 
@@ -144,8 +168,9 @@ public class TeachingRevocationContributor {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseSubjectId, "courseSubjectId");
         workspaceTransaction.applyContext(workspaceId);
-        repository.revokeEnrollmentsOfCourseSubject(workspaceId, courseSubjectId);
-        repository.revokeTeachingAssignmentsOfCourseSubject(workspaceId, courseSubjectId);
+        enrollments.revokeCurrentByCourseSubjectId(workspaceId, courseSubjectId, CURRENT_STATES);
+        teachingAssignments.revokeCurrentByCourseSubjectId(
+                workspaceId, courseSubjectId, CURRENT_STATES);
         return List.of(NativePolicyTemplates.courseSubjectKey(workspaceId, courseSubjectId));
     }
 }

@@ -1,18 +1,20 @@
 package com.giaokhoa.authorization.projection;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -49,7 +51,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class SourceRevocationCoordinator {
-    private final JdbcTemplate jdbc;
+    private final AuthzPartitionRepository partitions;
     private final AuthorizationOperationService operations;
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
@@ -58,14 +60,14 @@ public class SourceRevocationCoordinator {
     private final ResourcePolicyProjector resourceProjector;
 
     public SourceRevocationCoordinator(
-            JdbcTemplate jdbc,
+            AuthzPartitionRepository partitions,
             AuthorizationOperationService operations,
             CenterPolicyProjector centerProjector,
             TeachingPolicyProjector teachingProjector,
             PersonalTeachingPolicyProjector personalTeachingProjector,
             ResultPolicyProjector resultProjector,
             ResourcePolicyProjector resourceProjector) {
-        this.jdbc = jdbc;
+        this.partitions = partitions;
         this.operations = operations;
         this.centerProjector = centerProjector;
         this.teachingProjector = teachingProjector;
@@ -146,24 +148,19 @@ public class SourceRevocationCoordinator {
 
     /** Bundle giảng dạy của personal do projector riêng của personal dựng, tách khỏi center. */
     private boolean isPersonalWorkspace(UUID workspaceId) {
-        return !jdbc.queryForList(
-                        "SELECT id FROM workspace WHERE id = ? AND kind = 'PERSONAL'",
-                        UUID.class,
-                        workspaceId)
-                .isEmpty();
+        return partitions
+                .findWorkspaceById(workspaceId)
+                .map(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
+                .orElse(false);
     }
 
     private UUID workspacePartition(UUID workspaceId) {
-        List<UUID> partitions =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'WORKSPACE'"
-                                + " AND owner_key = ?",
-                        UUID.class,
-                        "workspace:" + workspaceId);
-        if (partitions.isEmpty()) {
-            throw new IllegalStateException(
-                    "Workspace authorization partition is missing: " + workspaceId);
-        }
-        return partitions.getFirst();
+        return partitions
+                .findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
+                .map(AuthorizationPartition::getId)
+                .orElseThrow(() ->
+                        new IllegalStateException(
+                                "Workspace authorization partition is missing: " + workspaceId));
     }
 }

@@ -4,19 +4,25 @@ import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
+import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.subscriptions.SubscriptionPeriodRow;
+import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
+import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
+import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 /**
@@ -32,6 +38,10 @@ import org.springframework.stereotype.Component;
  * ghi (qua {@link CenterService}), vừa dựng lại đúng tập đó khi {@code ProjectionReconciler} đối
  * chiếu desired hash, và đồng bộ membership thật của từng user vào các realm group khi reconcile —
  * group policy chỉ cấp cho người thật sự đang ở trong group.
+ *
+ * <p>Dữ kiện nguồn đọc qua repository của directory (membership ở schema tenant, workspace/account
+ * ở schema hệ thống, kỳ gói qua repository dùng chung của subscriptions), luôn theo ID chứ không
+ * join xuyên mặt phẳng.
  */
 @Component
 public class CenterPolicyProjector {
@@ -81,11 +91,22 @@ public class CenterPolicyProjector {
         return Map.copyOf(sources);
     }
 
-    private final JdbcTemplate jdbc;
+    private final CenterMembershipRepository memberships;
+    private final WorkspaceRepository workspaces;
+    private final UserAccountRepository accounts;
+    private final SubscriptionPeriodRepository periods;
     private final AuthorizationProvisioningClient directory;
 
-    public CenterPolicyProjector(JdbcTemplate jdbc, AuthorizationProvisioningClient directory) {
-        this.jdbc = jdbc;
+    public CenterPolicyProjector(
+            CenterMembershipRepository memberships,
+            WorkspaceRepository workspaces,
+            UserAccountRepository accounts,
+            SubscriptionPeriodRepository periods,
+            AuthorizationProvisioningClient directory) {
+        this.memberships = memberships;
+        this.workspaces = workspaces;
+        this.accounts = accounts;
+        this.periods = periods;
         this.directory = directory;
     }
 
@@ -153,16 +174,16 @@ public class CenterPolicyProjector {
                                 workspaceId, NativePolicyTemplates.PrerequisiteRole.STUDENTS),
                         NativePolicyTemplates.prerequisiteRoleGroup(
                                 workspaceId, NativePolicyTemplates.PrerequisiteRole.PARENTS));
-        List<Map<String, Object>> members =
-                jdbc.queryForList(
-                        "SELECT DISTINCT m.user_id, u.keycloak_sub FROM center_membership m"
-                                + " JOIN user_account u ON u.id = m.user_id"
-                                + " WHERE m.workspace_id = ?",
-                        workspaceId);
-        for (Map<String, Object> member : members) {
-            UUID userId = (UUID) Objects.requireNonNull(member.get("user_id"), "user_id");
-            String subject =
-                    Objects.requireNonNull((String) member.get("keycloak_sub"), "keycloak_sub");
+        List<UUID> userIds = memberships.findDistinctUserIdsByWorkspaceId(workspaceId);
+        Map<UUID, String> subjects =
+                accounts.findByIdIn(userIds).stream()
+                        .collect(Collectors.toMap(UserAccount::getId, UserAccount::getKeycloakSub));
+        for (UUID userId : userIds) {
+            String subject = subjects.get(userId);
+            if (subject == null) {
+                // Membership trỏ tới account không còn: không có subject để đồng bộ group.
+                continue;
+            }
             Set<String> desired = desiredGroups(workspaceId, userId);
             for (String groupPath : groupPaths) {
                 boolean shouldBeMember = desired.contains(groupPath);
@@ -175,26 +196,15 @@ public class CenterPolicyProjector {
 
     private Set<String> desiredGroups(UUID workspaceId, UUID userId) {
         Set<String> groups = new java.util.HashSet<>();
-        if (jdbc.queryForList(
-                        "SELECT id FROM center_membership WHERE workspace_id = ? AND user_id = ?"
-                                + " AND state = 'ACTIVE'",
-                        UUID.class,
-                        workspaceId,
-                        userId)
-                .isEmpty()) {
+        var membership =
+                memberships.findByWorkspaceIdAndUserIdAndState(
+                        workspaceId, userId, CenterMembership.State.ACTIVE);
+        if (membership.isEmpty()) {
             return Set.of();
         }
         groups.add(NativePolicyTemplates.membersGroup(workspaceId));
         Set<MembershipRole.Role> roles = EnumSet.noneOf(MembershipRole.Role.class);
-        jdbc.queryForList(
-                        "SELECT r.role FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = ? AND m.user_id = ?"
-                                + " AND m.state = 'ACTIVE'",
-                        String.class,
-                        workspaceId,
-                        userId)
-                .forEach(role -> roles.add(MembershipRole.Role.valueOf(role)));
+        roles.addAll(membership.get().getRoles());
         if (roles.contains(MembershipRole.Role.OWNER)) {
             groups.add(NativePolicyTemplates.ownersGroup(workspaceId));
         }
@@ -220,49 +230,32 @@ public class CenterPolicyProjector {
     }
 
     private boolean isCenter(UUID workspaceId) {
-        return !jdbc.queryForList(
-                        "SELECT id FROM workspace WHERE id = ? AND kind = 'CENTER'",
-                        UUID.class,
-                        workspaceId)
-                .isEmpty();
+        return workspaces.existsByIdAndKind(workspaceId, Workspace.Kind.CENTER);
     }
 
     private boolean groupHasActiveMember(UUID workspaceId, String groupKind) {
-        String condition =
+        if (MEMBERS.equals(groupKind)) {
+            return memberships.existsByWorkspaceIdAndState(
+                    workspaceId, CenterMembership.State.ACTIVE);
+        }
+        MembershipRole.Role role =
                 switch (groupKind) {
-                    case MEMBERS -> "";
-                    case OWNERS -> " AND r.role = 'OWNER'";
-                    case MANAGERS -> " AND r.role = 'MANAGER'";
-                    case PARENTS -> " AND r.role = 'PARENT'";
+                    case OWNERS -> MembershipRole.Role.OWNER;
+                    case MANAGERS -> MembershipRole.Role.MANAGER;
+                    case PARENTS -> MembershipRole.Role.PARENT;
                     default ->
                             throw new IllegalArgumentException("Unknown group kind: " + groupKind);
                 };
-        String sql =
-                MEMBERS.equals(groupKind)
-                        ? "SELECT id FROM center_membership WHERE workspace_id = ?"
-                                + " AND state = 'ACTIVE' LIMIT 1"
-                        : "SELECT m.id FROM center_membership m"
-                                + " JOIN membership_role r ON r.membership_id = m.id"
-                                + " WHERE m.workspace_id = ? AND m.state = 'ACTIVE'"
-                                + condition
-                                + " LIMIT 1";
-        return !jdbc.queryForList(sql, UUID.class, workspaceId).isEmpty();
+        return !memberships
+                .findIdsByWorkspaceIdAndStateAndRole(
+                        workspaceId, CenterMembership.State.ACTIVE, role, PageRequest.of(0, 1))
+                .isEmpty();
     }
 
     private List<SubscriptionPeriodRow> subscriptionPeriods(UUID workspaceId) {
-        return jdbc.query(
-                "SELECT id, valid_from, expires_at FROM subscription_period"
-                        + " WHERE workspace_id = ? ORDER BY valid_from, id",
-                (rs, _) ->
-                        new SubscriptionPeriodRow(
-                                rs.getObject("id", UUID.class),
-                                Objects.requireNonNull(
-                                                rs.getObject("valid_from", OffsetDateTime.class))
-                                        .toInstant(),
-                                Objects.requireNonNull(
-                                                rs.getObject("expires_at", OffsetDateTime.class))
-                                        .toInstant()),
-                workspaceId);
+        return periods.findByWorkspaceIdOrderByValidFromAscIdAsc(workspaceId).stream()
+                .map(SubscriptionPeriodRow::from)
+                .toList();
     }
 
     private static String groupPath(UUID workspaceId, String groupKind) {

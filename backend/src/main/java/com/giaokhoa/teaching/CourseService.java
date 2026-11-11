@@ -2,13 +2,22 @@ package com.giaokhoa.teaching;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
-import com.giaokhoa.teaching.data.TeachingRepository.CourseRow;
-import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectRow;
-import com.giaokhoa.teaching.data.TeachingRepository.SubjectRow;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.teaching.model.Course;
+import com.giaokhoa.teaching.model.CourseSubject;
+import com.giaokhoa.teaching.model.Subject;
+import com.giaokhoa.teaching.repository.CourseRepository;
+import com.giaokhoa.teaching.repository.CourseSubjectRepository;
+import com.giaokhoa.teaching.repository.SchoolClassRepository;
+import com.giaokhoa.teaching.repository.SubjectRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -21,11 +30,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Nghiệp vụ khóa, môn của khóa và danh mục môn ở tầng dữ kiện nguồn: tạo/đổi tên/thu hồi khóa,
- * gắn/gỡ môn của khóa, đọc danh mục môn tham chiếu. Mọi thao tác đi qua {@link TeachingRepository}
- * đã khóa phạm vi theo workspace và lớp cha. Như {@link ClassService}, mỗi phương thức có phạm vi
- * workspace đặt context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt đầu
- * để RLS ở tầng DB khóa đúng cùng phạm vi; riêng danh mục môn là dữ liệu dùng chung, không có RLS
- * nên không cần context. Mọi phương thức ghi giữ khóa workspace thống nhất qua {@link
+ * gắn/gỡ môn của khóa, đọc danh mục môn tham chiếu. Mọi thao tác đi qua các repository đã khóa phạm
+ * vi theo workspace và lớp cha. Như {@link ClassService}, mỗi phương thức có phạm vi workspace đặt
+ * context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt đầu để RLS ở tầng
+ * DB khóa đúng cùng phạm vi; riêng danh mục môn là dữ liệu dùng chung, không có RLS nên không cần
+ * context. Mọi phương thức ghi giữ khóa workspace thống nhất qua {@link
  * ResourceMutationCoordinator} ngay sau khi đặt context, như {@link ClassService}.
  *
  * <p>Như {@link ClassService}, service này chỉ giữ bất biến dữ kiện và trạng thái — không tự quyết
@@ -38,17 +47,35 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class CourseService {
-    private final TeachingRepository repository;
+    private static final String ACTIVE = "ACTIVE";
+    private static final List<String> CURRENT_STATES = List.of("PENDING", ACTIVE);
+
+    private final SchoolClassRepository schoolClasses;
+    private final CourseRepository courses;
+    private final CourseSubjectRepository courseSubjects;
+    private final SubjectRepository subjects;
+    private final TeachingPageRepository pages;
+    private final TeachingScopePreconditions preconditions;
     private final WorkspaceTransaction workspaceTransaction;
     private final ResourceMutationCoordinator coordinator;
     private final TeachingRevocationContributor revocationContributor;
 
     public CourseService(
-            TeachingRepository repository,
+            SchoolClassRepository schoolClasses,
+            CourseRepository courses,
+            CourseSubjectRepository courseSubjects,
+            SubjectRepository subjects,
+            TeachingPageRepository pages,
+            TeachingScopePreconditions preconditions,
             WorkspaceTransaction workspaceTransaction,
             ResourceMutationCoordinator coordinator,
             TeachingRevocationContributor revocationContributor) {
-        this.repository = repository;
+        this.schoolClasses = schoolClasses;
+        this.courses = courses;
+        this.courseSubjects = courseSubjects;
+        this.subjects = subjects;
+        this.pages = pages;
+        this.preconditions = preconditions;
         this.workspaceTransaction = workspaceTransaction;
         this.coordinator = coordinator;
         this.revocationContributor = revocationContributor;
@@ -80,26 +107,28 @@ public class CourseService {
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
         String trimmed = normalizeName(name);
-        List<UUID> subjects = requireSubjects(subjectIds);
-        var clazz = repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        boolean classRevoked = "REVOKED".equals(clazz.state());
+        List<UUID> requested = requireSubjects(subjectIds);
+        var clazz =
+                schoolClasses
+                        .lockByWorkspaceIdAndId(workspaceId, classId)
+                        .orElseThrow(() -> classNotFound());
+        boolean classRevoked = "REVOKED".equals(clazz.getState());
         if (classRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CLASS_NOT_ACTIVE,
                     "Lớp đã bị thu hồi, không tạo khóa được nữa.");
         }
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
-        List<SubjectRow> catalog = subjects.stream().map(this::requireCatalogSubject).toList();
+        preconditions.requireSubscriptionCurrent(workspaceId);
+        List<Subject> catalog = requested.stream().map(this::requireCatalogSubject).toList();
         UUID courseId = UUID.randomUUID();
-        repository.insertCourse(courseId, workspaceId, classId, trimmed);
-        for (SubjectRow subject : catalog) {
-            repository.insertCourseSubject(
-                    UUID.randomUUID(), workspaceId, classId, courseId, subject.id());
+        Course course = courses.save(new Course(courseId, workspaceId, classId, trimmed));
+        for (Subject subject : catalog) {
+            courseSubjects.save(
+                    new CourseSubject(
+                            UUID.randomUUID(), workspaceId, classId, courseId, subject.getId()));
         }
-        return view(
-                new CourseRow(courseId, workspaceId, classId, trimmed, "ACTIVE", 0),
-                repository.listCurrentCourseSubjects(workspaceId, courseId));
+        return view(course, course.getVersion(), listCurrentSubjectEntries(workspaceId, courseId));
     }
 
     /** Một khóa trong đúng workspace kèm môn hiện hành; khóa ngoài workspace trả 404. */
@@ -108,22 +137,30 @@ public class CourseService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
-        CourseRow row =
-                repository.findCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
-        return view(row, repository.listCurrentCourseSubjects(workspaceId, courseId));
+        Course row =
+                courses.findByWorkspaceIdAndId(workspaceId, courseId)
+                        .orElseThrow(() -> courseNotFound());
+        return view(row, row.getVersion(), listCurrentSubjectEntries(workspaceId, courseId));
     }
 
     @Transactional(readOnly = true)
-    public TeachingRepository.Page<CourseView> pageCourses(
+    public Page<CourseView> pageCourses(
             UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
         workspaceTransaction.applyContext(workspaceId);
-        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        TeachingRepository.Page<CourseRow> page =
-                repository.pageCourses(workspaceId, classId, cursor, limit);
-        Map<UUID, List<CourseSubjectRow>> subjects =
-                repository.currentSubjectsByCourse(
-                        workspaceId, page.items().stream().map(row -> row.id()).toList());
-        return page.map(row -> view(row, subjects.getOrDefault(row.id(), List.of())));
+        schoolClasses
+                .findByWorkspaceIdAndId(workspaceId, classId)
+                .orElseThrow(() -> classNotFound());
+        var page = pages.pageCourses(workspaceId, classId, cursor, limit);
+        Map<UUID, List<SubjectEntry>> subjects =
+                subjectsByCourse(
+                        workspaceId, page.items().stream().map(item -> item.getId()).toList());
+        return page.map(item ->
+                new CourseView(
+                        item.getId(),
+                        item.getClassId(),
+                        item.getName(),
+                        subjects.getOrDefault(item.getId(), List.of()),
+                        item.getVersion()));
     }
 
     /** Các khóa hiện hành của một lớp trong workspace, cũ nhất trước, kèm môn hiện hành. */
@@ -132,13 +169,17 @@ public class CourseService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
-        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        List<CourseRow> rows = repository.listCourses(workspaceId, classId);
-        Map<UUID, List<CourseSubjectRow>> subjects =
-                repository.currentSubjectsByCourse(
-                        workspaceId, rows.stream().map(row -> row.id()).toList());
+        schoolClasses
+                .findByWorkspaceIdAndId(workspaceId, classId)
+                .orElseThrow(() -> classNotFound());
+        List<Course> rows =
+                courses.findByWorkspaceIdAndClassIdAndStateOrderByCreatedAtAscIdAsc(
+                        workspaceId, classId, ACTIVE);
+        Map<UUID, List<SubjectEntry>> subjects =
+                subjectsByCourse(workspaceId, rows.stream().map(Course::getId).toList());
         return rows.stream()
-                .map(row -> view(row, subjects.getOrDefault(row.id(), List.of())))
+                .map(row ->
+                        view(row, row.getVersion(), subjects.getOrDefault(row.getId(), List.of())))
                 .toList();
     }
 
@@ -155,27 +196,20 @@ public class CourseService {
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
         String trimmed = normalizeName(name);
-        CourseRow row =
-                repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        Course row =
+                courses.lockByWorkspaceIdAndId(workspaceId, courseId)
+                        .orElseThrow(() -> courseNotFound());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.COURSE_ALREADY_REVOKED,
                     "Khóa đã bị thu hồi trước đó.");
         }
-        requireClassActive(workspaceId, row.classId());
-        IdempotencyService.requireIfMatch(ifMatch, row.version());
-        repository.renameCourse(courseId, trimmed);
-        return view(
-                new CourseRow(
-                        row.id(),
-                        row.workspaceId(),
-                        row.classId(),
-                        trimmed,
-                        row.state(),
-                        row.version() + 1),
-                repository.listCurrentCourseSubjects(workspaceId, courseId));
+        requireClassActive(workspaceId, row.getClassId());
+        IdempotencyService.requireIfMatch(ifMatch, row.getVersion());
+        row.rename(trimmed);
+        return view(row, row.getVersion() + 1, listCurrentSubjectEntries(workspaceId, courseId));
     }
 
     /**
@@ -189,26 +223,19 @@ public class CourseService {
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
-        CourseRow row =
-                repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        Course row =
+                courses.lockByWorkspaceIdAndId(workspaceId, courseId)
+                        .orElseThrow(() -> courseNotFound());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.COURSE_ALREADY_REVOKED,
                     "Khóa đã bị thu hồi trước đó.");
         }
-        repository.revokeCourse(courseId);
+        row.revoke();
         revocationContributor.revokeDependentsOfCourse(workspaceId, courseId);
-        return view(
-                new CourseRow(
-                        row.id(),
-                        row.workspaceId(),
-                        row.classId(),
-                        row.name(),
-                        "REVOKED",
-                        row.version() + 1),
-                repository.listCurrentCourseSubjects(workspaceId, courseId));
+        return view(row, row.getVersion() + 1, listCurrentSubjectEntries(workspaceId, courseId));
     }
 
     /**
@@ -222,28 +249,35 @@ public class CourseService {
         Objects.requireNonNull(courseId, "courseId");
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
-        List<UUID> subjects = requireSubjects(subjectIds);
-        CourseRow row =
-                repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
-        boolean courseRevoked = "REVOKED".equals(row.state());
+        List<UUID> requested = requireSubjects(subjectIds);
+        Course row =
+                courses.lockByWorkspaceIdAndId(workspaceId, courseId)
+                        .orElseThrow(() -> courseNotFound());
+        boolean courseRevoked = "REVOKED".equals(row.getState());
         if (courseRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.COURSE_NOT_ACTIVE,
                     "Khóa đã bị thu hồi, không gắn thêm môn được nữa.");
         }
-        requireClassActive(workspaceId, row.classId());
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
-        List<SubjectRow> catalog = subjects.stream().map(this::requireCatalogSubject).toList();
-        for (SubjectRow subject : catalog) {
-            if (repository
-                    .findCurrentCourseSubject(workspaceId, courseId, subject.id())
+        requireClassActive(workspaceId, row.getClassId());
+        preconditions.requireSubscriptionCurrent(workspaceId);
+        List<Subject> catalog = requested.stream().map(this::requireCatalogSubject).toList();
+        for (Subject subject : catalog) {
+            if (courseSubjects
+                    .findByWorkspaceIdAndCourseIdAndSubjectIdAndStateIn(
+                            workspaceId, courseId, subject.getId(), CURRENT_STATES)
                     .isEmpty()) {
-                repository.insertCourseSubject(
-                        UUID.randomUUID(), workspaceId, row.classId(), courseId, subject.id());
+                courseSubjects.save(
+                        new CourseSubject(
+                                UUID.randomUUID(),
+                                workspaceId,
+                                row.getClassId(),
+                                courseId,
+                                subject.getId()));
             }
         }
-        return view(row, repository.listCurrentCourseSubjects(workspaceId, courseId));
+        return view(row, row.getVersion(), listCurrentSubjectEntries(workspaceId, courseId));
     }
 
     /**
@@ -258,42 +292,96 @@ public class CourseService {
         Objects.requireNonNull(courseSubjectId, "courseSubjectId");
         workspaceTransaction.applyContext(workspaceId);
         coordinator.lockWorkspace(workspaceId);
-        CourseRow row =
-                repository.lockCourse(workspaceId, courseId).orElseThrow(() -> courseNotFound());
-        CourseSubjectRow subject =
-                repository
-                        .lockCourseSubject(workspaceId, courseId, courseSubjectId)
+        Course row =
+                courses.lockByWorkspaceIdAndId(workspaceId, courseId)
+                        .orElseThrow(() -> courseNotFound());
+        CourseSubject subject =
+                courseSubjects
+                        .lockByWorkspaceIdAndCourseIdAndId(workspaceId, courseId, courseSubjectId)
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
                                         ErrorCodes.COURSE_SUBJECT_NOT_FOUND,
                                         "Không tìm thấy môn trong khóa này."));
-        boolean subjectRevoked = "REVOKED".equals(subject.state());
+        boolean subjectRevoked = "REVOKED".equals(subject.getState());
         if (subjectRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.COURSE_SUBJECT_ALREADY_REVOKED,
                     "Môn đã được gỡ khỏi khóa trước đó.");
         }
-        repository.revokeCourseSubject(courseSubjectId);
+        subject.revoke();
         revocationContributor.revokeDependentsOfCourseSubject(workspaceId, courseSubjectId);
-        return view(row, repository.listCurrentCourseSubjects(workspaceId, courseId));
+        return view(row, row.getVersion(), listCurrentSubjectEntries(workspaceId, courseId));
     }
 
     /** Danh mục môn tham chiếu đang ACTIVE; danh mục không chứa dữ liệu riêng của workspace nào. */
     @Transactional(readOnly = true)
     public List<SubjectView> listSubjects() {
-        return repository.listSubjects().stream()
-                .map(subject -> new SubjectView(subject.id(), subject.code(), subject.name()))
+        return subjects.findByStateOrderByCodeAsc(ACTIVE).stream()
+                .map(subject ->
+                        new SubjectView(subject.getId(), subject.getCode(), subject.getName()))
+                .toList();
+    }
+
+    /** Các môn hiện hành của một khóa kèm tên danh mục, theo mã môn rồi tới id của dòng. */
+    private List<SubjectEntry> listCurrentSubjectEntries(UUID workspaceId, UUID courseId) {
+        List<CourseSubject> rows =
+                courseSubjects.findByWorkspaceIdAndCourseIdAndStateIn(
+                        workspaceId, courseId, CURRENT_STATES);
+        return subjectEntries(rows, catalogById(rows));
+    }
+
+    /** Nạp môn của tối đa một trang khóa bằng một truy vấn thay vì một query cho mỗi khóa. */
+    private Map<UUID, List<SubjectEntry>> subjectsByCourse(UUID workspaceId, List<UUID> courseIds) {
+        if (courseIds.isEmpty()) {
+            return Map.of();
+        }
+        List<CourseSubject> rows =
+                courseSubjects.findByWorkspaceIdAndCourseIdInAndStateIn(
+                        workspaceId, courseIds, CURRENT_STATES);
+        Map<UUID, Subject> catalog = catalogById(rows);
+        Map<UUID, List<CourseSubject>> byCourse = new LinkedHashMap<>();
+        for (CourseSubject row : rows) {
+            byCourse.computeIfAbsent(row.getCourseId(), _ -> new ArrayList<>()).add(row);
+        }
+        Map<UUID, List<SubjectEntry>> entries = new LinkedHashMap<>();
+        byCourse.forEach((courseId, list) -> entries.put(courseId, subjectEntries(list, catalog)));
+        return entries;
+    }
+
+    private Map<UUID, Subject> catalogById(List<CourseSubject> rows) {
+        Map<UUID, Subject> catalog = new HashMap<>();
+        subjects.findAllById(rows.stream().map(CourseSubject::getSubjectId).distinct().toList())
+                .forEach(subject -> catalog.put(subject.getId(), subject));
+        return catalog;
+    }
+
+    private static List<SubjectEntry> subjectEntries(
+            List<CourseSubject> rows, Map<UUID, Subject> catalog) {
+        // Tên và mã môn thuộc danh mục hệ thống: phân giải theo lô từ ID rồi sắp xếp ở tầng
+        // ứng dụng theo đúng thứ tự (mã môn, id dòng) của tầng JDBC cũ.
+        return rows.stream()
+                .filter(row -> catalog.containsKey(row.getSubjectId()))
+                .sorted(
+                        Comparator.comparing((CourseSubject row) ->
+                                        Objects.requireNonNull(catalog.get(row.getSubjectId()))
+                                                .getCode())
+                                .thenComparing(CourseSubject::getId))
+                .map(row ->
+                        new SubjectEntry(
+                                row.getId(),
+                                row.getSubjectId(),
+                                Objects.requireNonNull(catalog.get(row.getSubjectId())).getName()))
                 .toList();
     }
 
     private void requireClassActive(UUID workspaceId, UUID classId) {
         var clazz =
-                repository
-                        .findClass(workspaceId, classId)
+                schoolClasses
+                        .findByWorkspaceIdAndId(workspaceId, classId)
                         .orElseThrow(CourseService::classNotFound);
-        if (!"ACTIVE".equals(clazz.state())) {
+        if (!ACTIVE.equals(clazz.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CLASS_NOT_ACTIVE,
@@ -303,19 +391,19 @@ public class CourseService {
 
     private List<UUID> requireSubjects(List<UUID> subjectIds) {
         Objects.requireNonNull(subjectIds, "subjectIds");
-        List<UUID> subjects = List.copyOf(new LinkedHashSet<>(subjectIds));
-        if (subjects.isEmpty()) {
+        List<UUID> requested = List.copyOf(new LinkedHashSet<>(subjectIds));
+        if (requested.isEmpty()) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
                     ErrorCodes.COURSE_REQUIRES_SUBJECTS,
                     "Khóa phải có ít nhất một môn.");
         }
-        return subjects;
+        return requested;
     }
 
-    private SubjectRow requireCatalogSubject(UUID subjectId) {
-        SubjectRow subject = repository.findSubject(subjectId).orElseThrow(() -> subjectNotFound());
-        if (!"ACTIVE".equals(subject.state())) {
+    private Subject requireCatalogSubject(UUID subjectId) {
+        Subject subject = subjects.findById(subjectId).orElseThrow(() -> subjectNotFound());
+        if (!ACTIVE.equals(subject.getState())) {
             throw subjectNotFound();
         }
         return subject;
@@ -352,16 +440,7 @@ public class CourseService {
                 "Môn không có trong danh mục đang hoạt động.");
     }
 
-    private static CourseView view(CourseRow row, List<CourseSubjectRow> subjects) {
-        return new CourseView(
-                row.id(),
-                row.classId(),
-                row.name(),
-                subjects.stream()
-                        .map(subject ->
-                                new SubjectEntry(
-                                        subject.id(), subject.subjectId(), subject.subjectName()))
-                        .toList(),
-                row.version());
+    private static CourseView view(Course row, long version, List<SubjectEntry> subjects) {
+        return new CourseView(row.getId(), row.getClassId(), row.getName(), subjects, version);
     }
 }

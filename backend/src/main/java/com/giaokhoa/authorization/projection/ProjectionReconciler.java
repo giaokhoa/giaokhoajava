@@ -9,7 +9,10 @@ import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter.AppliedGraph;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.guardians.GuardianPolicyProjector;
+import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.resources.SharePolicyProjector;
 import com.giaokhoa.shared.Sha256;
@@ -17,10 +20,8 @@ import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.verification.ResultPolicyProjector;
-import java.sql.Array;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -37,8 +38,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -65,27 +64,8 @@ public class ProjectionReconciler {
     public static final String ERROR_DEPENDENCY_NOT_READY = "DEPENDENCY_NOT_READY";
     public static final String ERROR_REVISION_SUPERSEDED = "REVISION_SUPERSEDED";
 
-    private static final RowMapper<PartitionRow> PARTITION_MAPPER =
-            (rs, _) ->
-                    new PartitionRow(
-                            rs.getObject("id", UUID.class),
-                            rs.getLong("desired_revision"),
-                            rs.getLong("applied_revision"),
-                            AuthorizationPartition.State.valueOf(rs.getString("state")));
-    private static final RowMapper<ProjectionRow> PROJECTION_MAPPER =
-            (rs, _) ->
-                    new ProjectionRow(
-                            rs.getObject("id", UUID.class),
-                            rs.getObject("partition_id", UUID.class),
-                            rs.getString("target_key"),
-                            rs.getString("keycloak_resource_id"),
-                            stringList(rs, "policy_names"),
-                            uuidList(rs, "dependency_partition_ids"),
-                            rs.getString("desired_hash"),
-                            rs.getString("applied_hash"),
-                            AuthorizationProjection.State.valueOf(rs.getString("state")));
-
-    private final JdbcTemplate jdbc;
+    private final AuthzPartitionRepository partitions;
+    private final AuthzProjectionRepository projections;
     private final PolicyGraphWriter writer;
     private final AuthorizationProvisioningClient directory;
     private final CenterPolicyProjector centerProjector;
@@ -100,7 +80,8 @@ public class ProjectionReconciler {
     private final ResourceMutationCoordinator coordinator;
 
     public ProjectionReconciler(
-            JdbcTemplate jdbc,
+            AuthzPartitionRepository partitions,
+            AuthzProjectionRepository projections,
             PolicyGraphWriter writer,
             AuthorizationProvisioningClient directory,
             CenterPolicyProjector centerProjector,
@@ -113,7 +94,8 @@ public class ProjectionReconciler {
             PersonalTeachingPolicyProjector personalTeachingProjector,
             PlatformTransactionManager transactionManager,
             ResourceMutationCoordinator coordinator) {
-        this.jdbc = jdbc;
+        this.partitions = partitions;
+        this.projections = projections;
         this.writer = writer;
         this.directory = directory;
         this.centerProjector = centerProjector;
@@ -193,12 +175,32 @@ public class ProjectionReconciler {
     private record Outcome(
             ProjectionRow projection, Resolved resolved, @Nullable AppliedGraph applied) {}
 
+    private static PartitionRow rowOf(AuthorizationPartition partition) {
+        return new PartitionRow(
+                partition.getId(),
+                partition.getDesiredRevision(),
+                partition.getAppliedRevision(),
+                partition.getState());
+    }
+
+    private static ProjectionRow rowOf(AuthorizationProjection projection) {
+        return new ProjectionRow(
+                projection.getId(),
+                projection.getPartitionId(),
+                projection.getTargetKey(),
+                projection.getKeycloakResourceId(),
+                projection.getPolicyNames(),
+                projection.getDependencyPartitionIds(),
+                projection.getDesiredHash(),
+                projection.getAppliedHash(),
+                projection.getState());
+    }
+
     public PartitionRow partition(UUID partitionId) {
-        return jdbc.queryForObject(
-                "SELECT id, desired_revision, applied_revision, state FROM authz_partition"
-                        + " WHERE id = ?",
-                PARTITION_MAPPER,
-                partitionId);
+        return partitions
+                .findById(partitionId)
+                .map(ProjectionReconciler::rowOf)
+                .orElseThrow(() -> new EmptyResultDataAccessException(1));
     }
 
     /** Nạp nhiều partition trong một query, lập chỉ mục theo id cho các kiểm tra theo lô. */
@@ -207,29 +209,16 @@ public class ProjectionReconciler {
         if (partitionIds.isEmpty()) {
             return byId;
         }
-        for (PartitionRow row :
-                jdbc.query(
-                        "SELECT id, desired_revision, applied_revision, state"
-                                + " FROM authz_partition WHERE id = ANY(?)",
-                        ps ->
-                                ps.setArray(
-                                        1,
-                                        ps.getConnection()
-                                                .createArrayOf(
-                                                        "uuid", partitionIds.toArray(new UUID[0]))),
-                        PARTITION_MAPPER)) {
-            byId.put(row.id(), row);
+        for (AuthorizationPartition partition : partitions.findAllById(partitionIds)) {
+            byId.put(partition.getId(), rowOf(partition));
         }
         return byId;
     }
 
     public List<ProjectionRow> projectionsOf(UUID partitionId) {
-        return jdbc.query(
-                "SELECT id, partition_id, target_key, keycloak_resource_id, policy_names,"
-                        + " dependency_partition_ids, desired_hash, applied_hash, state"
-                        + " FROM authz_projection WHERE partition_id = ? ORDER BY target_key",
-                PROJECTION_MAPPER,
-                partitionId);
+        return projections.findByPartitionIdOrderByTargetKeyAsc(partitionId).stream()
+                .map(ProjectionReconciler::rowOf)
+                .toList();
     }
 
     /** Reconcile partition tại bất kỳ revision nào đang được mong muốn hiện tại. */
@@ -389,21 +378,20 @@ public class ProjectionReconciler {
      * reconciliation lỗi theo: fence giữ đóng thay vì publish READY trên membership cũ.
      */
     private void syncEligibilityMembership(UUID partitionId) {
-        List<Map<String, Object>> accounts =
-                jdbc.queryForList(
-                        "SELECT u.keycloak_sub, u.origin, u.email_verified FROM authz_partition p"
-                                + " JOIN user_account u ON 'account:' || u.id = p.owner_key"
-                                + " WHERE p.id = ? AND p.kind = 'ACCOUNT'",
-                        partitionId);
-        if (accounts.isEmpty()) {
+        Optional<AuthorizationPartition> partition = partitions.findById(partitionId);
+        if (partition.isEmpty()
+                || partition.get().getKind() != AuthorizationPartition.Kind.ACCOUNT) {
             return;
         }
-        Map<String, Object> account = accounts.getFirst();
-        String subject =
-                Objects.requireNonNull((String) account.get("keycloak_sub"), "keycloak_sub");
+        UUID userId = UUID.fromString(partition.get().getOwnerKey().substring("account:".length()));
+        Optional<UserAccount> account = partitions.findAccountById(userId);
+        if (account.isEmpty()) {
+            return;
+        }
+        String subject = Objects.requireNonNull(account.get().getKeycloakSub(), "keycloak_sub");
         boolean eligible =
-                "CENTER_ISSUED".equals(account.get("origin"))
-                        || Boolean.TRUE.equals(account.get("email_verified"));
+                account.get().getOrigin() == UserAccount.Origin.CENTER_ISSUED
+                        || account.get().isEmailVerified();
         if (directory.isRealmGroupMember(subject, NativePolicyTemplates.ELIGIBILITY_GROUP)
                 != eligible) {
             directory.setRealmGroupMembership(
@@ -419,35 +407,37 @@ public class ProjectionReconciler {
      * group đã tồn tại khi lấy id cho policy.
      */
     private void syncWorkspaceGroupMemberships(UUID partitionId) {
-        List<UUID> centers =
-                jdbc.queryForList(
-                        "SELECT w.id FROM authz_partition p"
-                                + " JOIN workspace w ON 'workspace:' || w.id = p.owner_key"
-                                + " WHERE p.id = ? AND p.kind = 'WORKSPACE' AND w.kind = 'CENTER'",
-                        UUID.class,
-                        partitionId);
-        if (!centers.isEmpty()) {
-            centerProjector.syncGroupMemberships(centers.getFirst());
-            // Cùng một vòng đối chiếu: group nguồn giảng dạy (giáo viên/chủ nhiệm/học sinh theo
-            // môn–khóa) cũng phải khớp membership hiện hành trước khi writer áp bundle.
-            teachingProjector.syncGroupMemberships(centers.getFirst());
-            // Và guardian group theo student: phép chiếu duy nhất biến một guardian link đã
-            // duyệt thành tư cách thành viên group mà policy của kết quả tham chiếu.
-            guardianProjector.syncGroupMemberships(centers.getFirst());
+        Optional<AuthorizationPartition> partition = partitions.findById(partitionId);
+        if (partition.isEmpty()
+                || partition.get().getKind() != AuthorizationPartition.Kind.WORKSPACE) {
+            return;
         }
+        UUID workspaceId =
+                UUID.fromString(partition.get().getOwnerKey().substring("workspace:".length()));
+        Optional<Workspace> workspace = partitions.findWorkspaceById(workspaceId);
+        if (workspace.isEmpty() || workspace.get().getKind() != Workspace.Kind.CENTER) {
+            return;
+        }
+        centerProjector.syncGroupMemberships(workspaceId);
+        // Cùng một vòng đối chiếu: group nguồn giảng dạy (giáo viên/chủ nhiệm/học sinh theo
+        // môn–khóa) cũng phải khớp membership hiện hành trước khi writer áp bundle.
+        teachingProjector.syncGroupMemberships(workspaceId);
+        // Và guardian group theo student: phép chiếu duy nhất biến một guardian link đã
+        // duyệt thành tư cách thành viên group mà policy của kết quả tham chiếu.
+        guardianProjector.syncGroupMemberships(workspaceId);
     }
 
     /** Fence một partition và các projection của nó; dùng trước khi sửa drift ngoài hệ thống. */
     public void fencePartition(UUID partitionId) {
         transactions.executeWithoutResult(_ -> {
-            jdbc.update(
-                    "UPDATE authz_partition SET state = 'PENDING', updated_at = now()"
-                            + " WHERE id = ? AND state = 'READY'",
-                    partitionId);
-            jdbc.update(
-                    "UPDATE authz_projection SET state = 'PENDING'"
-                            + " WHERE partition_id = ? AND state = 'READY'",
-                    partitionId);
+            partitions.fenceIfReady(
+                    partitionId,
+                    AuthorizationPartition.State.PENDING,
+                    AuthorizationPartition.State.READY);
+            projections.fenceReadyByPartitionId(
+                    partitionId,
+                    AuthorizationProjection.State.PENDING,
+                    AuthorizationProjection.State.READY);
         });
     }
 
@@ -582,16 +572,19 @@ public class ProjectionReconciler {
 
     private void publish(PartitionRow snapshot, List<Outcome> outcomes) {
         transactions.executeWithoutResult(_ -> {
-            PartitionRow current =
-                    Objects.requireNonNull(
-                            jdbc.queryForObject(
-                                    "SELECT id, desired_revision, applied_revision, state"
-                                            + " FROM authz_partition WHERE id = ? FOR UPDATE",
-                                    PARTITION_MAPPER,
-                                    snapshot.id()),
-                            "Authorization partition missing during reconciliation: "
-                                    + snapshot.id());
-            if (current.desiredRevision() != snapshot.desiredRevision()) {
+            AuthorizationPartition current =
+                    partitions
+                            .lockById(snapshot.id())
+                            .orElseThrow(() -> new EmptyResultDataAccessException(1));
+            // Kiểm tra bằng revision hiện hành tại cơ sở dữ liệu, không phải entity đã nạp:
+            // vòng reconcile chạy trong một session dài nên entity partition có thể cũ hơn
+            // DB, và flush entity cũ đó sẽ ghi revision đi lùi (trigger identity chặn lại
+            // thành lỗi dữ liệu thay vì lỗi superseded đúng giao thức).
+            long currentDesiredRevision =
+                    partitions
+                            .findDesiredRevisionById(snapshot.id())
+                            .orElseThrow(() -> new EmptyResultDataAccessException(1));
+            if (currentDesiredRevision != snapshot.desiredRevision()) {
                 throw new ReconciliationException(
                         ERROR_REVISION_SUPERSEDED,
                         "Desired revision changed during reconciliation");
@@ -600,31 +593,30 @@ public class ProjectionReconciler {
                 ProjectionRow projection = outcome.projection();
                 if (outcome.resolved() instanceof Resolved.Retract
                         || outcome.resolved() instanceof Resolved.RetractBundle) {
-                    jdbc.update("DELETE FROM authz_projection WHERE id = ?", projection.id());
+                    projections.deleteById(projection.id());
                 } else {
                     AppliedGraph applied = Objects.requireNonNull(outcome.applied());
-                    jdbc.update(
-                            "UPDATE authz_projection SET applied_hash = desired_hash,"
-                                    + " keycloak_resource_id = ?, policy_names = ?,"
-                                    + " state = 'READY' WHERE id = ?",
-                            ps -> {
-                                ps.setString(1, applied.resourceId());
-                                ps.setArray(
-                                        2,
-                                        ps.getConnection()
-                                                .createArrayOf(
-                                                        "text",
-                                                        applied.policyNames()
-                                                                .toArray(new String[0])));
-                                ps.setObject(3, projection.id());
-                            });
+                    AuthorizationProjection entity =
+                            projections
+                                    .findById(projection.id())
+                                    .orElseThrow(() -> new EmptyResultDataAccessException(1));
+                    // applied_hash lấy theo desired_hash hiện hành tại DB như câu UPDATE của
+                    // tầng JDBC cũ, không theo bản entity có thể đã cũ trong session.
+                    entity.setAppliedHash(
+                            projections
+                                    .findDesiredHashById(projection.id())
+                                    .orElseThrow(() -> new EmptyResultDataAccessException(1)));
+                    entity.setKeycloakResourceId(applied.resourceId());
+                    entity.setPolicyNames(applied.policyNames());
+                    entity.setState(AuthorizationProjection.State.READY);
                 }
             }
-            jdbc.update(
-                    "UPDATE authz_partition SET applied_revision = ?, state = 'READY',"
-                            + " updated_at = now() WHERE id = ?",
-                    snapshot.desiredRevision(),
-                    snapshot.id());
+            // Mọi thay đổi projection phải xuống cơ sở dữ liệu trước khi partition chuyển
+            // READY: trigger kiểm tra graph READY của partition ngay tại câu lệnh đổi trạng
+            // thái của nó.
+            projections.flush();
+            current.setAppliedRevision(snapshot.desiredRevision());
+            current.setState(AuthorizationPartition.State.READY);
         });
     }
 
@@ -751,22 +743,20 @@ public class ProjectionReconciler {
         UUID workspaceId =
                 UUID.fromString(
                         targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
-        return !jdbc.queryForList(
-                        "SELECT id FROM workspace WHERE id = ? AND kind = 'CENTER'",
-                        UUID.class,
-                        workspaceId)
-                .isEmpty();
+        return partitions
+                .findWorkspaceById(workspaceId)
+                .map(workspace -> workspace.getKind() == Workspace.Kind.CENTER)
+                .orElse(false);
     }
 
     private boolean isPersonalWorkspace(String targetKey) {
         UUID workspaceId =
                 UUID.fromString(
                         targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
-        return !jdbc.queryForList(
-                        "SELECT id FROM workspace WHERE id = ? AND kind = 'PERSONAL'",
-                        UUID.class,
-                        workspaceId)
-                .isEmpty();
+        return partitions
+                .findWorkspaceById(workspaceId)
+                .map(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
+                .orElse(false);
     }
 
     /**
@@ -891,8 +881,8 @@ public class ProjectionReconciler {
     /**
      * Bundle của một target kết quả thuộc workspace (center hoặc personal): cùng hình dạng với
      * bundle giảng dạy — desired hash đã ghi phải khớp đúng tập descriptor mà {@link
-     * ResultPolicyProjector} dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa READ của
-     * projector.
+     * ResultPolicyProjector} dựng lại từ dữ kiện nguồn hiện hành cho mọi scope, với scope danh
+     * nghĩa READ của projector.
      */
     private Resolved resolveResultBundle(ProjectionRow projection) {
         List<String> bundle = resultProjector.bundleDescriptors(projection.targetKey());
@@ -981,11 +971,16 @@ public class ProjectionReconciler {
             String targetKey, NativePolicyTemplates.TargetType type, String scope) {
         if (type == NativePolicyTemplates.TargetType.PROFILE) {
             UUID userId = UUID.fromString(targetKey.substring("account:".length()));
-            return jdbc.query(
-                    "SELECT keycloak_sub FROM user_account WHERE id = ?"
-                            + " AND (origin = 'CENTER_ISSUED' OR email_verified)",
-                    (rs, _) -> eligibilityDescriptor(userId, rs.getString(1), targetKey, scope),
-                    userId);
+            return partitions
+                    .findAccountById(userId)
+                    .filter(account ->
+                            account.getOrigin() == UserAccount.Origin.CENTER_ISSUED
+                                    || account.isEmailVerified())
+                    .map(account ->
+                            List.of(
+                                    eligibilityDescriptor(
+                                            userId, account.getKeycloakSub(), targetKey, scope)))
+                    .orElse(List.of());
         }
         if (type != NativePolicyTemplates.TargetType.WORKSPACE) {
             return List.of();
@@ -993,23 +988,22 @@ public class ProjectionReconciler {
         UUID workspaceId =
                 UUID.fromString(
                         targetKey.substring(NativePolicyTemplates.WORKSPACE_PREFIX.length()));
-        Optional<String> owner =
-                jdbc
-                        .query(
-                                "SELECT u.id, u.keycloak_sub FROM workspace w"
-                                        + " JOIN user_account u ON u.id = w.owner_user_id"
-                                        + " WHERE w.id = ? AND w.kind = 'PERSONAL'",
-                                (rs, _) ->
-                                        personalOwnerDescriptor(
-                                                workspaceId,
-                                                rs.getObject(1, UUID.class),
-                                                rs.getString(2),
-                                                targetKey,
-                                                scope),
-                                workspaceId)
-                        .stream()
-                        .findFirst();
-        return owner.map(List::of).orElse(List.of());
+        Optional<Workspace> workspace = partitions.findWorkspaceById(workspaceId);
+        if (workspace.isEmpty() || workspace.get().getKind() != Workspace.Kind.PERSONAL) {
+            return List.of();
+        }
+        UUID ownerUserId = workspace.get().getOwnerUserId();
+        return partitions
+                .findAccountById(ownerUserId)
+                .map(owner ->
+                        List.of(
+                                personalOwnerDescriptor(
+                                        workspaceId,
+                                        ownerUserId,
+                                        owner.getKeycloakSub(),
+                                        targetKey,
+                                        scope)))
+                .orElse(List.of());
     }
 
     /** Canonical source descriptor của personal owner, dựng lại từ các dòng owner bền vững. */
@@ -1140,31 +1134,5 @@ public class ProjectionReconciler {
             }
         }
         throw new IllegalArgumentException("Source descriptor has no subject: " + descriptor);
-    }
-
-    private static List<String> stringList(ResultSet rs, String column) throws SQLException {
-        Array array = rs.getArray(column);
-        if (array == null) {
-            return List.of();
-        }
-        Object[] raw = (Object[]) array.getArray();
-        List<String> out = new ArrayList<>(raw.length);
-        for (Object item : raw) {
-            out.add(String.valueOf(item));
-        }
-        return List.copyOf(out);
-    }
-
-    private static List<UUID> uuidList(ResultSet rs, String column) throws SQLException {
-        Array array = rs.getArray(column);
-        if (array == null) {
-            return List.of();
-        }
-        Object[] raw = (Object[]) array.getArray();
-        List<UUID> out = new ArrayList<>(raw.length);
-        for (Object item : raw) {
-            out.add(item instanceof UUID uuid ? uuid : UUID.fromString(String.valueOf(item)));
-        }
-        return List.copyOf(out);
     }
 }

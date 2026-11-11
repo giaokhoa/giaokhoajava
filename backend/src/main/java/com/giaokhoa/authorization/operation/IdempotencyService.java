@@ -1,9 +1,10 @@
 package com.giaokhoa.authorization.operation;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.repository.AuthorizationOperationRepository;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import jakarta.persistence.EntityManager;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -11,12 +12,13 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,15 +32,16 @@ public class IdempotencyService {
     private static final JsonMapper CANONICAL_JSON =
             JsonMapper.builder().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS).build();
 
-    private final JdbcTemplate jdbc;
-    private final EntityManager entities;
+    private final AuthorizationOperationRepository operations;
+    private final AuthzPartitionRepository partitions;
 
     public record OperationReceipt(
             UUID operationId, String state, boolean completed, String statusUrl) {}
 
-    public IdempotencyService(JdbcTemplate jdbc, EntityManager entities) {
-        this.jdbc = jdbc;
-        this.entities = entities;
+    public IdempotencyService(
+            AuthorizationOperationRepository operations, AuthzPartitionRepository partitions) {
+        this.operations = operations;
+        this.partitions = partitions;
     }
 
     public String requireKey(@Nullable String key) {
@@ -110,14 +113,7 @@ public class IdempotencyService {
 
     public Optional<AuthorizationOperation> findExisting(UUID actorId, String key, String hash) {
         requireKey(key);
-        var existing =
-                entities.createQuery(
-                                "select o from AuthorizationOperation o where o.initiatorUserId = :actor and o.idempotencyKey = :key",
-                                AuthorizationOperation.class)
-                        .setParameter("actor", actorId)
-                        .setParameter("key", key)
-                        .getResultStream()
-                        .findFirst();
+        var existing = operations.findByInitiatorUserIdAndIdempotencyKey(actorId, key);
         existing.ifPresent(operation -> {
             if (!operation.getPayloadHash().equals(hash)) {
                 throw new HttpProblemException(
@@ -133,45 +129,22 @@ public class IdempotencyService {
     @Transactional(propagation = Propagation.MANDATORY)
     public AuthorizationOperation executeOnce(AuthorizationOperation operation, Runnable mutation) {
         requireKey(operation.getIdempotencyKey());
-        UUID[] partitions = operation.getAffectedPartitions().clone();
-        // UUID.compareTo() dùng signed longs, khác thứ tự uuid của PostgreSQL.
-        Arrays.sort(partitions, Comparator.comparing((UUID partition) -> partition.toString()));
-        for (UUID partition : partitions) {
-            if (jdbc.queryForList(
-                            "SELECT id FROM authz_partition WHERE id = ? FOR UPDATE",
-                            UUID.class,
-                            partition)
-                    .isEmpty()) {
+        // UUID.compareTo() dùng signed longs, khác thứ tự uuid của PostgreSQL: sắp xếp theo
+        // chuỗi trước khi khóa để mọi transaction khóa partition theo cùng một thứ tự.
+        var partitionIds =
+                operation.getAffectedPartitions().stream()
+                        .sorted(Comparator.comparing(UUID::toString))
+                        .toList();
+        Set<UUID> locked =
+                partitions.lockAllForUpdate(partitionIds).stream()
+                        .map(partition -> partition.getId())
+                        .collect(Collectors.toSet());
+        for (UUID partition : partitionIds) {
+            if (!locked.contains(partition)) {
                 throw new IllegalArgumentException("Unknown authorization partition");
             }
         }
-        int created =
-                jdbc.update(
-                        """
-                        INSERT INTO authorization_operation
-                          (id, initiator_user_id, workspace_id, idempotency_key, payload_hash,
-                           affected_partitions, affected_revisions, desired_revision)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (initiator_user_id, idempotency_key) DO NOTHING
-                        """,
-                        ps -> {
-                            ps.setObject(1, operation.getId());
-                            ps.setObject(2, operation.getInitiatorUserId());
-                            ps.setObject(3, operation.getWorkspaceId());
-                            ps.setString(4, operation.getIdempotencyKey());
-                            ps.setString(5, operation.getPayloadHash());
-                            ps.setArray(
-                                    6,
-                                    ps.getConnection()
-                                            .createArrayOf(
-                                                    "uuid", operation.getAffectedPartitions()));
-                            ps.setArray(
-                                    7,
-                                    ps.getConnection()
-                                            .createArrayOf(
-                                                    "int8", operation.getAffectedRevisions()));
-                            ps.setLong(8, operation.getDesiredRevision());
-                        });
+        int created = operations.insertIfAbsent(operation);
         if (created > 0) {
             mutation.run();
             return operation;

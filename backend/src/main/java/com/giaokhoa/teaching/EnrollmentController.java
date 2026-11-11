@@ -4,7 +4,6 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -38,15 +37,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces/{workspaceId}")
 public class EnrollmentController {
     private final EnrollmentService enrollments;
-    private final TeachingRepository repository;
     private final TeachingRouteSupport support;
 
-    public EnrollmentController(
-            EnrollmentService enrollments,
-            TeachingRepository repository,
-            TeachingRouteSupport support) {
+    public EnrollmentController(EnrollmentService enrollments, TeachingRouteSupport support) {
         this.enrollments = enrollments;
-        this.repository = repository;
         this.support = support;
     }
 
@@ -71,13 +65,12 @@ public class EnrollmentController {
                 servletRequest,
                 workspaceId,
                 actor -> {
-                    repository
-                            .findCourseSubjectScope(workspaceId, courseSubjectId)
-                            .orElseThrow(() ->
-                                    new HttpProblemException(
-                                            HttpStatus.NOT_FOUND,
-                                            ErrorCodes.ENROLLMENT_TARGET_NOT_FOUND,
-                                            "Không tìm thấy môn–khóa trong workspace" + " này."));
+                    if (!support.courseSubjectExists(workspaceId, courseSubjectId)) {
+                        throw new HttpProblemException(
+                                HttpStatus.NOT_FOUND,
+                                ErrorCodes.ENROLLMENT_TARGET_NOT_FOUND,
+                                "Không tìm thấy môn–khóa trong workspace" + " này.");
+                    }
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
                         throw TeachingRouteSupport.denied();
                     }
@@ -147,12 +140,12 @@ public class EnrollmentController {
     private void requireBatchTargetsInWorkspace(
             UUID workspaceId, List<UUID> classStudentIds, List<UUID> courseSubjectIds) {
         for (UUID classStudentId : classStudentIds) {
-            if (repository.findRosterEntryById(workspaceId, classStudentId).isEmpty()) {
+            if (!support.rosterEntryExists(workspaceId, classStudentId)) {
                 throw batchMismatch();
             }
         }
         for (UUID courseSubjectId : courseSubjectIds) {
-            if (repository.findCourseSubjectScope(workspaceId, courseSubjectId).isEmpty()) {
+            if (!support.courseSubjectExists(workspaceId, courseSubjectId)) {
                 throw batchMismatch();
             }
         }

@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
 import com.giaokhoa.verification.model.SystemPracticeAttemptSample;
 import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;

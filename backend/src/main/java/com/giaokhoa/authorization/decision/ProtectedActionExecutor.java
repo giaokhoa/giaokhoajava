@@ -5,6 +5,7 @@ import com.giaokhoa.authorization.fence.DependencyManifestResolver;
 import com.giaokhoa.authorization.fence.DependencyManifestResolver.Manifest;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
@@ -18,7 +19,6 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
@@ -38,7 +38,7 @@ public class ProtectedActionExecutor {
     private final AuthorizationFence fence;
     private final KeycloakDecisionClient decisions;
     private final PolicyGraphWriter writer;
-    private final JdbcTemplate jdbc;
+    private final AuthzPartitionRepository partitions;
     private final IdentityEligibilityService eligibility;
 
     public ProtectedActionExecutor(
@@ -46,13 +46,13 @@ public class ProtectedActionExecutor {
             AuthorizationFence fence,
             KeycloakDecisionClient decisions,
             PolicyGraphWriter writer,
-            JdbcTemplate jdbc,
+            AuthzPartitionRepository partitions,
             IdentityEligibilityService eligibility) {
         this.resolver = resolver;
         this.fence = fence;
         this.decisions = decisions;
         this.writer = writer;
-        this.jdbc = jdbc;
+        this.partitions = partitions;
         this.eligibility = eligibility;
     }
 
@@ -215,16 +215,10 @@ public class ProtectedActionExecutor {
             throw new HttpProblemException(
                     HttpStatus.UNAUTHORIZED, ErrorCodes.UNAUTHORIZED, "Cần đăng nhập.");
         }
-        List<UUID> found =
-                jdbc.queryForList(
-                        "SELECT id FROM user_account WHERE keycloak_sub = ?",
-                        UUID.class,
-                        authentication.getName());
-        if (found.isEmpty()) {
-            // Phiên đã xác thực nhưng không có tài khoản directory thì không có ACCOUNT partition
-            // để fence, nên không quyết định protected nào được đưa ra cho nó.
-            throw AuthorizationFence.notReady();
-        }
-        return found.getFirst();
+        return partitions
+                .findUserIdByKeycloakSub(authentication.getName())
+                // Phiên đã xác thực nhưng không có tài khoản directory thì không có ACCOUNT
+                // partition để fence, nên không quyết định protected nào được đưa ra cho nó.
+                .orElseThrow(AuthorizationFence::notReady);
     }
 }

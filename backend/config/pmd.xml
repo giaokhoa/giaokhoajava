@@ -8,6 +8,7 @@
         <exclude name="UnitTestAssertionsShouldIncludeMessage"/>
         <exclude name="UnitTestContainsTooManyAsserts"/>
         <exclude name="UnitTestShouldIncludeAssert"/>
+        <exclude name="ImplicitFunctionalInterface"/>
     </rule>
     <!-- MockMvc .andExpect là phép assert; rule JUnit mặc định của PMD không nhận ra. -->
     <rule ref="category/java/bestpractices.xml/UnitTestShouldIncludeAssert">
@@ -15,10 +16,30 @@
             <property name="extraAssertMethodNames" value="andExpect"/>
         </properties>
     </rule>
+    <!-- Fragment repository, projection đóng và repository một truy vấn của Spring Data có đúng
+         một phương thức trừu tượng theo thiết kế nhưng không phải functional interface (chúng sẽ
+         có thêm phương thức khi module lớn lên); PMD không phân biệt được hai loại này nên loại
+         trừ hẹp theo đúng tên interface, cùng cách FieldNamingConventions loại theo tên field. -->
+    <rule ref="category/java/bestpractices.xml/ImplicitFunctionalInterface">
+        <properties>
+            <property name="violationSuppressXPath"
+                      value="//ClassDeclaration[@SimpleName='AuthorizationOperationRepositoryCustom' or @SimpleName='AuthzProjectionRepositoryCustom' or @SimpleName='RecoveryMutationClaim' or @SimpleName='ResourcesAuthorizationOperationRepository' or @SimpleName='SampleActionClaim' or @SimpleName='ClassStudentRef']"/>
+        </properties>
+    </rule>
     <!-- AvoidDuplicateLiterals chỉ loại cho test: giữ SQL và giá trị fixture tại nơi dùng để test
          dễ đọc, không ép tạo hằng số cho mọi literal. Code chính chịu rule này qua pmd-main.xml. -->
     <rule ref="category/java/errorprone.xml">
         <exclude name="AvoidDuplicateLiterals"/>
+        <exclude name="MissingStaticMethodInNonInstantiatableClass"/>
+    </rule>
+    <!-- MembershipRole là hộp chứa duy nhất enum Role của membership (được tham chiếu dạng
+         MembershipRole.Role khắp repo); class không có hành vi nên không có phương thức static
+         nào là tự nhiên, PMD không tính type lồng là nội dung của class nên loại trừ hẹp theo tên. -->
+    <rule ref="category/java/errorprone.xml/MissingStaticMethodInNonInstantiatableClass">
+        <properties>
+            <property name="violationSuppressXPath"
+                      value="//ClassDeclaration[@SimpleName='MembershipRole']"/>
+        </properties>
     </rule>
     <rule ref="category/java/security.xml"/>
 </ruleset>

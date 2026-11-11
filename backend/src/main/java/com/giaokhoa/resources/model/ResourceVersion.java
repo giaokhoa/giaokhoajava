@@ -4,7 +4,10 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
@@ -27,6 +30,12 @@ public class ResourceVersion {
 
     @Column(name = "resource_id", nullable = false)
     private UUID resourceId;
+
+    // Association duy nhất của module resource: version thuộc về resource của nó. Cột thuần ở
+    // trên vẫn là trường ghi; association chỉ để đọc/nạp lười (LAZY) và không cascade.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "resource_id", insertable = false, updatable = false)
+    private Resource resource;
 
     @Column(name = "version_no", nullable = false)
     private int versionNo;
@@ -86,6 +95,10 @@ public class ResourceVersion {
 
     public UUID getResourceId() {
         return resourceId;
+    }
+
+    public Resource getResource() {
+        return resource;
     }
 
     public int getVersionNo() {

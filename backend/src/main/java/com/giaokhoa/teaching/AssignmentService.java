@@ -5,14 +5,20 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.data.TeachingRepository;
-import com.giaokhoa.teaching.data.TeachingRepository.CourseSubjectScopeRow;
-import com.giaokhoa.teaching.data.TeachingRepository.HomeroomAssignmentRow;
-import com.giaokhoa.teaching.data.TeachingRepository.TeachingAssignmentRow;
-import com.giaokhoa.teaching.data.TeachingRepository.WorkspaceInfo;
-import com.giaokhoa.tenancy.data.WorkspaceTransaction;
+import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
+import com.giaokhoa.teaching.model.CourseSubject;
+import com.giaokhoa.teaching.model.HomeroomAssignment;
+import com.giaokhoa.teaching.model.TeachingAssignment;
+import com.giaokhoa.teaching.repository.CourseRepository;
+import com.giaokhoa.teaching.repository.CourseSubjectRepository;
+import com.giaokhoa.teaching.repository.HomeroomAssignmentRepository;
+import com.giaokhoa.teaching.repository.SchoolClassRepository;
+import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository;
+import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,19 +58,39 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AssignmentService {
-    private final TeachingRepository repository;
+    private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
+
+    private final SchoolClassRepository schoolClasses;
+    private final CourseRepository courses;
+    private final CourseSubjectRepository courseSubjects;
+    private final TeachingAssignmentRepository teachingAssignments;
+    private final HomeroomAssignmentRepository homeroomAssignments;
+    private final TeachingPageRepository pages;
+    private final TeachingScopePreconditions preconditions;
     private final WorkspaceTransaction workspaceTransaction;
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator revocations;
     private final ResourceMutationCoordinator coordinator;
 
     public AssignmentService(
-            TeachingRepository repository,
+            SchoolClassRepository schoolClasses,
+            CourseRepository courses,
+            CourseSubjectRepository courseSubjects,
+            TeachingAssignmentRepository teachingAssignments,
+            HomeroomAssignmentRepository homeroomAssignments,
+            TeachingPageRepository pages,
+            TeachingScopePreconditions preconditions,
             WorkspaceTransaction workspaceTransaction,
             IdempotencyService idempotency,
             SourceRevocationCoordinator revocations,
             ResourceMutationCoordinator coordinator) {
-        this.repository = repository;
+        this.schoolClasses = schoolClasses;
+        this.courses = courses;
+        this.courseSubjects = courseSubjects;
+        this.teachingAssignments = teachingAssignments;
+        this.homeroomAssignments = homeroomAssignments;
+        this.pages = pages;
+        this.preconditions = preconditions;
         this.workspaceTransaction = workspaceTransaction;
         this.idempotency = idempotency;
         this.revocations = revocations;
@@ -111,18 +137,20 @@ public class AssignmentService {
                     "Danh sách giáo viên phân công không được rỗng.");
         }
         requireCenter(workspaceId);
-        CourseSubjectScopeRow subject = requireCurrentCourseSubject(workspaceId, courseSubjectId);
+        CourseSubject subject = requireCurrentCourseSubject(workspaceId, courseSubjectId);
         requireClassAndCourseActive(workspaceId, subject);
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
+        preconditions.requireSubscriptionCurrent(workspaceId);
         for (UUID teacherUserId : teachers) {
             requireCenterTeacher(workspaceId, teacherUserId);
         }
         for (UUID teacherUserId : teachers) {
-            if (repository
-                    .findCurrentTeachingAssignment(workspaceId, courseSubjectId, teacherUserId)
+            if (teachingAssignments
+                    .findByWorkspaceIdAndCourseSubjectIdAndTeacherUserIdAndStateIn(
+                            workspaceId, courseSubjectId, teacherUserId, CURRENT_STATES)
                     .isEmpty()) {
-                repository.insertTeachingAssignment(
-                        UUID.randomUUID(), workspaceId, courseSubjectId, teacherUserId);
+                teachingAssignments.save(
+                        new TeachingAssignment(
+                                UUID.randomUUID(), workspaceId, courseSubjectId, teacherUserId));
             }
         }
         return revocations.recordTeachingRevocation(
@@ -154,18 +182,19 @@ public class AssignmentService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        TeachingAssignmentRow row =
-                repository
-                        .lockTeachingAssignment(workspaceId, courseSubjectId, assignmentId)
+        TeachingAssignment row =
+                teachingAssignments
+                        .lockByWorkspaceIdAndCourseSubjectIdAndId(
+                                workspaceId, courseSubjectId, assignmentId)
                         .orElseThrow(() -> assignmentNotFound());
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.TEACHING_ASSIGNMENT_ALREADY_REVOKED,
                     "Phân công giảng dạy đã bị thu hồi trước đó.");
         }
-        repository.revokeTeachingAssignment(assignmentId);
+        row.revoke();
         return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
@@ -199,21 +228,25 @@ public class AssignmentService {
             return existing.get();
         }
         requireCenter(workspaceId);
-        var clazz = repository.lockClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        boolean classRevoked = "REVOKED".equals(clazz.state());
+        var clazz =
+                schoolClasses
+                        .lockByWorkspaceIdAndId(workspaceId, classId)
+                        .orElseThrow(() -> classNotFound());
+        boolean classRevoked = "REVOKED".equals(clazz.getState());
         if (classRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CLASS_NOT_ACTIVE,
                     "Lớp đã bị thu hồi, không phân công chủ nhiệm được nữa.");
         }
-        TeachingRouteSupport.requireSubscriptionCurrent(repository, workspaceId);
+        preconditions.requireSubscriptionCurrent(workspaceId);
         requireCenterTeacher(workspaceId, teacherUserId);
-        if (repository
-                .findCurrentHomeroomAssignment(workspaceId, classId, teacherUserId)
+        if (homeroomAssignments
+                .findByWorkspaceIdAndClassIdAndTeacherUserIdAndStateIn(
+                        workspaceId, classId, teacherUserId, CURRENT_STATES)
                 .isEmpty()) {
-            repository.insertHomeroomAssignment(
-                    UUID.randomUUID(), workspaceId, classId, teacherUserId);
+            homeroomAssignments.save(
+                    new HomeroomAssignment(UUID.randomUUID(), workspaceId, classId, teacherUserId));
         }
         return revocations.recordTeachingRevocation(
                 initiatorUserId,
@@ -244,18 +277,18 @@ public class AssignmentService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        HomeroomAssignmentRow row =
-                repository
-                        .lockHomeroomAssignment(workspaceId, classId, assignmentId)
+        HomeroomAssignment row =
+                homeroomAssignments
+                        .lockByWorkspaceIdAndClassIdAndId(workspaceId, classId, assignmentId)
                         .orElseThrow(() -> assignmentNotFound());
-        boolean alreadyRevoked = "REVOKED".equals(row.state());
+        boolean alreadyRevoked = "REVOKED".equals(row.getState());
         if (alreadyRevoked) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.HOMEROOM_ASSIGNMENT_ALREADY_REVOKED,
                     "Phân công chủ nhiệm đã bị thu hồi trước đó.");
         }
-        repository.revokeHomeroomAssignment(assignmentId);
+        row.revoke();
         return revocations.recordTeachingRevocation(
                 initiatorUserId,
                 workspaceId,
@@ -265,24 +298,23 @@ public class AssignmentService {
     }
 
     @Transactional(readOnly = true)
-    public TeachingRepository.Page<TeachingAssignmentView> pageTeachingAssignments(
+    public Page<TeachingAssignmentView> pageTeachingAssignments(
             UUID workspaceId,
             UUID courseSubjectId,
             @Nullable String cursor,
             @Nullable Integer limit) {
         workspaceTransaction.applyContext(workspaceId);
-        repository
-                .findCourseSubjectScope(workspaceId, courseSubjectId)
+        courseSubjects
+                .findByWorkspaceIdAndId(workspaceId, courseSubjectId)
                 .orElseThrow(() -> courseSubjectNotFound());
-        return repository
-                .pageTeachingAssignments(workspaceId, courseSubjectId, cursor, limit)
-                .map(row ->
+        return pages.pageTeachingAssignments(workspaceId, courseSubjectId, cursor, limit)
+                .map(item ->
                         new TeachingAssignmentView(
-                                row.id(),
-                                row.courseSubjectId(),
-                                row.teacherUserId(),
-                                row.state(),
-                                row.version()));
+                                item.getId(),
+                                item.getCourseSubjectId(),
+                                item.getTeacherUserId(),
+                                item.getState(),
+                                item.getVersion()));
     }
 
     /** Các phân công giảng dạy hiện hành của một môn–khóa. Chỉ đọc dữ kiện nguồn. */
@@ -292,34 +324,38 @@ public class AssignmentService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(courseSubjectId, "courseSubjectId");
         workspaceTransaction.applyContext(workspaceId);
-        repository
-                .findCourseSubjectScope(workspaceId, courseSubjectId)
+        courseSubjects
+                .findByWorkspaceIdAndId(workspaceId, courseSubjectId)
                 .orElseThrow(() -> courseSubjectNotFound());
-        return repository.listCurrentTeachingAssignments(workspaceId, courseSubjectId).stream()
+        return teachingAssignments
+                .findByWorkspaceIdAndCourseSubjectIdAndStateInOrderByCreatedAtAscIdAsc(
+                        workspaceId, courseSubjectId, CURRENT_STATES)
+                .stream()
                 .map(row ->
                         new TeachingAssignmentView(
-                                row.id(),
-                                row.courseSubjectId(),
-                                row.teacherUserId(),
-                                row.state(),
-                                row.version()))
+                                row.getId(),
+                                row.getCourseSubjectId(),
+                                row.getTeacherUserId(),
+                                row.getState(),
+                                row.getVersion()))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public TeachingRepository.Page<HomeroomAssignmentView> pageHomeroomAssignments(
+    public Page<HomeroomAssignmentView> pageHomeroomAssignments(
             UUID workspaceId, UUID classId, @Nullable String cursor, @Nullable Integer limit) {
         workspaceTransaction.applyContext(workspaceId);
-        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        return repository
-                .pageHomeroomAssignments(workspaceId, classId, cursor, limit)
-                .map(row ->
+        schoolClasses
+                .findByWorkspaceIdAndId(workspaceId, classId)
+                .orElseThrow(() -> classNotFound());
+        return pages.pageHomeroomAssignments(workspaceId, classId, cursor, limit)
+                .map(item ->
                         new HomeroomAssignmentView(
-                                row.id(),
-                                row.classId(),
-                                row.teacherUserId(),
-                                row.state(),
-                                row.version()));
+                                item.getId(),
+                                item.getClassId(),
+                                item.getTeacherUserId(),
+                                item.getState(),
+                                item.getVersion()));
     }
 
     /** Các phân công chủ nhiệm hiện hành của một lớp. Chỉ đọc dữ kiện nguồn. */
@@ -328,15 +364,20 @@ public class AssignmentService {
         Objects.requireNonNull(workspaceId, "workspaceId");
         Objects.requireNonNull(classId, "classId");
         workspaceTransaction.applyContext(workspaceId);
-        repository.findClass(workspaceId, classId).orElseThrow(() -> classNotFound());
-        return repository.listCurrentHomeroomAssignments(workspaceId, classId).stream()
+        schoolClasses
+                .findByWorkspaceIdAndId(workspaceId, classId)
+                .orElseThrow(() -> classNotFound());
+        return homeroomAssignments
+                .findByWorkspaceIdAndClassIdAndStateInOrderByCreatedAtAscIdAsc(
+                        workspaceId, classId, CURRENT_STATES)
+                .stream()
                 .map(row ->
                         new HomeroomAssignmentView(
-                                row.id(),
-                                row.classId(),
-                                row.teacherUserId(),
-                                row.state(),
-                                row.version()))
+                                row.getId(),
+                                row.getClassId(),
+                                row.getTeacherUserId(),
+                                row.getState(),
+                                row.getVersion()))
                 .toList();
     }
 
@@ -348,22 +389,22 @@ public class AssignmentService {
     private List<String> homeroomAffectedTargets(UUID workspaceId, UUID classId) {
         List<String> targets = new ArrayList<>();
         targets.add(NativePolicyTemplates.classKey(workspaceId, classId));
-        for (UUID courseId : repository.courseIdsOfClass(workspaceId, classId)) {
+        for (UUID courseId : courses.findIdsByWorkspaceIdAndClassId(workspaceId, classId)) {
             targets.add(NativePolicyTemplates.courseKey(workspaceId, courseId));
         }
-        for (UUID courseSubjectId : repository.courseSubjectIdsOfClass(workspaceId, classId)) {
+        for (UUID courseSubjectId :
+                courseSubjects.findIdsByWorkspaceIdAndClassId(workspaceId, classId)) {
             targets.add(NativePolicyTemplates.courseSubjectKey(workspaceId, courseSubjectId));
         }
         return targets;
     }
 
-    private CourseSubjectScopeRow requireCurrentCourseSubject(
-            UUID workspaceId, UUID courseSubjectId) {
-        CourseSubjectScopeRow subject =
-                repository
-                        .findCourseSubjectScope(workspaceId, courseSubjectId)
+    private CourseSubject requireCurrentCourseSubject(UUID workspaceId, UUID courseSubjectId) {
+        CourseSubject subject =
+                courseSubjects
+                        .findByWorkspaceIdAndId(workspaceId, courseSubjectId)
                         .orElseThrow(() -> courseSubjectNotFound());
-        if (!"PENDING".equals(subject.state()) && !"ACTIVE".equals(subject.state())) {
+        if (!"PENDING".equals(subject.getState()) && !"ACTIVE".equals(subject.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.COURSE_SUBJECT_NOT_ACTIVE,
@@ -372,20 +413,19 @@ public class AssignmentService {
         return subject;
     }
 
-    private void requireClassAndCourseActive(UUID workspaceId, CourseSubjectScopeRow subject) {
+    private void requireClassAndCourseActive(UUID workspaceId, CourseSubject subject) {
         var clazz =
-                repository
-                        .findClass(workspaceId, subject.classId())
+                schoolClasses
+                        .findByWorkspaceIdAndId(workspaceId, subject.getClassId())
                         .orElseThrow(() -> classNotFound());
         var course =
-                repository
-                        .findCourse(workspaceId, subject.courseId())
+                courses.findByWorkspaceIdAndId(workspaceId, subject.getCourseId())
                         .orElseThrow(() ->
                                 new HttpProblemException(
                                         HttpStatus.NOT_FOUND,
                                         ErrorCodes.COURSE_NOT_FOUND,
                                         "Không tìm thấy khóa trong workspace này."));
-        if ("REVOKED".equals(clazz.state()) || "REVOKED".equals(course.state())) {
+        if ("REVOKED".equals(clazz.getState()) || "REVOKED".equals(course.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.TEACHING_CONTEXT_NOT_ACTIVE,
@@ -394,7 +434,8 @@ public class AssignmentService {
     }
 
     private void requireCenterTeacher(UUID workspaceId, UUID teacherUserId) {
-        if (!repository.hasActiveCenterMembershipWithRole(workspaceId, teacherUserId, "TEACHER")) {
+        if (!preconditions.hasActiveCenterMembershipWithRole(
+                workspaceId, teacherUserId, "TEACHER")) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
                     ErrorCodes.TEACHER_NOT_CENTER_TEACHER,
@@ -404,7 +445,7 @@ public class AssignmentService {
 
     private WorkspaceInfo requireCenter(UUID workspaceId) {
         WorkspaceInfo workspace =
-                repository.findWorkspace(workspaceId).orElseThrow(() -> workspaceNotFound());
+                preconditions.workspaceInfo(workspaceId).orElseThrow(() -> workspaceNotFound());
         if (!"CENTER".equals(workspace.kind()) || !"ACTIVE".equals(workspace.state())) {
             throw workspaceNotFound();
         }
@@ -442,8 +483,8 @@ public class AssignmentService {
     /**
      * Tuần tự hoá mọi mutation của một workspace trên khóa workspace thống nhất của {@link
      * ResourceMutationCoordinator} — cùng một khóa với CenterService, SubscriptionService và các
-     * service lớp/khóa — để dữ kiện nguồn mà projector chiếu không bao giờ thiếu một mutation đang
-     * chạy đồng thời của cùng workspace.
+     * service lớp/khóa — để dữ kiện nguồn mà projector tính từ dữ kiện nguồn không bao giờ thiếu
+     * một mutation đang chạy đồng thời trong cùng workspace.
      */
     private void lockWorkspace(UUID workspaceId) {
         coordinator.lockWorkspace(workspaceId);
