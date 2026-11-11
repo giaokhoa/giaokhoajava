@@ -191,20 +191,32 @@ public class CorrectionService {
      * Đọc lại notice đã ghi để trả metadata đúng như đã lưu, dùng chung cho đường mới và replay.
      */
     private CorrectionNoticeView noticeView(UUID noticeId) {
-        Map<String, Object> row =
-                jdbc.queryForMap(
+        CorrectionNoticeView view =
+                jdbc.queryForObject(
                         "SELECT resource_id, affected_version_id, replacement_version_id,"
                                 + " reason, created_at FROM correction_notice WHERE id = ?",
+                        (rs, rowNum) ->
+                                new CorrectionNoticeView(
+                                        noticeId,
+                                        Objects.requireNonNull(
+                                                rs.getObject("resource_id", UUID.class),
+                                                "resource_id"),
+                                        Objects.requireNonNull(
+                                                rs.getObject("affected_version_id", UUID.class),
+                                                "affected_version_id"),
+                                        Objects.requireNonNull(
+                                                rs.getObject("replacement_version_id", UUID.class),
+                                                "replacement_version_id"),
+                                        Objects.requireNonNull(rs.getString("reason"), "reason"),
+                                        // Đọc thẳng OffsetDateTime từ ResultSet: lấy qua Map
+                                        // của queryForMap rồi ép kiểu thì trúng kiểu trung gian
+                                        // của driver (Timestamp) và vỡ ClassCastException trên
+                                        // cột timestamptz.
+                                        Objects.requireNonNull(
+                                                rs.getObject("created_at", OffsetDateTime.class),
+                                                "created_at")),
                         noticeId);
-        return new CorrectionNoticeView(
-                noticeId,
-                Objects.requireNonNull((UUID) row.get("resource_id"), "resource_id"),
-                Objects.requireNonNull(
-                        (UUID) row.get("affected_version_id"), "affected_version_id"),
-                Objects.requireNonNull(
-                        (UUID) row.get("replacement_version_id"), "replacement_version_id"),
-                Objects.requireNonNull((String) row.get("reason"), "reason"),
-                Objects.requireNonNull((OffsetDateTime) row.get("created_at"), "created_at"));
+        return Objects.requireNonNull(view, "correction_notice");
     }
 
     // ---------- Biên nhận idempotency của chính action ----------

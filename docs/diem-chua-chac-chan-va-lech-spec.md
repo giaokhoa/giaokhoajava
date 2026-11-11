@@ -192,6 +192,20 @@ Bắt đầu lập: 2026-11-08 (theo lệnh của chủ dự án). Nguồn: báo
 
 ## C. Điểm đã có quyết định xử lý trong pipeline (ghi để bên đánh giá đối chiếu)
 
+- **C7 — License đi theo cạnh đính chính (đợt sửa defect gate #88 vòng 2, 2026-11-11).**
+  Sau khi defect ép kiểu `created_at` ở CORRECT_SOURCE được sửa, kịch bản đính chính US7.2
+  lộ thêm một khoảng trống bị lỗi 500 che khuất ở vòng 2: quyết định `library.save` của
+  RECEIVE_UPDATE hỏi trên target của version thay thế, nhưng grant của nơi nhận khóa đúng
+  version bị ảnh hưởng nên nơi nhận bị 403 khi nhận bản đính chính. Quyết định xử lý:
+  `ResourcePolicyProjector.licenseSources` coi grant trên version bị ảnh hưởng cũng cấp
+  trên version thay thế mà `correction_notice` chỉ định (đi ngược chuỗi đính chính), và
+  `grantDependencyPartitions` đăng ký cùng các grant đó để thu hồi vẫn fence đúng target
+  thay thế. Version kế tiếp thường (không có notice) không được mở rộng — binding theo
+  version của grant giữ nguyên ngoài cạnh đính chính. Căn cứ: notice là cơ chế nghiệp vụ
+  chỉ định bản thay thế cho đúng các nơi đã nhận version bị ảnh hưởng, và hợp đồng nghiệm
+  thu của gate (ResourceAccessIT trên PR #274) yêu cầu RECEIVE_UPDATE + đọc lại bản đính
+  chính thành công cho nơi nhận, 403 cho nơi chưa từng nhận. Chờ gate vòng 3 đối chiếu.
+
 - **C6 — Khắc phục review #180 trên US3 (PR #184, 2026-11-08).** Route giảng dạy nay giữ
   eligibility/fence hiện hành và khóa workspace trước kiểm tra role; membership activation
   ghi cả bundle giảng dạy. Chặn mở rộng dưới lớp/khóa đã thu hồi và ghi danh người đã mất
