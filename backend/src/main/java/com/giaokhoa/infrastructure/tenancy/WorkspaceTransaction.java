@@ -14,20 +14,17 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Điểm đặt context tenant duy nhất của hệ thống trong phạm vi một transaction PostgreSQL. Ba việc
+ * Điểm đặt context tenant duy nhất của hệ thống trong phạm vi một transaction PostgreSQL. Hai việc
  * được đặt cùng nhau để các tầng truy cập dữ liệu luôn thấy cùng một tenant: (1) {@link
- * TenantContext} cho resolver của Hibernate, (2) {@code set_config('app.workspace_id', …)} với
- * is_local = true (tương đương SET LOCAL) phục vụ RLS trong giai đoạn chuyển tiếp — context chỉ
- * sống tới hết transaction hiện tại, không rò sang transaction khác hay lần dùng connection sau, và
- * khi chưa đặt thì policy không khớp bất kỳ hàng tenant nào (fail-closed), (3) {@code search_path}
- * ở mức transaction trỏ vào schema riêng của workspace khi workspace đó đã được cấp schema (cột
- * {@code workspace.schema_name}); workspace chưa có schema riêng giữ nguyên hành vi cũ trên schema
- * hệ thống.
+ * TenantContext} cho resolver của Hibernate, (2) {@code search_path} ở mức transaction (qua
+ * set_config với is_local = true, tương đương SET LOCAL) trỏ vào schema riêng của workspace khi
+ * workspace đó đã được cấp schema (cột {@code workspace.schema_name}); workspace chưa có schema
+ * riêng giữ nguyên hành vi trên schema hệ thống. Cách ly giữa các workspace chưa kích hoạt dựa vào
+ * mệnh đề workspace_id trong truy vấn ứng dụng; schema riêng là ranh giới cách ly của workspace đã
+ * kích hoạt.
  */
 @Component
 public class WorkspaceTransaction {
-    public static final String WORKSPACE_SETTING = "app.workspace_id";
-
     private static final Object TENANT_CONTEXT_BACKUP = new Object();
 
     private final JdbcTemplate jdbc;
@@ -65,11 +62,6 @@ public class WorkspaceTransaction {
                         workspaceId);
         @Nullable String schemaName = schemaNames.isEmpty() ? null : schemaNames.getFirst();
         TenantContext.set(workspaceId, schemaName);
-        jdbc.queryForObject(
-                "SELECT set_config(?, ?, true)",
-                String.class,
-                WORKSPACE_SETTING,
-                workspaceId.toString());
         if (schemaName != null) {
             // Đuôi search_path lấy nguyên từ connection hiện tại (schema hệ thống do cấu hình
             // pool quyết định — public ở deployment chuẩn, schema riêng ở môi trường kiểm thử

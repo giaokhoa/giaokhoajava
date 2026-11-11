@@ -1,41 +1,36 @@
--- Dòng migration của schema tenant (đợt di trú schema-per-tenant, Wave 0).
--- File này là trạng thái đích hiện hành của 25 bảng thuộc tenant, suy ra từ
--- trạng thái cuối của dòng migration hệ thống (V001–V031 trên schema public):
--- 19 bảng chỉ thuộc tenant và 6 bảng của mặt phẳng tài nguyên (resource,
--- resource_version, resource_dependency, share_grant, correction_notice,
--- notification_receipt) vốn cũng tồn tại ở schema hệ thống cho tài nguyên do
--- hệ thống cấp. Flyway chạy file này trong từng schema tenant với bảng history
--- riêng của schema đó (xem TenantSchemaProvisioner).
+-- Baseline tenant: cấu trúc dữ liệu của một schema workspace đã kích hoạt, gộp từ chuỗi
+-- migration tenant đầu tiên. File chạy trong schema đích của workspace; schema là ranh
+-- giới cách ly duy nhất nên không dùng row-level security. Mọi thay đổi cấu trúc kể từ
+-- đây đi qua migration tăng dần mới; không sửa file này.
 --
--- Khác biệt có chủ đích so với DDL ở schema hệ thống, theo nguyên tắc giữ
--- đường nâng cấp database-per-tenant (chỉ tham chiếu xuyên ranh giới bằng
--- định danh, không khoá ngoại, không join): mọi khoá ngoại từ bảng tenant tới
--- bảng thuộc schema hệ thống (workspace, user_account, subject) và khoá ngoại
--- từ library_item/resource_assignment/sample_activity/
--- system_practice_attempt_sample tới resource/resource_version/share_grant
--- đều KHÔNG được tái tạo ở đây; các cột định danh tương ứng được giữ nguyên
--- dạng cột thuần. Khoá ngoại nằm trọn trong schema tenant được giữ nguyên.
--- RLS và policy theo app.workspace_id được giữ trong giai đoạn chuyển tiếp
--- như ở schema hệ thống; việc tháo lớp này thuộc đợt cuối của đợt di trú.
+-- Cột resource.subject_id cố ý không có khóa ngoại — xem ghi chú ở baseline hệ thống.
+
+-- Các hàm PL/pgSQL đứng trước bảng mà chúng tham chiếu trong file gộp này nên phải hoãn
+-- kiểm tra thân hàm tới lần chạy đầu tiên (đúng cách pg_restore xử lý dump); chỉ áp
+-- trong transaction của migration.
+SET LOCAL check_function_bodies = false;
+
+--
 
 CREATE FUNCTION enforce_directory_immutable_links() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF TG_TABLE_NAME = 'workspace' AND
-        (OLD.kind IS DISTINCT FROM NEW.kind
-         OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id) THEN
-        RAISE EXCEPTION 'Workspace kind and personal owner cannot change' USING ERRCODE = '23514';
-    END IF;
-    IF TG_TABLE_NAME = 'center' AND
-        (OLD.workspace_id IS DISTINCT FROM NEW.workspace_id
-         OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id) THEN
-        RAISE EXCEPTION 'Center workspace and owner cannot change' USING ERRCODE = '23514';
-    END IF;
-    IF TG_TABLE_NAME = 'center_membership' AND
-        (OLD.workspace_id IS DISTINCT FROM NEW.workspace_id
-         OR OLD.user_id IS DISTINCT FROM NEW.user_id) THEN
-        RAISE EXCEPTION 'Membership workspace and user cannot change' USING ERRCODE = '23514';
+    IF TG_TABLE_NAME = 'workspace' THEN
+        IF OLD.kind IS DISTINCT FROM NEW.kind
+            OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id THEN
+            RAISE EXCEPTION 'Workspace kind and personal owner cannot change' USING ERRCODE = '23514';
+        END IF;
+    ELSIF TG_TABLE_NAME = 'center' THEN
+        IF OLD.workspace_id IS DISTINCT FROM NEW.workspace_id
+            OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id THEN
+            RAISE EXCEPTION 'Center workspace and owner cannot change' USING ERRCODE = '23514';
+        END IF;
+    ELSIF TG_TABLE_NAME = 'center_membership' THEN
+        IF OLD.workspace_id IS DISTINCT FROM NEW.workspace_id
+            OR OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+            RAISE EXCEPTION 'Membership workspace and user cannot change' USING ERRCODE = '23514';
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -846,6 +841,10 @@ BEGIN
 END;
 $$;
 
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
 CREATE TABLE center_membership (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
@@ -856,8 +855,8 @@ CREATE TABLE center_membership (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT center_membership_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[]))),
-    CONSTRAINT ck_membership_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL) AND (revoked_at >= joined_at))))
+    CONSTRAINT center_membership_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text]))),
+    CONSTRAINT ck_membership_revocation CHECK (((((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL) AND (revoked_at >= joined_at))))
 );
 
 CREATE TABLE class_student (
@@ -870,8 +869,8 @@ CREATE TABLE class_student (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_class_student_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
-    CONSTRAINT class_student_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT ck_class_student_revocation CHECK (((((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
+    CONSTRAINT class_student_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE correction_notice (
@@ -895,7 +894,7 @@ CREATE TABLE course (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT course_name_check CHECK ((btrim((name)::text) <> ''::text)),
-    CONSTRAINT course_state_check CHECK (((state)::text = ANY ((ARRAY['ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT course_state_check CHECK (((state)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE course_subject (
@@ -909,8 +908,8 @@ CREATE TABLE course_subject (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_course_subject_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
-    CONSTRAINT course_subject_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT ck_course_subject_revocation CHECK (((((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
+    CONSTRAINT course_subject_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE enrollment (
@@ -923,8 +922,8 @@ CREATE TABLE enrollment (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_enrollment_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
-    CONSTRAINT enrollment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT ck_enrollment_revocation CHECK (((((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
+    CONSTRAINT enrollment_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE guardian_link (
@@ -940,8 +939,8 @@ CREATE TABLE guardian_link (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_guardian_link_state_fields CHECK (((((state)::text = ANY ((ARRAY['REQUESTED'::character varying, 'REJECTED'::character varying])::text[])) AND (approved_by IS NULL) AND (approved_at IS NULL) AND (revoked_at IS NULL)) OR (((state)::text = 'APPROVED'::text) AND (approved_by IS NOT NULL) AND (approved_at IS NOT NULL) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (approved_by IS NOT NULL) AND (approved_at IS NOT NULL) AND (revoked_at IS NOT NULL)))),
-    CONSTRAINT guardian_link_state_check CHECK (((state)::text = ANY ((ARRAY['REQUESTED'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT ck_guardian_link_state_fields CHECK (((((state)::text = ANY (ARRAY[('REQUESTED'::character varying)::text, ('REJECTED'::character varying)::text])) AND (approved_by IS NULL) AND (approved_at IS NULL) AND (revoked_at IS NULL)) OR (((state)::text = 'APPROVED'::text) AND (approved_by IS NOT NULL) AND (approved_at IS NOT NULL) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (approved_by IS NOT NULL) AND (approved_at IS NOT NULL) AND (revoked_at IS NOT NULL)))),
+    CONSTRAINT guardian_link_state_check CHECK (((state)::text = ANY (ARRAY[('REQUESTED'::character varying)::text, ('APPROVED'::character varying)::text, ('REJECTED'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE homeroom_assignment (
@@ -954,8 +953,8 @@ CREATE TABLE homeroom_assignment (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_homeroom_assignment_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
-    CONSTRAINT homeroom_assignment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT ck_homeroom_assignment_revocation CHECK (((((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
+    CONSTRAINT homeroom_assignment_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE invitation (
@@ -972,7 +971,7 @@ CREATE TABLE invitation (
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT ck_invitation_exactly_one_target CHECK (((target_email IS NULL) <> (target_user_id IS NULL))),
     CONSTRAINT invitation_intended_roles_check CHECK (((intended_roles <> '{}'::text[]) AND (intended_roles <@ ARRAY['MANAGER'::text, 'TEACHER'::text, 'STUDENT'::text, 'PARENT'::text]))),
-    CONSTRAINT invitation_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACCEPTED'::character varying, 'EXPIRED'::character varying, 'REVOKED'::character varying])::text[]))),
+    CONSTRAINT invitation_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACCEPTED'::character varying)::text, ('EXPIRED'::character varying)::text, ('REVOKED'::character varying)::text]))),
     CONSTRAINT invitation_target_email_check CHECK (((target_email IS NULL) OR (btrim((target_email)::text) <> ''::text)))
 );
 
@@ -986,7 +985,7 @@ CREATE TABLE library_item (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT library_item_custody_check CHECK (((custody)::text = ANY ((ARRAY['OWNED'::character varying, 'LICENSED'::character varying])::text[])))
+    CONSTRAINT library_item_custody_check CHECK (((custody)::text = ANY (ARRAY[('OWNED'::character varying)::text, ('LICENSED'::character varying)::text])))
 );
 
 CREATE TABLE membership_role (
@@ -995,7 +994,7 @@ CREATE TABLE membership_role (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT membership_role_role_check CHECK (((role)::text = ANY ((ARRAY['OWNER'::character varying, 'MANAGER'::character varying, 'TEACHER'::character varying, 'STUDENT'::character varying, 'PARENT'::character varying])::text[])))
+    CONSTRAINT membership_role_role_check CHECK (((role)::text = ANY (ARRAY[('OWNER'::character varying)::text, ('MANAGER'::character varying)::text, ('TEACHER'::character varying)::text, ('STUDENT'::character varying)::text, ('PARENT'::character varying)::text])))
 );
 
 CREATE TABLE notification_receipt (
@@ -1015,7 +1014,7 @@ CREATE TABLE resource (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT resource_kind_check CHECK (((kind)::text = ANY ((ARRAY['QUESTION'::character varying, 'EXAM'::character varying, 'MATRIX'::character varying])::text[]))),
+    CONSTRAINT resource_kind_check CHECK (((kind)::text = ANY (ARRAY[('QUESTION'::character varying)::text, ('EXAM'::character varying)::text, ('MATRIX'::character varying)::text]))),
     CONSTRAINT resource_state_check CHECK ((btrim((state)::text) <> ''::text))
 );
 
@@ -1032,9 +1031,9 @@ CREATE TABLE resource_assignment (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT ck_resource_assignment_has_target CHECK (((resource_id IS NOT NULL) OR (subject_id IS NOT NULL))),
-    CONSTRAINT ck_resource_assignment_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
+    CONSTRAINT ck_resource_assignment_revocation CHECK (((((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
     CONSTRAINT resource_assignment_actions_check CHECK (((actions <> '{}'::text[]) AND (actions <@ ARRAY['draft.edit'::text, 'review'::text, 'use'::text, 'answer.read'::text, 'share'::text, 'content.read'::text]))),
-    CONSTRAINT resource_assignment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT resource_assignment_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE resource_dependency (
@@ -1066,7 +1065,7 @@ CREATE TABLE resource_version (
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT ck_resource_version_lock CHECK ((((review_state)::text = 'LOCKED'::text) = (locked_at IS NOT NULL))),
     CONSTRAINT resource_version_label_check CHECK ((btrim((label)::text) <> ''::text)),
-    CONSTRAINT resource_version_review_state_check CHECK (((review_state)::text = ANY ((ARRAY['DRAFT'::character varying, 'APPROVED'::character varying, 'LOCKED'::character varying])::text[]))),
+    CONSTRAINT resource_version_review_state_check CHECK (((review_state)::text = ANY (ARRAY[('DRAFT'::character varying)::text, ('APPROVED'::character varying)::text, ('LOCKED'::character varying)::text]))),
     CONSTRAINT resource_version_version_no_check CHECK ((version_no >= 1))
 );
 
@@ -1078,7 +1077,7 @@ CREATE TABLE sample_action_mutation (
     target_type character varying(16) NOT NULL,
     target_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT sample_action_mutation_target_type_check CHECK (((target_type)::text = ANY ((ARRAY['RESOURCE'::character varying, 'ACTIVITY'::character varying, 'SUBMISSION'::character varying, 'RESULT'::character varying, 'LIBRARY_ITEM'::character varying, 'SHARE_GRANT'::character varying])::text[])))
+    CONSTRAINT sample_action_mutation_target_type_check CHECK (((target_type)::text = ANY (ARRAY[('RESOURCE'::character varying)::text, ('ACTIVITY'::character varying)::text, ('SUBMISSION'::character varying)::text, ('RESULT'::character varying)::text, ('LIBRARY_ITEM'::character varying)::text, ('SHARE_GRANT'::character varying)::text])))
 );
 
 CREATE TABLE sample_activity (
@@ -1097,7 +1096,7 @@ CREATE TABLE sample_activity (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT sample_activity_attempt_limit_check CHECK ((attempt_limit >= 1)),
-    CONSTRAINT sample_activity_state_check CHECK (((state)::text = ANY ((ARRAY['ASSIGNED'::character varying, 'CLOSED'::character varying, 'ARCHIVED'::character varying])::text[])))
+    CONSTRAINT sample_activity_state_check CHECK (((state)::text = ANY (ARRAY[('ASSIGNED'::character varying)::text, ('CLOSED'::character varying)::text, ('ARCHIVED'::character varying)::text])))
 );
 
 CREATE TABLE sample_result (
@@ -1115,7 +1114,7 @@ CREATE TABLE sample_result (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT ck_sample_result_publication CHECK ((((state)::text = 'PUBLISHED'::text) = (published_at IS NOT NULL))),
-    CONSTRAINT sample_result_state_check CHECK (((state)::text = ANY ((ARRAY['DRAFT'::character varying, 'PUBLISHED'::character varying])::text[])))
+    CONSTRAINT sample_result_state_check CHECK (((state)::text = ANY (ARRAY[('DRAFT'::character varying)::text, ('PUBLISHED'::character varying)::text])))
 );
 
 CREATE TABLE sample_submission (
@@ -1143,7 +1142,7 @@ CREATE TABLE school_class (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT school_class_name_check CHECK ((btrim((name)::text) <> ''::text)),
-    CONSTRAINT school_class_state_check CHECK (((state)::text = ANY ((ARRAY['ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT school_class_state_check CHECK (((state)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 CREATE TABLE share_grant (
@@ -1166,8 +1165,8 @@ CREATE TABLE share_grant (
     CONSTRAINT ck_share_grant_state_timestamps CHECK (((((state)::text = 'OFFERED'::text) AND (accepted_at IS NULL) AND (revoked_at IS NULL)) OR (((state)::text = 'ACCEPTED'::text) AND (accepted_at IS NOT NULL) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND ((mode)::text = 'REVOCABLE'::text) AND (accepted_at IS NOT NULL) AND (revoked_at IS NOT NULL)) OR (((state)::text = 'EXPIRED'::text) AND (revoked_at IS NULL)))),
     CONSTRAINT ck_share_grant_valid_window CHECK (((expires_at IS NULL) OR (expires_at > valid_from))),
     CONSTRAINT share_grant_actions_check CHECK (((actions <> '{}'::text[]) AND (actions <@ ARRAY['draft.edit'::text, 'review'::text, 'use'::text, 'answer.read'::text, 'share'::text, 'content.read'::text, 'fork'::text, 'library.save'::text]))),
-    CONSTRAINT share_grant_mode_check CHECK (((mode)::text = ANY ((ARRAY['REVOCABLE'::character varying, 'LONG_TERM'::character varying])::text[]))),
-    CONSTRAINT share_grant_state_check CHECK (((state)::text = ANY ((ARRAY['OFFERED'::character varying, 'ACCEPTED'::character varying, 'REVOKED'::character varying, 'EXPIRED'::character varying])::text[])))
+    CONSTRAINT share_grant_mode_check CHECK (((mode)::text = ANY (ARRAY[('REVOCABLE'::character varying)::text, ('LONG_TERM'::character varying)::text]))),
+    CONSTRAINT share_grant_state_check CHECK (((state)::text = ANY (ARRAY[('OFFERED'::character varying)::text, ('ACCEPTED'::character varying)::text, ('REVOKED'::character varying)::text, ('EXPIRED'::character varying)::text])))
 );
 
 CREATE TABLE subscription_period (
@@ -1211,8 +1210,8 @@ CREATE TABLE teaching_assignment (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     version bigint DEFAULT 0 NOT NULL,
-    CONSTRAINT ck_teaching_assignment_revocation CHECK (((((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
-    CONSTRAINT teaching_assignment_state_check CHECK (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying, 'REVOKED'::character varying])::text[])))
+    CONSTRAINT ck_teaching_assignment_revocation CHECK (((((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (revoked_at IS NULL)) OR (((state)::text = 'REVOKED'::text) AND (revoked_at IS NOT NULL)))),
+    CONSTRAINT teaching_assignment_state_check CHECK (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text, ('REVOKED'::character varying)::text])))
 );
 
 ALTER TABLE ONLY center_membership
@@ -1332,172 +1331,11 @@ ALTER TABLE ONLY school_class
 ALTER TABLE ONLY subscription_period
     ADD CONSTRAINT uq_subscription_period_workspace_id UNIQUE (workspace_id, id);
 
--- FK bo qua (xuyen mat phang, giu cot ID thuan): center_membership_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): center_membership_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): class_student_student_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): class_student_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): course_subject_subject_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): course_subject_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): course_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): enrollment_workspace_id_fkey
-
-ALTER TABLE ONLY class_student
-    ADD CONSTRAINT fk_class_student_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
-
-ALTER TABLE ONLY correction_notice
-    ADD CONSTRAINT fk_correction_notice_affected_version FOREIGN KEY (resource_id, affected_version_id) REFERENCES resource_version(resource_id, id);
-
-ALTER TABLE ONLY correction_notice
-    ADD CONSTRAINT fk_correction_notice_replacement_version FOREIGN KEY (resource_id, replacement_version_id) REFERENCES resource_version(resource_id, id);
-
-ALTER TABLE ONLY course
-    ADD CONSTRAINT fk_course_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
-
-ALTER TABLE ONLY course_subject
-    ADD CONSTRAINT fk_course_subject_course FOREIGN KEY (workspace_id, class_id, course_id) REFERENCES course(workspace_id, class_id, id);
-
-ALTER TABLE ONLY enrollment
-    ADD CONSTRAINT fk_enrollment_class_student FOREIGN KEY (workspace_id, class_student_id) REFERENCES class_student(workspace_id, id);
-
-ALTER TABLE ONLY enrollment
-    ADD CONSTRAINT fk_enrollment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
-
-ALTER TABLE ONLY homeroom_assignment
-    ADD CONSTRAINT fk_homeroom_assignment_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): fk_library_item_resource_version
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): fk_library_item_share_grant
-
-ALTER TABLE ONLY resource_dependency
-    ADD CONSTRAINT fk_resource_dependency_derived_version FOREIGN KEY (derived_resource_id, derived_version_id) REFERENCES resource_version(resource_id, id);
-
-ALTER TABLE ONLY resource_dependency
-    ADD CONSTRAINT fk_resource_dependency_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES resource_version(resource_id, id);
-
-ALTER TABLE ONLY sample_activity
-    ADD CONSTRAINT fk_sample_activity_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): fk_sample_activity_resource_version
-
-ALTER TABLE ONLY sample_activity
-    ADD CONSTRAINT fk_sample_activity_subscription_period FOREIGN KEY (workspace_id, subscription_period_id) REFERENCES subscription_period(workspace_id, id);
-
-ALTER TABLE ONLY sample_result
-    ADD CONSTRAINT fk_sample_result_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
-
-ALTER TABLE ONLY sample_result
-    ADD CONSTRAINT fk_sample_result_submission FOREIGN KEY (workspace_id, submission_id) REFERENCES sample_submission(workspace_id, id);
-
-ALTER TABLE ONLY sample_submission
-    ADD CONSTRAINT fk_sample_submission_activity FOREIGN KEY (workspace_id, activity_id) REFERENCES sample_activity(workspace_id, id);
-
-ALTER TABLE ONLY share_grant
-    ADD CONSTRAINT fk_share_grant_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES resource_version(resource_id, id);
-
-ALTER TABLE ONLY teaching_assignment
-    ADD CONSTRAINT fk_teaching_assignment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): guardian_link_approved_by_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): guardian_link_parent_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): guardian_link_requested_by_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): guardian_link_student_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): guardian_link_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): homeroom_assignment_teacher_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): homeroom_assignment_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): invitation_target_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): invitation_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): library_item_workspace_id_fkey
-
-ALTER TABLE ONLY membership_role
-    ADD CONSTRAINT membership_role_membership_id_fkey FOREIGN KEY (membership_id) REFERENCES center_membership(id);
-
-ALTER TABLE ONLY notification_receipt
-    ADD CONSTRAINT notification_receipt_notice_id_fkey FOREIGN KEY (notice_id) REFERENCES correction_notice(id);
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): notification_receipt_recipient_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): resource_assignment_resource_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): resource_assignment_subject_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): resource_assignment_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): resource_assignment_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): resource_created_by_user_id_fkey
-
-ALTER TABLE ONLY resource_dependency
-    ADD CONSTRAINT resource_dependency_share_grant_id_fkey FOREIGN KEY (share_grant_id) REFERENCES share_grant(id);
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): resource_owner_workspace_id_fkey
-
-ALTER TABLE ONLY resource_version
-    ADD CONSTRAINT resource_version_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES resource(id);
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_action_mutation_actor_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_action_mutation_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_activity_assigned_by_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_activity_resource_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_activity_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_result_graded_by_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_result_student_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_result_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_submission_student_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): sample_submission_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): school_class_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): share_grant_grantor_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): share_grant_recipient_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): subscription_period_confirmed_by_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): subscription_period_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): system_practice_attempt_sample_personal_workspace_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): system_practice_attempt_sample_system_resource_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): system_practice_attempt_sample_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): system_practice_attempt_sample_version_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): teaching_assignment_teacher_user_id_fkey
-
--- FK bo qua (xuyen mat phang, giu cot ID thuan): teaching_assignment_workspace_id_fkey
-
-CREATE INDEX ix_center_membership_listing_page ON center_membership USING btree (workspace_id, joined_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_center_membership_listing_page ON center_membership USING btree (workspace_id, joined_at, id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE INDEX ix_class_listing_page ON school_class USING btree (workspace_id, created_at, id) WHERE ((state)::text = 'ACTIVE'::text);
 
-CREATE UNIQUE INDEX ix_class_student_current_unique ON class_student USING btree (workspace_id, class_id, student_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_class_student_current_unique ON class_student USING btree (workspace_id, class_id, student_user_id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE INDEX ix_class_student_workspace_state ON class_student USING btree (workspace_id, state);
 
@@ -1505,25 +1343,25 @@ CREATE INDEX ix_correction_notice_resource ON correction_notice USING btree (res
 
 CREATE INDEX ix_course_listing_page ON course USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = 'ACTIVE'::text);
 
-CREATE UNIQUE INDEX ix_course_subject_current_unique ON course_subject USING btree (workspace_id, class_id, course_id, subject_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_course_subject_current_unique ON course_subject USING btree (workspace_id, class_id, course_id, subject_id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE INDEX ix_course_subject_workspace_state ON course_subject USING btree (workspace_id, state);
 
 CREATE INDEX ix_course_workspace_state ON course USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX ix_enrollment_current_unique ON enrollment USING btree (workspace_id, class_student_id, course_subject_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_enrollment_current_unique ON enrollment USING btree (workspace_id, class_student_id, course_subject_id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
-CREATE INDEX ix_enrollment_listing_page ON enrollment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_enrollment_listing_page ON enrollment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE INDEX ix_enrollment_workspace_state ON enrollment USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX ix_guardian_link_current_unique ON guardian_link USING btree (workspace_id, parent_user_id, student_user_id) WHERE ((state)::text = ANY ((ARRAY['REQUESTED'::character varying, 'APPROVED'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_guardian_link_current_unique ON guardian_link USING btree (workspace_id, parent_user_id, student_user_id) WHERE ((state)::text = ANY (ARRAY[('REQUESTED'::character varying)::text, ('APPROVED'::character varying)::text]));
 
 CREATE INDEX ix_guardian_link_workspace_state ON guardian_link USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX ix_homeroom_assignment_current_unique ON homeroom_assignment USING btree (workspace_id, class_id, teacher_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_homeroom_assignment_current_unique ON homeroom_assignment USING btree (workspace_id, class_id, teacher_user_id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
-CREATE INDEX ix_homeroom_assignment_listing_page ON homeroom_assignment USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_homeroom_assignment_listing_page ON homeroom_assignment USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE INDEX ix_homeroom_assignment_workspace_state ON homeroom_assignment USING btree (workspace_id, state);
 
@@ -1541,9 +1379,9 @@ CREATE INDEX ix_notification_receipt_recipient ON notification_receipt USING btr
 
 CREATE INDEX ix_practice_history_workspace_time ON system_practice_attempt_sample USING btree (personal_workspace_id, attempted_at DESC);
 
-CREATE UNIQUE INDEX ix_resource_assignment_current_resource ON resource_assignment USING btree (workspace_id, user_id, resource_id) WHERE (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (resource_id IS NOT NULL));
+CREATE UNIQUE INDEX ix_resource_assignment_current_resource ON resource_assignment USING btree (workspace_id, user_id, resource_id) WHERE (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (resource_id IS NOT NULL));
 
-CREATE UNIQUE INDEX ix_resource_assignment_current_subject ON resource_assignment USING btree (workspace_id, user_id, subject_id) WHERE (((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[])) AND (subject_id IS NOT NULL));
+CREATE UNIQUE INDEX ix_resource_assignment_current_subject ON resource_assignment USING btree (workspace_id, user_id, subject_id) WHERE (((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text])) AND (subject_id IS NOT NULL));
 
 CREATE INDEX ix_resource_assignment_workspace_state ON resource_assignment USING btree (workspace_id, state);
 
@@ -1555,7 +1393,7 @@ CREATE INDEX ix_resource_dependency_source_grant ON resource_dependency USING bt
 
 CREATE INDEX ix_resource_owner_state ON resource USING btree (owner_workspace_id, state);
 
-CREATE INDEX ix_roster_listing_page ON class_student USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_roster_listing_page ON class_student USING btree (workspace_id, class_id, created_at, id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE INDEX ix_sample_activity_course_subject ON sample_activity USING btree (workspace_id, course_subject_id);
 
@@ -1575,13 +1413,13 @@ CREATE INDEX ix_share_grant_source_version ON share_grant USING btree (source_re
 
 CREATE INDEX ix_subscription_workspace_range ON subscription_period USING btree (workspace_id, valid_from, expires_at);
 
-CREATE UNIQUE INDEX ix_teaching_assignment_current_unique ON teaching_assignment USING btree (workspace_id, course_subject_id, teacher_user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX ix_teaching_assignment_current_unique ON teaching_assignment USING btree (workspace_id, course_subject_id, teacher_user_id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
-CREATE INDEX ix_teaching_assignment_listing_page ON teaching_assignment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE INDEX ix_teaching_assignment_listing_page ON teaching_assignment USING btree (workspace_id, course_subject_id, created_at, id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE INDEX ix_teaching_assignment_workspace_state ON teaching_assignment USING btree (workspace_id, state);
 
-CREATE UNIQUE INDEX uq_membership_current ON center_membership USING btree (workspace_id, user_id) WHERE ((state)::text = ANY ((ARRAY['PENDING'::character varying, 'ACTIVE'::character varying])::text[]));
+CREATE UNIQUE INDEX uq_membership_current ON center_membership USING btree (workspace_id, user_id) WHERE ((state)::text = ANY (ARRAY[('PENDING'::character varying)::text, ('ACTIVE'::character varying)::text]));
 
 CREATE TRIGGER ck_class_student_membership BEFORE INSERT ON class_student FOR EACH ROW EXECUTE FUNCTION validate_class_student_membership();
 
@@ -1657,65 +1495,140 @@ CREATE TRIGGER ck_subscription_workspace_kind BEFORE INSERT OR UPDATE OF workspa
 
 CREATE TRIGGER ck_teaching_assignment_preserve_history BEFORE DELETE OR UPDATE ON teaching_assignment FOR EACH ROW EXECUTE FUNCTION guard_teaching_assignment_history();
 
-ALTER TABLE class_student ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY class_student
+    ADD CONSTRAINT fk_class_student_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
 
-ALTER TABLE course ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY correction_notice
+    ADD CONSTRAINT fk_correction_notice_affected_version FOREIGN KEY (resource_id, affected_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE course_subject ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY correction_notice
+    ADD CONSTRAINT fk_correction_notice_replacement_version FOREIGN KEY (resource_id, replacement_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE enrollment ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY course
+    ADD CONSTRAINT fk_course_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
 
-ALTER TABLE guardian_link ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY course_subject
+    ADD CONSTRAINT fk_course_subject_course FOREIGN KEY (workspace_id, class_id, course_id) REFERENCES course(workspace_id, class_id, id);
 
-ALTER TABLE homeroom_assignment ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY enrollment
+    ADD CONSTRAINT fk_enrollment_class_student FOREIGN KEY (workspace_id, class_student_id) REFERENCES class_student(workspace_id, id);
 
-ALTER TABLE library_item ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY enrollment
+    ADD CONSTRAINT fk_enrollment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-ALTER TABLE resource_assignment ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY homeroom_assignment
+    ADD CONSTRAINT fk_homeroom_assignment_school_class FOREIGN KEY (workspace_id, class_id) REFERENCES school_class(workspace_id, id);
 
-ALTER TABLE sample_activity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY resource_dependency
+    ADD CONSTRAINT fk_resource_dependency_derived_version FOREIGN KEY (derived_resource_id, derived_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE sample_result ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY resource_dependency
+    ADD CONSTRAINT fk_resource_dependency_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE sample_submission ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT fk_sample_activity_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-ALTER TABLE school_class ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY sample_activity
+    ADD CONSTRAINT fk_sample_activity_subscription_period FOREIGN KEY (workspace_id, subscription_period_id) REFERENCES subscription_period(workspace_id, id);
 
-ALTER TABLE system_practice_attempt_sample ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY sample_result
+    ADD CONSTRAINT fk_sample_result_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-ALTER TABLE teaching_assignment ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ONLY sample_result
+    ADD CONSTRAINT fk_sample_result_submission FOREIGN KEY (workspace_id, submission_id) REFERENCES sample_submission(workspace_id, id);
 
-CREATE POLICY class_student_workspace_isolation ON class_student USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
+ALTER TABLE ONLY sample_submission
+    ADD CONSTRAINT fk_sample_submission_activity FOREIGN KEY (workspace_id, activity_id) REFERENCES sample_activity(workspace_id, id);
 
-CREATE POLICY course_subject_workspace_isolation ON course_subject USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
+ALTER TABLE ONLY share_grant
+    ADD CONSTRAINT fk_share_grant_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES resource_version(resource_id, id);
 
-CREATE POLICY course_workspace_isolation ON course USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
+ALTER TABLE ONLY teaching_assignment
+    ADD CONSTRAINT fk_teaching_assignment_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
-CREATE POLICY enrollment_workspace_isolation ON enrollment USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
+ALTER TABLE ONLY membership_role
+    ADD CONSTRAINT membership_role_membership_id_fkey FOREIGN KEY (membership_id) REFERENCES center_membership(id);
 
-CREATE POLICY guardian_link_workspace_isolation ON guardian_link USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
+ALTER TABLE ONLY notification_receipt
+    ADD CONSTRAINT notification_receipt_notice_id_fkey FOREIGN KEY (notice_id) REFERENCES correction_notice(id);
 
-CREATE POLICY homeroom_assignment_workspace_isolation ON homeroom_assignment USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
+ALTER TABLE ONLY resource_dependency
+    ADD CONSTRAINT resource_dependency_share_grant_id_fkey FOREIGN KEY (share_grant_id) REFERENCES share_grant(id);
 
-CREATE POLICY library_item_workspace_isolation ON library_item USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
+ALTER TABLE ONLY resource_version
+    ADD CONSTRAINT resource_version_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES resource(id);
 
-CREATE POLICY resource_assignment_workspace_isolation ON resource_assignment USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
-
-CREATE POLICY sample_activity_workspace_isolation ON sample_activity USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
-
-CREATE POLICY sample_result_workspace_isolation ON sample_result USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
-
-CREATE POLICY sample_submission_workspace_isolation ON sample_submission USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
-
-CREATE POLICY school_class_workspace_isolation ON school_class USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
-
-CREATE POLICY system_practice_workspace_isolation ON system_practice_attempt_sample USING ((personal_workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((personal_workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
-
-CREATE POLICY teaching_assignment_workspace_isolation ON teaching_assignment USING ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid)) WITH CHECK ((workspace_id = (NULLIF(current_setting('app.workspace_id'::text, true), ''::text))::uuid));
-
-
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
+--
 --
 -- PostgreSQL database dump complete
 --
 
+-- Tra cứu resource theo chủ sở hữu và môn học (danh mục cá nhân/trung tâm lọc theo môn).
+CREATE INDEX ix_resource_owner_subject ON resource (owner_workspace_id, subject_id);
 
+-- Grants cho role runtime (giaokhoa_runtime): ứng dụng chạy bằng role này, role chạy
+-- migration giữ quyền sở hữu đối tượng. Mọi lệnh grant đều gắn tường minh với schema mà
+-- migration đang chạy (current_schema(): public với dòng hệ thống, schema của workspace
+-- với dòng tenant) thay vì phụ thuộc search_path của phiên. flyway_schema_history chỉ
+-- được đọc: runtime không có quyền ghi lịch sử migration.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'giaokhoa_runtime') THEN
+        CREATE ROLE giaokhoa_runtime NOLOGIN NOSUPERUSER NOBYPASSRLS;
+    END IF;
+END
+$$;
+
+DO $$
+DECLARE
+    target_schema text := current_schema();
+BEGIN
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO giaokhoa_runtime', target_schema);
+    EXECUTE format(
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO giaokhoa_runtime',
+        target_schema);
+    EXECUTE format(
+        'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO giaokhoa_runtime',
+        target_schema);
+    IF to_regclass(format('%I.flyway_schema_history', target_schema)) IS NOT NULL THEN
+        EXECUTE format(
+            'REVOKE INSERT, UPDATE, DELETE ON %I.flyway_schema_history FROM giaokhoa_runtime',
+            target_schema);
+    END IF;
+    EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA %I '
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO giaokhoa_runtime',
+        target_schema);
+    EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA %I '
+        'GRANT USAGE, SELECT ON SEQUENCES TO giaokhoa_runtime',
+        target_schema);
+END
+$$;

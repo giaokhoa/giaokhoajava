@@ -12,8 +12,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * Một môn trong danh mục tham chiếu dùng chung toàn hệ thống (mặt phẳng hệ thống, không có
- * workspace_id và không RLS theo DDL V015). Module giảng dạy chỉ đọc danh mục này; {@code
- * CourseSubject.subjectId} trỏ tới đây bằng ID thuần.
+ * workspace_id). Module giảng dạy chỉ đọc danh mục này; {@code CourseSubject.subjectId} trỏ tới đây
+ * bằng ID thuần.
  */
 @Entity
 @Table(name = "subject")
