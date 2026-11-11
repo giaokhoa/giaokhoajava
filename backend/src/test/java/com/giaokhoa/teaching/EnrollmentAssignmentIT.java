@@ -513,7 +513,8 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             new ResourceCopies(
                                     runtime.resources,
                                     runtime.resourceVersions,
-                                    runtime.resourceDependencies),
+                                    runtime.resourceDependencies,
+                                    runtimeWorkspaceTx),
                             new ResourceScopePreconditions(
                                     runtime.periods,
                                     runtime.memberships,

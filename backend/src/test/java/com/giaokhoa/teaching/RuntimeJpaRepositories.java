@@ -107,6 +107,15 @@ final class RuntimeJpaRepositories implements AutoCloseable {
         emfBean.setPackagesToScan("com.giaokhoa");
         emfBean.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
         emfBean.getJpaPropertyMap().put("hibernate.hbm2ddl.auto", "validate");
+        emfBean.getJpaPropertyMap()
+                .put(
+                        org.hibernate.cfg.AvailableSettings.MULTI_TENANT_CONNECTION_PROVIDER,
+                        new com.giaokhoa.infrastructure.tenancy.TenantConnectionProvider(
+                                dataSource));
+        emfBean.getJpaPropertyMap()
+                .put(
+                        org.hibernate.cfg.AvailableSettings.MULTI_TENANT_IDENTIFIER_RESOLVER,
+                        new com.giaokhoa.infrastructure.tenancy.WorkspaceTenantResolver());
         emfBean.afterPropertiesSet();
         this.entityManagerFactory = Objects.requireNonNull(emfBean.getObject());
         this.transactionManager = new JpaTransactionManager(entityManagerFactory);

@@ -1,5 +1,6 @@
 package com.giaokhoa.resources;
 
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.model.Resource;
 import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.model.ResourceVersion;
@@ -38,15 +39,45 @@ public class ResourceCopies {
     private final ResourceRepository resources;
     private final ResourceVersionRepository versions;
     private final ResourceDependencyRepository dependencies;
+    private final WorkspaceTransaction workspaces;
 
     public ResourceCopies(
             ResourceRepository resources,
             ResourceVersionRepository versions,
-            ResourceDependencyRepository dependencies) {
+            ResourceDependencyRepository dependencies,
+            WorkspaceTransaction workspaces) {
         this.resources = resources;
         this.versions = versions;
         this.dependencies = dependencies;
+        this.workspaces = workspaces;
     }
+
+    /** Dữ kiện nguồn tách khỏi persistence context của tenant nguồn. */
+    public record VersionView(
+            String label,
+            String body,
+            @Nullable String answer,
+            ResourceVersion.ReviewState reviewState,
+            @Nullable Instant lockedAt) {}
+
+    public Optional<VersionView> readVersion(VersionMetadata source) {
+        return Objects.requireNonNull(
+                workspaces.readInWorkspace(
+                        source.ownerWorkspaceId(),
+                        () ->
+                                versions.findByResourceIdAndId(
+                                                source.resourceId(), source.versionId())
+                                        .map(version ->
+                                                new VersionView(
+                                                        version.getLabel(),
+                                                        version.getBodyStub(),
+                                                        version.getAnswerStub(),
+                                                        version.getReviewState(),
+                                                        version.getLockedAt()))));
+    }
+
+    private record DependencyRow(
+            UUID resourceId, UUID versionId, @Nullable UUID grantId, String constraints) {}
 
     /** Định danh một bản sao đã vật chất hoá: resource sao và version sao của nó. */
     public record CopyRef(UUID resourceId, UUID versionId) {}
@@ -113,6 +144,22 @@ public class ResourceCopies {
             int versionNo,
             @Nullable UUID grantId,
             String usageConstraints) {
+        List<DependencyRow> sourceEdges =
+                Objects.requireNonNull(
+                        workspaces.readInWorkspace(
+                                source.ownerWorkspaceId(),
+                                () ->
+                                        dependencies
+                                                .findByDerivedResourceIdAndDerivedVersionId(
+                                                        source.resourceId(), source.versionId())
+                                                .stream()
+                                                .map(edge ->
+                                                        new DependencyRow(
+                                                                edge.getSourceResourceId(),
+                                                                edge.getSourceVersionId(),
+                                                                edge.getShareGrantId(),
+                                                                edge.getUsageConstraints()))
+                                                .toList()));
         versions.save(
                 new ResourceVersion(
                         copyVersionId,
@@ -132,18 +179,16 @@ public class ResourceCopies {
                         source.versionId(),
                         grantId,
                         usageConstraints));
-        for (ResourceDependency edge :
-                dependencies.findByDerivedResourceIdAndDerivedVersionId(
-                        source.resourceId(), source.versionId())) {
+        for (DependencyRow edge : sourceEdges) {
             dependencies.save(
                     new ResourceDependency(
                             UUID.randomUUID(),
                             copyResourceId,
                             copyVersionId,
-                            edge.getSourceResourceId(),
-                            edge.getSourceVersionId(),
-                            edge.getShareGrantId(),
-                            edge.getUsageConstraints()));
+                            edge.resourceId(),
+                            edge.versionId(),
+                            edge.grantId(),
+                            edge.constraints()));
         }
         return new CopyRef(copyResourceId, copyVersionId);
     }

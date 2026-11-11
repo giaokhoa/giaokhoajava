@@ -612,24 +612,19 @@ public class ResourceLibraryService {
                     }
                     UUID copyVersionId =
                             existingCopyVersionId.orElseGet(() -> {
-                                ResourceVersion sourceVersion =
-                                        versions.findById(replacement.versionId())
+                                ResourceCopies.VersionView sourceVersion =
+                                        copies.readVersion(replacement)
                                                 .orElseThrow(ResourceLibraryService::notFound);
                                 UUID newCopyVersionId = UUID.randomUUID();
                                 copies.appendVersion(
                                         item.resourceId(),
                                         newCopyVersionId,
                                         replacement,
-                                        sourceVersion.getLabel(),
-                                        repository
-                                                .body(
-                                                        replacement.resourceId(),
-                                                        replacement.versionId())
-                                                .orElseThrow(ResourceLibraryService::notFound),
-                                        repository.answer(
-                                                replacement.resourceId(), replacement.versionId()),
-                                        sourceVersion.getReviewState(),
-                                        sourceVersion.getLockedAt(),
+                                        sourceVersion.label(),
+                                        sourceVersion.body(),
+                                        sourceVersion.answer(),
+                                        sourceVersion.reviewState(),
+                                        sourceVersion.lockedAt(),
                                         copies.nextVersionNo(item.resourceId()),
                                         grantId,
                                         provenance.getUsageConstraints());
