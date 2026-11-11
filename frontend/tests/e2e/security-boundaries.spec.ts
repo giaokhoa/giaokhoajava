@@ -124,7 +124,7 @@ test("CSRF token gắn với phiên: token của phiên khác bị 403", async (
   }
 });
 
-test("IDOR: thành viên không xem được danh sách membership của workspace khác", async ({
+test("IDOR: người dùng không đọc được danh sách lớp ở personal workspace của người khác", async ({
   page,
   browser,
 }) => {
@@ -148,17 +148,18 @@ test("IDOR: thành viên không xem được danh sách membership của workspa
       await dongBoEligibility(pageB, origin);
       const personalB = await layPersonalWorkspaceId(pageB, origin);
 
-      // Đối chứng dương: chủ workspace đọc được danh sách của chính mình.
+      // Đối chứng dương: chủ personal workspace được đọc danh sách lớp của mình.
+      // Endpoint /memberships chỉ áp dụng cho thành viên center, không dùng làm đối chứng personal.
       const own = await appRequestWhenReady(
         pageB,
-        `${origin}/api/workspaces/${personalB}/memberships`,
+        `${origin}/api/workspaces/${personalB}/classes`,
       );
       expect(own.status()).toBe(200);
 
-      // Người ngoài không có membership hiện hành trong workspace đó thì bị 403.
+      // Cùng route, actor thuộc personal workspace khác phải bị 403.
       const foreign = await appRequestWhenReady(
         page,
-        `${origin}/api/workspaces/${personalB}/memberships`,
+        `${origin}/api/workspaces/${personalB}/classes`,
       );
       expect(foreign.status()).toBe(403);
       expect(((await foreign.json()) as { code?: string }).code).toBe(
