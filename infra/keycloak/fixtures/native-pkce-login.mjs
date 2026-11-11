@@ -28,7 +28,10 @@ await new Promise((done, reject) => {
 
 let browser;
 try {
-    browser = await chromium.launch({ headless: true });
+    const endpoint = process.env.PW_TEST_CONNECT_WS_ENDPOINT;
+    browser = endpoint
+        ? await chromium.connect(endpoint)
+        : await chromium.launch({ headless: true });
 
     async function login(username, clientId) {
         const context = await browser.newContext();

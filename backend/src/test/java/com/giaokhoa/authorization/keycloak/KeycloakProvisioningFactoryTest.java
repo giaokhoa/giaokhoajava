@@ -16,11 +16,8 @@ class KeycloakProvisioningFactoryTest {
 
     @Test
     void realmOfRejectsNullIssuer() {
-        IllegalStateException failure =
-                assertThrows(
-                        IllegalStateException.class,
-                        () -> KeycloakProvisioningFactory.realmOf(null));
-        assertEquals("Keycloak issuer URI has no realm: null", failure.getMessage());
+        // Chỉ khoá loại exception: thông điệp chứa chính đầu vào nên khoá câu chữ là khoá prose.
+        assertThrows(IllegalStateException.class, () -> KeycloakProvisioningFactory.realmOf(null));
     }
 
     @Test

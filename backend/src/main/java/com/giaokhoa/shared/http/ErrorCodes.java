@@ -29,6 +29,7 @@ public final class ErrorCodes {
     public static final String COURSE_SUBJECT_NOT_FOUND = "COURSE_SUBJECT_NOT_FOUND";
     public static final String DATA_CONFLICT = "DATA_CONFLICT";
     public static final String DECISION_UNVERIFIABLE = "DECISION_UNVERIFIABLE";
+    public static final String EMAIL_TAKEN = "EMAIL_TAKEN";
     public static final String ENROLLMENT_ALREADY_REVOKED = "ENROLLMENT_ALREADY_REVOKED";
     public static final String ENROLLMENT_BATCH_REQUIRED = "ENROLLMENT_BATCH_REQUIRED";
     public static final String ENROLLMENT_CLASS_MISMATCH = "ENROLLMENT_CLASS_MISMATCH";
@@ -85,6 +86,8 @@ public final class ErrorCodes {
     public static final String RECOVERY_INVALID_STATE = "RECOVERY_INVALID_STATE";
     public static final String RECOVERY_REQUEST_NOT_FOUND = "RECOVERY_REQUEST_NOT_FOUND";
     public static final String RECOVERY_TARGET_NOT_FOUND = "RECOVERY_TARGET_NOT_FOUND";
+    public static final String RESOURCE_HAS_HISTORY = "RESOURCE_HAS_HISTORY";
+    public static final String RESOURCE_VERSION_HAS_HISTORY = "RESOURCE_VERSION_HAS_HISTORY";
     public static final String RESULT_NOT_DRAFT = "RESULT_NOT_DRAFT";
     public static final String ROSTER_ENTRY_ALREADY_REVOKED = "ROSTER_ENTRY_ALREADY_REVOKED";
     public static final String ROSTER_ENTRY_NOT_CURRENT = "ROSTER_ENTRY_NOT_CURRENT";
@@ -104,11 +107,13 @@ public final class ErrorCodes {
     public static final String TEACHING_ASSIGNMENT_ALREADY_REVOKED =
             "TEACHING_ASSIGNMENT_ALREADY_REVOKED";
     public static final String TEACHING_CONTEXT_NOT_ACTIVE = "TEACHING_CONTEXT_NOT_ACTIVE";
+    public static final String TEACHING_OBJECT_HAS_HISTORY = "TEACHING_OBJECT_HAS_HISTORY";
     public static final String UNAUTHORIZED = "UNAUTHORIZED";
     public static final String UNSUPPORTED_SAMPLE_ACTION = "UNSUPPORTED_SAMPLE_ACTION";
     public static final String USERNAME_MISMATCH = "USERNAME_MISMATCH";
     public static final String USERNAME_TAKEN = "USERNAME_TAKEN";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
+    public static final String VERIFICATION_EMAIL_COOLDOWN = "VERIFICATION_EMAIL_COOLDOWN";
     public static final String VERSION_CONFLICT = "VERSION_CONFLICT";
     public static final String WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND";
 }

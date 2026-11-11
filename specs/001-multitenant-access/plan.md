@@ -150,7 +150,7 @@ Không có unknown nghiệp vụ cần mở lại brainstorm trong bước này.
 
 ## Phase 1 — Dữ liệu, hợp đồng và kiểm chứng
 
-- [data-model.md](data-model.md): entities/fields/FK/trạng thái, workspace RLS, canonical source, provenance, subscription periods, projection/revision/durable operation.
+- [data-model.md](data-model.md): entities/fields/FK/trạng thái, cách ly theo schema tenant, canonical source, provenance, subscription periods, projection/revision/durable operation.
 - [contracts/http-api.md](contracts/http-api.md): session/CSRF, HTTP semantics, typed request/response fields, các route quản trị và luồng UI; fixture actions không bypass quyền.
 - [contracts/authorization.md](contracts/authorization.md): resource/scope naming, native source graph, PDP request, đồng bộ/fence/concurrency, console boundary và 9 nhóm gate thật.
 - [quickstart.md](quickstart.md): yêu cầu môi trường, lệnh dự kiến sau implementation, dữ kiện nghiệm thu và kết quả mong đợi. Không chứa implementation/migration/test suite đầy đủ.

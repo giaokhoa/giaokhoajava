@@ -2,7 +2,7 @@ package com.giaokhoa.verification;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.tenancy.WorkspaceDirectoryService;
+import com.giaokhoa.tenancy.service.WorkspaceDirectoryService;
 import com.giaokhoa.verification.repository.SystemPracticeAttemptRepository;
 import java.time.Instant;
 import java.util.List;
@@ -12,9 +12,9 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 /**
- * Đọc lịch sử luyện tập trên resource hệ thống của chính người dùng. Bảng mẫu nằm dưới RLS theo
- * personal workspace nên truy vấn chạy trong WorkspaceTransaction với context là personal workspace
- * của actor, và vẫn lọc thêm theo user_id của actor để hai lớp phạm vi cùng giữ.
+ * Đọc lịch sử luyện tập trên resource hệ thống của chính người dùng. Bảng mẫu nằm trong schema
+ * tenant của personal workspace nên truy vấn chạy trong WorkspaceTransaction với context là
+ * personal của actor, và vẫn lọc thêm theo user_id của actor để hai lớp phạm vi cùng giữ.
  */
 @Service
 public class SystemPracticeService {

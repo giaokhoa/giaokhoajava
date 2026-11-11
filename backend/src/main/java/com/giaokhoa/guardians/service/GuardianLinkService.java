@@ -12,9 +12,9 @@ import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.service.MembershipService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -44,9 +44,9 @@ import org.springframework.transaction.annotation.Transactional;
  * thái của schema — vẫn truy được actor đã quyết.
  *
  * <p>Như các service nguồn quyền khác, mỗi phương thức đặt context workspace cho transaction qua
- * {@link WorkspaceTransaction} ngay khi bắt đầu vì bảng guardian_link nằm dưới RLS theo đúng
- * context đó, và giữ khóa workspace thống nhất qua {@link ResourceMutationCoordinator} để dữ kiện
- * nguồn mà projector chiếu không bao giờ thiếu một mutation đang chạy đồng thời.
+ * {@link WorkspaceTransaction} ngay khi bắt đầu vì bảng guardian_link nằm trong schema tenant của
+ * đúng workspace đó, và giữ khóa workspace thống nhất qua {@link ResourceMutationCoordinator} để dữ
+ * kiện nguồn mà projector chiếu không bao giờ thiếu một mutation đang chạy đồng thời.
  */
 @Service
 public class GuardianLinkService {

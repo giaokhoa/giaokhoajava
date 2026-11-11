@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -134,6 +135,21 @@ class ProjectionWorkerTest {
 
         // Poll thứ hai nằm trong cửa sổ backoff có giới hạn: không có lần thử mạng mới.
         verify(reconciler, times(1)).tryReconcilePartition(eq(PARTITION), anyInt());
+    }
+
+    @Test
+    void anOrphanedPartitionDeletedAfterTheScanIsSkippedSilently() {
+        when(operations.findAffectedPartitionsByStateIn(any())).thenReturn(List.of());
+        when(partitions.findIdsByStateWithIntentOrderByIdAsc(AuthorizationPartition.State.PENDING))
+                .thenReturn(List.of(PARTITION));
+        // Partition bị xoá giữa lượt quét và lần đọc: vòng mồ côi bỏ qua, không
+        // để EmptyResultDataAccessException thoát ra poll().
+        when(reconciler.partition(PARTITION)).thenThrow(new EmptyResultDataAccessException(1));
+        ProjectionWorker worker = worker();
+
+        worker.reconcileOrphanedPartitions();
+
+        verify(reconciler, never()).tryReconcilePartition(any(), anyInt());
     }
 
     @Test

@@ -105,7 +105,7 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
 
     private static void discardConnection(Connection connection, SQLException failure) {
         try (connection) {
-            connection.abort(Runnable::run);
+            connection.abort(task -> task.run());
         } catch (SQLException cleanupFailure) {
             failure.addSuppressed(cleanupFailure);
         }

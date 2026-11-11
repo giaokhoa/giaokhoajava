@@ -2,10 +2,13 @@ package com.giaokhoa.identity.eligibility;
 
 import com.giaokhoa.authorization.fence.AuthorizationFence;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
+import com.giaokhoa.authorization.model.AuthorizationPartition;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
+import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient;
 import com.giaokhoa.identity.keycloak.CurrentIdentityClient.CurrentIdentity;
 import com.giaokhoa.identity.model.UserAccount;
@@ -17,13 +20,11 @@ import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,8 +42,7 @@ import org.springframework.web.client.RestClientException;
  * subject không khớp account, đều fail-closed 503 và không ghi gì.
  *
  * <p>Dữ kiện directory (account, workspace) đọc qua repository của module identity/tenancy; dữ kiện
- * của mặt phẳng authorization (projection, partition) vẫn đọc tại đây cho tới khi repository của
- * mặt phẳng đó land cùng đợt chuyển đổi của module authorization.
+ * của mặt phẳng authorization (projection, partition) đọc qua repository của module authorization.
  */
 @Service
 public class IdentityEligibilityService {
@@ -54,7 +54,8 @@ public class IdentityEligibilityService {
     private static final String ELIGIBILITY_SCOPE =
             PermissionCatalog.ProfileScope.WORKSPACE_LIST.scopeName();
 
-    private final JdbcTemplate jdbc;
+    private final AuthzProjectionRepository projections;
+    private final AuthzPartitionRepository partitions;
     private final UserAccountRepository accounts;
     private final WorkspaceRepository workspaces;
     private final CurrentIdentityClient identities;
@@ -62,13 +63,15 @@ public class IdentityEligibilityService {
     private final PersonalEntitlementProjector entitlementProjector;
 
     public IdentityEligibilityService(
-            JdbcTemplate jdbc,
+            AuthzProjectionRepository projections,
+            AuthzPartitionRepository partitions,
             UserAccountRepository accounts,
             WorkspaceRepository workspaces,
             CurrentIdentityClient identities,
             AuthorizationOperationService operations,
             PersonalEntitlementProjector entitlementProjector) {
-        this.jdbc = jdbc;
+        this.projections = projections;
+        this.partitions = partitions;
         this.accounts = accounts;
         this.workspaces = workspaces;
         this.identities = identities;
@@ -110,10 +113,10 @@ public class IdentityEligibilityService {
         String desiredHash =
                 ProjectionReconciler.desiredHash(targetKey, ELIGIBILITY_SCOPE, desiredSources);
         List<String> recordedHashes =
-                jdbc.queryForList(
-                        "SELECT desired_hash FROM authz_projection WHERE target_key = ?",
-                        String.class,
-                        targetKey);
+                projections
+                        .findByTargetKey(targetKey)
+                        .map(projection -> List.of(projection.getDesiredHash()))
+                        .orElse(List.of());
         boolean profileChanged =
                 current.emailVerified() != recordedVerified
                         || !Objects.equals(current.email(), recordedEmail)
@@ -128,7 +131,7 @@ public class IdentityEligibilityService {
         List<AuthorizationOperationService.PartitionChange> changes = new ArrayList<>();
         UUID accountPartition = accountPartition(actorUserId);
         // Workspace cá nhân tra qua repository directory; partition của nó thuộc mặt phẳng
-        // authorization nên vẫn tra tại đây theo owner_key suy từ chính workspace đó.
+        // authorization nên tra qua repository của mặt phẳng đó theo owner_key suy từ workspace.
         @Nullable UUID personalWorkspaceId = null;
         @Nullable UUID personalPartitionId = null;
         long personalDesiredRevision = 0;
@@ -136,32 +139,18 @@ public class IdentityEligibilityService {
                 workspaces.findByKindAndOwnerUserId(Workspace.Kind.PERSONAL, actorUserId);
         if (!personalWorkspaces.isEmpty()) {
             UUID workspaceId = personalWorkspaces.getFirst().getId();
-            List<Map<String, Object>> partitions =
-                    jdbc.queryForList(
-                            "SELECT id AS partition_id, desired_revision FROM authz_partition"
-                                    + " WHERE owner_key = ? AND kind = 'WORKSPACE'",
-                            "workspace:" + workspaceId);
-            if (!partitions.isEmpty()) {
+            Optional<AuthorizationPartition> personalPartition =
+                    partitions.findByKindAndOwnerKey(
+                            AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId);
+            if (personalPartition.isPresent()) {
                 personalWorkspaceId = workspaceId;
-                personalPartitionId =
-                        (UUID)
-                                Objects.requireNonNull(
-                                        partitions.getFirst().get("partition_id"), "partition_id");
-                personalDesiredRevision =
-                        ((Number)
-                                        Objects.requireNonNull(
-                                                partitions.getFirst().get("desired_revision"),
-                                                "desired_revision"))
-                                .longValue();
+                personalPartitionId = personalPartition.get().getId();
+                personalDesiredRevision = personalPartition.get().getDesiredRevision();
             }
         }
         if (personalWorkspaceId != null) {
             String workspaceTarget = NativePolicyTemplates.workspaceKey(personalWorkspaceId);
-            if (jdbc.queryForList(
-                            "SELECT id FROM authz_projection WHERE target_key = ?",
-                            UUID.class,
-                            workspaceTarget)
-                    .isEmpty()) {
+            if (projections.findByTargetKey(workspaceTarget).isEmpty()) {
                 String scope = PermissionCatalog.WorkspaceScope.ENTER.scopeName();
                 changes.add(
                         new AuthorizationOperationService.PartitionChange(
@@ -183,10 +172,10 @@ public class IdentityEligibilityService {
             account.syncEmail(current.email(), current.emailVerified());
         }
         Long recordedRevision =
-                jdbc.queryForObject(
-                        "SELECT desired_revision FROM authz_partition WHERE id = ?",
-                        Long.class,
-                        accountPartition);
+                partitions
+                        .findById(accountPartition)
+                        .map(partition -> partition.getDesiredRevision())
+                        .orElse(null);
         if (recordedRevision == null) {
             throw AuthorizationFence.notReady();
         }
@@ -214,13 +203,14 @@ public class IdentityEligibilityService {
 
     private boolean retractionWasApplied(UUID actorUserId) {
         // Reconcile xóa projection đã retract; revision đã áp là bằng chứng không tạo lại nó.
-        return Boolean.TRUE.equals(
-                jdbc.queryForObject(
-                        "SELECT state = 'READY' AND applied_revision = desired_revision"
-                                + " AND applied_revision > 0 FROM authz_partition"
-                                + " WHERE kind = 'ACCOUNT' AND owner_key = ?",
-                        Boolean.class,
-                        "account:" + actorUserId));
+        return partitions
+                .findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.ACCOUNT, "account:" + actorUserId)
+                .map(partition ->
+                        partition.getState() == AuthorizationPartition.State.READY
+                                && partition.getAppliedRevision() == partition.getDesiredRevision()
+                                && partition.getAppliedRevision() > 0)
+                .orElse(false);
     }
 
     private CurrentIdentity readCurrent(String keycloakSub) {
@@ -240,15 +230,11 @@ public class IdentityEligibilityService {
     }
 
     private UUID accountPartition(UUID actorUserId) {
-        List<UUID> found =
-                jdbc.queryForList(
-                        "SELECT id FROM authz_partition WHERE kind = 'ACCOUNT' AND owner_key = ?",
-                        UUID.class,
-                        "account:" + actorUserId);
-        if (found.isEmpty()) {
-            throw AuthorizationFence.notReady();
-        }
-        return found.getFirst();
+        return partitions
+                .findByKindAndOwnerKey(
+                        AuthorizationPartition.Kind.ACCOUNT, "account:" + actorUserId)
+                .map(partition -> partition.getId())
+                .orElseThrow(AuthorizationFence::notReady);
     }
 
     private static HttpProblemException unavailable(@Nullable Throwable cause) {

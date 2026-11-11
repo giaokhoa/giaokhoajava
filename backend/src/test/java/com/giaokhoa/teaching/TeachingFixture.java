@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.giaokhoa.support.HttpTestClient;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.support.OidcFormLogin;
 import jakarta.servlet.http.Cookie;
@@ -35,6 +36,7 @@ import org.awaitility.core.ConditionTimeoutException;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -315,6 +317,47 @@ abstract class TeachingFixture extends IntegrationEnvironment {
         return JSON.readTree(response.getContentAsString());
     }
 
+    private @Nullable HttpTestClient httpClient;
+
+    /**
+     * Client HTTP thật của tầng e2e-backend (B109), bind lười vào server RANDOM_PORT của context.
+     * Chỉ các class e2e dùng; các class it-pure giữ nguyên đường MockMvc.
+     */
+    protected HttpTestClient realHttp() {
+        if (httpClient == null) {
+            httpClient = HttpTestClient.bind(webContext);
+        }
+        return httpClient;
+    }
+
+    /** Bản HTTP thật của {@link #postMutation(RealSession, String, String, String)}. */
+    protected UUID postMutationHttp(RealSession session, String uri, String json, String method)
+            throws Exception {
+        HttpTestClient.Response response =
+                realHttp()
+                        .exchange(
+                                HttpMethod.valueOf(method),
+                                uri,
+                                session.cookie(),
+                                true,
+                                json,
+                                Map.of("Idempotency-Key", "teaching-" + UUID.randomUUID()));
+        assertEquals(202, response.status(), "Mutation phải trả 202 OperationView, URI: " + uri);
+        JsonNode body = JSON.readTree(response.body());
+        assertEquals("PENDING", body.get("state").stringValue());
+        assertFalse(body.get("completed").booleanValue());
+        assertFalse(body.get("statusUrl").stringValue().isBlank());
+        return UUID.fromString(body.get("operationId").stringValue());
+    }
+
+    /** Bản HTTP thật của {@link #getJson(RealSession, String, int)}. */
+    protected JsonNode getJsonHttp(RealSession session, String uri, int expectedStatus)
+            throws Exception {
+        HttpTestClient.Response response = realHttp().get(uri, session.cookie());
+        assertEquals(expectedStatus, response.status(), "GET " + uri);
+        return JSON.readTree(response.body());
+    }
+
     // ---------- Dữ kiện thư mục ----------
 
     protected record KeycloakLogin(
@@ -342,8 +385,8 @@ abstract class TeachingFixture extends IntegrationEnvironment {
     /**
      * Danh tính dùng chung cho cả class test: tạo user Keycloak và tài khoản là phần seed đắt (mỗi
      * user tạo ra là một lần Keycloak băm mật khẩu), còn center, membership và gói là JDBC rẻ.
-     * Center mặc định riêng từng test; riêng TeachingAuthorizationIT và TeachingStructureIT dùng
-     * chung một center cho cả class theo mô hình phân vùng thực thể con (mỗi test tự tạo
+     * Center mặc định riêng từng test; riêng TeachingAuthorizationE2EIT và TeachingStructureE2EIT
+     * dùng chung một center cho cả class theo mô hình phân vùng thực thể con (mỗi test tự tạo
      * class/course với tên duy nhất và chỉ khẳng định trên vùng của mình, không test nào sửa
      * membership hay gói của center dùng chung).
      */
@@ -622,6 +665,44 @@ abstract class TeachingFixture extends IntegrationEnvironment {
         // Phiên thật luôn nạp workspace trước: lời gọi có fence đó đồng bộ eligibility
         // của actor, điều kiện để PDP cho qua các scope nghiệp vụ.
         getWorkspacesWhenReady(session);
+        return session;
+    }
+
+    /**
+     * Bản HTTP thật của {@link #getWorkspacesWhenReady(RealSession)} cho tầng e2e-backend: cùng
+     * vòng poll và cùng cách chịu hết giờ như bản MockMvc, chỉ khác đường vận chuyển.
+     */
+    protected HttpTestClient.Response getWorkspacesWhenReadyHttp(RealSession session) {
+        AtomicReference<HttpTestClient.Response> last = new AtomicReference<>();
+        try {
+            await().atMost(Duration.ofSeconds(60))
+                    .pollInterval(Duration.ofMillis(500))
+                    .until(() -> {
+                        HttpTestClient.Response response =
+                                realHttp().get("/api/me/workspaces", session.cookie());
+                        last.set(response);
+                        return response.status() != 503
+                                || !response.body().contains("AUTHORIZATION_NOT_READY");
+                    });
+        } catch (ConditionTimeoutException ignored) {
+            // Hết 60 giây mà account chưa sẵn sàng: trả phản hồi cuối như vòng poll cũ để
+            // khẳng định phía trên tự báo đúng trạng thái.
+        }
+        return Objects.requireNonNull(last.get());
+    }
+
+    /** Bản HTTP thật của {@link #openSession(KeycloakLogin)} cho tầng e2e-backend. */
+    protected RealSession openSessionHttp(KeycloakLogin login) throws Exception {
+        RealSession session =
+                RealSession.open(
+                        login.username(),
+                        login.password(),
+                        login.subject(),
+                        sessionFilter,
+                        authorizedClients,
+                        clientRegistrations,
+                        sessions);
+        getWorkspacesWhenReadyHttp(session);
         return session;
     }
 

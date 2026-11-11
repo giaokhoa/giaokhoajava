@@ -13,8 +13,8 @@ import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.guardians.repository.GuardianUserAccountRepository;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
-import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.service.MembershipService;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.ArrayList;
 import java.util.List;
@@ -101,7 +101,7 @@ public class GuardianPolicyProjector {
                         .findByKindAndOwnerKey(
                                 AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
                         .stream()
-                        .map(AuthorizationPartition::getId)
+                        .map(partition -> partition.getId())
                         .toList();
         if (partitionIds.isEmpty()) {
             throw new IllegalStateException(
@@ -131,7 +131,7 @@ public class GuardianPolicyProjector {
      * ACTIVE và role tiền đề hiện hành của cả hai phía suy ra, không thuộc guardian group nào khác
      * của workspace. Chỉ ghi khi live đang lệch, để reconcile không đổi gì vẫn là kiểm chứng đọc.
      * Tự đặt context workspace vì phía reconcile không có transaction bao quanh sẵn và bảng
-     * guardian_link nằm dưới RLS theo đúng context đó.
+     * guardian_link nằm trong schema tenant của đúng workspace đó.
      */
     public void syncGroupMemberships(UUID workspaceId) {
         transactions.executeWithoutResult(_ -> {
@@ -179,7 +179,7 @@ public class GuardianPolicyProjector {
                 .findByWorkspaceIdAndParentUserIdAndState(
                         workspaceId, parentUserId, GuardianLink.APPROVED)
                 .stream()
-                .map(GuardianLink::getStudentUserId)
+                .map(link -> link.getStudentUserId())
                 .distinct()
                 .filter(studentId ->
                         memberships

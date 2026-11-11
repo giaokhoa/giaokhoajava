@@ -20,6 +20,10 @@
 - Gộp test trùng theo yêu cầu và lỗi mà test bắt được, cập nhật bảng nghiệm thu; giữ những assertion riêng của transaction, giao thức, session và browser. Số test hay coverage không thay thế bằng chứng hành vi.
 - Fixture chỉ dựng tiền đề cần cho ca kiểm thử. Tái dùng danh tính phải giữ cô lập dữ kiện và phiên; thao tác đang được kiểm thử luôn đi qua đường chạy thật của tầng đó.
 - Đặt tên test theo cơ chế của JUnit 5: tên phương thức là định danh ngắn gọn chỉ nêu hành vi chính; câu mô tả đầy đủ (kịch bản + kết quả kỳ vọng) viết ở `@DisplayName` bằng tiếng Việt để báo cáo test đọc như đặc tả, không nhồi toàn bộ mô tả vào tên phương thức. Khi một nhóm test trong cùng class dùng chung một tiền tố ngữ cảnh dài, gom nhóm bằng `@Nested` (class con mang `@DisplayName` riêng cho ngữ cảnh đó) thay vì lặp tiền tố trong từng tên phương thức.
+- Ba tầng test backend phân biệt bằng hậu tố tên class, plugin chạy và cơ chế (căn cứ: tài liệu Maven Failsafe/Surefire về mẫu tên mặc định và Spring Boot Reference mục Testing):
+  - **Unit** — hậu tố `Test`: Surefire chạy ở phase `test`; không dựng Spring context.
+  - **Integration (it-pure)** — hậu tố `IT`: Failsafe chạy ở các phase `integration-test`/`verify` (profile `integration`; profile `it-pure` loại nhóm `e2e-backend`). `@SpringBootTest` môi trường MOCK: khẳng định qua service/repository/JDBC và MockMvc trong tiến trình.
+  - **E2E backend** — hậu tố `E2EIT` kèm nhãn `@Tag("e2e-backend")`: Failsafe chạy qua profile `e2e-backend` (chỉ đúng nhóm nhãn này). Tên vẫn khớp mẫu mặc định `**/*IT.java` của Failsafe và không khớp mẫu nào của Surefire nên không cần cấu hình includes riêng. `@SpringBootTest(webEnvironment = RANDOM_PORT)` chạy server thật trên cổng ngẫu nhiên; mọi request vào ứng dụng đi qua HTTP thật bằng `RestTestClient.bindToServer()` — client fluent của Spring Framework 7 cho stack servlet (`WebTestClient` là client của stack WebFlux). Cookie phiên và token CSRF lấy qua hợp đồng thật của ứng dụng (phiên JDBC thật; token CSRF đọc từ `GET /api/session` như frontend), không dùng post-processor mô phỏng của spring-security-test.
 
 ## Điều phối triển khai
 

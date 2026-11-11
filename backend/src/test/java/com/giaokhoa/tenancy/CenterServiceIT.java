@@ -16,6 +16,9 @@ import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.tenancy.service.CenterService;
+import com.giaokhoa.tenancy.service.MembershipService;
+import com.giaokhoa.tenancy.service.WorkspaceDirectoryService;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -235,7 +238,7 @@ class CenterServiceIT extends IntegrationEnvironment {
             List<UUID> ownerCenterIds =
                     directory.listWorkspaces(owner.userId()).stream()
                             .filter(workspace -> workspace.kind() == Workspace.Kind.CENTER)
-                            .map(WorkspaceDirectoryService.ListedWorkspace::id)
+                            .map(workspace -> workspace.id())
                             .toList();
             assertEquals(1, ownerCenterIds.size(), "Replay không tạo tenant thứ hai");
             assertEquals(
@@ -955,7 +958,7 @@ class CenterServiceIT extends IntegrationEnvironment {
     /**
      * Group eligibility chung mà mọi policy graph đều gate qua (common gate của PolicyGraph):
      * test-realm.json không khai group này, các integration test tự tạo khi thiếu (theo mẫu
-     * IdentityFlowIT); chỉ xóa những group do chính class này tạo, group đã có sẵn thì để lại.
+     * IdentityFlowE2EIT); chỉ xóa những group do chính class này tạo, group đã có sẵn thì để lại.
      */
     private static void seedEligibilityGroup() {
         String parentId = null;

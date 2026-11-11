@@ -7,12 +7,14 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.resources.model.CorrectionNotice;
 import com.giaokhoa.resources.model.LibraryItem;
 import com.giaokhoa.resources.model.Resource;
 import com.giaokhoa.resources.model.ResourceAssignment;
 import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.model.ResourceVersion;
 import com.giaokhoa.resources.model.ShareGrant;
+import com.giaokhoa.resources.repository.CorrectionNoticeRepository;
 import com.giaokhoa.resources.repository.LibraryItemRepository;
 import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
@@ -27,7 +29,9 @@ import com.giaokhoa.resources.repository.ShareGrantRepository;
 import com.giaokhoa.tenancy.model.Workspace;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -54,9 +58,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * partition của các grant làm nguồn cho nó để fence của protected request và phép đóng phụ thuộc
  * luôn thấy grant đang đổi trạng thái. Projector vừa tính bundle khi ghi (qua {@link
  * #recordResourceChange}), vừa dựng lại đúng bundle đó khi {@code ProjectionReconciler} đối chiếu
- * desired hash. Các bảng thư viện/phân công/hoạt động nằm dưới RLS theo workspace ngữ cảnh nên mọi
- * phép dựng bundle tự bọc trong một transaction ngắn có đặt context của đúng workspace trước truy
- * vấn đầu tiên, như các projector bundle khác.
+ * desired hash. Các bảng thư viện/phân công/hoạt động nằm trong schema tenant của workspace ngữ
+ * cảnh nên mọi phép dựng bundle tự bọc trong một transaction ngắn có đặt context của đúng workspace
+ * trước truy vấn đầu tiên, như các projector bundle khác.
  */
 @Component
 public class ResourcePolicyProjector {
@@ -128,8 +132,8 @@ public class ResourcePolicyProjector {
     private final ResourcesUserAccountRepository userAccounts;
     private final ResourcesSampleActivityRepository activities;
     private final ResourcesAuthorizationPartitionRepository partitions;
-    private final ResourceCopies copies;
     private final ResourceScopePreconditions preconditions;
+    private final CorrectionNoticeRepository corrections;
 
     public ResourcePolicyProjector(
             AuthorizationOperationService operations,
@@ -144,8 +148,8 @@ public class ResourcePolicyProjector {
             ResourcesUserAccountRepository userAccounts,
             ResourcesSampleActivityRepository activities,
             ResourcesAuthorizationPartitionRepository partitions,
-            ResourceCopies copies,
-            ResourceScopePreconditions preconditions) {
+            ResourceScopePreconditions preconditions,
+            CorrectionNoticeRepository corrections) {
         this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
         this.versions = versions;
@@ -158,8 +162,8 @@ public class ResourcePolicyProjector {
         this.userAccounts = userAccounts;
         this.activities = activities;
         this.partitions = partitions;
-        this.copies = copies;
         this.preconditions = preconditions;
+        this.corrections = corrections;
     }
 
     /** Scope danh nghĩa ghi trên projection row của mọi bundle resource version. */
@@ -209,7 +213,7 @@ public class ResourcePolicyProjector {
     public static List<String> mapActions(List<String> actions) {
         return actions.stream()
                 .map(ResourcePolicyProjector::mapAction)
-                .flatMap(Optional::stream)
+                .flatMap(value -> value.stream())
                 .distinct()
                 .toList();
     }
@@ -582,7 +586,11 @@ public class ResourcePolicyProjector {
      * Nhánh phân công tường minh: assignment ACTIVE của đúng workspace ngữ cảnh khớp resource hoặc
      * môn của resource; ở center người được phân công phải còn membership ACTIVE. Token lưu trữ map
      * sang scope mức version qua {@link #mapAction} — {@code draft.edit} thành {@code fork}, {@code
-     * content.read} giữ nguyên nhờ catalog đã nới ở migration V028.
+     * content.read} giữ nguyên nhờ catalog đã nới ở migration V028. Cùng kỷ luật gate gói của nhánh
+     * chủ sở hữu: các scope đọc ({@code content.read}, {@code answer.read}) không qua gate gói, còn
+     * mọi scope mở rộng mà phân công trao (dùng, fork, share, review, lưu thư viện) AND thêm cửa sổ
+     * hiệu lực của từng kỳ gói của workspace ngữ cảnh — gói hết hạn thì phân công không còn mở được
+     * thao tác tạo/sửa/dùng học liệu, dù assignment vẫn ACTIVE.
      */
     private void assignmentSources(
             List<String> descriptors,
@@ -598,16 +606,20 @@ public class ResourcePolicyProjector {
                 userAccounts
                         .findByIdIn(
                                 matching.stream()
-                                        .map(ResourceAssignment::getUserId)
+                                        .map(assignment -> assignment.getUserId())
                                         .distinct()
                                         .toList())
                         .stream()
-                        .collect(Collectors.toMap(UserAccount::getId, UserAccount::getKeycloakSub));
+                        .collect(
+                                Collectors.toMap(
+                                        user -> user.getId(), user -> user.getKeycloakSub()));
         Set<UUID> activeMembers =
                 CENTER_KIND.equals(contextKind)
                         ? preconditions.centerMembershipActiveUserIds(
                                 workspaceId, subjects.keySet())
                         : Set.of();
+        List<ResourceScopePreconditions.SubscriptionPeriod> periods = List.of();
+        boolean periodsLoaded = false;
         for (ResourceAssignment assignment : matching) {
             if (CENTER_KIND.equals(contextKind)
                     && !activeMembers.contains(assignment.getUserId())) {
@@ -618,11 +630,40 @@ public class ResourcePolicyProjector {
                 continue;
             }
             for (String scope : mapActions(assignment.getActions())) {
-                descriptors.add(
-                        actorDescriptor(
-                                workspaceId, assignment.getUserId(), subject, targetKey, scope));
+                if (!isAssignmentScopePeriodGated(scope)) {
+                    descriptors.add(
+                            actorDescriptor(
+                                    workspaceId,
+                                    assignment.getUserId(),
+                                    subject,
+                                    targetKey,
+                                    scope));
+                    continue;
+                }
+                if (!periodsLoaded) {
+                    periods = preconditions.subscriptionPeriods(workspaceId);
+                    periodsLoaded = true;
+                }
+                for (ResourceScopePreconditions.SubscriptionPeriod period : periods) {
+                    descriptors.add(
+                            actorPeriodDescriptor(
+                                    workspaceId,
+                                    assignment.getUserId(),
+                                    subject,
+                                    period,
+                                    targetKey,
+                                    scope));
+                }
             }
         }
+    }
+
+    /**
+     * Một scope mức version do phân công trao có phải gate theo kỳ gói hay không: đúng các scope mở
+     * rộng của nhánh chủ sở hữu; hai scope đọc còn lại của catalog map được thì không gate.
+     */
+    static boolean isAssignmentScopePeriodGated(String scope) {
+        return OWNER_EXPANSION_SCOPES.contains(scope);
     }
 
     /**
@@ -667,11 +708,19 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Nhánh license: mỗi grant ACCEPTED cho workspace nhận trên đúng version cấp các scope do
-     * actions của grant quyết định, trong cửa sổ hiệu lực của grant và chỉ khi workspace nhận nằm
-     * trong phạm vi workspace cho phép (rỗng nghĩa là không giới hạn). Ngoại lệ copy-on-share:
-     * grant đã có bản sao tại workspace nhận thì chỉ còn scope {@code library.save} trên target của
-     * version nguồn — quyền đọc/dùng sống trên target của bản sao.
+     * Nhánh license: mỗi grant ACCEPTED cho workspace nhận trên đúng version cấp toàn bộ scope do
+     * actions của grant quyết định trên target của version nguồn, trong cửa sổ hiệu lực của grant
+     * và chỉ khi workspace nhận nằm trong phạm vi workspace cho phép (rỗng nghĩa là không giới
+     * hạn). Bản sao copy-on-share không đổi nhánh này: mọi đường đọc/dùng/fork đều hỏi quyết định
+     * trên target của version nguồn, nên quyền phải đủ ngay trên target nguồn; target của bản sao
+     * mang các scope phái sinh riêng qua {@link #derivedLicenseSources}. Thu hồi vẫn chặn cả hai
+     * target vì cả hai nhánh đều chỉ phát nguồn khi grant còn ACCEPTED.
+     *
+     * <p>Grant cũng đi theo cạnh đính chính: notice đính chính chỉ định version thay thế là bản
+     * tiếp nối của đúng version bị ảnh hưởng cho những nơi đã nhận version đó, nên grant trên
+     * version bị ảnh hưởng cũng cấp trên target của version thay thế (đường nhận cập nhật
+     * RECEIVE_UPDATE và đường đọc bản đính chính đều hỏi quyết định trên target thay thế). Version
+     * kế tiếp thường không có notice thì không được mở rộng.
      */
     private void licenseSources(
             List<String> descriptors,
@@ -680,36 +729,46 @@ public class ResourcePolicyProjector {
             UUID resourceId,
             UUID versionId,
             String targetKey) {
-        String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
-        List<ShareGrant> applicable =
-                grants
-                        .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
-                                workspaceId, resourceId, versionId, ShareGrant.State.ACCEPTED)
-                        .stream()
-                        .filter(grant -> allowedHere(grant, workspaceId))
-                        .toList();
-        Set<UUID> copiedGrantIds =
-                copies.grantsWithCopyAt(
-                        resourceId,
-                        versionId,
-                        applicable.stream().map(ShareGrant::getId).toList(),
-                        workspaceId);
+        List<ShareGrant> applicable = new ArrayList<>();
+        for (UUID sourceVersionId : licenseSourceVersions(resourceId, versionId)) {
+            applicable.addAll(
+                    grants
+                            .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
+                                    workspaceId,
+                                    resourceId,
+                                    sourceVersionId,
+                                    ShareGrant.State.ACCEPTED));
+        }
         for (ShareGrant grant : applicable) {
-            List<String> scopes = mapActions(grant.getActions());
-            boolean copied = copiedGrantIds.contains(grant.getId());
-            if (copied) {
-                if (scopes.contains(saveScope)) {
-                    descriptors.add(
-                            licenseDescriptor(
-                                    workspaceId, contextKind, grant, targetKey, saveScope));
-                }
+            if (!allowedHere(grant, workspaceId)) {
                 continue;
             }
-            for (String scope : scopes) {
+            for (String scope : mapActions(grant.getActions())) {
                 descriptors.add(
                         licenseDescriptor(workspaceId, contextKind, grant, targetKey, scope));
             }
         }
+    }
+
+    /**
+     * Tập version mà grant trên đó cũng cấp cho target của {@code versionId}: chính version đó cộng
+     * các version bị ảnh hưởng trong chuỗi đính chính dẫn tới nó (đi ngược cạnh thay thế → bị ảnh
+     * hưởng của {@code correction_notice} cùng resource cho tới khi hết chuỗi).
+     */
+    private Set<UUID> licenseSourceVersions(UUID resourceId, UUID versionId) {
+        Set<UUID> covered = new LinkedHashSet<>();
+        Deque<UUID> pending = new ArrayDeque<>(List.of(versionId));
+        while (!pending.isEmpty()) {
+            UUID current = pending.pop();
+            if (!covered.add(current)) {
+                continue;
+            }
+            for (CorrectionNotice notice :
+                    corrections.findByResourceIdAndReplacementVersionId(resourceId, current)) {
+                pending.push(notice.getAffectedVersionId());
+            }
+        }
+        return covered;
     }
 
     /**
@@ -870,10 +929,12 @@ public class ResourcePolicyProjector {
     private List<UUID> grantDependencyPartitions(
             UUID workspaceId, UUID resourceId, UUID versionId) {
         Set<UUID> grantIds = new LinkedHashSet<>();
-        for (ShareGrant grant :
-                grants.findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionId(
-                        workspaceId, resourceId, versionId)) {
-            grantIds.add(grant.getId());
+        for (UUID sourceVersionId : licenseSourceVersions(resourceId, versionId)) {
+            for (ShareGrant grant :
+                    grants.findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionId(
+                            workspaceId, resourceId, sourceVersionId)) {
+                grantIds.add(grant.getId());
+            }
         }
         for (ResourceDependency dependency :
                 dependencies.findByDerivedResourceIdAndDerivedVersionId(resourceId, versionId)) {
@@ -888,7 +949,7 @@ public class ResourcePolicyProjector {
         return partitions
                 .findByKindAndOwnerKeyIn(AuthorizationPartition.Kind.GRANT, ownerKeys)
                 .stream()
-                .map(AuthorizationPartition::getId)
+                .map(partition -> partition.getId())
                 .toList();
     }
 

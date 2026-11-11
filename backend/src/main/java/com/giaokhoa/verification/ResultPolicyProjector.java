@@ -54,11 +54,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * APPROVED mà cả phụ huynh (membership ACTIVE kèm role PARENT) và học sinh (membership ACTIVE kèm
  * role STUDENT) còn hiệu lực, tức đúng điều kiện group có thành viên thật khi writer áp graph.
  *
- * <p>Các bảng kết quả/liên kết nằm dưới RLS theo context workspace của transaction, mà phía
- * reconcile không có transaction bao quanh sẵn: mọi phép dựng bundle ở đây tự bọc trong một
- * transaction ngắn có đặt context của đúng workspace trước truy vấn đầu tiên, như projector giảng
- * dạy. Dữ kiện của module khác (ghi danh, phân công, workspace, tài khoản, liên kết phụ huynh) được
- * đọc qua repository của module sở tại và phân giải theo định danh ở tầng ứng dụng.
+ * <p>Các bảng kết quả/liên kết nằm trong schema tenant của workspace, mà phía reconcile không có
+ * transaction bao quanh sẵn: mọi phép dựng bundle ở đây tự bọc trong một transaction ngắn có đặt
+ * context của đúng workspace trước truy vấn đầu tiên, như projector giảng dạy. Dữ kiện của module
+ * khác (ghi danh, phân công, workspace, tài khoản, liên kết phụ huynh) được đọc qua repository của
+ * module sở tại và phân giải theo định danh ở tầng ứng dụng.
  */
 @Component
 public class ResultPolicyProjector {
@@ -217,7 +217,7 @@ public class ResultPolicyProjector {
                         .findByKindAndOwnerKey(
                                 AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
                         .stream()
-                        .map(AuthorizationPartition::getId)
+                        .map(partition -> partition.getId())
                         .toList();
         if (partitionIds.isEmpty()) {
             throw new IllegalStateException(
@@ -422,7 +422,7 @@ public class ResultPolicyProjector {
                 && !activeRoles(studentUserId, workspaceId).contains(MembershipRole.Role.STUDENT)) {
             return Optional.empty();
         }
-        return userAccounts.findById(studentUserId).map(UserAccount::getKeycloakSub);
+        return userAccounts.findById(studentUserId).map(user -> user.getKeycloakSub());
     }
 
     /**

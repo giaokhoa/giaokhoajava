@@ -40,7 +40,8 @@ public class TenantSchemaProvisioner {
      * không đi qua datasource runtime bị giới hạn bởi runtime role. Kết nối này cố ý KHÔNG phải là
      * một bean {@code DataSource}: chỉ cần tồn tại một bean kiểu đó là Spring Boot tắt hẳn tự cấu
      * hình DataSource chính (@ConditionalOnMissingBean trong DataSourceAutoConfiguration) và toàn
-     * bộ runtime rơi về kết nối migration không pool, chạy bằng role owner — RLS bị bypass.
+     * bộ runtime rơi về kết nối migration không pool, chạy bằng role owner — mọi giới hạn quyền
+     * theo schema của role runtime đều mất hiệu lực.
      */
     @Autowired
     public TenantSchemaProvisioner(Environment environment) {

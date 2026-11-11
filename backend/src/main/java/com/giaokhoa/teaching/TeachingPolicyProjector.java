@@ -6,14 +6,15 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.teaching.TeachingScopePreconditions.SubscriptionPeriod;
-import com.giaokhoa.teaching.TeachingScopePreconditions.UserAccountRef;
 import com.giaokhoa.teaching.repository.CourseRepository;
 import com.giaokhoa.teaching.repository.CourseSubjectRepository;
 import com.giaokhoa.teaching.repository.EnrollmentRepository;
 import com.giaokhoa.teaching.repository.HomeroomAssignmentRepository;
 import com.giaokhoa.teaching.repository.SchoolClassRepository;
 import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions.SubscriptionPeriod;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions.UserAccountRef;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,8 +49,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * và group giảng dạy chỉ chứa người còn membership ACTIVE kèm role tiền đề đúng (TEACHER cho phân
  * công, STUDENT cho ghi danh) tại thời điểm đối chiếu.
  *
- * <p>Các bảng giảng dạy nằm dưới RLS theo context workspace của transaction, mà phía reconcile
- * không có transaction bao quanh sẵn: mọi phép dựng bundle và đồng bộ group ở đây tự bọc trong một
+ * <p>Các bảng giảng dạy nằm trong schema tenant của workspace, mà phía reconcile không có
+ * transaction bao quanh sẵn: mọi phép dựng bundle và đồng bộ group ở đây tự bọc trong một
  * transaction ngắn có đặt context của đúng workspace qua {@link WorkspaceTransaction} trước truy
  * vấn đầu tiên. Phía ghi đã có transaction của service (context do service đặt cùng workspace) thì
  * phép bọc này chỉ nối vào, không đổi ngữ nghĩa. Dữ kiện giảng dạy đọc qua các repository của
@@ -407,9 +408,9 @@ public class TeachingPolicyProjector {
                 PermissionCatalog.CourseScope.READ.scopeName(), managers, managersActive, false);
         sources.add(
                 PermissionCatalog.CourseScope.READ.scopeName(), homeroom, homeroomPresent, false);
-        sources.add(PermissionCatalog.CourseScope.UPDATE.scopeName(), owners, ownersActive, false);
+        sources.add(PermissionCatalog.CourseScope.UPDATE.scopeName(), owners, ownersActive, true);
         sources.add(
-                PermissionCatalog.CourseScope.UPDATE.scopeName(), managers, managersActive, false);
+                PermissionCatalog.CourseScope.UPDATE.scopeName(), managers, managersActive, true);
         sources.add(
                 PermissionCatalog.CourseScope.SUBJECT_ADD.scopeName(), owners, ownersActive, true);
         sources.add(

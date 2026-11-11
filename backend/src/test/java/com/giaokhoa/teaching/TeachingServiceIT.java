@@ -11,11 +11,15 @@ import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.teaching.ClassService.ClassView;
-import com.giaokhoa.teaching.ClassService.RosterEntryView;
-import com.giaokhoa.teaching.CourseService.CourseView;
-import com.giaokhoa.tenancy.MembershipService;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions;
+import com.giaokhoa.teaching.service.ClassService;
+import com.giaokhoa.teaching.service.ClassService.ClassView;
+import com.giaokhoa.teaching.service.ClassService.RosterEntryView;
+import com.giaokhoa.teaching.service.CourseService;
+import com.giaokhoa.teaching.service.CourseService.CourseView;
+import com.giaokhoa.teaching.service.EnrollmentService;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.service.MembershipService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -392,7 +396,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
         return rows.stream()
                 .collect(
                         Collectors.toMap(
-                                CourseView::id,
+                                course -> course.id(),
                                 row -> row.subjects().stream().map(e -> e.subjectId()).toList()));
     }
 

@@ -8,7 +8,7 @@ import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.identity.InitialCredentialService;
+import com.giaokhoa.identity.service.InitialCredentialService;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
@@ -16,8 +16,8 @@ import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
-import com.giaokhoa.tenancy.MembershipService;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.service.MembershipService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;

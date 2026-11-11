@@ -8,9 +8,12 @@ import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.tenancy.CenterService;
-import com.giaokhoa.tenancy.InvitationService;
+import com.giaokhoa.teaching.service.ClassService;
+import com.giaokhoa.teaching.service.CourseService;
+import com.giaokhoa.teaching.service.EnrollmentService;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.service.CenterService;
+import com.giaokhoa.tenancy.service.InvitationService;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -21,7 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-/** Kiểm tra dữ kiện và desired hash; HTTP/PDP thật được kiểm chứng riêng ở TeachingAccessIT. */
+/** Kiểm tra dữ kiện và desired hash; HTTP/PDP thật được kiểm chứng riêng ở TeachingAccessE2EIT. */
 @SpringBootTest
 class TeachingLifecycleIT extends TeachingFixture {
     @MockitoBean private ProjectionWorker scheduledWorker;

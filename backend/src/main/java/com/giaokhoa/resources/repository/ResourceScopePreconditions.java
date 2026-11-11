@@ -73,7 +73,7 @@ public class ResourceScopePreconditions {
                 .findByWorkspaceIdAndUserIdInAndState(
                         workspaceId, userIds, CenterMembership.State.ACTIVE)
                 .stream()
-                .map(CenterMembership::getUserId)
+                .map(membership -> membership.getUserId())
                 .collect(Collectors.toSet());
     }
 

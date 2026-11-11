@@ -15,6 +15,9 @@ public interface ShareGrantRepository extends JpaRepository<ShareGrant, UUID> {
 
     List<ShareGrant> findByRecipientWorkspaceId(UUID recipientWorkspaceId);
 
+    /** Resource đã từng được chia sẻ là lịch sử phải bảo lưu, kể cả khi grant đã đóng. */
+    boolean existsBySourceResourceId(UUID sourceResourceId);
+
     List<ShareGrant> findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionId(
             UUID recipientWorkspaceId, UUID sourceResourceId, UUID sourceVersionId);
 

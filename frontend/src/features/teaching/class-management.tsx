@@ -21,3 +21,12 @@ export {
   type TeachingMutate,
 } from "./teaching-helpers";
 export { CenterClassesContent } from "./center-classes";
+// Trạng thái gói/chế độ chỉ đọc dùng chung cho các màn hình giảng dạy nằm ở feature
+// subscriptions; re-export tại điểm vào này để nơi dùng không phải biết nơi ở thật.
+export {
+  blockedActionReason,
+  isExpansionBlocked,
+  readOnlyNotice,
+  subscriptionPhase,
+  type SubscriptionPhase,
+} from "@/features/subscriptions/subscription-state";

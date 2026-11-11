@@ -16,20 +16,24 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.resources.ResourceCopies;
 import com.giaokhoa.resources.repository.ResourceScopePreconditions;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.teaching.AssignmentService.HomeroomAssignmentView;
-import com.giaokhoa.teaching.AssignmentService.TeachingAssignmentView;
-import com.giaokhoa.teaching.ClassService.ClassView;
-import com.giaokhoa.teaching.ClassService.RosterEntryView;
-import com.giaokhoa.teaching.CourseService.CourseView;
-import com.giaokhoa.teaching.EnrollmentService.EnrollmentView;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions;
+import com.giaokhoa.teaching.service.AssignmentService;
+import com.giaokhoa.teaching.service.AssignmentService.HomeroomAssignmentView;
+import com.giaokhoa.teaching.service.AssignmentService.TeachingAssignmentView;
+import com.giaokhoa.teaching.service.ClassService;
+import com.giaokhoa.teaching.service.ClassService.ClassView;
+import com.giaokhoa.teaching.service.ClassService.RosterEntryView;
+import com.giaokhoa.teaching.service.CourseService;
+import com.giaokhoa.teaching.service.CourseService.CourseView;
+import com.giaokhoa.teaching.service.EnrollmentService;
+import com.giaokhoa.teaching.service.EnrollmentService.EnrollmentView;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
-import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.service.CenterService;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.persistence.EntityManagerFactory;
 import java.net.URI;
@@ -511,16 +515,12 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                             runtime.resourcesAccounts,
                             runtime.resourcesActivities,
                             runtime.resourcesPartitions,
-                            new ResourceCopies(
-                                    runtime.resources,
-                                    runtime.resourceVersions,
-                                    runtime.resourceDependencies,
-                                    runtimeWorkspaceTx),
                             new ResourceScopePreconditions(
                                     runtime.periods,
                                     runtime.memberships,
                                     runtime.enrollments,
-                                    runtime.accounts));
+                                    runtime.accounts),
+                            runtime.correctionNotices);
             SourceRevocationCoordinator runtimeRevocations =
                     new SourceRevocationCoordinator(
                             runtime.authzPartitions,

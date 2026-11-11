@@ -1,6 +1,6 @@
 package com.giaokhoa.verification.dto;
 
-import com.giaokhoa.resources.CorrectionService;
+import com.giaokhoa.resources.service.CorrectionService;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 

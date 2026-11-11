@@ -7,10 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.identity.InitialCredentialService.Handoff;
-import com.giaokhoa.identity.RecoveryService.Decision;
-import com.giaokhoa.identity.RecoveryService.RequestView;
 import com.giaokhoa.identity.model.RecoveryRequest;
+import com.giaokhoa.identity.service.InitialCredentialService;
+import com.giaokhoa.identity.service.InitialCredentialService.Handoff;
+import com.giaokhoa.identity.service.RecoveryService;
+import com.giaokhoa.identity.service.RecoveryService.Decision;
+import com.giaokhoa.identity.service.RecoveryService.RequestView;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.net.URI;
@@ -58,8 +60,8 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
 
     private static final RestClient HTTP = RestClient.create();
     private static final String BASE =
-            IdentityFlowIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
-    private static final String REALM = IdentityFlowIT.fixture("TEST_KEYCLOAK_REALM");
+            IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_BASE_URL").replaceAll("/+$", "");
+    private static final String REALM = IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_REALM");
     private static @Nullable String ownedDirectClientId;
 
     private final List<String> createdKeycloakUsers = new ArrayList<>();
@@ -662,8 +664,8 @@ class RecoveryWorkflowIT extends IntegrationEnvironment {
         var form = new LinkedMultiValueMap<String, String>();
         form.add("grant_type", "password");
         form.add("client_id", "admin-cli");
-        form.add("username", IdentityFlowIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
-        form.add("password", IdentityFlowIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
+        form.add("username", IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_MASTER_USERNAME"));
+        form.add("password", IdentityFlowE2EIT.fixture("TEST_KEYCLOAK_MASTER_PASSWORD"));
         Map<String, Object> response =
                 HTTP.post()
                         .uri(BASE + "/realms/master/protocol/openid-connect/token")

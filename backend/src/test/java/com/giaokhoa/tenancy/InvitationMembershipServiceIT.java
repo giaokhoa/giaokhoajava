@@ -8,12 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.identity.InitialCredentialService.Handoff;
+import com.giaokhoa.identity.service.InitialCredentialService.Handoff;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
-import com.giaokhoa.tenancy.InvitationService.InvitationIssued;
-import com.giaokhoa.tenancy.MembershipService.StudentIssueResult;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.service.InvitationService;
+import com.giaokhoa.tenancy.service.InvitationService.InvitationIssued;
+import com.giaokhoa.tenancy.service.MembershipService;
+import com.giaokhoa.tenancy.service.MembershipService.StudentIssueResult;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;

@@ -104,7 +104,7 @@ public class TeachingPageRepository {
                                     anchor.id(),
                                     request);
         }
-        return toPage(fetched, size, ClassListItem::getId);
+        return toPage(fetched, size, row -> row.getId());
     }
 
     public Page<RosterListItem> pageRoster(
@@ -127,7 +127,7 @@ public class TeachingPageRepository {
                                 anchor.createdAt(),
                                 anchor.id(),
                                 request);
-        return toPage(fetched, size, RosterListItem::getId);
+        return toPage(fetched, size, row -> row.getId());
     }
 
     public Page<CourseListItem> pageCourses(
@@ -150,7 +150,7 @@ public class TeachingPageRepository {
                                 anchor.createdAt(),
                                 anchor.id(),
                                 request);
-        return toPage(fetched, size, CourseListItem::getId);
+        return toPage(fetched, size, row -> row.getId());
     }
 
     public Page<EnrollmentListItem> pageEnrollments(
@@ -177,7 +177,7 @@ public class TeachingPageRepository {
                                 anchor.createdAt(),
                                 anchor.id(),
                                 request);
-        return toPage(fetched, size, EnrollmentListItem::getId);
+        return toPage(fetched, size, row -> row.getId());
     }
 
     public Page<TeachingAssignmentListItem> pageTeachingAssignments(
@@ -205,7 +205,7 @@ public class TeachingPageRepository {
                                 anchor.createdAt(),
                                 anchor.id(),
                                 request);
-        return toPage(fetched, size, TeachingAssignmentListItem::getId);
+        return toPage(fetched, size, row -> row.getId());
     }
 
     public Page<HomeroomAssignmentListItem> pageHomeroomAssignments(
@@ -229,7 +229,7 @@ public class TeachingPageRepository {
                                 anchor.createdAt(),
                                 anchor.id(),
                                 request);
-        return toPage(fetched, size, HomeroomAssignmentListItem::getId);
+        return toPage(fetched, size, row -> row.getId());
     }
 
     /** Mốc keyset của hàng cursor: thời điểm tạo của nó cùng chính id của nó. */

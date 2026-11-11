@@ -9,7 +9,7 @@ import static org.mockito.Mockito.doAnswer;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.guardians.service.GuardianLinkService;
-import com.giaokhoa.tenancy.CenterService;
+import com.giaokhoa.tenancy.service.CenterService;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;

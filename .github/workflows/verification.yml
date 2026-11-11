@@ -1,0 +1,357 @@
+name: Verification
+
+# Kiểm chứng đầy đủ theo yêu cầu, tách khỏi cổng CI thường lệ: chạy Maven verify,
+# frontend lint/test/build và Playwright trên stack TEST riêng của lượt
+# verification, mọi credential lấy từ GitHub secrets thay vì để plaintext trong
+# workflow. ci.yml vẫn là cổng cho pull request/push; workflow này chỉ chạy tay
+# (workflow_dispatch) nên không mở rộng lượt chạy tự động khi không có thay
+# đổi/failure. Không deploy, không truy cập database hay realm DEV: stack dựng
+# từ infra/compose.test.yaml bằng project riêng giaokhoa-verification (container,
+# network, volume riêng) và realm TEST giaokhoa-it nạp mới từ test-realm.json.
+#
+# Secrets bắt buộc (Settings > Secrets and variables > Actions của repo):
+#   VERIFY_APP_DB_PASSWORD         mật khẩu owner giaokhoa_test của app-db TEST
+#   VERIFY_RUNTIME_DB_PASSWORD     mật khẩu role runtime giaokhoa_runtime
+#   VERIFY_KEYCLOAK_DB_PASSWORD    mật khẩu database của Keycloak TEST
+#   VERIFY_KEYCLOAK_ADMIN_PASSWORD mật khẩu bootstrap admin test-admin của Keycloak TEST
+#   VERIFY_WEB_CLIENT_SECRET       secret client giaokhoa-it-web trong realm TEST
+#   VERIFY_FIXTURES_CLIENT_SECRET  secret client giaokhoa-it-fixtures trong realm TEST
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: verification-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Verify Java quality gates and unit tests
+        run: ./backend/mvnw -B -ntp -f backend/pom.xml clean verify
+      - name: Upload backend quality reports
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-quality-reports
+          path: |
+            backend/target/pmd.xml
+            backend/target/spotbugsXml.xml
+            backend/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+      # Chỉ phát hành artifact khi compile, unit test và ba cổng tĩnh đều đạt.
+      - name: Upload verified backend build
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-build
+          overwrite: true
+          path: |
+            backend/target/classes/
+            backend/target/test-classes/
+            backend/target/*.jar
+          if-no-files-found: error
+          retention-days: 1
+
+  backend-checks:
+    name: backend (${{ matrix.tier }})
+    needs: backend-build
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [it-pure, e2e-backend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      COMPOSE_PROJECT_NAME: giaokhoa-verification
+      VERIFY_APP_DB_PASSWORD: ${{ secrets.VERIFY_APP_DB_PASSWORD }}
+      VERIFY_RUNTIME_DB_PASSWORD: ${{ secrets.VERIFY_RUNTIME_DB_PASSWORD }}
+      VERIFY_KEYCLOAK_DB_PASSWORD: ${{ secrets.VERIFY_KEYCLOAK_DB_PASSWORD }}
+      VERIFY_KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.VERIFY_KEYCLOAK_ADMIN_PASSWORD }}
+      VERIFY_WEB_CLIENT_SECRET: ${{ secrets.VERIFY_WEB_CLIENT_SECRET }}
+      VERIFY_FIXTURES_CLIENT_SECRET: ${{ secrets.VERIFY_FIXTURES_CLIENT_SECRET }}
+      TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:15432/giaokhoa_test
+      # Datasource của suite là role runtime thật để mọi IT chịu đúng kỷ luật quyền
+      # production (không phải chủ sở hữu đối tượng); migration vẫn chạy bằng owner.
+      TEST_DATABASE_USERNAME: giaokhoa_runtime
+      TEST_DATABASE_PASSWORD: ${{ secrets.VERIFY_RUNTIME_DB_PASSWORD }}
+      TEST_DATABASE_MIGRATOR_USERNAME: giaokhoa_test
+      TEST_DATABASE_MIGRATOR_PASSWORD: ${{ secrets.VERIFY_APP_DB_PASSWORD }}
+      TEST_KEYCLOAK_BASE_URL: http://127.0.0.1:18081
+      TEST_KEYCLOAK_REALM: giaokhoa-it
+      TEST_KEYCLOAK_MASTER_USERNAME: test-admin
+      TEST_KEYCLOAK_MASTER_PASSWORD: ${{ secrets.VERIFY_KEYCLOAK_ADMIN_PASSWORD }}
+      TEST_OIDC_CLIENT_ID: giaokhoa-it-web
+      TEST_OIDC_CLIENT_SECRET: ${{ secrets.VERIFY_WEB_CLIENT_SECRET }}
+      TEST_KEYCLOAK_ADMIN_CLIENT_ID: giaokhoa-it-fixtures
+      TEST_KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.VERIFY_FIXTURES_CLIENT_SECRET }}
+      TEST_KEYCLOAK_PROVISIONER_CLIENT_ID: giaokhoa-it-fixtures
+      TEST_KEYCLOAK_PROVISIONER_CLIENT_SECRET: ${{ secrets.VERIFY_FIXTURES_CLIENT_SECRET }}
+      TEST_KEYCLOAK_AUTHZ_AUDIENCE: giaokhoa-it-api
+      TEST_APP_ORIGIN: http://127.0.0.1:8080
+      TEST_MAILPIT_URL: http://127.0.0.1:18025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Download verified backend build
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-build
+          path: backend/target
+      - name: Check required verification secrets
+        run: |
+          missing=0
+          for name in VERIFY_APP_DB_PASSWORD VERIFY_RUNTIME_DB_PASSWORD VERIFY_KEYCLOAK_DB_PASSWORD VERIFY_KEYCLOAK_ADMIN_PASSWORD VERIFY_WEB_CLIENT_SECRET VERIFY_FIXTURES_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Repository secret $name is not set"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      # Realm nạp từ bản sao của test-realm.json đã thay secret client bằng secret
+      # CI (file trong repo không đổi); mật khẩu service đi qua compose override
+      # chỉ chứa tham chiếu biến môi trường, không chứa giá trị secret.
+      - name: Prepare verification realm and compose override
+        run: |
+          jq --arg web "$VERIFY_WEB_CLIENT_SECRET" --arg fixtures "$VERIFY_FIXTURES_CLIENT_SECRET" '
+            .clients |= map(
+              if .clientId == "giaokhoa-it-web" then .secret = $web
+              elif .clientId == "giaokhoa-it-fixtures" then .secret = $fixtures
+              else . end)
+          ' infra/keycloak/test-realm.json > "$RUNNER_TEMP/verification-realm.json"
+          cat > "$RUNNER_TEMP/compose.verification.yaml" <<'OVERRIDE'
+          services:
+            test-app-db:
+              environment:
+                POSTGRES_PASSWORD: ${VERIFY_APP_DB_PASSWORD}
+            test-keycloak-db:
+              environment:
+                POSTGRES_PASSWORD: ${VERIFY_KEYCLOAK_DB_PASSWORD}
+            test-keycloak:
+              environment:
+                KC_DB_PASSWORD: ${VERIFY_KEYCLOAK_DB_PASSWORD}
+                KC_BOOTSTRAP_ADMIN_PASSWORD: ${VERIFY_KEYCLOAK_ADMIN_PASSWORD}
+              volumes:
+                - ${RUNNER_TEMP}/verification-realm.json:/opt/keycloak/data/import/giaokhoa-it-realm.json:ro
+          OVERRIDE
+          echo "COMPOSE_FILE=infra/compose.test.yaml:$RUNNER_TEMP/compose.verification.yaml" >> "$GITHUB_ENV"
+      - name: Start dedicated verification TEST services
+        run: |
+          docker compose up -d --wait --wait-timeout 180
+          curl -fsS --retry 40 --retry-delay 2 --retry-all-errors --max-time 5 http://127.0.0.1:18081/realms/giaokhoa-it/.well-known/openid-configuration -o /dev/null
+          docker compose exec -T test-keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://127.0.0.1:18081 --realm master --user test-admin --password "$VERIFY_KEYCLOAK_ADMIN_PASSWORD"
+          docker compose exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename manage-users
+          # Policy graph writer production chạy trong integration context bằng credential
+          # của fixtures: cấp cho writer các role mà bootstrap.sh cấp cho provisioner
+          # production, nếu không các lời gọi của writer bị từ chối với 403.
+          for role in view-clients view-authorization manage-authorization query-groups manage-organizations view-organizations query-organizations; do
+            docker compose exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename "$role"
+          done
+      # Role runtime phải tồn tại kèm LOGIN trước context đầu tiên: baseline chỉ tạo
+      # role ở dạng NOLOGIN khi chưa có, còn mật khẩu là việc của môi trường TEST.
+      - name: Create runtime database role
+        run: |
+          docker compose exec -T test-app-db \
+            psql -U giaokhoa_test -d giaokhoa_test -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE giaokhoa_runtime LOGIN PASSWORD '$TEST_DATABASE_PASSWORD' NOSUPERUSER NOBYPASSRLS"
+      - name: Verify implemented Spring integration tests
+        run: ./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration,${{ matrix.tier }} failsafe:integration-test failsafe:verify
+      - name: Upload backend integration reports
+        if: always()
+        # Báo cáo phục vụ chẩn đoán; lỗi quota không được thay đổi kết quả lint/test.
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-integration-reports-${{ matrix.tier }}
+          path: backend/target/failsafe-reports/TEST-*.xml
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: TEST logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Verify Next.js
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run lint
+          npm --prefix frontend run test
+          npm --prefix frontend run build
+
+  integration-checks:
+    name: integration (${{ matrix.project }})
+    needs: backend-build
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium-core, chromium-teaching-guardians]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      COMPOSE_PROJECT_NAME: giaokhoa-verification
+      VERIFY_APP_DB_PASSWORD: ${{ secrets.VERIFY_APP_DB_PASSWORD }}
+      VERIFY_RUNTIME_DB_PASSWORD: ${{ secrets.VERIFY_RUNTIME_DB_PASSWORD }}
+      VERIFY_KEYCLOAK_DB_PASSWORD: ${{ secrets.VERIFY_KEYCLOAK_DB_PASSWORD }}
+      VERIFY_KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.VERIFY_KEYCLOAK_ADMIN_PASSWORD }}
+      VERIFY_WEB_CLIENT_SECRET: ${{ secrets.VERIFY_WEB_CLIENT_SECRET }}
+      VERIFY_FIXTURES_CLIENT_SECRET: ${{ secrets.VERIFY_FIXTURES_CLIENT_SECRET }}
+      TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:15432/giaokhoa_test
+      # Backend E2E và các spec seed chạy bằng role runtime thật như production;
+      # migration vẫn chạy bằng owner.
+      TEST_DATABASE_USERNAME: giaokhoa_runtime
+      TEST_DATABASE_PASSWORD: ${{ secrets.VERIFY_RUNTIME_DB_PASSWORD }}
+      TEST_DATABASE_MIGRATOR_USERNAME: giaokhoa_test
+      TEST_DATABASE_MIGRATOR_PASSWORD: ${{ secrets.VERIFY_APP_DB_PASSWORD }}
+      TEST_KEYCLOAK_BASE_URL: http://127.0.0.1:18081
+      TEST_KEYCLOAK_REALM: giaokhoa-it
+      TEST_KEYCLOAK_MASTER_USERNAME: test-admin
+      TEST_KEYCLOAK_MASTER_PASSWORD: ${{ secrets.VERIFY_KEYCLOAK_ADMIN_PASSWORD }}
+      TEST_OIDC_CLIENT_ID: giaokhoa-it-web
+      TEST_OIDC_CLIENT_SECRET: ${{ secrets.VERIFY_WEB_CLIENT_SECRET }}
+      TEST_KEYCLOAK_ADMIN_CLIENT_ID: giaokhoa-it-fixtures
+      TEST_KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.VERIFY_FIXTURES_CLIENT_SECRET }}
+      TEST_KEYCLOAK_PROVISIONER_CLIENT_ID: giaokhoa-it-fixtures
+      TEST_KEYCLOAK_PROVISIONER_CLIENT_SECRET: ${{ secrets.VERIFY_FIXTURES_CLIENT_SECRET }}
+      TEST_KEYCLOAK_AUTHZ_AUDIENCE: giaokhoa-it-api
+      TEST_APP_ORIGIN: http://127.0.0.1:8080
+      NATIVE_GATE_APP_ORIGIN: http://127.0.0.1:8080
+      TEST_FRONTEND_ORIGIN: http://127.0.0.1:8080
+      PW_TEST_CONNECT_WS_ENDPOINT: ws://127.0.0.1:3002/
+      # Schema riêng của lượt E2E: playwright.config.ts đặt TEST_E2E_SCHEMA ngẫu nhiên,
+      # run-backend.sh và các spec seed kết quả mẫu đều dùng đúng tên đó cho backend.
+      # E2E_SCHEMA chỉ còn là dự phòng của run-backend.sh khi chạy ngoài Playwright.
+      E2E_SCHEMA: e2e_ci
+      TEST_MAILPIT_URL: http://127.0.0.1:18025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Download verified backend build
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-build
+          path: backend/target
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm --prefix frontend ci
+      - name: Start Playwright Server
+        run: bash infra/testing/start-playwright.sh
+      - name: Check required verification secrets
+        run: |
+          missing=0
+          for name in VERIFY_APP_DB_PASSWORD VERIFY_RUNTIME_DB_PASSWORD VERIFY_KEYCLOAK_DB_PASSWORD VERIFY_KEYCLOAK_ADMIN_PASSWORD VERIFY_WEB_CLIENT_SECRET VERIFY_FIXTURES_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Repository secret $name is not set"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      # Realm nạp từ bản sao của test-realm.json đã thay secret client bằng secret
+      # CI (file trong repo không đổi); mật khẩu service đi qua compose override
+      # chỉ chứa tham chiếu biến môi trường, không chứa giá trị secret.
+      - name: Prepare verification realm and compose override
+        run: |
+          jq --arg web "$VERIFY_WEB_CLIENT_SECRET" --arg fixtures "$VERIFY_FIXTURES_CLIENT_SECRET" '
+            .clients |= map(
+              if .clientId == "giaokhoa-it-web" then .secret = $web
+              elif .clientId == "giaokhoa-it-fixtures" then .secret = $fixtures
+              else . end)
+          ' infra/keycloak/test-realm.json > "$RUNNER_TEMP/verification-realm.json"
+          cat > "$RUNNER_TEMP/compose.verification.yaml" <<'OVERRIDE'
+          services:
+            test-app-db:
+              environment:
+                POSTGRES_PASSWORD: ${VERIFY_APP_DB_PASSWORD}
+            test-keycloak-db:
+              environment:
+                POSTGRES_PASSWORD: ${VERIFY_KEYCLOAK_DB_PASSWORD}
+            test-keycloak:
+              environment:
+                KC_DB_PASSWORD: ${VERIFY_KEYCLOAK_DB_PASSWORD}
+                KC_BOOTSTRAP_ADMIN_PASSWORD: ${VERIFY_KEYCLOAK_ADMIN_PASSWORD}
+              volumes:
+                - ${RUNNER_TEMP}/verification-realm.json:/opt/keycloak/data/import/giaokhoa-it-realm.json:ro
+          OVERRIDE
+          echo "COMPOSE_FILE=infra/compose.test.yaml:$RUNNER_TEMP/compose.verification.yaml" >> "$GITHUB_ENV"
+      - name: Start dedicated verification TEST services
+        run: |
+          docker compose up -d --wait --wait-timeout 180
+          curl -fsS --retry 40 --retry-delay 2 --retry-all-errors --max-time 5 http://127.0.0.1:18081/realms/giaokhoa-it/.well-known/openid-configuration -o /dev/null
+          docker compose exec -T test-keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://127.0.0.1:18081 --realm master --user test-admin --password "$VERIFY_KEYCLOAK_ADMIN_PASSWORD"
+          docker compose exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename manage-users
+          # Policy graph writer production chạy trong integration context bằng credential
+          # của fixtures: cấp cho writer các role mà bootstrap.sh cấp cho provisioner
+          # production, nếu không các lời gọi của writer bị từ chối với 403.
+          for role in view-clients view-authorization manage-authorization query-groups manage-organizations view-organizations query-organizations; do
+            docker compose exec -T test-keycloak /opt/keycloak/bin/kcadm.sh add-roles -r giaokhoa-it --uusername service-account-giaokhoa-it-fixtures --cclientid realm-management --rolename "$role"
+          done
+      # Role runtime phải tồn tại kèm LOGIN trước khi backend E2E khởi động (xem job
+      # backend-checks).
+      - name: Create runtime database role
+        run: |
+          docker compose exec -T test-app-db \
+            psql -U giaokhoa_test -d giaokhoa_test -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE giaokhoa_runtime LOGIN PASSWORD '$TEST_DATABASE_PASSWORD' NOSUPERUSER NOBYPASSRLS"
+      - name: Verify frontend/backend E2E with PostgreSQL and Keycloak
+        run: npm --prefix frontend run test:e2e -- --project=${{ matrix.project }}
+      - name: Upload E2E reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-reports-${{ matrix.project }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Verify native Keycloak bootstrap and provisioning
+        if: matrix.project == 'chromium-core'
+        run: bash infra/keycloak/verify-native.sh --use-build-artifact
+      # verify-oidc-logout.mjs không chạy ở workflow này: script đang cố định
+      # credential TEST dùng chung (test-only-password) nên không tương thích với
+      # stack đã đổi mật khẩu qua secrets; kiểm chứng đó vẫn thuộc ci.yml.
+      - name: TEST logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+      - name: Stop Playwright Server
+        if: always()
+        run: |
+          if docker container inspect giaokhoa-playwright >/dev/null 2>&1; then
+            docker logs giaokhoa-playwright
+            docker rm -f giaokhoa-playwright
+          fi
