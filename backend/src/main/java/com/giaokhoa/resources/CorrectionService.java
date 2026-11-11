@@ -11,14 +11,17 @@ import com.giaokhoa.resources.repository.CanonicalResourceRepository;
 import com.giaokhoa.resources.repository.VersionMetadata;
 import com.giaokhoa.shared.http.HttpProblemException;
 import jakarta.servlet.http.HttpServletRequest;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
@@ -203,7 +206,27 @@ public class CorrectionService {
                 Objects.requireNonNull(
                         (UUID) row.get("replacement_version_id"), "replacement_version_id"),
                 Objects.requireNonNull((String) row.get("reason"), "reason"),
-                Objects.requireNonNull((OffsetDateTime) row.get("created_at"), "created_at"));
+                Objects.requireNonNull(toOffsetDateTime(row.get("created_at")), "created_at"));
+    }
+
+    /**
+     * Driver JDBC trả timestamptz về dạng {@link Timestamp} qua {@code queryForMap}, không phải
+     * {@link OffsetDateTime} — chuyển đổi theo kiểu thực tế nhận được thay vì ép kiểu trực tiếp (vỡ
+     * bằng {@code ClassCastException} ngay lần {@code CORRECT_SOURCE} thành công đầu tiên). Để ở
+     * mức package để unit test gọi trực tiếp.
+     */
+    static @Nullable OffsetDateTime toOffsetDateTime(@Nullable Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof OffsetDateTime createdAt) {
+            return createdAt;
+        }
+        if (value instanceof Timestamp createdAt) {
+            return createdAt.toInstant().atOffset(ZoneOffset.UTC);
+        }
+        throw new IllegalStateException(
+                "created_at có kiểu không hỗ trợ: " + value.getClass().getName());
     }
 
     // ---------- Biên nhận idempotency của chính action ----------
