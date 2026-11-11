@@ -17,6 +17,10 @@ import {
   parseCorrectionNotice,
   type CorrectionNotice,
 } from "./correction-notice";
+import {
+  blockedActionReason,
+  sampleActionExpiryBehavior,
+} from "@/features/subscriptions/subscription-state";
 
 type FieldKind = "text" | "number" | "mode";
 
@@ -161,6 +165,9 @@ function parseOperationView(data: unknown): OperationView | null {
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
+    // Mã nghiệp vụ đã biết được kèm lý do dễ hiểu; vẫn giữ mã để đối chiếu bằng chứng.
+    const reason = blockedActionReason(error.code);
+    if (reason) return error.code ? `${error.code} — ${reason}` : reason;
     return error.code ? `${error.code}: ${error.message}` : error.message;
   }
   return error instanceof Error ? error.message : "Yêu cầu không thành công.";
@@ -342,11 +349,24 @@ function SampleActionForm() {
         value={action}
         onChange={(event) => setAction(event.target.value)}
       >
-        {SAMPLE_ACTION_SPECS.map((item) => (
-          <option key={item.action} value={item.action}>
-            {item.action}
-          </option>
-        ))}
+        <optgroup label="Mở rộng — bị chặn khi gói hết hạn">
+          {SAMPLE_ACTION_SPECS.filter(
+            (item) => sampleActionExpiryBehavior(item.action) === "BLOCKED_WHEN_LAPSED",
+          ).map((item) => (
+            <option key={item.action} value={item.action}>
+              {item.action}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="Hoàn tất và thu hồi — vẫn dùng được khi gói hết hạn">
+          {SAMPLE_ACTION_SPECS.filter(
+            (item) => sampleActionExpiryBehavior(item.action) === "ALLOWED_WHEN_LAPSED",
+          ).map((item) => (
+            <option key={item.action} value={item.action}>
+              {item.action}
+            </option>
+          ))}
+        </optgroup>
       </select>
     </div>
 

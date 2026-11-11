@@ -23,6 +23,9 @@ public interface LibraryItemRepository extends JpaRepository<LibraryItem, UUID> 
     boolean existsByWorkspaceIdAndResourceIdAndVersionIdAndShareGrantIdIsNull(
             UUID workspaceId, UUID resourceId, UUID versionId);
 
+    /** Một version đã được lưu vào kho của bất kỳ workspace nào là lịch sử phải bảo lưu. */
+    boolean existsByResourceIdAndVersionId(UUID resourceId, UUID versionId);
+
     @Query("select distinct l.workspaceId from LibraryItem l where l.shareGrantId = :grantId")
     List<UUID> findWorkspaceIdsByShareGrantId(@Param("grantId") UUID grantId);
 }

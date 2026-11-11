@@ -15,6 +15,9 @@ public interface ResourceDependencyRepository extends JpaRepository<ResourceDepe
     List<ResourceDependency> findByDerivedResourceIdAndDerivedVersionId(
             UUID derivedResourceId, UUID derivedVersionId);
 
+    /** Version đã làm nguồn cho ít nhất một bản phái sinh là lịch sử phải bảo lưu. */
+    boolean existsBySourceVersionId(UUID sourceVersionId);
+
     List<ResourceDependency> findByDerivedResourceIdIn(Collection<UUID> derivedResourceIds);
 
     /** Nạp một tầng của phép duyệt closure: mọi cạnh có đầu derived thuộc tập version cho trước. */
