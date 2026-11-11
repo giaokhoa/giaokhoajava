@@ -14,6 +14,7 @@ import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.postgresql.util.PSQLException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -120,7 +121,8 @@ class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
                                 otherWorkspace,
                                 resourceId))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("Resource owner workspace cannot change");
+                .satisfies(failure ->
+                        assertRejectedByTrigger(failure, "enforce_resource_immutable_owner"));
     }
 
     @Test
@@ -145,7 +147,7 @@ class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
                                         + " locked_at = CURRENT_TIMESTAMP WHERE id = ?",
                                 versionId))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("must advance DRAFT -> APPROVED -> LOCKED");
+                .satisfies(failure -> assertRejectedByTrigger(failure, "guard_resource_version"));
         jdbc.update("ROLLBACK TO SAVEPOINT skip_approval");
         jdbc.update(
                 "UPDATE resource_version SET review_state = 'APPROVED' WHERE id = ?", versionId);
@@ -174,7 +176,7 @@ class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
                                         + " WHERE id = ?",
                                 versionId))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("Locked resource version cannot be modified");
+                .satisfies(failure -> assertRejectedByTrigger(failure, "guard_resource_version"));
         jdbc.update("ROLLBACK TO SAVEPOINT edit_locked");
         assertThatThrownBy(() ->
                         jdbc.update(
@@ -252,6 +254,25 @@ class ResourcePrimitivesSchemaIT extends IntegrationEnvironment {
                                 UUID.randomUUID()))
                 .isInstanceOf(DataIntegrityViolationException.class);
         jdbc.update("ROLLBACK TO SAVEPOINT unknown_target_type");
+    }
+
+    /**
+     * Khẳng định lệnh ghi bị DB chặn bởi đúng hàm trigger với SQLState 23514 (check_violation):
+     * danh tính của lỗi thay cho câu chữ trong thông điệp RAISE, để đổi lời văn của trigger không
+     * làm đỏ test, còn đổi cơ chế chặn thì có.
+     */
+    private static void assertRejectedByTrigger(Throwable failure, String triggerFunction) {
+        Throwable cursor = failure;
+        while (cursor != null && !(cursor instanceof PSQLException)) {
+            cursor = cursor.getCause();
+        }
+        assertThat(cursor)
+                .as("chuỗi cause phải chứa lỗi PostgreSQL do trigger %s ném", triggerFunction)
+                .isNotNull();
+        PSQLException pgFailure = Objects.requireNonNull((PSQLException) cursor);
+        assertThat(pgFailure.getSQLState()).isEqualTo("23514");
+        assertThat(Objects.requireNonNull(pgFailure.getServerErrorMessage()).getWhere())
+                .contains("PL/pgSQL function " + triggerFunction + "()");
     }
 
     private UUID user() {

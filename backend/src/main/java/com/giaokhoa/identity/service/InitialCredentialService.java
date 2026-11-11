@@ -74,10 +74,13 @@ public class InitialCredentialService {
             keycloakSub = provisioning.createUser(username, displayName, email, temporaryPassword);
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode().isSameCodeAs(HttpStatus.CONFLICT)) {
+                boolean emailTaken = isEmailConflict(ex);
                 throw new HttpProblemException(
                         HttpStatus.CONFLICT,
-                        ErrorCodes.USERNAME_TAKEN,
-                        "Tên đăng nhập đã thuộc về một danh tính khác.",
+                        emailTaken ? ErrorCodes.EMAIL_TAKEN : ErrorCodes.USERNAME_TAKEN,
+                        emailTaken
+                                ? "Địa chỉ email đã thuộc về một danh tính khác."
+                                : "Tên đăng nhập đã thuộc về một danh tính khác.",
                         ex);
             }
             throw unavailable(ex);
@@ -117,6 +120,16 @@ public class InitialCredentialService {
             password[j] = swap;
         }
         return new String(password);
+    }
+
+    /**
+     * Keycloak trả 409 cho cả trùng username lẫn trùng email; thân lỗi mang errorMessage "User with
+     * username/email ... already exists" là dấu hiệu duy nhất phân biệt hai trường hợp mà không cần
+     * tra cứu thêm. Không nhận ra trường nào thì giữ hành vi cũ.
+     */
+    private static boolean isEmailConflict(RestClientResponseException ex) {
+        String body = ex.getResponseBodyAsString();
+        return body != null && body.contains("User with email");
     }
 
     private static HttpProblemException unavailable(Throwable cause) {
