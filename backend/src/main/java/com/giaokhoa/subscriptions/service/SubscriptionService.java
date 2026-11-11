@@ -20,6 +20,8 @@ import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.model.Workspace;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
+import com.giaokhoa.verification.ActivityPolicyProjector;
+import com.giaokhoa.verification.ResultPolicyProjector;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -69,6 +71,8 @@ public class SubscriptionService {
     private final PersonalTeachingPolicyProjector personalTeachingProjector;
     private final AuditRecorder audit;
     private final ResourcePolicyProjector resourceProjector;
+    private final ActivityPolicyProjector activityProjector;
+    private final ResultPolicyProjector resultProjector;
 
     private final ResourceMutationCoordinator coordinator;
 
@@ -85,7 +89,9 @@ public class SubscriptionService {
             PersonalEntitlementProjector entitlementProjector,
             PersonalTeachingPolicyProjector personalTeachingProjector,
             AuditRecorder audit,
-            ResourcePolicyProjector resourceProjector) {
+            ResourcePolicyProjector resourceProjector,
+            ActivityPolicyProjector activityProjector,
+            ResultPolicyProjector resultProjector) {
         this.locks = locks;
         this.accounts = accounts;
         this.workspaces = workspaces;
@@ -99,6 +105,8 @@ public class SubscriptionService {
         this.personalTeachingProjector = personalTeachingProjector;
         this.audit = audit;
         this.resourceProjector = resourceProjector;
+        this.activityProjector = activityProjector;
+        this.resultProjector = resultProjector;
     }
 
     /**
@@ -183,9 +191,11 @@ public class SubscriptionService {
     /**
      * Thay đổi partition cần ghi cho một thay đổi gói trên workspace này: bundle trọn vẹn của
      * projector theo loại workspace trên WORKSPACE partition của chính workspace, kèm bundle của
-     * mọi target giảng dạy và mọi target resource version — kỳ gói đổi hiệu lực mà các scope cổng
-     * gói của chúng tham chiếu (descriptor mang chính định danh kỳ) nên chúng phải ghi lại trong
-     * cùng operation. Rỗng khi partition chưa tồn tại.
+     * mọi target giảng dạy, mọi target resource version, mọi target hoạt động và mọi target kết quả
+     * — kỳ gói đổi hiệu lực mà các scope cổng gói của chúng tham chiếu (descriptor quản lý của hoạt
+     * động mang chính định danh từng kỳ) nên chúng phải ghi lại trong cùng operation, nếu không
+     * reconcile dựng lại bundle với kỳ mới sẽ chết {@code DESIRED_SOURCE_MISMATCH}. Rỗng khi
+     * partition chưa tồn tại.
      */
     private Optional<AuthorizationOperationService.PartitionChange> partitionChange(
             UUID workspaceId, Workspace.Kind kind) {
@@ -217,6 +227,8 @@ public class SubscriptionService {
             projections.addAll(personalTeachingProjector.allBundleProjections(workspaceId));
         }
         projections.addAll(resourceProjector.allBundleProjections(workspaceId));
+        projections.addAll(activityProjector.allBundleProjections(workspaceId));
+        projections.addAll(resultProjector.allBundleProjections(workspaceId));
         return Optional.of(
                 new AuthorizationOperationService.PartitionChange(
                         partitions.getFirst(), List.copyOf(projections)));

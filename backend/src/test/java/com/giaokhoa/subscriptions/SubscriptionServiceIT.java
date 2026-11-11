@@ -13,9 +13,11 @@ import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.service.SubscriptionService;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.verification.ActivityPolicyProjector;
 import java.sql.Array;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +55,7 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
     @Autowired SubscriptionService service;
     @Autowired CenterPolicyProjector projector;
     @Autowired PersonalEntitlementProjector personalProjector;
+    @Autowired ActivityPolicyProjector activityProjector;
 
     @DisplayName("Các lần confirm đồng thời giữ nguyên toàn bộ desired bundle")
     @Test
@@ -396,6 +399,79 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
         assertEquals(1, periodCount(workspace));
     }
 
+    @DisplayName(
+            "Gia hạn ghi lại bundle hoạt động với kỳ mới thay vì để reconcile chết DESIRED_SOURCE_MISMATCH")
+    @Test
+    void confirmRenewalReRecordsActivityBundle() {
+        UUID operator = seedAccount();
+        UUID owner = seedAccount();
+        UUID workspace = seedCenter(owner);
+        Instant from = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+
+        service.confirm(
+                operator,
+                workspace,
+                from,
+                from.plus(30, ChronoUnit.DAYS),
+                "ref-renewal-p1",
+                "sub-key-renewal-p1-" + UUID.randomUUID(),
+                HASH_A);
+        UUID firstPeriodId =
+                jdbc.queryForObject(
+                        "SELECT id FROM subscription_period WHERE workspace_id = ?",
+                        UUID.class,
+                        workspace);
+        UUID activityId =
+                seedAssignedActivity(workspace, owner, Objects.requireNonNull(firstPeriodId));
+        String activityTarget = NativePolicyTemplates.activityKey(workspace, activityId);
+        activityProjector.recordActivityChange(
+                owner,
+                workspace,
+                "assign-activity-" + UUID.randomUUID(),
+                HASH_A,
+                List.of(activityTarget));
+        assertEquals(
+                ProjectionReconciler.desiredHash(
+                        activityTarget,
+                        ActivityPolicyProjector.bundleScope(),
+                        activityProjector.bundleDescriptors(activityTarget)),
+                jdbc.queryForObject(
+                        "SELECT desired_hash FROM authz_projection WHERE target_key = ?",
+                        String.class,
+                        activityTarget),
+                "Bundle hoạt động lúc giao bài phải khớp desired đã ghi ở kỳ đầu");
+
+        service.confirm(
+                operator,
+                workspace,
+                from.plus(30, ChronoUnit.DAYS),
+                from.plus(60, ChronoUnit.DAYS),
+                "ref-renewal-p2",
+                "sub-key-renewal-p2-" + UUID.randomUUID(),
+                HASH_A);
+        UUID secondPeriodId =
+                jdbc.queryForObject(
+                        "SELECT id FROM subscription_period WHERE workspace_id = ?"
+                                + " AND valid_from = ?",
+                        UUID.class,
+                        workspace,
+                        OffsetDateTime.ofInstant(from.plus(30, ChronoUnit.DAYS), ZoneOffset.UTC));
+        List<String> renewedBundle = activityProjector.bundleDescriptors(activityTarget);
+        assertTrue(
+                renewedBundle.stream()
+                        .anyMatch(descriptor -> descriptor.contains("period=" + secondPeriodId)),
+                "Bundle hoạt động sau gia hạn phải gate scope quản lý bằng kỳ mới");
+        assertEquals(
+                ProjectionReconciler.desiredHash(
+                        activityTarget, ActivityPolicyProjector.bundleScope(), renewedBundle),
+                jdbc.queryForObject(
+                        "SELECT desired_hash FROM authz_projection WHERE target_key = ?",
+                        String.class,
+                        activityTarget),
+                "Gia hạn không ghi lại bundle hoạt động thì reconcile dựng lại với kỳ mới sẽ"
+                        + " chết DESIRED_SOURCE_MISMATCH");
+    }
+
     @DisplayName("Confirm cho center không khôi phục các group mà thành viên duy nhất đã bị revoke")
     @Test
     void confirmSkipsRevokedOnlyGroups() {
@@ -586,6 +662,78 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
             return null;
         });
         return workspace;
+    }
+
+    /**
+     * Seed một hoạt động đã giao trên workspace center: owner là nguồn quản lý duy nhất nên bundle
+     * của nó chỉ gồm descriptor quản lý nhúng kỳ gói — đủ để gia hạn làm đổi bundle. Seed đủ chuỗi
+     * FK của sample_activity (course_subject, resource_version); không cần ghi danh vì manager đã
+     * đủ làm bundle phụ thuộc kỳ.
+     */
+    private UUID seedAssignedActivity(
+            UUID workspaceId, UUID assignedBy, UUID subscriptionPeriodId) {
+        UUID subjectId =
+                jdbc.queryForObject("SELECT id FROM subject WHERE code = 'M1'", UUID.class);
+        UUID classId = UUID.randomUUID();
+        UUID courseId = UUID.randomUUID();
+        UUID courseSubjectId = UUID.randomUUID();
+        UUID resourceId = UUID.randomUUID();
+        UUID versionId = UUID.randomUUID();
+        UUID activityId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        tx(() -> {
+            jdbc.update(
+                    "INSERT INTO school_class(id,workspace_id,name,state)"
+                            + " VALUES (?,?,?,'ACTIVE')",
+                    classId,
+                    workspaceId,
+                    "Lớp mẫu");
+            jdbc.update(
+                    "INSERT INTO course(id,workspace_id,class_id,name,state)"
+                            + " VALUES (?,?,?,?,'ACTIVE')",
+                    courseId,
+                    workspaceId,
+                    classId,
+                    "Khóa mẫu");
+            jdbc.update(
+                    "INSERT INTO course_subject(id,workspace_id,class_id,course_id,subject_id,"
+                            + "state) VALUES (?,?,?,?,?,'ACTIVE')",
+                    courseSubjectId,
+                    workspaceId,
+                    classId,
+                    courseId,
+                    subjectId);
+            jdbc.update(
+                    "INSERT INTO resource(id,owner_workspace_id,created_by_user_id,kind,"
+                            + "subject_id,state) VALUES (?,?,?,'EXAM',?,'ACTIVE')",
+                    resourceId,
+                    workspaceId,
+                    assignedBy,
+                    subjectId);
+            jdbc.update(
+                    "INSERT INTO resource_version(id,resource_id,version_no,label,body_stub,"
+                            + "answer_stub,review_state)"
+                            + " VALUES (?,?,1,'Bản mẫu','Nội dung','Đáp án','APPROVED')",
+                    versionId,
+                    resourceId);
+            jdbc.update(
+                    "INSERT INTO sample_activity(id,workspace_id,course_subject_id,resource_id,"
+                            + "version_id,assigned_by,assigned_at,due_at,attempt_limit,"
+                            + "subscription_period_id,state)"
+                            + " VALUES (?,?,?,?,?,?,?,?,?,?,'ASSIGNED')",
+                    activityId,
+                    workspaceId,
+                    courseSubjectId,
+                    resourceId,
+                    versionId,
+                    assignedBy,
+                    now,
+                    now.plusDays(7),
+                    1,
+                    subscriptionPeriodId);
+            return null;
+        });
+        return activityId;
     }
 
     private void seedRevokedManagerAndParent(UUID workspaceId, UUID userId) {
