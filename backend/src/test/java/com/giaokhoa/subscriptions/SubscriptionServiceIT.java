@@ -64,11 +64,17 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
         java.util.concurrent.CompletableFuture<AuthorizationOperation> second;
         try (var connection = Objects.requireNonNull(jdbc.getDataSource()).getConnection()) {
             connection.setAutoCommit(false);
+            int blockerPid;
             try (var statement =
                     connection.prepareStatement(
-                            "SELECT id FROM authz_partition WHERE id = ? FOR UPDATE")) {
+                            "SELECT pg_backend_pid() FROM authz_partition WHERE id = ? FOR UPDATE")) {
                 statement.setObject(1, partition);
-                statement.executeQuery().close();
+                try (var result = statement.executeQuery()) {
+                    if (!result.next()) {
+                        throw new IllegalStateException("Partition của fixture không tồn tại");
+                    }
+                    blockerPid = result.getInt(1);
+                }
             }
             first =
                     java.util.concurrent.CompletableFuture.supplyAsync(() ->
@@ -90,23 +96,28 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                                     "review-ref-b-" + workspace,
                                     "review-key-b-" + workspace,
                                     HASH_B));
-            // Quan sát việc serialize thật trên PostgreSQL: một confirm chờ advisory lock
-            // của workspace, confirm còn lại chờ khóa hàng partition (câu for update do
-            // Hibernate sinh khi khóa entity). Hình dạng câu khóa thay theo tầng truy cập
-            // dữ liệu; điều được khóa là cả hai đều bị chặn cùng lúc.
+            // Cả hai confirm phải nằm trong chuỗi chờ khóa của đúng connection giữ partition;
+            // pg_blocking_pids không phụ thuộc cú pháp SQL hay loại khóa Hibernate sinh ra.
             try {
                 org.awaitility.Awaitility.await()
                         .atMost(java.time.Duration.ofSeconds(20))
                         .until(() ->
                                 Objects.requireNonNull(
                                                 jdbc.queryForObject(
-                                                        "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
-                                                                + " AND (query LIKE '%from authz_partition%for update%' OR query LIKE 'SELECT pg_advisory_xact_lock%')",
-                                                        Integer.class))
+                                                        """
+                                                        WITH RECURSIVE blocked(pid) AS (
+                                                          VALUES (CAST(? AS integer))
+                                                          UNION
+                                                          SELECT a.pid FROM pg_stat_activity a
+                                                          JOIN blocked b ON b.pid = ANY(pg_blocking_pids(a.pid))
+                                                        )
+                                                        SELECT count(*) FROM blocked WHERE pid <> ?
+                                                        """,
+                                                        Integer.class,
+                                                        blockerPid,
+                                                        blockerPid))
                                         >= 2);
             } catch (org.awaitility.core.ConditionTimeoutException timeout) {
-                // Chẩn đoán tạm: liệt kê mọi phiên đang chờ khóa hoặc đang chạy câu liên
-                // quan để thấy hai confirm thật sự đang bị chặn ở đâu.
                 String waiting =
                         jdbc.queryForList(
                                                 "SELECT pid, wait_event, query"

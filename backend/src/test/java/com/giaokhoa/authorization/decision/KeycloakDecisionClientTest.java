@@ -65,15 +65,16 @@ class KeycloakDecisionClientTest {
         RequestContextHolder.resetRequestAttributes();
     }
 
+    @DisplayName("Mọi cặp quyền bắt buộc đều được Keycloak cấp thì cho phép truy cập")
     @Test
-    void allowsOnlyWhenEveryRequiredPairIsAllowed() {
+    void allowsAllGrantedPairs() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
         KeycloakDecisionClient client = client(builder, session);
 
-        expectCombinedDecision(server, "resource-a%23enter", "resource-b%23read")
-                .andRespond(allowed());
+        expectDecision(server, "resource-a%23enter", "resource-b").andRespond(allowed());
+        expectDecision(server, "resource-b%23read", "resource-a").andRespond(allowed());
 
         assertTrue(
                 client.isAllowed(
@@ -85,14 +86,16 @@ class KeycloakDecisionClientTest {
         server.verify();
     }
 
+    @DisplayName("Một cặp quyền bị Keycloak từ chối thì chặn truy cập dù cặp trước đã được cấp")
     @Test
-    void deniesWhenOnePairIsDeniedByThePdp() {
+    void deniesPartialGrant() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         Session session = sessionWithToken(USER, tokenExpiringIn(300));
         KeycloakDecisionClient client = client(builder, session);
 
-        expectCombinedDecision(server, "resource-a%23enter", "resource-b%23read")
+        expectDecision(server, "resource-a%23enter", "resource-b").andRespond(allowed());
+        expectDecision(server, "resource-b%23read", "resource-a")
                 .andRespond(withStatus(HttpStatus.FORBIDDEN));
 
         assertFalse(
@@ -344,25 +347,6 @@ class KeycloakDecisionClientTest {
     private ResponseActions expectDecision(
             MockRestServiceServer server, String encodedPair, String otherResource) {
         return expectDecision(server, USER_TOKEN, encodedPair, otherResource);
-    }
-
-    private ResponseActions expectCombinedDecision(
-            MockRestServiceServer server, String firstPair, String secondPair) {
-        return server.expect(requestTo(TOKEN_URL))
-                .andExpect(method(HttpMethod.POST))
-                .andExpect(header("Authorization", "Bearer " + USER_TOKEN))
-                .andExpect(content().contentType(MediaType.APPLICATION_FORM_URLENCODED))
-                .andExpect(
-                        content()
-                                .string(
-                                        allOf(
-                                                containsString("grant_type="),
-                                                containsString("uma-ticket"),
-                                                containsString("audience=" + AUDIENCE),
-                                                containsString("permission=" + firstPair),
-                                                containsString("permission=" + secondPair),
-                                                containsString("response_mode=decision"),
-                                                not(containsString("claim_token")))));
     }
 
     private ResponseActions expectDecision(
