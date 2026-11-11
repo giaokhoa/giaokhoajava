@@ -20,7 +20,7 @@ Thiết kế ưu tiên chứng minh native Keycloak và thu hồi quyền trư�
 
 **Primary Dependencies**: Spring Security OAuth2 Client/OIDC với HttpSessionOAuth2AuthorizedClientRepository, Spring Session JDBC và OIDC session correlation bền, Spring Data JPA/Hibernate, Flyway, Bean Validation; các phiên bản theo BOM Spring Boot. Keycloak 26.8.1 native Authorization Services/Admin API. Next.js/React theo phiên bản hỗ trợ của Next, npm lockfile; không thêm Auth.js, Redis, message broker hoặc custom Keycloak SPI cho bản đầu.
 
-**Storage**: PostgreSQL 18.6 app-db, tách keycloak-db. Schema chia sẻ có workspace keys/composite FKs; RLS bảo vệ phạm vi các bảng dạy học/quan hệ/kết quả. Canonical học liệu nguồn qua repository chuyên biệt sau quyết định quyền. Spring Session JDBC lưu phiên, Flyway quản lý schema, Hibernate validate.
+**Storage**: PostgreSQL 18.6 app-db, tách keycloak-db. Mỗi workspace một schema riêng khi đã kích hoạt (workspace keys/composite FKs trong từng schema); mặt phẳng public giữ dữ kiện hệ thống và dữ kiện của workspace chưa kích hoạt, được lọc bằng `workspace_id` ở truy vấn ứng dụng; không dùng RLS (xem Sổ B103). Canonical học liệu nguồn qua repository chuyên biệt sau quyết định quyền. Spring Session JDBC lưu phiên, Flyway quản lý schema theo hai dòng (hệ thống + tenant), Hibernate không validate toàn cục.
 
 **Testing**: JUnit theo Spring Boot BOM; unit tests cho invariants/graph mapping/state transitions; integration tests PostgreSQL và Keycloak thật đúng baseline; Playwright qua Authorization Code thật; test email qua Mailpit. Testcontainers khi Docker có sẵn, hoặc services/realm/database test riêng. Core acceptance không mock PDP, không dùng dev data làm bãi test.
 

@@ -26,13 +26,15 @@ Hai vai trò tách biệt, không dùng chung:
 - **Migration role** (biến `SPRING_FLYWAY_USER`): owner của schema, chỉ dùng để chạy
   Flyway. Các role bootstrap trong compose của repo (`giaokhoa` ở DEV, `giaokhoa_test`
   ở TEST) là owner như vậy; **không trỏ datasource runtime của ứng dụng vào role
-  owner/superuser**, vì owner và superuser luôn bypass Row Level Security nên RLS sẽ
-  không còn hiệu lực.
-- **Runtime role** `giaokhoa_runtime` (biến `SPRING_DATASOURCE_USERNAME`): migration
-  V027 tạo sẵn với `NOSUPERUSER NOBYPASSRLS NOLOGIN`, chỉ cấp DML trên các bảng của
-  schema ứng dụng. Migration không đặt mật khẩu; khi dựng một môi trường, vận hành cấp
-  riêng `ALTER ROLE giaokhoa_runtime LOGIN PASSWORD '...'` bằng credential của chính
-  môi trường đó rồi mới trỏ datasource vào role này.
+  owner/superuser**: ứng dụng phải chạy bằng đúng tập quyền tối thiểu đã cấp, để lỗi
+  thiếu grant lộ ra ngay thay vì bị quyền sở hữu che mất.
+- **Runtime role** `giaokhoa_runtime` (biến `SPRING_DATASOURCE_USERNAME`): baseline
+  tạo sẵn với `NOSUPERUSER NOBYPASSRLS NOLOGIN` khi role chưa tồn tại, được cấp DML
+  trên các bảng của schema ứng dụng (trừ `flyway_schema_history` chỉ được đọc); một
+  callback sau migrate kiểm chứng lại grants này ở mọi lần migrate. Migration không
+  đặt mật khẩu; khi dựng một môi trường, vận hành cấp riêng `ALTER ROLE
+  giaokhoa_runtime LOGIN PASSWORD '...'` bằng credential của chính môi trường đó rồi
+  mới trỏ datasource vào role này.
 
 ## Integration test
 
@@ -40,6 +42,10 @@ Chỉ dùng stack TEST tại `infra/compose.test.yaml`. Không dùng DB hoặc r
 
 ```sh
 docker compose -p giaokhoa-test -f infra/compose.test.yaml up -d
+# Datasource của suite là role runtime nên role phải có LOGIN trước khi chạy:
+docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-app-db \
+  psql -U giaokhoa_test -d giaokhoa_test \
+  -c "CREATE ROLE giaokhoa_runtime LOGIN PASSWORD 'test-only-password' NOSUPERUSER NOBYPASSRLS"
 # Nạp biến môi trường TEST theo .env.test.example trước lệnh dưới.
 ./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration verify
 ```
