@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.subscriptions.model.SubscriptionPeriod;
 import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;
@@ -17,9 +18,11 @@ import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRe
 import com.giaokhoa.verification.repository.VerificationCenterMembershipRepository;
 import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
 import com.giaokhoa.verification.repository.VerificationHomeroomAssignmentRepository;
+import com.giaokhoa.verification.repository.VerificationSubscriptionPeriodRepository;
 import com.giaokhoa.verification.repository.VerificationTeachingAssignmentRepository;
 import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -42,8 +45,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * một tập nguồn là tập thẩm quyền giao bài của hợp đồng authorization: ở center là giáo viên đang
  * được phân công ở môn–khóa của hoạt động, chủ nhiệm của lớp chứa môn–khóa đó và chủ sở hữu/quản lý
  * của center (mọi nguồn đều đòi membership ACTIVE hiện hành); ở personal là chủ sở hữu của
- * workspace. Scope {@code read} của target hoạt động chưa có action nào dùng nên chưa thuộc bundle:
- * quyết định PDP trên nó luôn từ chối, fail-closed.
+ * workspace. Mọi nguồn quản lý còn AND thêm cửa sổ hiệu lực của từng kỳ gói đã xác nhận của
+ * workspace qua time policy native: gói hết hạn thì chính PDP từ chối gia hạn, mở lượt mới và giao
+ * lại, còn {@code submit} là đường hoàn tất bài đã giao nên không qua gate gói — nguồn của nó chỉ
+ * theo ghi danh và membership hiện hành như trên. Vì bundle được ghi lại trước mọi quyết định, một
+ * kỳ gói mới chỉ mở lại các scope quản lý cho người còn giữ thẩm quyền giao bài ở lần dựng lại đó;
+ * nguồn đã bị thu hồi không hồi lại theo kỳ mới. Scope {@code read} của target hoạt động chưa có
+ * action nào dùng nên chưa thuộc bundle: quyết định PDP trên nó luôn từ chối, fail-closed.
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
  * workspace với scope danh nghĩa {@code submit}, cùng hình dạng với bundle kết quả. Projector này
@@ -62,6 +70,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ActivityPolicyProjector {
 
     private static final String ACTOR_DESCRIPTOR = "ACTIVITY_ACTOR";
+    private static final String ACTOR_PERIOD_DESCRIPTOR = "ACTIVITY_ACTOR_PERIOD";
     private static final String BUNDLE_SCOPE = PermissionCatalog.ActivityScope.SUBMIT.scopeName();
 
     /** Các scope quản lý hoạt động dùng chung một tập nguồn thẩm quyền giao bài. */
@@ -74,6 +83,7 @@ public class ActivityPolicyProjector {
     private final SampleActivityRepository activities;
     private final VerificationAuthorizationPartitionRepository partitions;
     private final VerificationEnrollmentRepository enrollments;
+    private final VerificationSubscriptionPeriodRepository periods;
     private final VerificationWorkspaceRepository workspaces;
     private final VerificationUserAccountRepository userAccounts;
     private final VerificationCenterMembershipRepository memberships;
@@ -87,6 +97,7 @@ public class ActivityPolicyProjector {
             SampleActivityRepository activities,
             VerificationAuthorizationPartitionRepository partitions,
             VerificationEnrollmentRepository enrollments,
+            VerificationSubscriptionPeriodRepository periods,
             VerificationWorkspaceRepository workspaces,
             VerificationUserAccountRepository userAccounts,
             VerificationCenterMembershipRepository memberships,
@@ -98,6 +109,7 @@ public class ActivityPolicyProjector {
         this.activities = activities;
         this.partitions = partitions;
         this.enrollments = enrollments;
+        this.periods = periods;
         this.workspaces = workspaces;
         this.userAccounts = userAccounts;
         this.memberships = memberships;
@@ -168,16 +180,21 @@ public class ActivityPolicyProjector {
                                                         targetKey,
                                                         BUNDLE_SCOPE)));
                     }
+                    List<SubscriptionPeriod> workspacePeriods =
+                            periods.findByWorkspaceIdOrderByValidFromAscIdAsc(workspaceId);
                     for (ManagerSource manager :
                             activityManagers(workspaceId, activity.getCourseSubjectId(), center)) {
                         for (String scope : MANAGEMENT_SCOPES) {
-                            descriptors.add(
-                                    actorDescriptor(
-                                            workspaceId,
-                                            manager.userId(),
-                                            manager.subject(),
-                                            targetKey,
-                                            scope));
+                            for (SubscriptionPeriod period : workspacePeriods) {
+                                descriptors.add(
+                                        actorPeriodDescriptor(
+                                                workspaceId,
+                                                manager.userId(),
+                                                manager.subject(),
+                                                period,
+                                                targetKey,
+                                                scope));
+                            }
                         }
                     }
                     return descriptors.stream().sorted().distinct().toList();
@@ -234,19 +251,33 @@ public class ActivityPolicyProjector {
     }
 
     /**
-     * Các gate native của một canonical descriptor hoạt động: actor cụ thể của học sinh đang ghi
-     * danh. Dùng bởi reconciliation để dựng lại đúng graph đã ghi.
+     * Các gate native của một canonical descriptor hoạt động: actor cụ thể của nguồn, cộng cửa sổ
+     * hiệu lực của kỳ gói với descriptor của các scope quản lý. Dùng bởi reconciliation để dựng lại
+     * đúng graph đã ghi.
      */
     public static List<PolicyGraph.Gate> gatesFor(String descriptor) {
         String[] parts = descriptor.split("\\|", -1);
-        if (parts.length < 2 || !ACTOR_DESCRIPTOR.equals(parts[0])) {
+        if (parts.length < 2
+                || !(ACTOR_DESCRIPTOR.equals(parts[0])
+                        || ACTOR_PERIOD_DESCRIPTOR.equals(parts[0]))) {
             throw new IllegalArgumentException("Unsupported activity descriptor: " + descriptor);
         }
         String subject = partValue(parts, "subject=");
         if (subject == null || subject.isBlank()) {
             throw new IllegalArgumentException("Activity descriptor has no subject: " + descriptor);
         }
-        return List.of(new PolicyGraph.Gate.Actor(subject));
+        List<PolicyGraph.Gate> gates = new ArrayList<>();
+        gates.add(new PolicyGraph.Gate.Actor(subject));
+        if (ACTOR_PERIOD_DESCRIPTOR.equals(parts[0])) {
+            String from = partValue(parts, "from=");
+            String until = partValue(parts, "until=");
+            if (from == null || until == null) {
+                throw new IllegalArgumentException(
+                        "Activity period descriptor is incomplete: " + descriptor);
+            }
+            gates.add(new PolicyGraph.Gate.Validity(Instant.parse(from), Instant.parse(until)));
+        }
+        return List.copyOf(gates);
     }
 
     // ---------- Dựng nguồn ----------
@@ -335,6 +366,33 @@ public class ActivityPolicyProjector {
                 + userId
                 + "|subject="
                 + subject
+                + "|target="
+                + targetKey
+                + PolicyGraph.SCOPE_MARKER
+                + scope;
+    }
+
+    /** Canonical descriptor của một nguồn quản lý hoạt động bị gate bởi một kỳ gói cụ thể. */
+    private static String actorPeriodDescriptor(
+            UUID workspaceId,
+            UUID userId,
+            String subject,
+            SubscriptionPeriod period,
+            String targetKey,
+            String scope) {
+        return ACTOR_PERIOD_DESCRIPTOR
+                + "|workspace="
+                + workspaceId
+                + "|user="
+                + userId
+                + "|subject="
+                + subject
+                + "|period="
+                + period.getId()
+                + "|from="
+                + period.getValidFrom()
+                + "|until="
+                + period.getExpiresAt()
                 + "|target="
                 + targetKey
                 + PolicyGraph.SCOPE_MARKER
