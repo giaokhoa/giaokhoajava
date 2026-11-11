@@ -28,6 +28,7 @@ import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
+import com.giaokhoa.testsupport.AuthorizationFragmentRepositories;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
 import com.giaokhoa.verification.repository.VerificationCenterMembershipRepository;
@@ -43,7 +44,6 @@ import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
-import testinfra.AuthorizationFragmentRepositories;
 
 /**
  * Bộ repository JPA gắn với một DataSource riêng của test (thường là một role không phải chủ sở hữu
@@ -57,8 +57,8 @@ import testinfra.AuthorizationFragmentRepositories;
  * fragment cài đặt riêng của module authorization phải đi qua một context tối thiểu có {@code
  * EnableJpaRepositories} vì fragment chỉ được đăng ký ở tầng cấu hình đó (factory trần không tự
  * phát hiện fragment, đã kiểm chứng bằng thực nghiệm khi nối các đợt JPA). Cấu hình đó là {@link
- * AuthorizationFragmentRepositories}, đặt ngoài package {@code com.giaokhoa} để component scan của
- * ứng dụng không nhặt nó vào context chính.
+ * AuthorizationFragmentRepositories} — một {@code @TestConfiguration} nên component scan không nhặt
+ * vào context nào; chỉ context tự dựng này đăng ký tường minh nó mới có.
  */
 final class RuntimeJpaRepositories implements AutoCloseable {
     final EntityManagerFactory entityManagerFactory;

@@ -34,6 +34,7 @@ import com.giaokhoa.tenancy.repository.CenterMembershipRepository;
 import com.giaokhoa.tenancy.repository.WorkspaceRepository;
 import com.giaokhoa.tenancy.service.CenterService;
 import com.giaokhoa.tenancy.service.MembershipService;
+import com.giaokhoa.testsupport.AuthorizationFragmentRepositories;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.VerificationCenterMembershipRepository;
@@ -65,7 +66,6 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import testinfra.AuthorizationFragmentRepositories;
 
 /**
  * Kiểm chứng tầng service của guardian link bằng lời gọi thẳng service (route HTTP thuộc task route
