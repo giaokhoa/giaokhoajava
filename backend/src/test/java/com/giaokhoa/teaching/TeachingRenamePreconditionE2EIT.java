@@ -1,18 +1,18 @@
 package com.giaokhoa.teaching;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 
+import com.giaokhoa.support.HttpTestClient;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.http.HttpMethod;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -22,10 +22,29 @@ import tools.jackson.databind.JsonNode;
  * có nên theo hợp đồng HTTP phải mang If-Match chứa row version — thiếu trả 428, version cũ trả 409
  * và không ghi gì, version đúng mới đổi tên và tăng version.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class TeachingRenamePreconditionIT extends TeachingFixture {
+class TeachingRenamePreconditionE2EIT extends TeachingFixture {
+
+    // Tầng e2e-backend (B107): mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
+    // vận chuyển của fixture sang biến thể HTTP để toàn bộ helper tổ hợp chảy qua server thật.
+    @Override
+    protected RealSession openSession(KeycloakLogin login) throws Exception {
+        return openSessionHttp(login);
+    }
+
+    @Override
+    protected UUID postMutation(RealSession session, String uri, String json, String method)
+            throws Exception {
+        return postMutationHttp(session, uri, json, method);
+    }
+
+    @Override
+    protected JsonNode getJson(RealSession session, String uri, int expectedStatus)
+            throws Exception {
+        return getJsonHttp(session, uri, expectedStatus);
+    }
 
     @Test
     void renameClassRequiresCurrentIfMatch() throws Exception {
@@ -34,17 +53,15 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp precondition");
             String uri = "/api/workspaces/" + fixture.workspaceId() + "/classes/" + classId;
 
-            MockHttpServletResponse missing = patchRename(session, uri, "Tên mới", null);
-            assertEquals(428, missing.getStatus(), "Thiếu If-Match phải trả 428");
+            HttpTestClient.Response missing = patchRename(session, uri, "Tên mới", null);
+            assertEquals(428, missing.status(), "Thiếu If-Match phải trả 428");
             assertEquals(
                     "PRECONDITION_REQUIRED",
-                    JSON.readTree(missing.getContentAsString()).get("code").stringValue());
+                    JSON.readTree(missing.body()).get("code").stringValue());
 
-            MockHttpServletResponse stale = patchRename(session, uri, "Tên mới", "\"99\"");
-            assertEquals(409, stale.getStatus(), "Version không khớp phải trả 409");
-            assertEquals(
-                    "VERSION_CONFLICT",
-                    JSON.readTree(stale.getContentAsString()).get("code").stringValue());
+            HttpTestClient.Response stale = patchRename(session, uri, "Tên mới", "\"99\"");
+            assertEquals(409, stale.status(), "Version không khớp phải trả 409");
+            assertEquals("VERSION_CONFLICT", JSON.readTree(stale.body()).get("code").stringValue());
 
             JsonNode before = getJson(session, uri, 200);
             assertEquals(
@@ -53,24 +70,20 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
                     "Hai lần bị từ chối không được ghi gì");
             assertEquals(0, before.get("version").longValue());
 
-            MockHttpServletResponse renamed = patchRename(session, uri, "Tên mới", "\"0\"");
-            assertEquals(202, renamed.getStatus(), "Version đúng phải được chấp nhận");
+            HttpTestClient.Response renamed = patchRename(session, uri, "Tên mới", "\"0\"");
+            assertEquals(202, renamed.status(), "Version đúng phải được chấp nhận");
             awaitOperationSucceeded(
                     jdbc,
                     UUID.fromString(
-                            JSON.readTree(renamed.getContentAsString())
-                                    .get("operationId")
-                                    .stringValue()));
+                            JSON.readTree(renamed.body()).get("operationId").stringValue()));
 
             JsonNode after = getJson(session, uri, 200);
             assertEquals("Tên mới", after.get("name").stringValue());
             assertEquals(1, after.get("version").longValue());
 
-            MockHttpServletResponse outdated = patchRename(session, uri, "Tên khác", "\"0\"");
+            HttpTestClient.Response outdated = patchRename(session, uri, "Tên khác", "\"0\"");
             assertEquals(
-                    409,
-                    outdated.getStatus(),
-                    "Version cũ sau lần đổi tên thành công phải trả 409");
+                    409, outdated.status(), "Version cũ sau lần đổi tên thành công phải trả 409");
         } finally {
             deleteFixture(fixture);
         }
@@ -87,17 +100,15 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
                             session, fixture.workspaceId(), classId, "Khóa precondition", subjects);
             String uri = "/api/workspaces/" + fixture.workspaceId() + "/courses/" + courseId;
 
-            MockHttpServletResponse missing = patchRename(session, uri, "Tên mới", null);
-            assertEquals(428, missing.getStatus(), "Thiếu If-Match phải trả 428");
+            HttpTestClient.Response missing = patchRename(session, uri, "Tên mới", null);
+            assertEquals(428, missing.status(), "Thiếu If-Match phải trả 428");
             assertEquals(
                     "PRECONDITION_REQUIRED",
-                    JSON.readTree(missing.getContentAsString()).get("code").stringValue());
+                    JSON.readTree(missing.body()).get("code").stringValue());
 
-            MockHttpServletResponse stale = patchRename(session, uri, "Tên mới", "\"99\"");
-            assertEquals(409, stale.getStatus(), "Version không khớp phải trả 409");
-            assertEquals(
-                    "VERSION_CONFLICT",
-                    JSON.readTree(stale.getContentAsString()).get("code").stringValue());
+            HttpTestClient.Response stale = patchRename(session, uri, "Tên mới", "\"99\"");
+            assertEquals(409, stale.status(), "Version không khớp phải trả 409");
+            assertEquals("VERSION_CONFLICT", JSON.readTree(stale.body()).get("code").stringValue());
 
             JsonNode before = getJson(session, uri, 200);
             assertEquals(
@@ -106,24 +117,20 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
                     "Hai lần bị từ chối không được ghi gì");
             assertEquals(0, before.get("version").longValue());
 
-            MockHttpServletResponse renamed = patchRename(session, uri, "Tên mới", "\"0\"");
-            assertEquals(202, renamed.getStatus(), "Version đúng phải được chấp nhận");
+            HttpTestClient.Response renamed = patchRename(session, uri, "Tên mới", "\"0\"");
+            assertEquals(202, renamed.status(), "Version đúng phải được chấp nhận");
             awaitOperationSucceeded(
                     jdbc,
                     UUID.fromString(
-                            JSON.readTree(renamed.getContentAsString())
-                                    .get("operationId")
-                                    .stringValue()));
+                            JSON.readTree(renamed.body()).get("operationId").stringValue()));
 
             JsonNode after = getJson(session, uri, 200);
             assertEquals("Tên mới", after.get("name").stringValue());
             assertEquals(1, after.get("version").longValue());
 
-            MockHttpServletResponse outdated = patchRename(session, uri, "Tên khác", "\"0\"");
+            HttpTestClient.Response outdated = patchRename(session, uri, "Tên khác", "\"0\"");
             assertEquals(
-                    409,
-                    outdated.getStatus(),
-                    "Version cũ sau lần đổi tên thành công phải trả 409");
+                    409, outdated.status(), "Version cũ sau lần đổi tên thành công phải trả 409");
         } finally {
             deleteFixture(fixture);
         }
@@ -137,17 +144,13 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp giữ tên");
             String uri = "/api/workspaces/" + fixture.workspaceId() + "/classes/" + classId;
 
-            MockHttpServletResponse renamed = patchRename(session, uri, "Lớp giữ tên", "\"0\"");
+            HttpTestClient.Response renamed = patchRename(session, uri, "Lớp giữ tên", "\"0\"");
             assertEquals(
-                    202,
-                    renamed.getStatus(),
-                    "Đổi tên trùng tên hiện tại vẫn là đổi tên thành công");
+                    202, renamed.status(), "Đổi tên trùng tên hiện tại vẫn là đổi tên thành công");
             awaitOperationSucceeded(
                     jdbc,
                     UUID.fromString(
-                            JSON.readTree(renamed.getContentAsString())
-                                    .get("operationId")
-                                    .stringValue()));
+                            JSON.readTree(renamed.body()).get("operationId").stringValue()));
 
             JsonNode after = getJson(session, uri, 200);
             assertEquals("Lớp giữ tên", after.get("name").stringValue());
@@ -156,11 +159,9 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
                     after.get("version").longValue(),
                     "Version phải tăng ở DB dù tên không đổi, như SQL cũ tăng vô điều kiện");
 
-            MockHttpServletResponse outdated = patchRename(session, uri, "Tên khác", "\"0\"");
+            HttpTestClient.Response outdated = patchRename(session, uri, "Tên khác", "\"0\"");
             assertEquals(
-                    409,
-                    outdated.getStatus(),
-                    "Version cũ phải bị từ chối sau lần đổi tên trùng tên");
+                    409, outdated.status(), "Version cũ phải bị từ chối sau lần đổi tên trùng tên");
         } finally {
             deleteFixture(fixture);
         }
@@ -177,17 +178,13 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
                     createCourse(session, fixture.workspaceId(), classId, "Khóa giữ tên", subjects);
             String uri = "/api/workspaces/" + fixture.workspaceId() + "/courses/" + courseId;
 
-            MockHttpServletResponse renamed = patchRename(session, uri, "Khóa giữ tên", "\"0\"");
+            HttpTestClient.Response renamed = patchRename(session, uri, "Khóa giữ tên", "\"0\"");
             assertEquals(
-                    202,
-                    renamed.getStatus(),
-                    "Đổi tên trùng tên hiện tại vẫn là đổi tên thành công");
+                    202, renamed.status(), "Đổi tên trùng tên hiện tại vẫn là đổi tên thành công");
             awaitOperationSucceeded(
                     jdbc,
                     UUID.fromString(
-                            JSON.readTree(renamed.getContentAsString())
-                                    .get("operationId")
-                                    .stringValue()));
+                            JSON.readTree(renamed.body()).get("operationId").stringValue()));
 
             JsonNode after = getJson(session, uri, 200);
             assertEquals("Khóa giữ tên", after.get("name").stringValue());
@@ -196,29 +193,28 @@ class TeachingRenamePreconditionIT extends TeachingFixture {
                     after.get("version").longValue(),
                     "Version phải tăng ở DB dù tên không đổi, như SQL cũ tăng vô điều kiện");
 
-            MockHttpServletResponse outdated = patchRename(session, uri, "Tên khác", "\"0\"");
+            HttpTestClient.Response outdated = patchRename(session, uri, "Tên khác", "\"0\"");
             assertEquals(
-                    409,
-                    outdated.getStatus(),
-                    "Version cũ phải bị từ chối sau lần đổi tên trùng tên");
+                    409, outdated.status(), "Version cũ phải bị từ chối sau lần đổi tên trùng tên");
         } finally {
             deleteFixture(fixture);
         }
     }
 
-    private MockHttpServletResponse patchRename(
-            RealSession session, String uri, String name, @Nullable String ifMatch)
-            throws Exception {
-        var request =
-                patch(uri)
-                        .cookie(session.cookie())
-                        .with(csrf())
-                        .header("Idempotency-Key", "teaching-rename-" + UUID.randomUUID())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"" + name + "\"}");
+    private HttpTestClient.Response patchRename(
+            RealSession session, String uri, String name, @Nullable String ifMatch) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Idempotency-Key", "teaching-rename-" + UUID.randomUUID());
         if (ifMatch != null) {
-            request = request.header("If-Match", ifMatch);
+            headers.put("If-Match", ifMatch);
         }
-        return mockMvc().perform(request).andReturn().getResponse();
+        return realHttp()
+                .exchange(
+                        HttpMethod.PATCH,
+                        uri,
+                        session.cookie(),
+                        true,
+                        "{\"name\":\"" + name + "\"}",
+                        headers);
     }
 }

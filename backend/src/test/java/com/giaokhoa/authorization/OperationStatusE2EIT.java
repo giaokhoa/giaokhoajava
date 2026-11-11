@@ -1,16 +1,17 @@
 package com.giaokhoa.authorization;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
+import com.giaokhoa.support.HttpTestClient;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.support.NativeGateFixture;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -19,14 +20,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,10 +38,10 @@ import tools.jackson.databind.json.JsonMapper;
  * thật chứa token Code+PKCE thật; operation của người khác bị giấu thành 404; response chỉ chứa
  * metadata điều khiển, không chứa payload nội bộ hay secret.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class OperationStatusIT extends IntegrationEnvironment {
+class OperationStatusE2EIT extends IntegrationEnvironment {
     private static final JsonMapper JSON = new JsonMapper();
 
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua dữ kiện seed
@@ -60,6 +58,15 @@ class OperationStatusIT extends IntegrationEnvironment {
     @Autowired ClientRegistrationRepository clientRegistrations;
     @Autowired SessionRepository<?> sessions;
 
+    private @Nullable HttpTestClient httpClient;
+
+    private HttpTestClient realHttp() {
+        if (httpClient == null) {
+            httpClient = HttpTestClient.bind(webContext);
+        }
+        return httpClient;
+    }
+
     @DisplayName("Initiator đọc được operation PENDING của chính mình mà không lộ payload nội bộ")
     @Test
     void initiatorReadsOwnOperation() throws Exception {
@@ -70,11 +77,11 @@ class OperationStatusIT extends IntegrationEnvironment {
             UUID operation =
                     tx(() -> gate.seedOperation(actor, AuthorizationOperation.State.PENDING, null));
 
-            MockHttpServletResponse response = getOperation(session, operation);
+            HttpTestClient.Response response = getOperation(session, operation);
 
-            assertEquals(200, response.getStatus());
-            assertEquals("private, no-store", response.getHeader(HttpHeaders.CACHE_CONTROL));
-            String raw = response.getContentAsString();
+            assertEquals(200, response.status());
+            assertEquals("private, no-store", response.header(HttpHeaders.CACHE_CONTROL));
+            String raw = response.body();
             JsonNode body = JSON.readTree(raw);
             assertEquals(operation.toString(), body.get("id").stringValue());
             assertEquals("PENDING", body.get("state").stringValue());
@@ -114,11 +121,11 @@ class OperationStatusIT extends IntegrationEnvironment {
                                     AuthorizationOperation.State.RETRYABLE_FAILURE,
                                     "KEYCLOAK_UNAVAILABLE"));
 
-            JsonNode done = JSON.readTree(getOperation(session, succeeded).getContentAsString());
+            JsonNode done = JSON.readTree(getOperation(session, succeeded).body());
             assertEquals("SUCCEEDED", done.get("state").stringValue());
             assertTrue(done.get("completed").booleanValue());
 
-            JsonNode failed = JSON.readTree(getOperation(session, retryable).getContentAsString());
+            JsonNode failed = JSON.readTree(getOperation(session, retryable).body());
             assertEquals("RETRYABLE_FAILURE", failed.get("state").stringValue());
             assertFalse(
                     failed.get("completed").booleanValue(),
@@ -141,29 +148,28 @@ class OperationStatusIT extends IntegrationEnvironment {
                             gate.seedOperation(
                                     stranger, AuthorizationOperation.State.PENDING, null));
 
-            MockHttpServletResponse response = getOperation(session, foreign);
+            HttpTestClient.Response response = getOperation(session, foreign);
 
-            assertEquals(404, response.getStatus());
+            assertEquals(404, response.status());
             assertTrue(
-                    Objects.requireNonNull(response.getContentType(), "content type")
+                    Objects.requireNonNull(response.header("Content-Type"), "content type")
                             .startsWith(MediaType.APPLICATION_PROBLEM_JSON_VALUE));
-            JsonNode body = JSON.readTree(response.getContentAsString());
+            JsonNode body = JSON.readTree(response.body());
             assertEquals("NOT_FOUND", body.get("code").stringValue());
         }
     }
 
     @DisplayName("Request ẩn danh không bao giờ nhận được trạng thái operation")
     @Test
-    void anonymousGetsNoOperationStatus() throws Exception {
-        MockMvc mvc = mockMvc();
-        MockHttpServletResponse response =
-                mvc.perform(
-                                get("/api/me/operations/" + UUID.randomUUID())
-                                        .accept(MediaType.APPLICATION_JSON))
-                        .andReturn()
-                        .getResponse();
-        assertEquals(401, response.getStatus());
-        JsonNode body = JSON.readTree(response.getContentAsString());
+    void anonymousGetsNoOperationStatus() {
+        HttpTestClient.Response response =
+                realHttp()
+                        .get(
+                                "/api/me/operations/" + UUID.randomUUID(),
+                                null,
+                                Map.of("Accept", MediaType.APPLICATION_JSON_VALUE));
+        assertEquals(401, response.status());
+        JsonNode body = JSON.readTree(response.body());
         assertEquals("UNAUTHORIZED", body.get("code").stringValue());
     }
 
@@ -195,19 +201,9 @@ class OperationStatusIT extends IntegrationEnvironment {
                 diagnostics.contains(Objects.requireNonNull(idempotencyKey, "idempotency key")));
     }
 
-    private MockHttpServletResponse getOperation(NativeSpringSessionFixture session, UUID operation)
-            throws Exception {
-        return mockMvc()
-                .perform(get("/api/me/operations/" + operation).cookie(session.cookie()))
-                .andReturn()
-                .getResponse();
-    }
-
-    private MockMvc mockMvc() {
-        return MockMvcBuilders.webAppContextSetup(webContext)
-                .addFilters(sessionFilter)
-                .apply(springSecurity())
-                .build();
+    private HttpTestClient.Response getOperation(
+            NativeSpringSessionFixture session, UUID operation) {
+        return realHttp().get("/api/me/operations/" + operation, session.cookie());
     }
 
     private NativeSpringSessionFixture nativeSession(NativeRevocationFixture nativeGate)

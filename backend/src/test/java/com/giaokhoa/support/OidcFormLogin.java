@@ -31,8 +31,8 @@ import org.springframework.web.client.RestClient;
 
 /**
  * Đăng nhập form OIDC Authorization Code + PKCE qua Keycloak TEST cho client web của ứng dụng — bản
- * dùng chung thay các bản sao trước đây ở IdentityFlowIT và NativeRevocationFixture. Chỉ chấp nhận
- * đúng client BFF của stack TEST; không dùng Direct Access Grants cho phiên web.
+ * dùng chung thay các bản sao trước đây ở IdentityFlowE2EIT và NativeRevocationFixture. Chỉ chấp
+ * nhận đúng client BFF của stack TEST; không dùng Direct Access Grants cho phiên web.
  */
 public final class OidcFormLogin {
     private static final SecureRandom RANDOM = new SecureRandom();

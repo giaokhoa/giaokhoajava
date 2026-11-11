@@ -1,12 +1,11 @@
 package com.giaokhoa.teaching;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.giaokhoa.support.HttpTestClient;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -15,8 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.http.HttpMethod;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -30,19 +28,38 @@ import tools.jackson.databind.JsonNode;
  * <p>Đây là task test-first: các route và bảng giảng dạy chưa được triển khai nên test khẳng định
  * đúng hợp đồng HTTP và hiện đỏ với 404 vì route chưa tồn tại — đỏ đó là có ý nghĩa, không phải lỗi
  * hạ tầng. Trường hợp giáo viên tạo lớp center đã được khóa ở test hợp đồng US2 ({@code
- * CenterAdministrationIT.teacherCannotCreateCenterClassEvenWithPersonalPackage}) nên không lặp lại
- * ở đây.
+ * CenterAdministrationE2EIT.teacherCannotCreateCenterClassEvenWithPersonalPackage}) nên không lặp
+ * lại ở đây.
  *
  * <p>Quyền đọc roster của từng môn: hợp đồng chốt "chỉ roster môn đó" nhưng không liệt kê đích danh
  * ai được đọc — test này đọc theo nguồn phân công: giáo viên đúng môn–khóa, chủ nhiệm đúng lớp (chỉ
  * roster lớp, không phải roster môn), chủ sở hữu/quản lý. Nếu đội triển khai quyết khác thì đây là
  * điểm cần đối chiếu lại.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Tag("e2e-backend")
-class TeachingAuthorizationIT extends TeachingFixture {
+class TeachingAuthorizationE2EIT extends TeachingFixture {
+
+    // Tầng e2e-backend (B107): mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
+    // vận chuyển của fixture sang biến thể HTTP để toàn bộ helper tổ hợp chảy qua server thật.
+    @Override
+    protected RealSession openSession(KeycloakLogin login) throws Exception {
+        return openSessionHttp(login);
+    }
+
+    @Override
+    protected UUID postMutation(RealSession session, String uri, String json, String method)
+            throws Exception {
+        return postMutationHttp(session, uri, json, method);
+    }
+
+    @Override
+    protected JsonNode getJson(RealSession session, String uri, int expectedStatus)
+            throws Exception {
+        return getJsonHttp(session, uri, expectedStatus);
+    }
 
     // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt). Center chuẩn
     // cũng dựng một lần và dùng chung cho các test seed bằng seedCenterFixture: cô lập nằm ở
@@ -123,29 +140,24 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     fixture.workspaceId(),
                     setup.courseSubject(0),
                     List.of(fixture.teacherAId()));
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/course-subjects/"
-                                                    + setup.courseSubject(1)
-                                                    + "/teachers")
-                                            .cookie(teacher.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-forbid-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"teacherUserIds\":[\""
-                                                            + fixture.teacherBId()
-                                                            + "\"]}"))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/course-subjects/"
+                                            + setup.courseSubject(1)
+                                            + "/teachers",
+                                    teacher.cookie(),
+                                    true,
+                                    "{\"teacherUserIds\":[\"" + fixture.teacherBId() + "\"]}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-forbid-" + UUID.randomUUID()));
             assertEquals(
                     403,
-                    response.getStatus(),
+                    response.status(),
                     "Giáo viên môn này không được phân công giáo viên cho môn khác");
         }
     }
@@ -161,19 +173,17 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     fixture.workspaceId(),
                     setup.courseSubject(0),
                     List.of(fixture.teacherAId()));
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/course-subjects/"
-                                                    + setup.courseSubject(1)
-                                                    + "/enrollments")
-                                            .cookie(teacher.cookie()))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/course-subjects/"
+                                            + setup.courseSubject(1)
+                                            + "/enrollments",
+                                    teacher.cookie());
             assertEquals(
-                    403, response.getStatus(), "Giáo viên môn này không được đọc roster môn khác");
+                    403, response.status(), "Giáo viên môn này không được đọc roster môn khác");
         }
     }
 
@@ -189,20 +199,18 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     first.courseSubject(0),
                     List.of(fixture.teacherAId()));
             TeachingSetup second = prepareSecondClass(owner, fixture, 1);
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/course-subjects/"
-                                                    + second.courseSubject(0)
-                                                    + "/enrollments")
-                                            .cookie(teacher.cookie()))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/course-subjects/"
+                                            + second.courseSubject(0)
+                                            + "/enrollments",
+                                    teacher.cookie());
             assertEquals(
                     403,
-                    response.getStatus(),
+                    response.status(),
                     "Giáo viên lớp này không được đọc roster lớp khác cùng center");
         }
     }
@@ -214,42 +222,35 @@ class TeachingAuthorizationIT extends TeachingFixture {
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
-            MockHttpServletResponse read =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/classes/"
-                                                    + setup.classId()
-                                                    + "/students")
-                                            .cookie(homeroom.cookie()))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(200, read.getStatus(), "Chủ nhiệm đọc được roster lớp của mình");
+            HttpTestClient.Response read =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + setup.classId()
+                                            + "/students",
+                                    homeroom.cookie());
+            assertEquals(200, read.status(), "Chủ nhiệm đọc được roster lớp của mình");
 
-            MockHttpServletResponse assign =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/course-subjects/"
-                                                    + setup.courseSubject(0)
-                                                    + "/teachers")
-                                            .cookie(homeroom.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-hr-assign-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"teacherUserIds\":[\""
-                                                            + fixture.teacherBId()
-                                                            + "\"]}"))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response assign =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/course-subjects/"
+                                            + setup.courseSubject(0)
+                                            + "/teachers",
+                                    homeroom.cookie(),
+                                    true,
+                                    "{\"teacherUserIds\":[\"" + fixture.teacherBId() + "\"]}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-hr-assign-" + UUID.randomUUID()));
             assertEquals(
                     403,
-                    assign.getStatus(),
+                    assign.status(),
                     "Chủ nhiệm không được phân công giáo viên cho môn — đó là quyền quản trị");
         }
     }
@@ -261,27 +262,22 @@ class TeachingAuthorizationIT extends TeachingFixture {
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/enrollments")
-                                            .cookie(homeroom.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-hr-enroll-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"classStudentIds\":[\""
-                                                            + setup.classStudentId(0)
-                                                            + "\"],\"courseSubjectIds\":[\""
-                                                            + setup.courseSubject(0)
-                                                            + "\"]}"))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(403, response.getStatus(), "Chủ nhiệm không được ghi danh học sinh");
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/" + fixture.workspaceId() + "/enrollments",
+                                    homeroom.cookie(),
+                                    true,
+                                    "{\"classStudentIds\":[\""
+                                            + setup.classStudentId(0)
+                                            + "\"],\"courseSubjectIds\":[\""
+                                            + setup.courseSubject(0)
+                                            + "\"]}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-hr-enroll-" + UUID.randomUUID()));
+            assertEquals(403, response.status(), "Chủ nhiệm không được ghi danh học sinh");
         }
     }
 
@@ -293,27 +289,24 @@ class TeachingAuthorizationIT extends TeachingFixture {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
             List<UUID> subjects = subjectIds(owner, 1);
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/classes/"
-                                                    + setup.classId()
-                                                    + "/courses")
-                                            .cookie(homeroom.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-hr-course-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"name\":\"Khóa chủ nhiệm\",\"subjectIds\":[\""
-                                                            + subjects.get(0)
-                                                            + "\"]}"))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(403, response.getStatus(), "Chủ nhiệm không được tạo khóa");
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + setup.classId()
+                                            + "/courses",
+                                    homeroom.cookie(),
+                                    true,
+                                    "{\"name\":\"Khóa chủ nhiệm\",\"subjectIds\":[\""
+                                            + subjects.get(0)
+                                            + "\"]}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-hr-course-" + UUID.randomUUID()));
+            assertEquals(403, response.status(), "Chủ nhiệm không được tạo khóa");
         }
     }
 
@@ -324,20 +317,18 @@ class TeachingAuthorizationIT extends TeachingFixture {
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/" + fixture.workspaceId() + "/classes")
-                                            .cookie(homeroom.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-hr-class-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content("{\"name\":\"Lớp chủ nhiệm tạo\"}"))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(403, response.getStatus(), "Chủ nhiệm không được tạo lớp");
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/" + fixture.workspaceId() + "/classes",
+                                    homeroom.cookie(),
+                                    true,
+                                    "{\"name\":\"Lớp chủ nhiệm tạo\"}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-hr-class-" + UUID.randomUUID()));
+            assertEquals(403, response.status(), "Chủ nhiệm không được tạo lớp");
         }
     }
 
@@ -348,29 +339,24 @@ class TeachingAuthorizationIT extends TeachingFixture {
                 var homeroom = openSession(fixture.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, fixture, 1);
             assignHomeroom(owner, fixture.workspaceId(), setup.classId(), fixture.teacherAId());
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/classes/"
-                                                    + setup.classId()
-                                                    + "/homeroom-assignments")
-                                            .cookie(homeroom.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-hr-hr-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"teacherUserId\":\""
-                                                            + fixture.teacherBId()
-                                                            + "\"}"))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + setup.classId()
+                                            + "/homeroom-assignments",
+                                    homeroom.cookie(),
+                                    true,
+                                    "{\"teacherUserId\":\"" + fixture.teacherBId() + "\"}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-hr-hr-" + UUID.randomUUID()));
             assertEquals(
                     403,
-                    response.getStatus(),
+                    response.status(),
                     "Chỉ chủ sở hữu/quản lý được chỉ định chủ nhiệm, chủ nhiệm hiện tại không được");
         }
     }
@@ -387,20 +373,18 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     fixture.workspaceId(),
                     List.of(setup.classStudentId(0)),
                     List.of(setup.courseSubject(0)));
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/course-subjects/"
-                                                    + unenrolledSubject
-                                                    + "/enrollments")
-                                            .cookie(student.cookie()))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/course-subjects/"
+                                            + unenrolledSubject
+                                            + "/enrollments",
+                                    student.cookie());
             assertEquals(
                     403,
-                    response.getStatus(),
+                    response.status(),
                     "Học sinh không được đọc roster môn mình chưa ghi danh");
         }
     }
@@ -412,19 +396,17 @@ class TeachingAuthorizationIT extends TeachingFixture {
         try (var owner = openSession(first.owner());
                 var outsider = openSession(second.teacherA())) {
             TeachingSetup setup = prepareCourse(owner, first, 1);
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + first.workspaceId()
-                                                    + "/classes/"
-                                                    + setup.classId())
-                                            .cookie(outsider.cookie()))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + first.workspaceId()
+                                            + "/classes/"
+                                            + setup.classId(),
+                                    outsider.cookie());
             assertEquals(
                     404,
-                    response.getStatus(),
+                    response.status(),
                     "Lớp của center khác không tồn tại đối với actor ngoài center");
         } finally {
             deleteFixture(second);
@@ -461,29 +443,24 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             "DELETE");
             awaitOperationSucceeded(jdbc, operationId);
 
-            MockHttpServletResponse denied =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/course-subjects/"
-                                                    + subject
-                                                    + "/teachers")
-                                            .cookie(teacherA.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-revoked-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"teacherUserIds\":[\""
-                                                            + fixture.teacherBId()
-                                                            + "\"]}"))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response denied =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/course-subjects/"
+                                            + subject
+                                            + "/teachers",
+                                    teacherA.cookie(),
+                                    true,
+                                    "{\"teacherUserIds\":[\"" + fixture.teacherBId() + "\"]}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-revoked-" + UUID.randomUUID()));
             assertEquals(
                     403,
-                    denied.getStatus(),
+                    denied.status(),
                     "Cùng phiên sau khi bị thu hồi phân công thì lần gọi tiếp theo bị từ chối");
             assertEquals(
                     3,
@@ -560,20 +537,18 @@ class TeachingAuthorizationIT extends TeachingFixture {
                     3,
                     enrollmentCount(teacher, fixture.workspaceId(), setup.courseSubject(1)),
                     "Giáo viên đọc được roster môn nhận qua phân công bổ sung");
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/course-subjects/"
-                                                    + setup.courseSubject(2)
-                                                    + "/enrollments")
-                                            .cookie(teacher.cookie()))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/course-subjects/"
+                                            + setup.courseSubject(2)
+                                            + "/enrollments",
+                                    teacher.cookie());
             assertEquals(
                     403,
-                    response.getStatus(),
+                    response.status(),
                     "Môn chưa được phân công vẫn bị từ chối sau phân công bổ sung");
         } finally {
             deleteFixture(fixture);
@@ -601,20 +576,18 @@ class TeachingAuthorizationIT extends TeachingFixture {
                             .get("items")
                             .size(),
                     "Chủ nhiệm đọc được roster lớp của mình");
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/classes/"
-                                                    + second.classId()
-                                                    + "/students")
-                                            .cookie(homeroom.cookie()))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + second.classId()
+                                            + "/students",
+                                    homeroom.cookie());
             assertEquals(
                     403,
-                    response.getStatus(),
+                    response.status(),
                     "Chủ nhiệm lớp này không được đọc roster lớp khác dù cùng trung tâm");
         } finally {
             deleteFixture(fixture);

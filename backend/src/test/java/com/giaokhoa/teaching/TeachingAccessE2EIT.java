@@ -1,11 +1,9 @@
 package com.giaokhoa.teaching;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
+import com.giaokhoa.support.HttpTestClient;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.service.CenterService;
 import java.time.Duration;
@@ -23,15 +21,21 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
 
 /** Hồi quy eligibility và thứ tự kiểm tra role/khóa workspace với phiên Keycloak thật. */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Tag("e2e-backend")
-class TeachingAccessIT extends TeachingFixture {
+class TeachingAccessE2EIT extends TeachingFixture {
     @Autowired private CenterService centers;
     @Autowired private ResourceMutationCoordinator coordinator;
+
+    // Tầng e2e-backend (B107): mở phiên kèm nạp workspace qua HTTP thật.
+    @Override
+    protected RealSession openSession(KeycloakLogin login) throws Exception {
+        return openSessionHttp(login);
+    }
 
     @DisplayName("Actor chưa xác minh không đọc hay tạo được dữ liệu teaching bằng session cũ")
     @Test
@@ -52,21 +56,27 @@ class TeachingAccessIT extends TeachingFixture {
             // đồng bộ lại sau khi email bị gỡ xác minh; trạng thái cuối phải là PDP từ chối
             // dứt khoát 403 cho cả đọc lẫn ghi, không lẫn hai khả năng như khẳng định cũ.
             var read =
-                    requestWhenReady(
-                            mockMvc(),
-                            get("/api/workspaces/" + workspace + "/classes")
-                                    .cookie(session.cookie()));
+                    realHttp()
+                            .whenReady(() ->
+                                    realHttp()
+                                            .get(
+                                                    "/api/workspaces/" + workspace + "/classes",
+                                                    session.cookie()));
             var write =
-                    requestWhenReady(
-                            mockMvc(),
-                            post("/api/workspaces/" + workspace + "/classes")
-                                    .cookie(session.cookie())
-                                    .with(csrf())
-                                    .header("Idempotency-Key", UUID.randomUUID().toString())
-                                    .contentType(MediaType.APPLICATION_JSON)
-                                    .content("{\"name\":\"Forbidden\"}"));
-            assertEquals(403, read.getStatus());
-            assertEquals(403, write.getStatus());
+                    realHttp()
+                            .whenReady(() ->
+                                    realHttp()
+                                            .exchange(
+                                                    HttpMethod.POST,
+                                                    "/api/workspaces/" + workspace + "/classes",
+                                                    session.cookie(),
+                                                    true,
+                                                    "{\"name\":\"Forbidden\"}",
+                                                    Map.of(
+                                                            "Idempotency-Key",
+                                                            UUID.randomUUID().toString())));
+            assertEquals(403, read.status());
+            assertEquals(403, write.status());
             assertEquals(
                     0,
                     jdbc.queryForObject(
@@ -97,13 +107,15 @@ class TeachingAccessIT extends TeachingFixture {
                     .retrieve()
                     .toBodilessEntity();
             var response =
-                    requestWhenReady(
-                            mockMvc(),
-                            get("/api/workspaces/" + workspace + "/classes")
-                                    .cookie(session.cookie()));
+                    realHttp()
+                            .whenReady(() ->
+                                    realHttp()
+                                            .get(
+                                                    "/api/workspaces/" + workspace + "/classes",
+                                                    session.cookie()));
             assertEquals(
                     200,
-                    response.getStatus(),
+                    response.status(),
                     "Danh tính được cấp không email vẫn dùng nghiệp vụ theo role.");
             assertEquals(
                     false,
@@ -128,32 +140,25 @@ class TeachingAccessIT extends TeachingFixture {
         seedSubscription(workspace, -1, 30, owner);
         try (var session = openSession(login);
                 var pool = Executors.newVirtualThreadPerTaskExecutor()) {
-            Future<MockHttpServletResponse> pending =
+            Future<HttpTestClient.Response> pending =
                     tx(() -> {
                         coordinator.lockWorkspace(workspace);
                         int blocker =
                                 Objects.requireNonNull(
                                         jdbc.queryForObject(
                                                 "SELECT pg_backend_pid()", Integer.class));
-                        Future<MockHttpServletResponse> request =
+                        Future<HttpTestClient.Response> request =
                                 pool.submit(() ->
-                                        mockMvc()
-                                                .perform(
-                                                        post("/api/workspaces/"
-                                                                        + workspace
-                                                                        + "/classes")
-                                                                .cookie(session.cookie())
-                                                                .with(csrf())
-                                                                .header(
-                                                                        "Idempotency-Key",
-                                                                        UUID.randomUUID()
-                                                                                .toString())
-                                                                .contentType(
-                                                                        MediaType.APPLICATION_JSON)
-                                                                .content(
-                                                                        "{\"name\":\"After revoke\"}"))
-                                                .andReturn()
-                                                .getResponse());
+                                        realHttp()
+                                                .exchange(
+                                                        HttpMethod.POST,
+                                                        "/api/workspaces/" + workspace + "/classes",
+                                                        session.cookie(),
+                                                        true,
+                                                        "{\"name\":\"After revoke\"}",
+                                                        Map.of(
+                                                                "Idempotency-Key",
+                                                                UUID.randomUUID().toString())));
                         Awaitility.await()
                                 .atMost(Duration.ofSeconds(15))
                                 .pollInterval(Duration.ofMillis(50))
@@ -174,10 +179,10 @@ class TeachingAccessIT extends TeachingFixture {
                                 "b".repeat(64));
                         return request;
                     });
-            MockHttpServletResponse response = pending.get(20, TimeUnit.SECONDS);
+            HttpTestClient.Response response = pending.get(20, TimeUnit.SECONDS);
             assertEquals(
                     403,
-                    response.getStatus(),
+                    response.status(),
                     "Role must be checked after the writer acquires the shared workspace lock");
         } finally {
             deleteUser(login.subject());
