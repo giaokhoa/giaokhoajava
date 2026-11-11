@@ -86,8 +86,10 @@ class ProjectionRecoveryIT extends IntegrationEnvironment {
     }
 
     @AfterAll
-    static void removeSchema(@Autowired JdbcTemplate jdbc) {
-        jdbc.execute("DROP SCHEMA " + SCHEMA + " CASCADE");
+    static void removeSchema() {
+        // Schema do Flyway tạo bằng credential migration nên cũng phải xoá bằng credential đó;
+        // datasource ứng dụng chạy bằng role runtime không có quyền xoá schema.
+        migratorJdbc().execute("DROP SCHEMA " + SCHEMA + " CASCADE");
     }
 
     @Autowired JdbcTemplate jdbc;

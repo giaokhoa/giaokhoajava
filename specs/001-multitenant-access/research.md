@@ -86,11 +86,11 @@
 
 ## R9. Dữ liệu và cách ly
 
-**Decision**: Một app database PostgreSQL, schema dùng chung; `workspace_id` và khóa ngoại tổng hợp trên các quan hệ dạy học. Spring Data JPA/Hibernate, Flyway là nguồn duy nhất đổi schema; Hibernate validate. RLS làm lớp bảo vệ phạm vi workspace cho bảng dạy học/liên kết/kết quả và mục lưu; canonical tài nguyên nguồn được truy cập qua repository chuyên biệt sau quyết định quyền trong ngữ cảnh nhận, không qua endpoint danh sách toàn cục.
+**Decision**: Một app database PostgreSQL; mỗi tenant (workspace) một schema riêng khi đã kích hoạt, các bảng tenant trong schema hệ thống (public) là mặt phẳng dùng chung cho workspace chưa kích hoạt. `workspace_id` và khóa ngoại tổng hợp trên các quan hệ dạy học. Spring Data JPA/Hibernate, Flyway là nguồn duy nhất đổi schema (hai dòng migration: hệ thống và tenant); Hibernate không validate toàn cục vì validate không làm việc với multitenancy theo schema. Cách ly workspace dựa vào ranh giới schema với tenant đã kích hoạt và vào mệnh đề `workspace_id` trong truy vấn ứng dụng với tenant chưa kích hoạt — không dùng RLS (đã tháo ở bước chốt của đợt di trú JPA; lịch sử quyết định và bằng chứng ở Sổ B103 trong `docs/diem-chua-chac-chan-va-lech-spec.md`). Canonical tài nguyên nguồn được truy cập qua repository chuyên biệt sau quyết định quyền trong ngữ cảnh nhận, không qua endpoint danh sách toàn cục.
 
-**Rationale**: Không cần database mỗi trung tâm. RLS chỉ bảo vệ biên dữ liệu, không thay PDP hoặc tự chấm vai trò nghiệp vụ. Runtime role không là owner, không BYPASSRLS; migration role tách riêng. Directory danh tính/trung tâm và control metadata projection được quản lý bằng service chuyên biệt, không trả dữ liệu nghiệp vụ từ lookup chưa xét quyền.
+**Rationale**: Không cần database mỗi trung tâm; schema mỗi tenant cho ranh giới cách ly cứng ở tầng DB mà không nhân chi phí vận hành của database riêng. Runtime role không là owner, không BYPASSRLS, chỉ có DML theo grants gắn với từng schema (trừ bảng lịch sử migration chỉ được đọc); migration role tách riêng. Directory danh tính/trung tâm và control metadata projection được quản lý bằng service chuyên biệt, không trả dữ liệu nghiệp vụ từ lookup chưa xét quyền.
 
-**Alternatives considered**: Schema/database mỗi tenant tăng vận hành. Chỉ lọc tenant ở UI không bảo vệ API. RLS chứa toàn bộ luật giáo viên/phụ huynh tạo một PDP khác nên không chọn.
+**Alternatives considered**: Database mỗi tenant tăng vận hành. Schema dùng chung + RLS là mô hình chuyển tiếp trong lúc di trú, đã nghỉ hưu khi schema-per-tenant land vì hai cơ chế cách ly cùng lúc làm mọi đường truy cập phải mang cả hai kỷ luật. Chỉ lọc tenant ở UI không bảo vệ API.
 
 **Sources**: [PostgreSQL row security](https://www.postgresql.org/docs/18/ddl-rowsecurity.html), [Boot database initialization](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
 

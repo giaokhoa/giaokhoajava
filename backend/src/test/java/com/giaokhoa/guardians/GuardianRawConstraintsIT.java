@@ -26,16 +26,16 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Kiểm chứng schema guardian_link bằng SQL thô qua một role NOSUPERUSER NOBYPASSRLS, không qua
- * service: user của stack TEST là superuser nên tự nó không chịu RLS, chỉ role runtime mới chứng
- * minh được policy. Các lớp chốt chặn phải đứng vững ngay cả khi tầng ứng dụng bị bỏ qua: RLS theo
- * context workspace, FK tới tài khoản/workspace, CHECK trạng thái và hình dạng trường theo trạng
- * thái, unique từng phần cho cặp parent–học sinh hiện hành, trigger membership ACTIVE cho cả hai
- * phía lúc tạo và cho parent tại thời điểm duyệt, cùng trigger giữ lịch sử (cấm hard-delete, cấm
- * đổi định danh, đóng băng trạng thái kết thúc, chỉ hai chuyển trạng thái của vòng đời).
+ * Kiểm chứng schema guardian_link bằng SQL thô qua một role không phải chủ sở hữu bảng, không qua
+ * service. Các lớp chốt chặn ở tầng DB phải đứng vững ngay cả khi tầng ứng dụng bị bỏ qua: FK tới
+ * tài khoản/workspace, CHECK trạng thái và hình dạng trường theo trạng thái, unique từng phần cho
+ * cặp parent–học sinh hiện hành, trigger membership ACTIVE cho cả hai phía lúc tạo và cho parent
+ * tại thời điểm duyệt, cùng trigger giữ lịch sử (cấm hard-delete, cấm đổi định danh, đóng băng
+ * trạng thái kết thúc, chỉ hai chuyển trạng thái của vòng đời). Cách ly workspace ở tầng DB nằm ở
+ * ranh giới schema, không còn policy theo từng hàng.
  *
- * <p>Seed center/membership bằng SQL thô qua kết nối ứng dụng (superuser) trong schema cô lập; phần
- * khẳng định chạy hoàn toàn qua role runtime.
+ * <p>Seed center/membership bằng SQL thô qua kết nối ứng dụng trong schema cô lập; phần khẳng định
+ * chạy hoàn toàn qua role runtime tự tạo của class.
  */
 // Harness tối thiểu: chỉ kiểm chứng schema/bảng bằng JDBC thuần trên schema riêng nên tự chạy
 // Flyway và tự cấp JdbcTemplate, không dựng ApplicationContext của ứng dụng.
@@ -45,6 +45,7 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
     private static final String RUNTIME_ROLE = "guardian_raw_runtime";
 
     private static JdbcTemplate jdbc;
+    private static JdbcTemplate surgery;
     private static PlatformTransactionManager transactionManager;
 
     @BeforeAll
@@ -60,6 +61,7 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
                 .defaultSchema(SCHEMA)
                 .load()
                 .migrate();
+        surgery = new JdbcTemplate(migrator);
         var source =
                 new DriverManagerDataSource(
                         testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
@@ -71,7 +73,7 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
 
     @AfterAll
     static void removeSchema() {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+        surgery.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
@@ -87,67 +89,6 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
             UUID outsider) {}
 
     @Test
-    void rawSelectSeesOnlyRowsOfContextWorkspace() {
-        RawGraph graph = seedRawGraph();
-        JdbcTemplate runtime = openRuntime();
-        try {
-            assertEquals(
-                    0,
-                    countRows(runtime, graph.workspaceA()),
-                    "Không có context workspace thì RLS che toàn bộ guardian_link");
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, graph.workspaceA())));
-            assertEquals(
-                    0,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, graph.workspaceB())),
-                    "Context A không thấy liên kết của workspace B");
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceB(),
-                            () -> countRows(runtime, graph.workspaceB())),
-                    "Context B thấy đúng liên kết của B");
-        } finally {
-            closeRuntime();
-        }
-    }
-
-    @DisplayName("Insert thô dưới context workspace sai vi phạm kiểm tra RLS")
-    @Test
-    void rawInsertWrongContextViolatesRls() {
-        RawGraph graph = seedRawGraph();
-        JdbcTemplate runtime = openRuntime();
-        try {
-            assertSqlState(
-                    "42501",
-                    () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertLink(
-                                                runtime,
-                                                graph.workspaceB(),
-                                                graph.parentB(),
-                                                graph.studentB(),
-                                                graph.parentB());
-                                        return null;
-                                    }),
-                    "WITH CHECK của RLS chặn ghi liên kết mang workspace khác context");
-        } finally {
-            closeRuntime();
-        }
-    }
-
-    @Test
     void rawForeignKeyAndStateChecksRejectBadRows() {
         RawGraph graph = seedRawGraph();
         // Cặp parent–học sinh riêng cho test này: cặp đã seed ở đồ thị chung đang có
@@ -161,78 +102,66 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertLink(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                parent,
-                                                student,
-                                                UUID.randomUUID());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertLink(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        parent,
+                                        student,
+                                        UUID.randomUUID());
+                                return null;
+                            }),
                     "FK chặn requested_by không phải tài khoản tồn tại");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO guardian_link (id, workspace_id,"
-                                                        + " parent_user_id, student_user_id, state,"
-                                                        + " requested_by) VALUES (?, ?, ?, ?,"
-                                                        + " 'PENDING', ?)",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                parent,
-                                                student,
-                                                parent);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO guardian_link (id, workspace_id,"
+                                                + " parent_user_id, student_user_id, state,"
+                                                + " requested_by) VALUES (?, ?, ?, ?,"
+                                                + " 'PENDING', ?)",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        parent,
+                                        student,
+                                        parent);
+                                return null;
+                            }),
                     "CHECK chặn trạng thái ngoài vòng đời REQUESTED/APPROVED/REJECTED/REVOKED");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO guardian_link (id, workspace_id,"
-                                                        + " parent_user_id, student_user_id, state,"
-                                                        + " requested_by) VALUES (?, ?, ?, ?,"
-                                                        + " 'APPROVED', ?)",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                parent,
-                                                student,
-                                                parent);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO guardian_link (id, workspace_id,"
+                                                + " parent_user_id, student_user_id, state,"
+                                                + " requested_by) VALUES (?, ?, ?, ?,"
+                                                + " 'APPROVED', ?)",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        parent,
+                                        student,
+                                        parent);
+                                return null;
+                            }),
                     "CHECK hình dạng chặn APPROVED thiếu người duyệt và thời điểm duyệt");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO guardian_link (id, workspace_id,"
-                                                        + " parent_user_id, student_user_id, state,"
-                                                        + " requested_by, revoked_at) VALUES (?, ?, ?,"
-                                                        + " ?, 'REQUESTED', ?, now())",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                parent,
-                                                student,
-                                                parent);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO guardian_link (id, workspace_id,"
+                                                + " parent_user_id, student_user_id, state,"
+                                                + " requested_by, revoked_at) VALUES (?, ?, ?,"
+                                                + " ?, 'REQUESTED', ?, now())",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        parent,
+                                        student,
+                                        parent);
+                                return null;
+                            }),
                     "CHECK hình dạng chặn REQUESTED đã mang thời điểm thu hồi");
         } finally {
             closeRuntime();
@@ -247,34 +176,28 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertLink(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.outsider(),
-                                                graph.studentA(),
-                                                graph.outsider());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertLink(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.outsider(),
+                                        graph.studentA(),
+                                        graph.outsider());
+                                return null;
+                            }),
                     "Trigger membership chặn parent chưa là thành viên ACTIVE của center");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertLink(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.parentA(),
-                                                graph.outsider(),
-                                                graph.parentA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertLink(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.parentA(),
+                                        graph.outsider(),
+                                        graph.parentA());
+                                return null;
+                            }),
                     "Trigger membership chặn học sinh ngoài phạm vi center");
 
             // Parent là thành viên lúc gửi request nhưng bị thu hồi membership trước
@@ -292,18 +215,15 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE guardian_link SET state = 'APPROVED',"
-                                                        + " approved_by = ?, approved_at = now()"
-                                                        + " WHERE id = ?",
-                                                graph.ownerA(),
-                                                link);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE guardian_link SET state = 'APPROVED',"
+                                                + " approved_by = ?, approved_at = now()"
+                                                + " WHERE id = ?",
+                                        graph.ownerA(),
+                                        link);
+                                return null;
+                            }),
                     "Trigger duyệt chặn khi parent không còn là thành viên ACTIVE");
         } finally {
             closeRuntime();
@@ -322,40 +242,24 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
         JdbcTemplate runtime = openRuntime();
         try {
             UUID link =
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
+                    inTransaction(
                             () -> insertLink(runtime, graph.workspaceA(), parent, student, parent));
             assertSqlState(
                     "23505",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertLink(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                parent,
-                                                student,
-                                                parent);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertLink(runtime, graph.workspaceA(), parent, student, parent);
+                                return null;
+                            }),
                     "Unique từng phần chặn cặp parent–học sinh hiện hành trùng");
 
             // Từ chối là kết thúc: tạo lại bằng hàng mới, lịch sử cũ vẫn còn.
-            inContext(
-                    runtime,
-                    graph.workspaceA(),
-                    () -> {
-                        runtime.update(
-                                "UPDATE guardian_link SET state = 'REJECTED' WHERE id = ?", link);
-                        return null;
-                    });
+            inTransaction(() -> {
+                runtime.update("UPDATE guardian_link SET state = 'REJECTED' WHERE id = ?", link);
+                return null;
+            });
             UUID relink =
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
+                    inTransaction(
                             () -> insertLink(runtime, graph.workspaceA(), parent, student, parent));
             assertEquals(
                     2,
@@ -371,76 +275,60 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE guardian_link SET student_user_id = ?"
-                                                        + " WHERE id = ?",
-                                                graph.outsider(),
-                                                link);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE guardian_link SET student_user_id = ?"
+                                                + " WHERE id = ?",
+                                        graph.outsider(),
+                                        link);
+                                return null;
+                            }),
                     "Trigger giữ lịch sử chặn đổi học sinh của liên kết");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "DELETE FROM guardian_link WHERE id = ?", link);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update("DELETE FROM guardian_link WHERE id = ?", link);
+                                return null;
+                            }),
                     "Trigger giữ lịch sử chặn hard-delete liên kết");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE guardian_link SET state = 'REVOKED',"
-                                                        + " approved_by = ?, approved_at = now(),"
-                                                        + " revoked_at = now() WHERE id = ?",
-                                                graph.ownerA(),
-                                                relink);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE guardian_link SET state = 'REVOKED',"
+                                                + " approved_by = ?, approved_at = now(),"
+                                                + " revoked_at = now() WHERE id = ?",
+                                        graph.ownerA(),
+                                        relink);
+                                return null;
+                            }),
                     "Trigger vòng đời chặn REQUESTED nhảy thẳng sang REVOKED lách qua duyệt");
 
             // Vòng đời hợp lệ: duyệt rồi gỡ; hàng đã REVOKED đóng băng toàn bộ.
-            inContext(
-                    runtime,
-                    graph.workspaceA(),
-                    () -> {
-                        runtime.update(
-                                "UPDATE guardian_link SET state = 'APPROVED', approved_by = ?,"
-                                        + " approved_at = now() WHERE id = ?",
-                                graph.ownerA(),
-                                relink);
-                        runtime.update(
-                                "UPDATE guardian_link SET state = 'REVOKED', revoked_at = now()"
-                                        + " WHERE id = ?",
-                                relink);
-                        return null;
-                    });
+            inTransaction(() -> {
+                runtime.update(
+                        "UPDATE guardian_link SET state = 'APPROVED', approved_by = ?,"
+                                + " approved_at = now() WHERE id = ?",
+                        graph.ownerA(),
+                        relink);
+                runtime.update(
+                        "UPDATE guardian_link SET state = 'REVOKED', revoked_at = now()"
+                                + " WHERE id = ?",
+                        relink);
+                return null;
+            });
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE guardian_link SET revoked_at = now()"
-                                                        + " WHERE id = ?",
-                                                relink);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE guardian_link SET revoked_at = now()"
+                                                + " WHERE id = ?",
+                                        relink);
+                                return null;
+                            }),
                     "Trigger giữ lịch sử đóng băng hàng đã REVOKED");
         } finally {
             closeRuntime();
@@ -573,22 +461,22 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
         return new TransactionTemplate(transactionManager).execute(_ -> action.get());
     }
 
-    // ---------- Role runtime và context workspace ----------
+    // ---------- Role runtime của class ----------
 
     private JdbcTemplate openRuntime() {
         String password = UUID.randomUUID().toString();
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-        jdbc.execute(
+        surgery.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        surgery.execute(
                 "CREATE ROLE "
                         + RUNTIME_ROLE
                         + " LOGIN PASSWORD '"
                         + password
                         + "' NOSUPERUSER NOBYPASSRLS");
-        jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        // Cấp đủ quyền bảng để RLS/trigger/FK là chốt chặn duy nhất phải bắt được hành vi sai,
+        surgery.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        // Cấp đủ quyền bảng để trigger/FK là chốt chặn duy nhất phải bắt được hành vi sai,
         // đúng mẫu TeachingRawConstraintsIT.
-        jdbc.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        jdbc.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        surgery.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        surgery.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
         JdbcTemplate runtime = new JdbcTemplate(runtimeDataSource);
@@ -600,32 +488,18 @@ class GuardianRawConstraintsIT extends IntegrationEnvironment {
         if (runtimeDataSource != null) {
             runtimeDataSource.destroy();
         }
-        jdbc.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        surgery.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute(
+                "REVOKE ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
     }
 
-    private <T> T inContext(JdbcTemplate runtime, UUID workspaceId, Supplier<T> action) {
+    private <T> T inTransaction(Supplier<T> action) {
         DataSourceTransactionManager txManager =
                 new DataSourceTransactionManager(
                         Objects.requireNonNull(runtimeDataSource, "Role runtime phải mở trước"));
-        return new TransactionTemplate(txManager)
-                .execute(_ -> {
-                    runtime.queryForObject(
-                            "SELECT set_config('app.workspace_id', ?, true)",
-                            String.class,
-                            workspaceId.toString());
-                    return action.get();
-                });
-    }
-
-    private int countRows(JdbcTemplate runtime, UUID workspaceId) {
-        return Objects.requireNonNull(
-                runtime.queryForObject(
-                        "SELECT count(*) FROM guardian_link WHERE workspace_id = ?",
-                        Integer.class,
-                        workspaceId));
+        return new TransactionTemplate(txManager).execute(_ -> action.get());
     }
 
     private static void assertSqlState(String expectedState, Executable action, String message) {

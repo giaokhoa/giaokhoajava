@@ -153,7 +153,8 @@ public class TenantSchemaProvisioner {
 
     private void grantRuntimeRole(String schema) {
         // Tên schema suy ra tất định từ UUID nên an toàn để nội suy vào format(); role có thể
-        // chưa tồn tại ở môi trường chưa chạy migration hệ thống V027 nên phải kiểm trước.
+        // chưa tồn tại ở môi trường chưa chạy baseline hệ thống (nơi tạo role có điều kiện)
+        // nên phải kiểm trước.
         migrationJdbc.execute(
                 "DO $$ BEGIN"
                         + " IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'giaokhoa_runtime') THEN"
@@ -165,6 +166,12 @@ public class TenantSchemaProvisioner {
                         + executeFormat(
                                 "GRANT USAGE, SELECT ON ALL SEQUENCES"
                                         + " IN SCHEMA %I TO giaokhoa_runtime",
+                                schema)
+                        // Lịch sử migration của schema tenant chỉ cho runtime đọc (grant ALL
+                        // TABLES ở trên đã cấp cả quyền ghi vì bảng history nằm cùng schema).
+                        + executeFormat(
+                                "REVOKE INSERT, UPDATE, DELETE"
+                                        + " ON %I.flyway_schema_history FROM giaokhoa_runtime",
                                 schema)
                         // Default privileges gắn với role migration đang chạy Flyway của dòng
                         // tenant: bảng/sequence do các migration tenant sau này tạo trong schema

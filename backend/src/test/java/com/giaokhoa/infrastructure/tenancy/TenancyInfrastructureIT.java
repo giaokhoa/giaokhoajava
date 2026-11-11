@@ -317,11 +317,6 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                                         "SELECT count(*) FROM subscription_period WHERE id = ?",
                                         Long.class,
                                         probeId));
-                        assertEquals(
-                                workspaceA.toString(),
-                                jdbc.queryForObject(
-                                        "SELECT current_setting('app.workspace_id', true)",
-                                        String.class));
                         return null;
                     });
             assertEquals(1L, countIn(schemaA, probeId));
@@ -436,8 +431,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     }
 
     @Test
-    @DisplayName(
-            "Scope tham gia transaction cũ khôi phục ThreadLocal và RLS cả trước lẫn sau commit")
+    @DisplayName("Scope tham gia transaction cũ khôi phục ThreadLocal cả trước lẫn sau commit")
     void restoreJoinedContext() {
         ProbeWorkspace a = newWorkspace("joined-context");
         var manager = new DataSourceTransactionManager(runtimeDataSource);
@@ -447,17 +441,13 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                 .executeWithoutResult(_ -> {
                     tx.inWorkspace(a.workspaceId(), () -> null);
                     assertNull(TenantContext.current());
-                    assertNull(
-                            jdbc.queryForObject(
-                                    "SELECT NULLIF(current_setting('app.workspace_id', true), '')",
-                                    String.class));
                 });
         assertNull(TenantContext.current());
     }
 
     @Test
     @DisplayName(
-            "Đọc tenant khác dùng EntityManager riêng và giữ nguyên ghi chờ flush cùng RLS của tenant đích")
+            "Đọc tenant khác dùng EntityManager riêng và giữ nguyên ghi chờ flush cùng context của tenant đích")
     void isolateSourceRead() {
         ProbeWorkspace a = newWorkspace("read-a");
         ProbeWorkspace b = newWorkspace("read-b");
@@ -513,10 +503,8 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                                 schemaA,
                                 jdbc.queryForObject("SELECT current_schema()", String.class));
                         assertEquals(
-                                a.workspaceId().toString(),
-                                jdbc.queryForObject(
-                                        "SELECT current_setting('app.workspace_id')",
-                                        String.class));
+                                a.workspaceId(),
+                                Objects.requireNonNull(TenantContext.current()).workspaceId());
                         em.flush();
                         return null;
                     });

@@ -25,8 +25,6 @@ import com.giaokhoa.resources.repository.ResourcesUserAccountRepository;
 import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
 import com.giaokhoa.resources.repository.ShareGrantRepository;
 import com.giaokhoa.tenancy.model.Workspace;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -133,12 +131,6 @@ public class ResourcePolicyProjector {
     private final ResourceCopies copies;
     private final ResourceScopePreconditions preconditions;
 
-    // Container gán EntityManager qua @PersistenceContext trước mọi lời gọi nghiệp vụ;
-    // NullAway không thấy đường inject này nên suppression chỉ đặt tại field này.
-    @SuppressWarnings("NullAway")
-    @PersistenceContext
-    private EntityManager entityManager;
-
     public ResourcePolicyProjector(
             AuthorizationOperationService operations,
             PlatformTransactionManager transactionManager,
@@ -241,10 +233,8 @@ public class ResourcePolicyProjector {
         UUID resourceId = UUID.fromString(segments[3]);
         UUID versionId = UUID.fromString(segments[5]);
         List<String> bundle =
-                transactions.execute(_ -> {
-                    applyContext(workspaceId);
-                    return buildBundle(workspaceId, resourceId, versionId, targetKey);
-                });
+                transactions.execute(
+                        _ -> buildBundle(workspaceId, resourceId, versionId, targetKey));
         return Objects.requireNonNull(bundle, "bundle");
     }
 
@@ -263,7 +253,6 @@ public class ResourcePolicyProjector {
     public List<String> allBundleTargetKeys(UUID workspaceId) {
         List<String> targets =
                 transactions.execute(_ -> {
-                    applyContext(workspaceId);
                     Set<String> keys = new TreeSet<>();
                     List<UUID> ownedResourceIds = resources.findIdsByOwnerWorkspaceId(workspaceId);
                     for (ResourceVersion version : versionsOf(ownedResourceIds)) {
@@ -1047,16 +1036,5 @@ public class ResourcePolicyProjector {
             }
         }
         return null;
-    }
-
-    /**
-     * Đặt context workspace cho RLS trên chính connection của transaction JPA hiện hành (điểm
-     * set_config là hạ tầng tenancy của module, giữ nguyên cho tới wave tháo RLS).
-     */
-    private void applyContext(UUID workspaceId) {
-        entityManager
-                .createNativeQuery("SELECT set_config('app.workspace_id', ?1, true)")
-                .setParameter(1, workspaceId.toString())
-                .getSingleResult();
     }
 }

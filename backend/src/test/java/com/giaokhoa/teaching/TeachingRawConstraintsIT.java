@@ -27,16 +27,15 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Kiểm chứng RLS và FK của các bảng giảng dạy bằng SQL thô qua một role NOSUPERUSER NOBYPASSRLS,
- * không qua service: user của stack TEST là superuser nên tự nó không chịu RLS, chỉ role runtime
- * mới chứng minh được policy. Ba lớp chốt chặn phải đứng vững ngay cả khi tầng ứng dụng bị bỏ qua:
- * RLS theo context workspace (không context thì không thấy hàng nào, context A không thấy hàng B,
- * WITH CHECK chặn ghi hàng của workspace khác), FK composite (mọi tham chiếu chéo workspace/lớp đều
- * vi phạm), và các trigger nghiệp vụ ở tầng DB (cùng lớp cho ghi danh, membership ACTIVE cho
- * roster/chủ nhiệm ở center, unique từng phần cho cặp hiện hành, cấm hard-delete và đổi định danh).
+ * Kiểm chứng FK và trigger của các bảng giảng dạy bằng SQL thô qua một role không phải chủ sở hữu
+ * bảng, không qua service. Các lớp chốt chặn ở tầng DB phải đứng vững ngay cả khi tầng ứng dụng bị
+ * bỏ qua: FK composite (mọi tham chiếu chéo workspace/lớp đều vi phạm) và các trigger nghiệp vụ
+ * (cùng lớp cho ghi danh, membership ACTIVE cho roster/chủ nhiệm ở center, unique từng phần cho cặp
+ * hiện hành, cấm hard-delete và đổi định danh). Cách ly workspace ở tầng DB nằm ở ranh giới schema,
+ * không còn policy theo từng hàng.
  *
- * <p>Seed cấu trúc giảng dạy bằng SQL thô qua kết nối ứng dụng (superuser) trong schema cô lập;
- * phần khẳng định chạy hoàn toàn qua role runtime.
+ * <p>Seed cấu trúc giảng dạy bằng SQL thô qua kết nối ứng dụng trong schema cô lập; phần khẳng định
+ * chạy hoàn toàn qua role runtime tự tạo của class.
  */
 // Harness tối thiểu: chỉ kiểm chứng schema/bảng bằng JDBC thuần trên schema riêng nên tự chạy
 // Flyway và tự cấp JdbcTemplate cho fixture, không dựng ApplicationContext của ứng dụng.
@@ -44,17 +43,9 @@ class TeachingRawConstraintsIT extends TeachingFixture {
     private static final String SCHEMA =
             "teaching_raw_" + UUID.randomUUID().toString().replace("-", "");
     private static final String RUNTIME_ROLE = "teaching_raw_runtime";
-    private static final List<String> TEACHING_TABLES =
-            List.of(
-                    "school_class",
-                    "class_student",
-                    "course",
-                    "course_subject",
-                    "enrollment",
-                    "teaching_assignment",
-                    "homeroom_assignment");
 
     private static JdbcTemplate harnessJdbc;
+    private static JdbcTemplate surgery;
     private static PlatformTransactionManager harnessTx;
 
     @BeforeAll
@@ -70,6 +61,7 @@ class TeachingRawConstraintsIT extends TeachingFixture {
                 .defaultSchema(SCHEMA)
                 .load()
                 .migrate();
+        surgery = new JdbcTemplate(migrator);
         var source =
                 new DriverManagerDataSource(
                         testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
@@ -87,7 +79,7 @@ class TeachingRawConstraintsIT extends TeachingFixture {
 
     @AfterAll
     static void removeSchema() {
-        harnessJdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+        surgery.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
@@ -107,128 +99,6 @@ class TeachingRawConstraintsIT extends TeachingFixture {
             UUID teacherA,
             UUID outsider) {}
 
-    @Test
-    void rawSelectSeesOnlyRowsOfContextWorkspace() {
-        RawGraph graph = seedRawGraph();
-        JdbcTemplate runtime = openRuntime();
-        try {
-            for (String table : TEACHING_TABLES) {
-                assertEquals(
-                        0,
-                        countRows(runtime, table, graph.workspaceA()),
-                        "Không có context workspace thì RLS che toàn bộ bảng " + table);
-            }
-            assertEquals(
-                    2,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "school_class", graph.workspaceA())));
-            assertEquals(
-                    2,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "class_student", graph.workspaceA())));
-            assertEquals(
-                    2,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "course", graph.workspaceA())));
-            assertEquals(
-                    3,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "course_subject", graph.workspaceA())));
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "enrollment", graph.workspaceA())));
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "teaching_assignment", graph.workspaceA())));
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "homeroom_assignment", graph.workspaceA())));
-            assertEquals(
-                    0,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "school_class", graph.workspaceB())),
-                    "Context A không thấy hàng nào của workspace B");
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceB(),
-                            () -> countRows(runtime, "school_class", graph.workspaceB())),
-                    "Context B thấy đúng hàng của B");
-            assertEquals(
-                    0,
-                    inContext(
-                            runtime,
-                            graph.workspaceB(),
-                            () -> countRows(runtime, "school_class", graph.workspaceA())),
-                    "Context B không thấy hàng nào của workspace A");
-        } finally {
-            closeRuntime();
-        }
-    }
-
-    @DisplayName("Insert thô dưới context workspace sai vi phạm kiểm tra RLS")
-    @Test
-    void rawInsertWrongContextViolatesRls() {
-        RawGraph graph = seedRawGraph();
-        JdbcTemplate runtime = openRuntime();
-        try {
-            assertSqlState(
-                    "42501",
-                    () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO school_class (id, workspace_id, name, state)"
-                                                        + " VALUES (?, ?, 'Lớp lậu', 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceB());
-                                        return null;
-                                    }),
-                    "WITH CHECK của RLS chặn ghi lớp mang workspace khác context");
-            assertSqlState(
-                    "42501",
-                    () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO enrollment (id, workspace_id, class_student_id,"
-                                                        + " course_subject_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceB(),
-                                                graph.classStudentA(),
-                                                graph.courseSubjectA1M1());
-                                        return null;
-                                    }),
-                    "WITH CHECK của RLS chặn ghi danh mang workspace khác context");
-        } finally {
-            closeRuntime();
-        }
-    }
-
     @DisplayName("Khóa ngoại composite ở tầng raw từ chối tham chiếu chéo workspace")
     @Test
     void rawCompositeKeysRejectCrossRefs() {
@@ -238,90 +108,75 @@ class TeachingRawConstraintsIT extends TeachingFixture {
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO course (id, workspace_id, class_id, name, state)"
-                                                        + " VALUES (?, ?, ?, 'Khóa lậu', 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classB1());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO course (id, workspace_id, class_id, name, state)"
+                                                + " VALUES (?, ?, ?, 'Khóa lậu', 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classB1());
+                                return null;
+                            }),
                     "FK composite chặn khóa thuộc lớp của workspace khác");
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO course_subject (id, workspace_id, class_id, course_id,"
-                                                        + " subject_id, state) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classA2(),
-                                                courseOf(graph.courseSubjectA1M1()),
-                                                subjectOf(graph.courseSubjectA1M2()));
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO course_subject (id, workspace_id, class_id, course_id,"
+                                                + " subject_id, state) VALUES (?, ?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classA2(),
+                                        courseOf(graph.courseSubjectA1M1()),
+                                        subjectOf(graph.courseSubjectA1M2()));
+                                return null;
+                            }),
                     "FK composite ba cột chặn môn–khóa khai lớp khác với lớp thật của khóa");
             // Ghi danh chéo workspace bị trigger cùng lớp chặn ở 23514 trước FK composite:
             // trigger BEFORE INSERT chạy trước kiểm tra FK và hai phía khác lớp.
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO enrollment (id, workspace_id, class_student_id,"
-                                                        + " course_subject_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classStudentA(),
-                                                graph.courseSubjectB1M1());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO enrollment (id, workspace_id, class_student_id,"
+                                                + " course_subject_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classStudentA(),
+                                        graph.courseSubjectB1M1());
+                                return null;
+                            }),
                     "Trigger cùng lớp chặn ghi danh nối sang môn–khóa của workspace khác");
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO teaching_assignment (id, workspace_id,"
-                                                        + " course_subject_id, teacher_user_id, state)"
-                                                        + " VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.courseSubjectB1M1(),
-                                                graph.teacherA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO teaching_assignment (id, workspace_id,"
+                                                + " course_subject_id, teacher_user_id, state)"
+                                                + " VALUES (?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.courseSubjectB1M1(),
+                                        graph.teacherA());
+                                return null;
+                            }),
                     "FK composite chặn phân công nối sang môn–khóa của workspace khác");
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO homeroom_assignment (id, workspace_id, class_id,"
-                                                        + " teacher_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classB1(),
-                                                graph.teacherA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO homeroom_assignment (id, workspace_id, class_id,"
+                                                + " teacher_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classB1(),
+                                        graph.teacherA());
+                                return null;
+                            }),
                     "FK composite chặn chủ nhiệm nối sang lớp của workspace khác");
         } finally {
             closeRuntime();
@@ -337,19 +192,16 @@ class TeachingRawConstraintsIT extends TeachingFixture {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO enrollment (id, workspace_id, class_student_id,"
-                                                        + " course_subject_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classStudentA(),
-                                                graph.courseSubjectA2M1());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO enrollment (id, workspace_id, class_student_id,"
+                                                + " course_subject_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classStudentA(),
+                                        graph.courseSubjectA2M1());
+                                return null;
+                            }),
                     "Trigger cùng lớp chặn ghi danh khi học sinh lớp này nối môn–khóa của lớp khác");
         } finally {
             closeRuntime();
@@ -365,36 +217,30 @@ class TeachingRawConstraintsIT extends TeachingFixture {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO class_student (id, workspace_id, class_id,"
-                                                        + " student_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classA1(),
-                                                graph.outsider());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO class_student (id, workspace_id, class_id,"
+                                                + " student_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classA1(),
+                                        graph.outsider());
+                                return null;
+                            }),
                     "Trigger roster chặn học sinh center chưa có membership ACTIVE");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO homeroom_assignment (id, workspace_id, class_id,"
-                                                        + " teacher_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classA1(),
-                                                graph.outsider());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO homeroom_assignment (id, workspace_id, class_id,"
+                                                + " teacher_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classA1(),
+                                        graph.outsider());
+                                return null;
+                            }),
                     "Trigger chủ nhiệm chặn giáo viên chưa có membership ACTIVE của center");
         } finally {
             closeRuntime();
@@ -409,64 +255,51 @@ class TeachingRawConstraintsIT extends TeachingFixture {
             assertSqlState(
                     "23505",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "INSERT INTO class_student (id, workspace_id, class_id,"
-                                                        + " student_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                                UUID.randomUUID(),
-                                                graph.workspaceA(),
-                                                graph.classA1(),
-                                                graph.studentA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "INSERT INTO class_student (id, workspace_id, class_id,"
+                                                + " student_user_id, state) VALUES (?, ?, ?, ?, 'ACTIVE')",
+                                        UUID.randomUUID(),
+                                        graph.workspaceA(),
+                                        graph.classA1(),
+                                        graph.studentA());
+                                return null;
+                            }),
                     "Unique từng phần chặn cặp roster hiện hành trùng");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "DELETE FROM school_class WHERE id = ?",
-                                                graph.classA1());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "DELETE FROM school_class WHERE id = ?", graph.classA1());
+                                return null;
+                            }),
                     "Trigger giữ lịch sử chặn hard-delete lớp");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE school_class SET workspace_id = ? WHERE id = ?",
-                                                graph.workspaceB(),
-                                                graph.classA2());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE school_class SET workspace_id = ? WHERE id = ?",
+                                        graph.workspaceB(),
+                                        graph.classA2());
+                                return null;
+                            }),
                     "Trigger giữ lịch sử chặn đổi workspace của lớp");
 
-            inContext(
-                    runtime,
-                    graph.workspaceA(),
-                    () -> {
-                        runtime.update(
-                                "UPDATE class_student SET state = 'REVOKED', revoked_at = now() WHERE id = ?",
-                                graph.classStudentA());
-                        runtime.update(
-                                "INSERT INTO class_student (id, workspace_id, class_id, student_user_id, state)"
-                                        + " VALUES (?, ?, ?, ?, 'ACTIVE')",
-                                UUID.randomUUID(),
-                                graph.workspaceA(),
-                                graph.classA1(),
-                                graph.studentA());
-                        return null;
-                    });
+            inTransaction(() -> {
+                runtime.update(
+                        "UPDATE class_student SET state = 'REVOKED', revoked_at = now() WHERE id = ?",
+                        graph.classStudentA());
+                runtime.update(
+                        "INSERT INTO class_student (id, workspace_id, class_id, student_user_id, state)"
+                                + " VALUES (?, ?, ?, ?, 'ACTIVE')",
+                        UUID.randomUUID(),
+                        graph.workspaceA(),
+                        graph.classA1(),
+                        graph.studentA());
+                return null;
+            });
             assertEquals(
                     2,
                     jdbc.queryForObject(
@@ -593,22 +426,22 @@ class TeachingRawConstraintsIT extends TeachingFixture {
         return id;
     }
 
-    // ---------- Role runtime và context workspace ----------
+    // ---------- Role runtime của class ----------
 
     private JdbcTemplate openRuntime() {
         String password = UUID.randomUUID().toString();
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-        jdbc.execute(
+        surgery.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        surgery.execute(
                 "CREATE ROLE "
                         + RUNTIME_ROLE
                         + " LOGIN PASSWORD '"
                         + password
                         + "' NOSUPERUSER NOBYPASSRLS");
-        jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        // Cấp đủ quyền bảng để RLS/trigger/FK là chốt chặn duy nhất phải bắt được hành vi sai,
+        surgery.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        // Cấp đủ quyền bảng để trigger/FK là chốt chặn duy nhất phải bắt được hành vi sai,
         // đúng mẫu EnrollmentAssignmentIT.
-        jdbc.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        jdbc.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        surgery.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        surgery.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
         JdbcTemplate runtime = new JdbcTemplate(runtimeDataSource);
@@ -620,32 +453,18 @@ class TeachingRawConstraintsIT extends TeachingFixture {
         if (runtimeDataSource != null) {
             runtimeDataSource.destroy();
         }
-        jdbc.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        surgery.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute(
+                "REVOKE ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
     }
 
-    private <T> T inContext(JdbcTemplate runtime, UUID workspaceId, Supplier<T> action) {
+    private <T> T inTransaction(Supplier<T> action) {
         DataSourceTransactionManager txManager =
                 new DataSourceTransactionManager(
                         Objects.requireNonNull(runtimeDataSource, "Role runtime phải mở trước"));
-        return new TransactionTemplate(txManager)
-                .execute(_ -> {
-                    runtime.queryForObject(
-                            "SELECT set_config('app.workspace_id', ?, true)",
-                            String.class,
-                            workspaceId.toString());
-                    return action.get();
-                });
-    }
-
-    private int countRows(JdbcTemplate runtime, String table, UUID workspaceId) {
-        return Objects.requireNonNull(
-                runtime.queryForObject(
-                        "SELECT count(*) FROM " + table + " WHERE workspace_id = ?",
-                        Integer.class,
-                        workspaceId));
+        return new TransactionTemplate(txManager).execute(_ -> action.get());
     }
 
     private UUID courseOf(UUID courseSubjectId) {

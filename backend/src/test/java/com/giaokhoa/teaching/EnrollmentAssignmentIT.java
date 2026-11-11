@@ -61,8 +61,6 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.orm.jpa.SharedEntityManagerCreator;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,11 +74,11 @@ import tools.jackson.databind.json.JsonMapper;
  * Kiểm chứng tầng service của ghi danh và phân công: lô ghi danh nguyên tử và khóa cặp cùng lớp,
  * tiền đề role TEACHER của đúng center cho phân công giảng dạy/chủ nhiệm, cổng gói chặn mở rộng
  * nhưng không chặn thu hồi, cascade đóng nguồn phụ thuộc trong cùng transaction khi gỡ role hay thu
- * hồi membership qua CenterService, và hành vi dưới role runtime không bypass RLS. Phần projector
- * chạy end-to-end với worker thật và Keycloak TEST: group của giáo viên/học sinh/chủ nhiệm chỉ phản
- * ánh quan hệ hiện hành kèm membership ACTIVE hiện hành. Seed phần service thuần bằng JDBC trong
- * schema dùng chung của suite; phần projector tạo tài khoản Keycloak thật theo mẫu CenterServiceIT.
- * Route HTTP thuộc task route riêng nên test gọi thẳng service.
+ * hồi membership qua CenterService, và hành vi dưới một role không phải chủ sở hữu bảng. Phần
+ * projector chạy end-to-end với worker thật và Keycloak TEST: group của giáo viên/học sinh/chủ
+ * nhiệm chỉ phản ánh quan hệ hiện hành kèm membership ACTIVE hiện hành. Seed phần service thuần
+ * bằng JDBC trong schema dùng chung của suite; phần projector tạo tài khoản Keycloak thật theo mẫu
+ * CenterServiceIT. Route HTTP thuộc task route riêng nên test gọi thẳng service.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -434,7 +432,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
     }
 
     @Test
-    void enrollmentAndAssignmentRunUnderNonBypassRlsRole() {
+    void enrollmentAndAssignmentRunUnderNonOwnerRole() {
         UUID owner = seedAccount();
         UUID workspace = seedCenter(owner);
         UUID other = seedCenter(seedAccount());
@@ -442,27 +440,30 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
         UUID teacher = seedAccount();
         addMembership(workspace, student, "STUDENT");
         addMembership(workspace, teacher, "TEACHER");
-        ClassView clazz = classes.createClass(workspace, "Lớp RLS");
+        ClassView clazz = classes.createClass(workspace, "Lớp runtime");
         UUID subject = courses.listSubjects().getFirst().id();
         CourseView course =
-                courses.createCourse(workspace, clazz.id(), "Khóa RLS", List.of(subject));
+                courses.createCourse(workspace, clazz.id(), "Khóa runtime", List.of(subject));
         UUID courseSubjectId = course.subjects().getFirst().id();
         RosterEntryView entry =
                 classes.addStudents(workspace, clazz.id(), List.of(student)).getFirst();
 
         String password = UUID.randomUUID().toString();
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-        jdbc.execute(
-                "CREATE ROLE "
-                        + RUNTIME_ROLE
-                        + " LOGIN PASSWORD '"
-                        + password
-                        + "' NOSUPERUSER NOBYPASSRLS");
-        jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        migratorJdbc().execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        migratorJdbc()
+                .execute(
+                        "CREATE ROLE "
+                                + RUNTIME_ROLE
+                                + " LOGIN PASSWORD '"
+                                + password
+                                + "' NOSUPERUSER NOBYPASSRLS");
+        migratorJdbc().execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         // Cơ chế operation chạm nhiều bảng điều khiển quyền ngoài các bảng giảng dạy nên cấp
         // toàn bộ bảng của schema dùng chung cho role runtime của riêng class này.
-        jdbc.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        jdbc.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        migratorJdbc()
+                .execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        migratorJdbc()
+                .execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
         try (var runtime = new RuntimeJpaRepositories(runtimeDataSource)) {
@@ -520,13 +521,6 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                                     runtime.memberships,
                                     runtime.enrollments,
                                     runtime.accounts));
-            // Projector nhận EntityManager qua @PersistenceContext khi chạy trong context;
-            // ở làn dựng tay này phải gán EntityManager dùng chung của bộ repository runtime.
-            ReflectionTestUtils.setField(
-                    runtimeResourceProjector,
-                    "entityManager",
-                    SharedEntityManagerCreator.createSharedEntityManager(
-                            runtime.entityManagerFactory));
             SourceRevocationCoordinator runtimeRevocations =
                     new SourceRevocationCoordinator(
                             runtime.authzPartitions,
@@ -595,7 +589,7 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                                     "SELECT count(*) FROM enrollment WHERE workspace_id = ?",
                                     Integer.class,
                                     workspace)),
-                    "Không có context workspace thì RLS che toàn bộ ghi danh");
+                    "Chưa có ghi danh nào của workspace trước khi service dưới role runtime chạy");
 
             // findExisting của idempotency đọc qua EntityManager của context ứng dụng nên bọc
             // thêm transaction của ứng dụng quanh transaction runtime cho riêng đường đọc đó.
@@ -643,11 +637,20 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
             if (runtimeDataSource != null) {
                 runtimeDataSource.destroy();
             }
-            jdbc.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-            jdbc.execute(
-                    "REVOKE ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-            jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-            jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+            migratorJdbc()
+                    .execute(
+                            "REVOKE ALL ON ALL TABLES IN SCHEMA "
+                                    + SCHEMA
+                                    + " FROM "
+                                    + RUNTIME_ROLE);
+            migratorJdbc()
+                    .execute(
+                            "REVOKE ALL ON ALL SEQUENCES IN SCHEMA "
+                                    + SCHEMA
+                                    + " FROM "
+                                    + RUNTIME_ROLE);
+            migratorJdbc().execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+            migratorJdbc().execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
         }
     }
 

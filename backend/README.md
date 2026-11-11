@@ -26,13 +26,15 @@ Hai vai trò tách biệt, không dùng chung:
 - **Migration role** (biến `SPRING_FLYWAY_USER`): owner của schema, chỉ dùng để chạy
   Flyway. Các role bootstrap trong compose của repo (`giaokhoa` ở DEV, `giaokhoa_test`
   ở TEST) là owner như vậy; **không trỏ datasource runtime của ứng dụng vào role
-  owner/superuser**, vì owner và superuser luôn bypass Row Level Security nên RLS sẽ
-  không còn hiệu lực.
-- **Runtime role** `giaokhoa_runtime` (biến `SPRING_DATASOURCE_USERNAME`): migration
-  V027 tạo sẵn với `NOSUPERUSER NOBYPASSRLS NOLOGIN`, chỉ cấp DML trên các bảng của
-  schema ứng dụng. Migration không đặt mật khẩu; khi dựng một môi trường, vận hành cấp
-  riêng `ALTER ROLE giaokhoa_runtime LOGIN PASSWORD '...'` bằng credential của chính
-  môi trường đó rồi mới trỏ datasource vào role này.
+  owner/superuser**: ứng dụng phải chạy bằng đúng tập quyền tối thiểu đã cấp, để lỗi
+  thiếu grant lộ ra ngay thay vì bị quyền sở hữu che mất.
+- **Runtime role** `giaokhoa_runtime` (biến `SPRING_DATASOURCE_USERNAME`): baseline
+  tạo sẵn với `NOSUPERUSER NOBYPASSRLS NOLOGIN` khi role chưa tồn tại, được cấp DML
+  trên các bảng của schema ứng dụng (trừ `flyway_schema_history` chỉ được đọc); một
+  callback sau migrate kiểm chứng lại grants này ở mọi lần migrate. Migration không
+  đặt mật khẩu; khi dựng một môi trường, vận hành cấp riêng `ALTER ROLE
+  giaokhoa_runtime LOGIN PASSWORD '...'` bằng credential của chính môi trường đó rồi
+  mới trỏ datasource vào role này.
 
 ## Integration test
 
@@ -40,6 +42,10 @@ Chỉ dùng stack TEST tại `infra/compose.test.yaml`. Không dùng DB hoặc r
 
 ```sh
 docker compose -p giaokhoa-test -f infra/compose.test.yaml up -d
+# Datasource của suite là role runtime nên role phải có LOGIN trước khi chạy:
+docker compose -p giaokhoa-test -f infra/compose.test.yaml exec -T test-app-db \
+  psql -U giaokhoa_test -d giaokhoa_test \
+  -c "CREATE ROLE giaokhoa_runtime LOGIN PASSWORD 'test-only-password' NOSUPERUSER NOBYPASSRLS"
 # Nạp biến môi trường TEST theo .env.test.example trước lệnh dưới.
 ./backend/mvnw -B -ntp -f backend/pom.xml -Pintegration verify
 ```
@@ -82,27 +88,29 @@ vẫn riêng. Không chia sẻ center để tiết kiệm setup khi mutation là
 Workspace đã kích hoạt schema riêng phải đi vào `WorkspaceTransaction.inWorkspace` trước khi mở
 transaction JPA. `applyContext` trong một transaction chỉ chấp nhận schema mà EntityManager đã
 được mở; gọi từ session hệ thống sang schema tenant hoặc đổi A → B trong cùng transaction bị
-chặn trước khi ghi. Workspace chưa kích hoạt vẫn dùng schema hệ thống trong giai đoạn chuyển
-đổi của #261; đây chưa phải bước cutover/baseline của Wave 6.
+chặn trước khi ghi. Workspace chưa kích hoạt vẫn dùng schema hệ thống; bước chốt của #261
+(Wave 6) đã tháo RLS và GUC `app.workspace_id` khỏi plumbing này, cách ly dựa vào ranh giới
+schema và `TenantContext`.
 
 Đọc nguồn từ tenant khác qua `readInWorkspace`: schema khác dùng transaction đọc riêng
 (`REQUIRES_NEW`), cùng schema giữ transaction hiện hành để còn thấy dữ kiện chưa commit.
 Caller materialize dữ kiện thành DTO trước khi quay lại tenant đích. Các ghi bản sao, version,
 provenance và biên nhận của đích tiếp tục nằm trong cùng transaction ghi; transaction đọc không
-ghi nguồn. Context/RLS được khôi phục cả khi unit đọc rollback. Cách này theo
+ghi nguồn. Context được khôi phục cả khi unit đọc rollback. Cách này theo
 [transaction synchronization của Spring](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/transaction/support/TransactionSynchronization.html)
 và ranh giới session của
 [Hibernate tenant resolver](https://docs.hibernate.org/orm/7.4/javadocs/org/hibernate/context/spi/CurrentTenantIdentifierResolver.html).
 
-Migration tenant V003 giữ FK cho đầu `derived` thuộc schema hiện tại, chuyển đầu nguồn và grant
-xuyên tenant thành ID thuần như hợp đồng #261. Không sửa V001/V002 đã áp dụng. Khi trả connection,
+Baseline tenant giữ FK cho đầu `derived` thuộc schema hiện tại, chuyển đầu nguồn và grant
+xuyên tenant thành ID thuần như hợp đồng #261 (thiết kế này vào baseline thẳng khi Wave 6 gộp
+chuỗi tenant, thay cho migration V003 riêng). Khi trả connection,
 reset schema thất bại thì dùng `Connection.abort` trước khi đóng để pool không tái sử dụng
 connection mang schema cũ.
 
 | Bằng chứng trong `TenancyInfrastructureIT` | Hành vi khóa |
 | --- | --- |
 | `rejectCrossTenantFlush`, `rejectLateTenant` | Session chọn đúng tenant từ đầu; chặn chuyển schema trước khi flush |
-| `isolateSourceRead`, `restoreJoinedContext` | Đọc nguồn bằng session riêng; commit/rollback khôi phục context và RLS |
+| `isolateSourceRead`, `restoreJoinedContext` | Đọc nguồn bằng session riêng; commit/rollback khôi phục context |
 | `discardFailedReset` | Pool một connection sạch schema sau lỗi SQL và reset |
 | `copyAcrossSchemas` | Runtime role sao A → B đủ nội dung/provenance/dependency; FK derived vẫn chặn dữ kiện sai |
 

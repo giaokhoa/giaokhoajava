@@ -19,13 +19,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Chốt tenant trước khi mở transaction/EntityManager. Một transaction chỉ dùng một schema; đọc
- * nguồn ở schema khác chạy trong transaction đọc riêng và trả dữ kiện đã materialize. Context
- * app.workspace_id còn giữ trong giai đoạn chuyển tiếp để thực thi RLS.
+ * nguồn ở schema khác chạy trong transaction đọc riêng và trả dữ kiện đã materialize. Cách ly
+ * tenant dựa vào ranh giới schema và {@link TenantContext}; không còn context ở tầng cơ sở dữ liệu
+ * (RLS và GUC app.workspace_id đã tháo ở bước chốt của #261).
  */
 @Component
 public class WorkspaceTransaction {
-    public static final String WORKSPACE_SETTING = "app.workspace_id";
-
     private static final Object TENANT_CONTEXT_BACKUP = new Object();
 
     private final JdbcTemplate jdbc;
@@ -75,32 +74,16 @@ public class WorkspaceTransaction {
         boolean joined =
                 template.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRED
                         && TransactionSynchronizationManager.isActualTransactionActive();
-        @Nullable String previousWorkspace =
-                joined
-                        ? jdbc.queryForObject(
-                                "SELECT current_setting('app.workspace_id', true)", String.class)
-                        : null;
-        boolean completed = false;
         try {
             if (!joined) {
                 TenantContext.restore(context);
             }
-            T result =
-                    template.execute(_ -> {
-                        applyContext(context);
-                        return work.get();
-                    });
-            completed = true;
-            return result;
+            return template.execute(_ -> {
+                applyContext(context);
+                return work.get();
+            });
         } finally {
             TenantContext.restore(previous);
-            if (joined && completed) {
-                jdbc.queryForObject(
-                        "SELECT set_config(?, ?, true)",
-                        String.class,
-                        WORKSPACE_SETTING,
-                        previousWorkspace == null ? "" : previousWorkspace);
-            }
         }
     }
 
@@ -139,11 +122,6 @@ public class WorkspaceTransaction {
             registerContext(state);
         }
         TenantContext.restore(context);
-        jdbc.queryForObject(
-                "SELECT set_config(?, ?, true)",
-                String.class,
-                WORKSPACE_SETTING,
-                context.workspaceId().toString());
         // JPA đã mượn đúng schema qua TenantConnectionProvider; không đổi schema của Session.
         if (entityManagerFactory == null
                 && !TenantContext.SYSTEM_SCHEMA.equals(context.schemaName())) {

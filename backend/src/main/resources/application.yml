@@ -18,6 +18,13 @@ spring:
       # multitenancy), không kiểm được schema tenant. Tính đúng đắn của schema do
       # Flyway bảo đảm theo từng dòng migration (hệ thống + tenant) và IT cách ly.
       ddl-auto: none
+    properties:
+      hibernate:
+        # Gửi INSERT/UPDATE theo lô qua JDBC batch cho các vòng ghi nhiều hàng cùng loại
+        # (chiếu policy, ghi hàng đợi operation); Hibernate chỉ batch khi id do ứng dụng
+        # cấp như UUID ở đây, không batch với id IDENTITY do database sinh.
+        jdbc:
+          batch_size: 50
     open-in-view: false
   session:
     # Chốt tường minh bằng đúng mặc định của Spring Session (30 phút).

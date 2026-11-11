@@ -45,11 +45,11 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import testinfra.AuthorizationFragmentRepositories;
 
 /**
- * Bộ repository JPA gắn với một DataSource riêng của test (thường là role runtime không BYPASSRLS
- * trên SingleConnectionDataSource), thay cho việc truyền JdbcTemplate vào tầng repository như trước
- * đây. EntityManager là bản dùng chung theo transaction của thread nên các repository tham gia đúng
- * transaction mà test mở bằng {@link #transactionManager}; transaction manager được gắn cùng
- * DataSource để các đường JDBC còn lại trong cùng test (set_config của WorkspaceTransaction,
+ * Bộ repository JPA gắn với một DataSource riêng của test (thường là một role không phải chủ sở hữu
+ * bảng trên SingleConnectionDataSource), thay cho việc truyền JdbcTemplate vào tầng repository như
+ * trước đây. EntityManager là bản dùng chung theo transaction của thread nên các repository tham
+ * gia đúng transaction mà test mở bằng {@link #transactionManager}; transaction manager được gắn
+ * cùng DataSource để các đường JDBC còn lại trong cùng test (search_path của WorkspaceTransaction,
  * projector của module khác) dùng chung một connection và một transaction.
  *
  * <p>Repository thuần giao diện lấy thẳng từ {@link JpaRepositoryFactory}; riêng các repository có

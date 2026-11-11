@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.verification.model.SystemPracticeAttemptSample;
 import jakarta.persistence.EntityManager;
@@ -14,19 +13,13 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
@@ -36,16 +29,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Lịch sử practice trên schema dùng chung của suite: trigger chỉ cho practice version đã khoá của
  * resource hệ thống vào đúng personal workspace của người làm, và lịch sử không bị hard-delete hay
- * đổi định danh. Phần RLS chạy qua một role runtime không superuser, không BYPASSRLS — đúng bất
- * biến của data-model — vì user của stack TEST là owner nên tự nó không chịu RLS.
+ * đổi định danh.
  */
 @SpringBootTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class SystemPracticeHistoryIT extends IntegrationEnvironment {
-    private static final String SCHEMA = "public";
-    private static final String RUNTIME_ROLE = "practice_history_runtime";
-
     // Worker không thuộc phạm vi kiểm thử của class này (mọi khẳng định đều qua transaction
     // đồng bộ): mock để worker nền không tự xử lý operation song song với các transaction
     // trực tiếp của class.
@@ -54,53 +43,6 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private EntityManager entityManager;
-
-    private SingleConnectionDataSource runtimeDataSource;
-    private JdbcTemplate runtimeJdbc;
-    private WorkspaceTransaction runtimeTransaction;
-
-    @BeforeAll
-    void createRuntimeRole() {
-        String password = UUID.randomUUID().toString();
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-        jdbc.execute(
-                "CREATE ROLE "
-                        + RUNTIME_ROLE
-                        + " LOGIN PASSWORD '"
-                        + password
-                        + "' NOSUPERUSER NOBYPASSRLS");
-        jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        jdbc.execute(
-                "GRANT SELECT, INSERT, UPDATE ON system_practice_attempt_sample TO "
-                        + RUNTIME_ROLE);
-        jdbc.execute(
-                "GRANT SELECT ON workspace, user_account, resource, resource_version TO "
-                        + RUNTIME_ROLE);
-
-        String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
-        runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
-        runtimeJdbc = new JdbcTemplate(runtimeDataSource);
-        runtimeJdbc.execute("SET search_path TO " + SCHEMA + ",public");
-        runtimeTransaction =
-                new WorkspaceTransaction(
-                        runtimeJdbc, new DataSourceTransactionManager(runtimeDataSource));
-    }
-
-    @AfterAll
-    void removeRuntimeRole() {
-        runtimeDataSource.destroy();
-        // Chỉ dọn role runtime do class tự tạo; schema là schema dùng chung của toàn suite
-        // nên tuyệt đối không DROP ở đây. Phải thu hồi các grant trên schema dùng chung trước,
-        // vì DROP ROLE bị chặn khi role còn giữ privilege trên đối tượng còn tồn tại.
-        jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute(
-                "REVOKE SELECT, INSERT, UPDATE ON system_practice_attempt_sample FROM "
-                        + RUNTIME_ROLE);
-        jdbc.execute(
-                "REVOKE SELECT ON workspace, user_account, resource, resource_version FROM "
-                        + RUNTIME_ROLE);
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-    }
 
     @Test
     void entityRoundTripPersistsAttempt() {
@@ -141,49 +83,6 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
         assertThat(reloaded.getContentStub()).isEqualTo("Bài làm mẫu");
         assertThat(reloaded.getOutcomeStub()).isNull();
         assertThat(reloaded.getCreatedAt()).isNotNull();
-    }
-
-    @Test
-    void rlsIsolatesPersonalWorkspaces() {
-        UUID userA = userWithPersonalWorkspace();
-        UUID workspaceA = personalWorkspaceOf(userA);
-        UUID userB = userWithPersonalWorkspace();
-        UUID workspaceB = personalWorkspaceOf(userB);
-        PublishedVersion published = publishedVersion();
-        insertAttempt(workspaceA, userA, published);
-        insertAttempt(workspaceB, userB, published);
-
-        assertThat(countVisible(runtimeJdbc, workspaceA)).isZero();
-        assertThat(
-                        runtimeTransaction.inWorkspace(
-                                workspaceA, () -> countVisible(runtimeJdbc, workspaceA)))
-                .isEqualTo(1);
-        assertThat(
-                        runtimeTransaction.inWorkspace(
-                                workspaceA, () -> countVisible(runtimeJdbc, workspaceB)))
-                .isZero();
-        assertThat(
-                        runtimeTransaction.inWorkspace(
-                                workspaceB, () -> countVisible(runtimeJdbc, workspaceB)))
-                .isEqualTo(1);
-        assertThatThrownBy(() ->
-                        runtimeTransaction.inWorkspace(
-                                workspaceA,
-                                () -> {
-                                    insertAttempt(runtimeJdbc, workspaceB, userB, published);
-                                    return null;
-                                }))
-                .isInstanceOf(DataAccessException.class);
-        runtimeTransaction.inWorkspace(
-                workspaceA,
-                () -> {
-                    insertAttempt(runtimeJdbc, workspaceA, userA, published);
-                    return null;
-                });
-        assertThat(
-                        runtimeTransaction.inWorkspace(
-                                workspaceA, () -> countVisible(runtimeJdbc, workspaceA)))
-                .isEqualTo(2);
     }
 
     @Test
@@ -374,12 +273,6 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
                 jdbc, workspaceId, userId, published.resourceId(), published.versionId());
     }
 
-    private UUID insertAttempt(
-            JdbcTemplate template, UUID workspaceId, UUID userId, PublishedVersion published) {
-        return insertAttempt(
-                template, workspaceId, userId, published.resourceId(), published.versionId());
-    }
-
     private UUID insertAttempt(UUID workspaceId, UUID userId, UUID resourceId, UUID versionId) {
         return insertAttempt(jdbc, workspaceId, userId, resourceId, versionId);
     }
@@ -404,15 +297,6 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
     private int countAsOwner(UUID workspaceId) {
         return Objects.requireNonNull(
                 jdbc.queryForObject(
-                        "SELECT count(*) FROM system_practice_attempt_sample"
-                                + " WHERE personal_workspace_id = ?",
-                        Integer.class,
-                        workspaceId));
-    }
-
-    private int countVisible(JdbcTemplate template, UUID workspaceId) {
-        return Objects.requireNonNull(
-                template.queryForObject(
                         "SELECT count(*) FROM system_practice_attempt_sample"
                                 + " WHERE personal_workspace_id = ?",
                         Integer.class,

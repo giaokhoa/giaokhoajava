@@ -30,16 +30,16 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Kiểm chứng RLS, FK và trigger của ba bảng mẫu (hoạt động, bài nộp, kết quả) bằng SQL thô qua một
- * role NOSUPERUSER NOBYPASSRLS, không qua service: user của stack TEST là superuser nên tự nó không
- * chịu RLS, chỉ role runtime mới chứng minh được policy. Ba lớp chốt chặn phải đứng vững ngay cả
- * khi tầng ứng dụng bị bỏ qua: RLS theo context workspace, FK composite (môn–khóa, kỳ gói, cặp
- * resource/version và chuỗi hoạt động → bài nộp → kết quả cùng workspace), và các trigger nghiệp vụ
- * ở tầng DB (bài nộp cần ghi danh hiện hành và không vượt số lượt snapshot; học sinh/môn của kết
- * quả suy ra từ bài nộp; snapshot của hoạt động và kết quả đã công bố bất biến; cấm hard-delete).
+ * Kiểm chứng FK và trigger của ba bảng mẫu (hoạt động, bài nộp, kết quả) bằng SQL thô qua một role
+ * không phải chủ sở hữu bảng, không qua service. Các lớp chốt chặn ở tầng DB phải đứng vững ngay cả
+ * khi tầng ứng dụng bị bỏ qua: FK composite (môn–khóa, kỳ gói, cặp resource/version và chuỗi hoạt
+ * động → bài nộp → kết quả cùng workspace), và các trigger nghiệp vụ ở tầng DB (bài nộp cần ghi
+ * danh hiện hành và không vượt số lượt snapshot; học sinh/môn của kết quả suy ra từ bài nộp;
+ * snapshot của hoạt động và kết quả đã công bố bất biến; cấm hard-delete). Cách ly workspace ở tầng
+ * DB nằm ở ranh giới schema, không còn policy theo từng hàng.
  *
- * <p>Seed đồ thị mẫu bằng SQL thô qua kết nối ứng dụng (superuser) trong schema cô lập; phần khẳng
- * định chạy hoàn toàn qua role runtime.
+ * <p>Seed đồ thị mẫu bằng SQL thô qua kết nối ứng dụng trong schema cô lập; phần khẳng định chạy
+ * hoàn toàn qua role runtime tự tạo của class.
  */
 // Harness tối thiểu: chỉ kiểm chứng schema/bảng bằng JDBC thuần trên schema riêng nên tự chạy
 // Flyway và tự cấp JdbcTemplate, không dựng ApplicationContext của ứng dụng.
@@ -47,10 +47,9 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
     private static final String SCHEMA =
             "sample_raw_" + UUID.randomUUID().toString().replace("-", "");
     private static final String RUNTIME_ROLE = "sample_raw_runtime";
-    private static final List<String> SAMPLE_TABLES =
-            List.of("sample_activity", "sample_submission", "sample_result");
 
     private static JdbcTemplate jdbc;
+    private static JdbcTemplate surgery;
     private static PlatformTransactionManager transactionManager;
 
     @BeforeAll
@@ -66,6 +65,7 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
                 .defaultSchema(SCHEMA)
                 .load()
                 .migrate();
+        surgery = new JdbcTemplate(migrator);
         var source =
                 new DriverManagerDataSource(
                         testDatabaseUrl() + "?currentSchema=" + SCHEMA + ",public",
@@ -77,7 +77,7 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
 
     @AfterAll
     static void removeSchema() {
-        jdbc.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
+        surgery.execute("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
     }
 
     private @Nullable SingleConnectionDataSource runtimeDataSource;
@@ -101,83 +101,6 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
             UUID outsider,
             UUID teacherA) {}
 
-    @Test
-    void rawSelectSeesOnlyRowsOfContextWorkspace() {
-        SampleGraph graph = seedRawGraph();
-        JdbcTemplate runtime = openRuntime();
-        try {
-            for (String table : SAMPLE_TABLES) {
-                assertEquals(
-                        0,
-                        countRows(runtime, table, graph.workspaceA()),
-                        "Không có context workspace thì RLS che toàn bộ bảng " + table);
-            }
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "sample_activity", graph.workspaceA())));
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "sample_submission", graph.workspaceA())));
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "sample_result", graph.workspaceA())));
-            assertEquals(
-                    0,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
-                            () -> countRows(runtime, "sample_activity", graph.workspaceB())),
-                    "Context A không thấy hoạt động của workspace B");
-            assertEquals(
-                    1,
-                    inContext(
-                            runtime,
-                            graph.workspaceB(),
-                            () -> countRows(runtime, "sample_activity", graph.workspaceB())),
-                    "Context B thấy đúng hoạt động của B");
-        } finally {
-            closeRuntime();
-        }
-    }
-
-    @DisplayName("Insert thô dưới context workspace sai vi phạm kiểm tra RLS")
-    @Test
-    void rawInsertWrongContextViolatesRls() {
-        SampleGraph graph = seedRawGraph();
-        JdbcTemplate runtime = openRuntime();
-        try {
-            assertSqlState(
-                    "42501",
-                    () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertActivityRow(
-                                                runtime,
-                                                graph.workspaceB(),
-                                                graph.courseSubjectB1M1(),
-                                                graph.resourceA(),
-                                                graph.versionA1(),
-                                                graph.teacherA(),
-                                                graph.periodB());
-                                        return null;
-                                    }),
-                    "WITH CHECK của RLS chặn ghi hoạt động mang workspace khác context");
-        } finally {
-            closeRuntime();
-        }
-    }
-
     @DisplayName("Khóa ngoại composite ở tầng raw từ chối các tham chiếu chéo")
     @Test
     void rawCompositeKeysRejectCrossRefs() {
@@ -187,56 +110,47 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertActivityRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.courseSubjectB1M1(),
-                                                graph.resourceA(),
-                                                graph.versionA1(),
-                                                graph.teacherA(),
-                                                graph.periodA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertActivityRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.courseSubjectB1M1(),
+                                        graph.resourceA(),
+                                        graph.versionA1(),
+                                        graph.teacherA(),
+                                        graph.periodA());
+                                return null;
+                            }),
                     "FK composite chặn hoạt động nối sang môn–khóa của workspace khác");
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertActivityRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.courseSubjectA1M1(),
-                                                graph.resourceA(),
-                                                graph.versionA1(),
-                                                graph.teacherA(),
-                                                graph.periodB());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertActivityRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.courseSubjectA1M1(),
+                                        graph.resourceA(),
+                                        graph.versionA1(),
+                                        graph.teacherA(),
+                                        graph.periodB());
+                                return null;
+                            }),
                     "FK composite chặn hoạt động gắn kỳ gói của workspace khác");
             assertSqlState(
                     "23503",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertActivityRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.courseSubjectA1M1(),
-                                                graph.resourceA2(),
-                                                graph.versionA1(),
-                                                graph.teacherA(),
-                                                graph.periodA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertActivityRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.courseSubjectA1M1(),
+                                        graph.resourceA2(),
+                                        graph.versionA1(),
+                                        graph.teacherA(),
+                                        graph.periodA());
+                                return null;
+                            }),
                     "FK composite chặn hoạt động dùng version của resource khác");
             // Bài nộp chéo workspace bị trigger kiểm tra hoạt động chặn ở 23514 trước FK
             // composite: trigger BEFORE INSERT chạy trước kiểm tra FK và không thấy hoạt
@@ -244,18 +158,15 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceB(),
-                                    () -> {
-                                        insertSubmissionRow(
-                                                runtime,
-                                                graph.workspaceB(),
-                                                graph.activityA(),
-                                                graph.studentA(),
-                                                1);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertSubmissionRow(
+                                        runtime,
+                                        graph.workspaceB(),
+                                        graph.activityA(),
+                                        graph.studentA(),
+                                        1);
+                                return null;
+                            }),
                     "Trigger chặn bài nộp gắn hoạt động của workspace khác");
         } finally {
             closeRuntime();
@@ -271,85 +182,64 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertSubmissionRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.activityA(),
-                                                graph.outsider(),
-                                                1);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertSubmissionRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.activityA(),
+                                        graph.outsider(),
+                                        1);
+                                return null;
+                            }),
                     "Trigger chặn bài nộp của học sinh chưa ghi danh vào môn–khóa");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertSubmissionRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.activityA(),
-                                                graph.revokedStudent(),
-                                                1);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertSubmissionRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.activityA(),
+                                        graph.revokedStudent(),
+                                        1);
+                                return null;
+                            }),
                     "Trigger chặn bài nộp khi ghi danh đã bị thu hồi");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertSubmissionRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.activityA(),
-                                                graph.studentA(),
-                                                3);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertSubmissionRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.activityA(),
+                                        graph.studentA(),
+                                        3);
+                                return null;
+                            }),
                     "Trigger chặn số lượt vượt snapshot attempt_limit của hoạt động");
             assertSqlState(
                     "23505",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertSubmissionRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.activityA(),
-                                                graph.studentA(),
-                                                1);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertSubmissionRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.activityA(),
+                                        graph.studentA(),
+                                        1);
+                                return null;
+                            }),
                     "Unique chặn trùng bộ ba hoạt động/học sinh/lượt nộp");
 
-            inContext(
-                    runtime,
-                    graph.workspaceA(),
-                    () -> {
-                        insertSubmissionRow(
-                                runtime,
-                                graph.workspaceA(),
-                                graph.activityA(),
-                                graph.studentA(),
-                                2);
-                        return null;
-                    });
+            inTransaction(() -> {
+                insertSubmissionRow(
+                        runtime, graph.workspaceA(), graph.activityA(), graph.studentA(), 2);
+                return null;
+            });
             assertEquals(
                     2,
-                    inContext(
-                            runtime,
-                            graph.workspaceA(),
+                    inTransaction(
                             () -> countRows(runtime, "sample_submission", graph.workspaceA())),
                     "Lượt nộp thứ hai trong giới hạn snapshot được ghi");
         } finally {
@@ -366,74 +256,62 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertResultRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.submissionA(),
-                                                graph.outsider(),
-                                                graph.courseSubjectA1M1(),
-                                                "DRAFT",
-                                                null);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertResultRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.submissionA(),
+                                        graph.outsider(),
+                                        graph.courseSubjectA1M1(),
+                                        "DRAFT",
+                                        null);
+                                return null;
+                            }),
                     "Trigger chặn kết quả khai học sinh khác với học sinh của bài nộp");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertResultRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.submissionA(),
-                                                graph.studentA(),
-                                                graph.courseSubjectA1M2(),
-                                                "DRAFT",
-                                                null);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertResultRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.submissionA(),
+                                        graph.studentA(),
+                                        graph.courseSubjectA1M2(),
+                                        "DRAFT",
+                                        null);
+                                return null;
+                            }),
                     "Trigger chặn kết quả khai môn–khóa khác với môn–khóa của hoạt động");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertResultRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.submissionA(),
-                                                graph.studentA(),
-                                                graph.courseSubjectA1M1(),
-                                                "PUBLISHED",
-                                                null);
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertResultRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.submissionA(),
+                                        graph.studentA(),
+                                        graph.courseSubjectA1M1(),
+                                        "PUBLISHED",
+                                        null);
+                                return null;
+                            }),
                     "CHECK chặn kết quả PUBLISHED thiếu published_at");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        insertResultRow(
-                                                runtime,
-                                                graph.workspaceA(),
-                                                graph.submissionA(),
-                                                graph.studentA(),
-                                                graph.courseSubjectA1M1(),
-                                                "DRAFT",
-                                                Instant.now());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                insertResultRow(
+                                        runtime,
+                                        graph.workspaceA(),
+                                        graph.submissionA(),
+                                        graph.studentA(),
+                                        graph.courseSubjectA1M1(),
+                                        "DRAFT",
+                                        Instant.now());
+                                return null;
+                            }),
                     "CHECK chặn kết quả DRAFT đã có published_at");
         } finally {
             closeRuntime();
@@ -448,116 +326,90 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE sample_activity SET attempt_limit = 9"
-                                                        + " WHERE id = ?",
-                                                graph.activityA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE sample_activity SET attempt_limit = 9"
+                                                + " WHERE id = ?",
+                                        graph.activityA());
+                                return null;
+                            }),
                     "Trigger giữ snapshot chặn đổi attempt_limit của hoạt động");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE sample_activity SET subscription_period_id = ?"
-                                                        + " WHERE id = ?",
-                                                graph.periodB(),
-                                                graph.activityA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE sample_activity SET subscription_period_id = ?"
+                                                + " WHERE id = ?",
+                                        graph.periodB(),
+                                        graph.activityA());
+                                return null;
+                            }),
                     "Trigger giữ snapshot chặn đổi kỳ gói của hoạt động");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE sample_submission SET content_stub = 'Đổi bài'"
-                                                        + " WHERE id = ?",
-                                                graph.submissionA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE sample_submission SET content_stub = 'Đổi bài'"
+                                                + " WHERE id = ?",
+                                        graph.submissionA());
+                                return null;
+                            }),
                     "Trigger giữ lịch sử chặn sửa nội dung bài đã nộp");
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "DELETE FROM sample_result WHERE id = ?",
-                                                graph.resultA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "DELETE FROM sample_result WHERE id = ?", graph.resultA());
+                                return null;
+                            }),
                     "Trigger giữ lịch sử chặn hard-delete kết quả");
 
-            inContext(
-                    runtime,
-                    graph.workspaceA(),
-                    () -> {
-                        runtime.update(
-                                "UPDATE sample_activity SET due_at = ? WHERE id = ?",
-                                Timestamp.from(Instant.now().plus(30, ChronoUnit.DAYS)),
-                                graph.activityA());
-                        runtime.update(
-                                "UPDATE sample_result SET score_stub = '9' WHERE id = ?",
-                                graph.resultA());
-                        runtime.update(
-                                "UPDATE sample_result SET state = 'PUBLISHED', published_at = now()"
-                                        + " WHERE id = ?",
-                                graph.resultA());
-                        return null;
-                    });
+            inTransaction(() -> {
+                runtime.update(
+                        "UPDATE sample_activity SET due_at = ? WHERE id = ?",
+                        Timestamp.from(Instant.now().plus(30, ChronoUnit.DAYS)),
+                        graph.activityA());
+                runtime.update(
+                        "UPDATE sample_result SET score_stub = '9' WHERE id = ?", graph.resultA());
+                runtime.update(
+                        "UPDATE sample_result SET state = 'PUBLISHED', published_at = now()"
+                                + " WHERE id = ?",
+                        graph.resultA());
+                return null;
+            });
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE sample_result SET comment_stub = 'Đổi nhận xét'"
-                                                        + " WHERE id = ?",
-                                                graph.resultA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE sample_result SET comment_stub = 'Đổi nhận xét'"
+                                                + " WHERE id = ?",
+                                        graph.resultA());
+                                return null;
+                            }),
                     "Kết quả đã công bố bị đóng băng, không sửa được nhận xét");
 
-            inContext(
-                    runtime,
-                    graph.workspaceA(),
-                    () -> {
-                        runtime.update(
-                                "UPDATE sample_activity SET state = 'CLOSED' WHERE id = ?",
-                                graph.activityA());
-                        runtime.update(
-                                "UPDATE sample_activity SET state = 'ARCHIVED' WHERE id = ?",
-                                graph.activityA());
-                        return null;
-                    });
+            inTransaction(() -> {
+                runtime.update(
+                        "UPDATE sample_activity SET state = 'CLOSED' WHERE id = ?",
+                        graph.activityA());
+                runtime.update(
+                        "UPDATE sample_activity SET state = 'ARCHIVED' WHERE id = ?",
+                        graph.activityA());
+                return null;
+            });
             assertSqlState(
                     "23514",
                     () ->
-                            inContext(
-                                    runtime,
-                                    graph.workspaceA(),
-                                    () -> {
-                                        runtime.update(
-                                                "UPDATE sample_activity SET due_at = now() WHERE id = ?",
-                                                graph.activityA());
-                                        return null;
-                                    }),
+                            inTransaction(() -> {
+                                runtime.update(
+                                        "UPDATE sample_activity SET due_at = now() WHERE id = ?",
+                                        graph.activityA());
+                                return null;
+                            }),
                     "Hoạt động đã lưu trữ bị đóng băng toàn bộ");
         } finally {
             closeRuntime();
@@ -882,22 +734,22 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
         return id;
     }
 
-    // ---------- Role runtime và context workspace ----------
+    // ---------- Role runtime của class ----------
 
     private JdbcTemplate openRuntime() {
         String password = UUID.randomUUID().toString();
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
-        jdbc.execute(
+        surgery.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        surgery.execute(
                 "CREATE ROLE "
                         + RUNTIME_ROLE
                         + " LOGIN PASSWORD '"
                         + password
                         + "' NOSUPERUSER NOBYPASSRLS");
-        jdbc.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        // Cấp đủ quyền bảng để RLS/trigger/FK là chốt chặn duy nhất phải bắt được hành vi sai,
+        surgery.execute("GRANT USAGE ON SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        // Cấp đủ quyền bảng để trigger/FK là chốt chặn duy nhất phải bắt được hành vi sai,
         // đúng mẫu TeachingRawConstraintsIT.
-        jdbc.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
-        jdbc.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        surgery.execute("GRANT ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
+        surgery.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " TO " + RUNTIME_ROLE);
         String url = jdbc.execute((ConnectionCallback<String>) con -> con.getMetaData().getURL());
         runtimeDataSource = new SingleConnectionDataSource(url, RUNTIME_ROLE, password, true);
         JdbcTemplate runtime = new JdbcTemplate(runtimeDataSource);
@@ -909,24 +761,18 @@ class SampleRawConstraintsIT extends IntegrationEnvironment {
         if (runtimeDataSource != null) {
             runtimeDataSource.destroy();
         }
-        jdbc.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
-        jdbc.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
+        surgery.execute("REVOKE ALL ON ALL TABLES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute(
+                "REVOKE ALL ON ALL SEQUENCES IN SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute("REVOKE USAGE ON SCHEMA " + SCHEMA + " FROM " + RUNTIME_ROLE);
+        surgery.execute("DROP ROLE IF EXISTS " + RUNTIME_ROLE);
     }
 
-    private <T> T inContext(JdbcTemplate runtime, UUID workspaceId, Supplier<T> action) {
+    private <T> T inTransaction(Supplier<T> action) {
         DataSourceTransactionManager txManager =
                 new DataSourceTransactionManager(
                         Objects.requireNonNull(runtimeDataSource, "Role runtime phải mở trước"));
-        return new TransactionTemplate(txManager)
-                .execute(_ -> {
-                    runtime.queryForObject(
-                            "SELECT set_config('app.workspace_id', ?, true)",
-                            String.class,
-                            workspaceId.toString());
-                    return action.get();
-                });
+        return new TransactionTemplate(txManager).execute(_ -> action.get());
     }
 
     private int countRows(JdbcTemplate runtime, String table, UUID workspaceId) {
