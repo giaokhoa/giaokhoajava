@@ -958,7 +958,7 @@ class CenterServiceIT extends IntegrationEnvironment {
     /**
      * Group eligibility chung mà mọi policy graph đều gate qua (common gate của PolicyGraph):
      * test-realm.json không khai group này, các integration test tự tạo khi thiếu (theo mẫu
-     * IdentityFlowIT); chỉ xóa những group do chính class này tạo, group đã có sẵn thì để lại.
+     * IdentityFlowE2EIT); chỉ xóa những group do chính class này tạo, group đã có sẵn thì để lại.
      */
     private static void seedEligibilityGroup() {
         String parentId = null;

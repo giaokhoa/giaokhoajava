@@ -7,10 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.giaokhoa.support.HttpTestClient;
 import com.giaokhoa.support.KeycloakSessionFixture;
 import java.net.URI;
 import java.time.Duration;
@@ -32,8 +30,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -44,12 +42,12 @@ import tools.jackson.databind.JsonNode;
  * có), handoff không email chỉ xuất hiện trong response CREATE đầu tiên.
  *
  * <p>Test mời account đã có ở đây là nơi bao phủ hợp đồng invitations đó; bản trùng ở
- * IdentityFlowIT đã gỡ để tránh trùng lặp.
+ * IdentityFlowE2EIT đã gỡ để tránh trùng lặp.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Tag("e2e-backend")
-class MembershipInvitationIT extends KeycloakSessionFixture {
+class MembershipInvitationE2EIT extends KeycloakSessionFixture {
     private static final String DEFAULT_PERMISSION = "Default Permission";
     private static final String DEFAULT_RESOURCE = "Default Resource";
     private static final String DEFAULT_POLICY = "Default Policy";
@@ -68,10 +66,10 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(login)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
                 Map<String, Object> profile = new HashMap<>(getUser(login.subject()));
                 profile.put("email", "");
                 profile.put("emailVerified", false);
@@ -85,11 +83,15 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                 assertNull(getUser(login.subject()).get("email"));
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/workspaces/" + workspace + "/memberships")
-                                                .cookie(session.cookie()))
-                                .getStatus());
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .get(
+                                                        "/api/workspaces/"
+                                                                + workspace
+                                                                + "/memberships",
+                                                        session.cookie()))
+                                .status());
             }
         } finally {
             deleteUser(login.subject());
@@ -110,10 +112,10 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(ownerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
                 HTTP.put()
                         .uri(admin("/users/" + ownerLogin.subject()))
                         .headers(headers -> headers.setBearerAuth(masterToken()))
@@ -122,28 +124,27 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                         .retrieve()
                         .toBodilessEntity();
                 int list =
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/workspaces/" + workspace + "/memberships")
-                                                .cookie(session.cookie()))
-                                .getStatus();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .get(
+                                                        "/api/workspaces/"
+                                                                + workspace
+                                                                + "/memberships",
+                                                        session.cookie()))
+                                .status();
                 int invite =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + workspace + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "review-unverified-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"userId\":\""
-                                                                + target
-                                                                + "\",\"roles\":[\"STUDENT\"]}"))
-                                .andReturn()
-                                .getResponse()
-                                .getStatus();
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + workspace + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"userId\":\"" + target + "\",\"roles\":[\"STUDENT\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "review-unverified-" + UUID.randomUUID()))
+                                .status();
                 org.junit.jupiter.api.Assertions.assertAll(
                         () ->
                                 assertEquals(
@@ -177,29 +178,24 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(ownerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-create-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"userId\":\""
-                                                                + invitee
-                                                                + "\",\"roles\":[\"STUDENT\"]}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"userId\":\"" + invitee + "\",\"roles\":[\"STUDENT\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-create-" + UUID.randomUUID()));
 
-                assertEquals(202, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals(202, response.status());
+                JsonNode body = JSON.readTree(response.body());
                 assertEquals("PENDING", body.get("state").stringValue());
                 assertFalse(body.get("completed").booleanValue());
                 assertFalse(body.get("statusUrl").stringValue().isBlank());
@@ -243,29 +239,26 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(ownerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-email-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"email\":\""
-                                                                + inviteeLogin.email()
-                                                                + "\",\"roles\":[\"STUDENT\"]}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"email\":\""
+                                                + inviteeLogin.email()
+                                                + "\",\"roles\":[\"STUDENT\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-email-" + UUID.randomUUID()));
 
-                assertEquals(202, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals(202, response.status());
+                JsonNode body = JSON.readTree(response.body());
                 assertEquals("PENDING", body.get("state").stringValue());
                 assertFalse(body.get("completed").booleanValue());
                 UUID operationId = UUID.fromString(body.get("operationId").stringValue());
@@ -302,50 +295,43 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(ownerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse both =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-both-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"userId\":\""
-                                                                + invitee
-                                                                + "\",\"email\":\""
-                                                                + inviteeLogin.email()
-                                                                + "\",\"roles\":[\"STUDENT\"]}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response both =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"userId\":\""
+                                                + invitee
+                                                + "\",\"email\":\""
+                                                + inviteeLogin.email()
+                                                + "\",\"roles\":[\"STUDENT\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-both-" + UUID.randomUUID()));
 
                 assertEquals(
-                        400, both.getStatus(), "Lời mời phải có đúng một trong email hoặc userId");
+                        400, both.status(), "Lời mời phải có đúng một trong email hoặc userId");
 
-                MockHttpServletResponse neither =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-neither-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content("{\"roles\":[\"STUDENT\"]}"))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response neither =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"roles\":[\"STUDENT\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-neither-" + UUID.randomUUID()));
 
                 assertEquals(
-                        400,
-                        neither.getStatus(),
-                        "Lời mời thiếu cả email lẫn userId phải bị từ chối");
+                        400, neither.status(), "Lời mời thiếu cả email lẫn userId phải bị từ chối");
             }
 
             assertEquals(
@@ -373,28 +359,23 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(ownerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-owner-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"userId\":\""
-                                                                + invitee
-                                                                + "\",\"roles\":[\"OWNER\"]}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"userId\":\"" + invitee + "\",\"roles\":[\"OWNER\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-owner-" + UUID.randomUUID()));
 
-                assertEquals(400, response.getStatus(), "Lời mời không được cấp role OWNER");
+                assertEquals(400, response.status(), "Lời mời không được cấp role OWNER");
             }
 
             assertEquals(
@@ -434,50 +415,42 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(managerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse studentInvite =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-student-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"userId\":\""
-                                                                + invitee
-                                                                + "\",\"roles\":[\"STUDENT\"]}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response studentInvite =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"userId\":\"" + invitee + "\",\"roles\":[\"STUDENT\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-student-" + UUID.randomUUID()));
 
-                assertEquals(202, studentInvite.getStatus(), "Manager được mời học sinh");
-                JsonNode body = JSON.readTree(studentInvite.getContentAsString());
+                assertEquals(202, studentInvite.status(), "Manager được mời học sinh");
+                JsonNode body = JSON.readTree(studentInvite.body());
                 UUID operationId = UUID.fromString(body.get("operationId").stringValue());
                 awaitOperationSucceeded(session, operationId);
 
-                MockHttpServletResponse managerInvite =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-manager-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"userId\":\""
-                                                                + inviteeTwo
-                                                                + "\",\"roles\":[\"MANAGER\"]}"))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response managerInvite =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"userId\":\""
+                                                + inviteeTwo
+                                                + "\",\"roles\":[\"MANAGER\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-manager-" + UUID.randomUUID()));
 
-                assertEquals(403, managerInvite.getStatus(), "Chỉ owner mới được mời manager");
+                assertEquals(403, managerInvite.status(), "Chỉ owner mới được mời manager");
                 assertFalse(
                         membershipUserIds(session, center).contains(invitee),
                         "Tạo lời mời chưa tạo membership; membership chỉ có khi người được mời"
@@ -520,71 +493,62 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(ownerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse first =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(firstBody))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response first =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        firstBody,
+                                        Map.of("Idempotency-Key", key));
 
-                assertEquals(202, first.getStatus());
+                assertEquals(202, first.status());
                 UUID operationId =
                         UUID.fromString(
-                                JSON.readTree(first.getContentAsString())
-                                        .get("operationId")
-                                        .stringValue());
+                                JSON.readTree(first.body()).get("operationId").stringValue());
                 awaitOperationSucceeded(session, operationId);
 
                 // Cùng key, cùng payload → trả lại kết quả đã ghi, không tạo operation mới.
-                MockHttpServletResponse replay =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(firstBody))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response replay =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        firstBody,
+                                        Map.of("Idempotency-Key", key));
 
                 assertTrue(
-                        replay.getStatus() == 200 || replay.getStatus() == 202,
+                        replay.status() == 200 || replay.status() == 202,
                         "Phát lại cùng key phải trả lại kết quả đã ghi"
                                 + " (200 khi xong, 202 khi chưa xong)");
                 assertEquals(
                         operationId.toString(),
-                        JSON.readTree(replay.getContentAsString()).get("operationId").stringValue(),
+                        JSON.readTree(replay.body()).get("operationId").stringValue(),
                         "Phát lại cùng key không được tạo operation mới");
 
                 // Cùng key, payload khác → 409.
-                MockHttpServletResponse conflict =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/invitations")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"userId\":\""
-                                                                + inviteeTwo
-                                                                + "\",\"roles\":[\"STUDENT\"]}"))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response conflict =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/invitations",
+                                        session.cookie(),
+                                        true,
+                                        "{\"userId\":\""
+                                                + inviteeTwo
+                                                + "\",\"roles\":[\"STUDENT\"]}",
+                                        Map.of("Idempotency-Key", key));
 
                 assertEquals(
                         409,
-                        conflict.getStatus(),
+                        conflict.status(),
                         "Cùng Idempotency-Key với yêu cầu khác phải bị từ chối 409");
                 assertFalse(
                         membershipUserIds(session, center).contains(inviteeTwo),
@@ -606,27 +570,25 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(user)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/invitations/" + UUID.randomUUID() + "/accept")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "invite-accept-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content("{}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/invitations/" + UUID.randomUUID() + "/accept",
+                                        session.cookie(),
+                                        true,
+                                        "{}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "invite-accept-" + UUID.randomUUID()));
 
                 assertEquals(
                         404,
-                        response.getStatus(),
+                        response.status(),
                         "Token lạ không được chấp nhận và không lộ sự tồn tại của lời mời nào");
             }
         } finally {
@@ -653,29 +615,26 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(managerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "issue-create-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"username\":\""
-                                                                + username
-                                                                + "\",\"displayName\":\"Học sinh mới\"}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/students",
+                                        session.cookie(),
+                                        true,
+                                        "{\"username\":\""
+                                                + username
+                                                + "\",\"displayName\":\"Học sinh mới\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "issue-create-" + UUID.randomUUID()));
 
-                assertEquals(202, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals(202, response.status());
+                JsonNode body = JSON.readTree(response.body());
                 JsonNode operation = body.get("operation");
                 assertNotNull(operation, "StudentIssueView bọc biên nhận trong operation");
                 assertFalse(operation.get("completed").booleanValue());
@@ -688,33 +647,26 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                 operationId = UUID.fromString(operation.get("id").stringValue());
                 awaitOperationSucceeded(session, operationId);
 
-                MockHttpServletResponse poll =
-                        mockMvc()
-                                .perform(
-                                        get("/api/me/operations/" + operationId)
-                                                .cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response poll =
+                        realHttp().get("/api/me/operations/" + operationId, session.cookie());
 
-                assertEquals(200, poll.getStatus());
+                assertEquals(200, poll.status());
                 assertFalse(
-                        poll.getContentAsString().contains("temporaryPassword"),
+                        poll.body().contains("temporaryPassword"),
                         "Poll trạng thái không được echo mật khẩu tạm");
                 assertFalse(
-                        poll.getContentAsString().contains(temporaryPassword),
+                        poll.body().contains(temporaryPassword),
                         "Poll trạng thái không được lộ giá trị mật khẩu tạm");
 
-                MockHttpServletResponse list =
-                        mockMvc()
-                                .perform(
-                                        get("/api/workspaces/" + center + "/memberships")
-                                                .cookie(session.cookie()))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response list =
+                        realHttp()
+                                .get(
+                                        "/api/workspaces/" + center + "/memberships",
+                                        session.cookie());
 
-                assertEquals(200, list.getStatus());
+                assertEquals(200, list.status());
                 assertFalse(
-                        list.getContentAsString().contains(temporaryPassword),
+                        list.body().contains(temporaryPassword),
                         "Danh sách thành viên không được lộ mật khẩu tạm");
             }
 
@@ -753,24 +705,22 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(managerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse first =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(requestBody))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response first =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/students",
+                                        session.cookie(),
+                                        true,
+                                        requestBody,
+                                        Map.of("Idempotency-Key", key));
 
-                assertEquals(202, first.getStatus());
-                JsonNode firstBody = JSON.readTree(first.getContentAsString());
+                assertEquals(202, first.status());
+                JsonNode firstBody = JSON.readTree(first.body());
                 JsonNode handoff = firstBody.get("handoff");
                 assertNotNull(handoff, "Lần cấp đầu tiên phải mang handoff");
                 temporaryPassword = handoff.get("temporaryPassword").stringValue();
@@ -780,23 +730,21 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
 
                 // Phát lại đúng key và payload: trả lại operation đã ghi, tuyệt đối
                 // không lộ handoff/credential lần hai ở tầng HTTP.
-                MockHttpServletResponse replay =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header("Idempotency-Key", key)
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(requestBody))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response replay =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/students",
+                                        session.cookie(),
+                                        true,
+                                        requestBody,
+                                        Map.of("Idempotency-Key", key));
 
                 assertTrue(
-                        replay.getStatus() == 200 || replay.getStatus() == 202,
+                        replay.status() == 200 || replay.status() == 202,
                         "Phát lại cùng key phải trả lại kết quả đã ghi"
                                 + " (200 khi xong, 202 khi chưa xong)");
-                String replayContent = replay.getContentAsString();
+                String replayContent = replay.body();
                 assertFalse(
                         replayContent.contains("temporaryPassword"),
                         "Phát lại cùng key không được chứa lại trường mật khẩu tạm");
@@ -859,29 +807,25 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(managerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "issue-dup-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"username\":\""
-                                                                + existingLogin.username()
-                                                                + "\",\"displayName\":\"Kẻ mạo danh\"}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/students",
+                                        session.cookie(),
+                                        true,
+                                        "{\"username\":\""
+                                                + existingLogin.username()
+                                                + "\",\"displayName\":\"Kẻ mạo danh\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "issue-dup-" + UUID.randomUUID()));
 
-                assertEquals(
-                        409, response.getStatus(), "Username trùng không được chiếm user đã có");
+                assertEquals(409, response.status(), "Username trùng không được chiếm user đã có");
             }
 
             Map<String, Object> kept = getUser(existingLogin.subject());
@@ -933,29 +877,26 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(managerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "issue-noemail-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"username\":\""
-                                                                + username
-                                                                + "\",\"displayName\":\"Học sinh không email\"}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/students",
+                                        session.cookie(),
+                                        true,
+                                        "{\"username\":\""
+                                                + username
+                                                + "\",\"displayName\":\"Học sinh không email\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "issue-noemail-" + UUID.randomUUID()));
 
-                assertEquals(202, response.getStatus());
-                JsonNode body = JSON.readTree(response.getContentAsString());
+                assertEquals(202, response.status());
+                JsonNode body = JSON.readTree(response.body());
                 UUID operationId = UUID.fromString(body.get("operation").get("id").stringValue());
                 awaitOperationSucceeded(session, operationId);
             }
@@ -989,28 +930,25 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(managerLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "issue-exp-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"username\":\"student-"
-                                                                + UUID.randomUUID()
-                                                                + "\",\"displayName\":\"Học sinh mới\"}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/students",
+                                        session.cookie(),
+                                        true,
+                                        "{\"username\":\"student-"
+                                                + UUID.randomUUID()
+                                                + "\",\"displayName\":\"Học sinh mới\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "issue-exp-" + UUID.randomUUID()));
 
-                assertEquals(403, response.getStatus(), "Gói hết hạn chặn cấp tài khoản học sinh");
+                assertEquals(403, response.status(), "Gói hết hạn chặn cấp tài khoản học sinh");
             }
         } finally {
             deleteUser(ownerLogin.subject());
@@ -1034,28 +972,25 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
             try (var session = openSession(teacherLogin)) {
                 assertEquals(
                         200,
-                        requestWhenReady(
-                                        mockMvc(),
-                                        get("/api/me/workspaces").cookie(session.cookie()))
-                                .getStatus());
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/" + center + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "issue-teacher-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"username\":\"student-"
-                                                                + UUID.randomUUID()
-                                                                + "\",\"displayName\":\"Học sinh mới\"}"))
-                                .andReturn()
-                                .getResponse();
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp().get("/api/me/workspaces", session.cookie()))
+                                .status());
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/" + center + "/students",
+                                        session.cookie(),
+                                        true,
+                                        "{\"username\":\"student-"
+                                                + UUID.randomUUID()
+                                                + "\",\"displayName\":\"Học sinh mới\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "issue-teacher-" + UUID.randomUUID()));
 
-                assertEquals(403, response.getStatus(), "Giáo viên không được cấp học sinh");
+                assertEquals(403, response.status(), "Giáo viên không được cấp học sinh");
             }
         } finally {
             deleteUser(ownerLogin.subject());
@@ -1152,10 +1087,9 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
                             + workspaceId
                             + "/memberships?limit=100"
                             + (cursor == null ? "" : "&cursor=" + cursor);
-            MockHttpServletResponse response =
-                    mockMvc().perform(get(path).cookie(session.cookie())).andReturn().getResponse();
-            assertEquals(200, response.getStatus());
-            JsonNode body = JSON.readTree(response.getContentAsString());
+            HttpTestClient.Response response = realHttp().get(path, session.cookie());
+            assertEquals(200, response.status());
+            JsonNode body = JSON.readTree(response.body());
             for (JsonNode item : body.get("items")) {
                 userIds.add(UUID.fromString(item.get("user").get("id").stringValue()));
             }
@@ -1199,25 +1133,21 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
     }
 
     private void awaitOperationSucceeded(RealSession session, UUID operationId) throws Exception {
-        AtomicReference<MockHttpServletResponse> last = new AtomicReference<>();
+        AtomicReference<HttpTestClient.Response> last = new AtomicReference<>();
         AtomicBoolean completed = new AtomicBoolean();
         try {
             await().atMost(Duration.ofSeconds(90))
                     .pollInterval(Duration.ofMillis(500))
                     .until(() -> {
-                        MockHttpServletResponse response =
-                                mockMvc()
-                                        .perform(
-                                                get("/api/me/operations/" + operationId)
-                                                        .cookie(session.cookie()))
-                                        .andReturn()
-                                        .getResponse();
+                        HttpTestClient.Response response =
+                                realHttp()
+                                        .get("/api/me/operations/" + operationId, session.cookie());
                         last.set(response);
-                        boolean readable = response.getStatus() == 200;
+                        boolean readable = response.status() == 200;
                         if (!readable) {
                             return true;
                         }
-                        JsonNode body = JSON.readTree(response.getContentAsString());
+                        JsonNode body = JSON.readTree(response.body());
                         boolean done = body.get("completed").booleanValue();
                         if (done) {
                             completed.set(true);
@@ -1227,12 +1157,12 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
         } catch (ConditionTimeoutException ignored) {
             // Hết 90 giây: các khẳng định phía dưới báo đúng trạng thái như vòng poll cũ.
         }
-        MockHttpServletResponse response = Objects.requireNonNull(last.get());
-        assertEquals(200, response.getStatus(), "Đường poll operation phải đọc được");
+        HttpTestClient.Response response = Objects.requireNonNull(last.get());
+        assertEquals(200, response.status(), "Đường poll operation phải đọc được");
         if (!completed.get()) {
             fail("Operation did not succeed in time: " + operationId);
         }
-        JsonNode body = JSON.readTree(response.getContentAsString());
+        JsonNode body = JSON.readTree(response.body());
         assertEquals(
                 "SUCCEEDED",
                 body.get("state").stringValue(),
@@ -1314,9 +1244,9 @@ class MembershipInvitationIT extends KeycloakSessionFixture {
 
     /**
      * Resource server client mà policy graph writer resolve theo audience: test-realm.json không
-     * khai client này nên class tự tạo khi thiếu (theo mẫu IdentityFlowIT) để chạy độc lập. Client
-     * là object realm theo tên cố định dùng chung toàn suite nên không bao giờ xóa ở teardown, kể
-     * cả khi chính class này tạo ra.
+     * khai client này nên class tự tạo khi thiếu (theo mẫu IdentityFlowE2EIT) để chạy độc lập.
+     * Client là object realm theo tên cố định dùng chung toàn suite nên không bao giờ xóa ở
+     * teardown, kể cả khi chính class này tạo ra.
      */
     private static void ensureApiClient() {
         String audience = fixture("TEST_KEYCLOAK_AUTHZ_AUDIENCE");
