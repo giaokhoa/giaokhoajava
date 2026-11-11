@@ -1,6 +1,7 @@
 package com.giaokhoa.resources.repository;
 
 import com.giaokhoa.resources.model.CorrectionNotice;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -9,4 +10,8 @@ public interface CorrectionNoticeRepository extends JpaRepository<CorrectionNoti
 
     /** Version đã dính thông báo đính chính là lịch sử phải bảo lưu. */
     boolean existsByAffectedVersionId(UUID affectedVersionId);
+
+    /** Các notice lấy một version làm bản thay thế — cạnh đính chính vào version đó. */
+    List<CorrectionNotice> findByResourceIdAndReplacementVersionId(
+            UUID resourceId, UUID replacementVersionId);
 }

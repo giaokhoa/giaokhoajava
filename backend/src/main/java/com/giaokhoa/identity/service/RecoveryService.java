@@ -177,7 +177,7 @@ public class RecoveryService {
                         memberships
                                 .findByWorkspaceIdAndUserIdAndState(
                                         workspaceId, requesterUserId, CenterMembership.State.ACTIVE)
-                                .map(CenterMembership::getRoles)
+                                .map(membership -> membership.getRoles())
                                 .orElse(Set.of());
                 if (!requesterRoles.contains(MembershipRole.Role.OWNER)
                         && !requesterRoles.contains(MembershipRole.Role.MANAGER)) {

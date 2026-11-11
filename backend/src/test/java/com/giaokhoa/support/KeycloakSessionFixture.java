@@ -94,7 +94,7 @@ public abstract class KeycloakSessionFixture extends IntegrationEnvironment {
     private @Nullable HttpTestClient httpClient;
 
     /**
-     * Client HTTP thật của tầng e2e-backend (B107), bind lười vào server RANDOM_PORT của context.
+     * Client HTTP thật của tầng e2e-backend (B109), bind lười vào server RANDOM_PORT của context.
      * Chỉ các class e2e dùng; các class it-pure giữ nguyên đường MockMvc ở trên.
      */
     protected HttpTestClient realHttp() {

@@ -217,7 +217,7 @@ public class ResultPolicyProjector {
                         .findByKindAndOwnerKey(
                                 AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
                         .stream()
-                        .map(AuthorizationPartition::getId)
+                        .map(partition -> partition.getId())
                         .toList();
         if (partitionIds.isEmpty()) {
             throw new IllegalStateException(
@@ -422,7 +422,7 @@ public class ResultPolicyProjector {
                 && !activeRoles(studentUserId, workspaceId).contains(MembershipRole.Role.STUDENT)) {
             return Optional.empty();
         }
-        return userAccounts.findById(studentUserId).map(UserAccount::getKeycloakSub);
+        return userAccounts.findById(studentUserId).map(user -> user.getKeycloakSub());
     }
 
     /**

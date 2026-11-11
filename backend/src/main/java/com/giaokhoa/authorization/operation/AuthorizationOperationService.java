@@ -171,12 +171,12 @@ public class AuthorizationOperationService {
                                 .findByTargetKeyIn(
                                         changes.stream()
                                                 .flatMap(change -> change.projections().stream())
-                                                .map(DesiredProjection::targetKey)
+                                                .map(projection -> projection.targetKey())
                                                 .toList())
                                 .stream()
                                 .collect(
                                         Collectors.toMap(
-                                                AuthorizationProjection::getTargetKey,
+                                                projection -> projection.getTargetKey(),
                                                 Function.identity())));
         for (PartitionChange change : changes) {
             for (DesiredProjection desired : change.projections()) {
@@ -270,7 +270,7 @@ public class AuthorizationOperationService {
         }
         for (Set<FenceStep> targets : successors.values()) {
             for (FenceStep target : targets) {
-                indegree.merge(target, 1, Integer::sum);
+                indegree.merge(target, 1, (count, delta) -> count + delta);
             }
         }
         Set<FenceStep> done = new HashSet<>();
@@ -286,7 +286,7 @@ public class AuthorizationOperationService {
                     progressed = true;
                     for (FenceStep target :
                             Objects.requireNonNull(successors.get(step), FENCE_STEP_PRESENT)) {
-                        indegree.merge(target, -1, Integer::sum);
+                        indegree.merge(target, -1, (count, delta) -> count + delta);
                     }
                 }
             }

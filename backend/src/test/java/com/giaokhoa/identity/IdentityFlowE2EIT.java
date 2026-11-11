@@ -318,7 +318,7 @@ class IdentityFlowE2EIT extends KeycloakSessionFixture {
                     "ACTIVE",
                     directory.listWorkspaces(actor).stream()
                             .filter(workspace -> workspace.kind() == Workspace.Kind.PERSONAL)
-                            .map(WorkspaceDirectoryService.ListedWorkspace::state)
+                            .map(workspace -> workspace.state())
                             .findFirst()
                             .orElse("MISSING"));
             assertEquals(Set.of("STUDENT"), activeRoles(centerB, actor));

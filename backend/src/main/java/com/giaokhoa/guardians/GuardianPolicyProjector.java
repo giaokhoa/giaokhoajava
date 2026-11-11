@@ -101,7 +101,7 @@ public class GuardianPolicyProjector {
                         .findByKindAndOwnerKey(
                                 AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
                         .stream()
-                        .map(AuthorizationPartition::getId)
+                        .map(partition -> partition.getId())
                         .toList();
         if (partitionIds.isEmpty()) {
             throw new IllegalStateException(
@@ -179,7 +179,7 @@ public class GuardianPolicyProjector {
                 .findByWorkspaceIdAndParentUserIdAndState(
                         workspaceId, parentUserId, GuardianLink.APPROVED)
                 .stream()
-                .map(GuardianLink::getStudentUserId)
+                .map(link -> link.getStudentUserId())
                 .distinct()
                 .filter(studentId ->
                         memberships

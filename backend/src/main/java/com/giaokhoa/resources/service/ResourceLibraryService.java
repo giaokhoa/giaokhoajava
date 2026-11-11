@@ -386,6 +386,7 @@ public class ResourceLibraryService {
                                                             candidateId);
                                                 }),
                                         "fork"));
+        Objects.requireNonNull(fork, "fork");
         String forkTargetKey =
                 NativePolicyTemplates.resourceVersionKey(
                         workspaceId, fork.resourceId(), fork.versionId());
@@ -440,7 +441,7 @@ public class ResourceLibraryService {
                                 + (authorizingGrant.allowedWorkspaceIds().isEmpty()
                                         ? "-"
                                         : authorizingGrant.allowedWorkspaceIds().stream()
-                                                .map(UUID::toString)
+                                                .map(id -> id.toString())
                                                 .reduce((a, b) -> a + "," + b)
                                                 .orElse("-"));
         UUID forkVersionId = UUID.randomUUID();
@@ -490,7 +491,9 @@ public class ResourceLibraryService {
         Optional<ResourceDependency> provenance =
                 copies.shareProvenanceOf(item.resourceId(), item.versionId());
         UUID sourceResourceId =
-                provenance.map(ResourceDependency::getSourceResourceId).orElse(item.resourceId());
+                provenance
+                        .map(dependency -> dependency.getSourceResourceId())
+                        .orElse(item.resourceId());
         VersionMetadata replacement =
                 repository
                         .metadata(sourceResourceId, replacementVersionId)
@@ -723,7 +726,7 @@ public class ResourceLibraryService {
         UUID personalWorkspace =
                 workspaceDirectory
                         .findByOwnerUserIdAndKind(actorUserId, Workspace.Kind.PERSONAL)
-                        .map(Workspace::getId)
+                        .map(workspace -> workspace.getId())
                         .orElseThrow(ResourceLibraryService::notFound);
         Objects.requireNonNull(
                 workspaces.inWorkspace(

@@ -178,7 +178,7 @@ public class CourseService {
                 courses.findByWorkspaceIdAndClassIdAndStateOrderByCreatedAtAscIdAsc(
                         workspaceId, classId, ACTIVE);
         Map<UUID, List<SubjectEntry>> subjects =
-                subjectsByCourse(workspaceId, rows.stream().map(Course::getId).toList());
+                subjectsByCourse(workspaceId, rows.stream().map(course -> course.getId()).toList());
         return rows.stream()
                 .map(row ->
                         view(row, row.getVersion(), subjects.getOrDefault(row.getId(), List.of())))
@@ -354,7 +354,8 @@ public class CourseService {
 
     private Map<UUID, Subject> catalogById(List<CourseSubject> rows) {
         Map<UUID, Subject> catalog = new HashMap<>();
-        subjects.findAllById(rows.stream().map(CourseSubject::getSubjectId).distinct().toList())
+        subjects.findAllById(
+                        rows.stream().map(subject -> subject.getSubjectId()).distinct().toList())
                 .forEach(subject -> catalog.put(subject.getId(), subject));
         return catalog;
     }
@@ -369,7 +370,7 @@ public class CourseService {
                         Comparator.comparing((CourseSubject row) ->
                                         Objects.requireNonNull(catalog.get(row.getSubjectId()))
                                                 .getCode())
-                                .thenComparing(CourseSubject::getId))
+                                .thenComparing(subject -> subject.getId()))
                 .map(row ->
                         new SubjectEntry(
                                 row.getId(),

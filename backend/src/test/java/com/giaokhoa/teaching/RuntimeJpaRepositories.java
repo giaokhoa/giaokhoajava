@@ -5,6 +5,7 @@ import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.guardians.repository.GuardianLinkRepository;
 import com.giaokhoa.identity.repository.UserAccountRepository;
+import com.giaokhoa.resources.repository.CorrectionNoticeRepository;
 import com.giaokhoa.resources.repository.LibraryItemRepository;
 import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
@@ -98,6 +99,7 @@ final class RuntimeJpaRepositories implements AutoCloseable {
     final ResourcesUserAccountRepository resourcesAccounts;
     final ResourcesSampleActivityRepository resourcesActivities;
     final ResourcesAuthorizationPartitionRepository resourcesPartitions;
+    final CorrectionNoticeRepository correctionNotices;
     private final AnnotationConfigApplicationContext fragmentContext;
 
     RuntimeJpaRepositories(DataSource dataSource) {
@@ -170,6 +172,7 @@ final class RuntimeJpaRepositories implements AutoCloseable {
         this.resourcesActivities = factory.getRepository(ResourcesSampleActivityRepository.class);
         this.resourcesPartitions =
                 factory.getRepository(ResourcesAuthorizationPartitionRepository.class);
+        this.correctionNotices = factory.getRepository(CorrectionNoticeRepository.class);
         // Repository có fragment của module authorization: đăng ký qua context tối thiểu dùng
         // lại đúng EntityManagerFactory, JdbcTemplate và transaction manager của bộ này.
         this.fragmentContext = new AnnotationConfigApplicationContext();

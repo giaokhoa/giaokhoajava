@@ -21,7 +21,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Client HTTP thật của riêng tầng e2e-backend (B107): bind vào server nhúng đang chạy trên cổng
+ * Client HTTP thật của riêng tầng e2e-backend (B109): bind vào server nhúng đang chạy trên cổng
  * ngẫu nhiên của {@code @SpringBootTest(webEnvironment = RANDOM_PORT)} bằng {@link RestTestClient}
  * — client fluent của Spring Framework 7 cho stack servlet. Khác MockMvc ở tầng it-pure, request ở
  * đây đi qua socket, servlet container và filter chain thật.

@@ -12,6 +12,8 @@ import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.identity.service.IdentityService;
 import com.giaokhoa.identity.service.IdentityService.BootstrapResult;
 import com.giaokhoa.identity.service.IdentityService.CurrentUser;
+import com.giaokhoa.shared.http.ErrorCodes;
+import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
 import com.giaokhoa.tenancy.model.Center;
 import com.giaokhoa.tenancy.model.MembershipRole;
@@ -22,6 +24,7 @@ import com.giaokhoa.tenancy.service.WorkspaceDirectoryService.ListedWorkspace;
 import com.giaokhoa.verification.SystemPracticeService;
 import com.giaokhoa.verification.SystemPracticeService.PracticeEntry;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -31,14 +34,18 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Bề mặt HTTP của phiên đăng nhập và của người dùng hiện tại: mô tả phiên kèm CSRF token cho SPA,
@@ -48,6 +55,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api")
 public class SessionController {
+    private static final Duration VERIFY_EMAIL_COOLDOWN = Duration.ofSeconds(60);
+
     private final IdentityService identities;
     private final WorkspaceDirectoryService directory;
     private final SystemPracticeService practice;
@@ -184,12 +193,51 @@ public class SessionController {
                         .orElseThrow(() ->
                                 new IllegalStateException(
                                         "Account row without Keycloak subject for actor " + actor));
-        provisioning.sendVerifyEmail(account.getKeycloakSub());
+        // Cooldown chống gửi lặp: mốc gửi gần nhất nằm trên chính dòng account, chỉ ghi sau khi
+        // gửi thành công nên lần gửi hỏng không khoá lần thử lại ngay sau đó.
+        Instant lastSentAt = account.getVerifyEmailSentAt();
+        if (lastSentAt != null && Instant.now().isBefore(lastSentAt.plus(VERIFY_EMAIL_COOLDOWN))) {
+            throw new HttpProblemException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    ErrorCodes.VERIFICATION_EMAIL_COOLDOWN,
+                    "Email xác minh vừa được gửi, chờ một phút rồi thử lại.");
+        }
+        sendVerifyEmail(account.getKeycloakSub());
+        account.markVerifyEmailSent(Instant.now());
+        accounts.save(account);
         // Gửi email là tác vụ phụ trợ đồng bộ, không có thực thể operation để poll: biên nhận hoàn
         // tất ngay mang chính định danh của actor theo hình dạng tracked operation của hợp đồng.
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
                 .body(new OperationReceipt(actor, "SUCCEEDED", true));
+    }
+
+    // Lỗi Keycloak được ánh xạ tại workflow gọi client, cùng quy ước với InitialCredentialService:
+    // user không còn tồn tại phía Keycloak là 404 ACCOUNT_NOT_FOUND, mọi lỗi còn lại (đáp lỗi khác
+    // hoặc không gọi được) là 503 IDENTITY_UNAVAILABLE, không để đáp lỗi thô thành 500 mặc định.
+    private void sendVerifyEmail(String keycloakSub) {
+        try {
+            provisioning.sendVerifyEmail(keycloakSub);
+        } catch (RestClientResponseException ex) {
+            if (ex.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
+                throw new HttpProblemException(
+                        HttpStatus.NOT_FOUND,
+                        ErrorCodes.ACCOUNT_NOT_FOUND,
+                        "Không tìm thấy tài khoản trên hệ thống danh tính.",
+                        ex);
+            }
+            throw identityUnavailable(ex);
+        } catch (RestClientException | OAuth2AuthorizationException ex) {
+            throw identityUnavailable(ex);
+        }
+    }
+
+    private static HttpProblemException identityUnavailable(Throwable cause) {
+        return new HttpProblemException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ErrorCodes.IDENTITY_UNAVAILABLE,
+                "Không gửi được email xác minh lúc này, thử lại sau.",
+                cause);
     }
 
     // Mọi dữ kiện phụ (tên center, role, kỳ gói, trạng thái đồng bộ) nạp hàng loạt theo tập
@@ -199,7 +247,7 @@ public class SessionController {
         if (workspaces.isEmpty()) {
             return List.of();
         }
-        List<UUID> workspaceIds = workspaces.stream().map(ListedWorkspace::id).toList();
+        List<UUID> workspaceIds = workspaces.stream().map(workspace -> workspace.id()).toList();
         Map<UUID, Set<MembershipRole.Role>> rolesByWorkspace =
                 directory.rolesIn(actor, workspaceIds);
         Map<UUID, String> centerNames = centerNamesOf(workspaces);
@@ -233,7 +281,7 @@ public class SessionController {
     private Map<UUID, String> centerNamesOf(List<ListedWorkspace> workspaces) {
         List<UUID> centerIds =
                 workspaces.stream()
-                        .map(ListedWorkspace::centerId)
+                        .map(workspace -> workspace.centerId())
                         .filter(id -> id != null)
                         .distinct()
                         .toList();

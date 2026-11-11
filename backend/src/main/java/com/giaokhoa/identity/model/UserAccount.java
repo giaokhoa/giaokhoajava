@@ -37,6 +37,9 @@ public class UserAccount {
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified;
 
+    @Column(name = "verify_email_sent_at")
+    private @Nullable Instant verifyEmailSentAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "origin", nullable = false, length = 32)
     private Origin origin;
@@ -84,6 +87,13 @@ public class UserAccount {
         this.emailVerified = emailVerified;
     }
 
+    /**
+     * Ghi mốc lần gửi email xác minh gần nhất; cửa sổ cooldown của endpoint xác minh đọc mốc này.
+     */
+    public void markVerifyEmailSent(Instant sentAt) {
+        this.verifyEmailSentAt = sentAt;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -102,6 +112,10 @@ public class UserAccount {
 
     public boolean isEmailVerified() {
         return emailVerified;
+    }
+
+    public @Nullable Instant getVerifyEmailSentAt() {
+        return verifyEmailSentAt;
     }
 
     public Origin getOrigin() {

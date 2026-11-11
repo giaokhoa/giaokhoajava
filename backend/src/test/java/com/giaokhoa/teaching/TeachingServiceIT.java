@@ -396,7 +396,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
         return rows.stream()
                 .collect(
                         Collectors.toMap(
-                                CourseView::id,
+                                course -> course.id(),
                                 row -> row.subjects().stream().map(e -> e.subjectId()).toList()));
     }
 
