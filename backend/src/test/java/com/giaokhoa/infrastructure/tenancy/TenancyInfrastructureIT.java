@@ -179,6 +179,59 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     }
 
     @Test
+    @DisplayName("Schema tenant không còn bảng nào bật RLS hay policy")
+    void tenantSchemaHasNoRls() {
+        UUID workspaceId = newWorkspace("no-rls").workspaceId();
+        String schema = provisioner.provisionSchema(workspaceId);
+
+        Long rlsTables =
+                raw.queryForObject(
+                        "SELECT count(*) FROM pg_class c JOIN pg_namespace n"
+                                + " ON n.oid = c.relnamespace WHERE n.nspname = ? AND c.relrowsecurity",
+                        Long.class,
+                        schema);
+        assertEquals(0L, rlsTables);
+        Long policies =
+                raw.queryForObject(
+                        "SELECT count(*) FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid"
+                                + " JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ?",
+                        Long.class,
+                        schema);
+        assertEquals(0L, policies);
+    }
+
+    @Test
+    @DisplayName("Runtime role có đủ quyền theo mô hình grant theo schema trên schema tenant")
+    void runtimeRoleHasSchemaGrants() {
+        UUID workspaceId = newWorkspace("runtime-grants").workspaceId();
+        String schema = provisioner.provisionSchema(workspaceId);
+
+        assertEquals(
+                1L,
+                raw.queryForObject(
+                        "SELECT count(*) FROM pg_roles WHERE rolname = 'giaokhoa_runtime'",
+                        Long.class));
+        assertEquals(
+                Boolean.TRUE,
+                raw.queryForObject(
+                        "SELECT has_schema_privilege('giaokhoa_runtime', ?, 'USAGE')",
+                        Boolean.class,
+                        schema));
+        for (String table : List.of("school_class", "library_item")) {
+            for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE")) {
+                assertEquals(
+                        Boolean.TRUE,
+                        raw.queryForObject(
+                                "SELECT has_table_privilege('giaokhoa_runtime', ?, ?)",
+                                Boolean.class,
+                                schema + "." + table,
+                                privilege),
+                        "Thiếu quyền " + privilege + " trên " + schema + "." + table);
+            }
+        }
+    }
+
+    @Test
     @DisplayName(
             "Gọi applyContext trực tiếp thì TenantContext được khôi phục khi transaction kết thúc,"
                     + " cả khi commit lẫn rollback")
