@@ -1,4 +1,4 @@
-package com.giaokhoa.resources;
+package com.giaokhoa.resources.service;
 
 import java.util.List;
 import java.util.UUID;

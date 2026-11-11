@@ -1,4 +1,4 @@
-package com.giaokhoa.resources;
+package com.giaokhoa.resources.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -8,6 +8,10 @@ import static org.mockito.Mockito.when;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.resources.ResourceCopies;
+import com.giaokhoa.resources.ResourcePolicyProjector;
+import com.giaokhoa.resources.ResourceRevocationContributor;
+import com.giaokhoa.resources.SharePolicyProjector;
 import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.repository.CanonicalResourceRepository;
 import com.giaokhoa.resources.repository.LibraryItemRepository;

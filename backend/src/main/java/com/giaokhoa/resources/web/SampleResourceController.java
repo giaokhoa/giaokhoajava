@@ -1,5 +1,6 @@
-package com.giaokhoa.resources;
+package com.giaokhoa.resources.web;
 
+import com.giaokhoa.resources.service.ResourceLibraryService;
 import com.giaokhoa.verification.dto.ResourceAnswerView;
 import com.giaokhoa.verification.dto.ResourceBodyView;
 import jakarta.servlet.http.HttpServletRequest;

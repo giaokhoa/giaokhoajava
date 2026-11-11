@@ -1,4 +1,4 @@
-package com.giaokhoa.resources;
+package com.giaokhoa.resources.service;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.fence.AuthorizationFence;
@@ -7,6 +7,8 @@ import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
+import com.giaokhoa.resources.ResourceCopies;
+import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.resources.model.LibraryItem;
 import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.model.ResourceVersion;
