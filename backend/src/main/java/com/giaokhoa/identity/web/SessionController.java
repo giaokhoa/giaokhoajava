@@ -199,7 +199,7 @@ public class SessionController {
         if (workspaces.isEmpty()) {
             return List.of();
         }
-        List<UUID> workspaceIds = workspaces.stream().map(ListedWorkspace::id).toList();
+        List<UUID> workspaceIds = workspaces.stream().map(workspace -> workspace.id()).toList();
         Map<UUID, Set<MembershipRole.Role>> rolesByWorkspace =
                 directory.rolesIn(actor, workspaceIds);
         Map<UUID, String> centerNames = centerNamesOf(workspaces);
@@ -233,7 +233,7 @@ public class SessionController {
     private Map<UUID, String> centerNamesOf(List<ListedWorkspace> workspaces) {
         List<UUID> centerIds =
                 workspaces.stream()
-                        .map(ListedWorkspace::centerId)
+                        .map(workspace -> workspace.centerId())
                         .filter(id -> id != null)
                         .distinct()
                         .toList();

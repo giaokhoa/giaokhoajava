@@ -133,7 +133,7 @@ public class IdempotencyService {
         // chuỗi trước khi khóa để mọi transaction khóa partition theo cùng một thứ tự.
         var partitionIds =
                 operation.getAffectedPartitions().stream()
-                        .sorted(Comparator.comparing(UUID::toString))
+                        .sorted(Comparator.comparing(id -> id.toString()))
                         .toList();
         Set<UUID> locked =
                 partitions.lockAllForUpdate(partitionIds).stream()

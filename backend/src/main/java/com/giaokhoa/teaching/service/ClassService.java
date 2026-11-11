@@ -256,7 +256,7 @@ public class ClassService {
         // Tên hiển thị thuộc mặt phẳng hệ thống nên phân giải một lần cho cả lô từ danh sách ID.
         Map<UUID, String> usernames =
                 preconditions.usernamesByIds(
-                        entries.stream().map(ClassStudent::getStudentUserId).toList());
+                        entries.stream().map(entry -> entry.getStudentUserId()).toList());
         return entries.stream().map(entry -> toView(entry, usernames)).toList();
     }
 
@@ -270,7 +270,7 @@ public class ClassService {
         Page<RosterListItem> page = pages.pageRoster(workspaceId, classId, cursor, limit);
         Map<UUID, String> usernames =
                 preconditions.usernamesByIds(
-                        page.items().stream().map(RosterListItem::getStudentUserId).toList());
+                        page.items().stream().map(row -> row.getStudentUserId()).toList());
         return page.map(item ->
                 new RosterEntryView(
                         item.getId(),
@@ -294,7 +294,7 @@ public class ClassService {
                         workspaceId, classId, CURRENT_STATES);
         Map<UUID, String> usernames =
                 preconditions.usernamesByIds(
-                        entries.stream().map(ClassStudent::getStudentUserId).toList());
+                        entries.stream().map(entry -> entry.getStudentUserId()).toList());
         return entries.stream().map(entry -> toView(entry, usernames)).toList();
     }
 

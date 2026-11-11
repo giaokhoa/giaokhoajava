@@ -101,7 +101,7 @@ public class IssuedStudentRegistrationService {
                 memberships
                         .findByWorkspaceIdAndUserIdAndState(
                                 centerWorkspaceId, operatorUserId, CenterMembership.State.ACTIVE)
-                        .map(CenterMembership::getRoles)
+                        .map(membership -> membership.getRoles())
                         .orElse(Set.of());
         if (!operatorRoles.contains(MembershipRole.Role.OWNER)
                 && !operatorRoles.contains(MembershipRole.Role.MANAGER)) {

@@ -130,8 +130,8 @@ public class CenterController {
     public ResponseEntity<CenterPage> listCenters(
             Authentication authentication,
             HttpServletRequest request,
-            @RequestParam(value = "cursor", required = false) @Nullable String cursor,
-            @RequestParam(value = "limit", required = false) @Nullable Integer limit) {
+            @RequestParam(required = false) @Nullable String cursor,
+            @RequestParam(required = false) @Nullable Integer limit) {
         UUID actor = executor.actorUserId(authentication);
         return executor.executeForActor(
                 authentication,

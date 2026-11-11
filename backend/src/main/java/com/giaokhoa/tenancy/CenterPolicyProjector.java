@@ -4,7 +4,6 @@ import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
-import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.subscriptions.dto.SubscriptionPeriodRow;
 import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
@@ -178,7 +177,9 @@ public class CenterPolicyProjector {
         List<UUID> userIds = memberships.findDistinctUserIdsByWorkspaceId(workspaceId);
         Map<UUID, String> subjects =
                 accounts.findByIdIn(userIds).stream()
-                        .collect(Collectors.toMap(UserAccount::getId, UserAccount::getKeycloakSub));
+                        .collect(
+                                Collectors.toMap(
+                                        user -> user.getId(), user -> user.getKeycloakSub()));
         for (UUID userId : userIds) {
             String subject = subjects.get(userId);
             if (subject == null) {

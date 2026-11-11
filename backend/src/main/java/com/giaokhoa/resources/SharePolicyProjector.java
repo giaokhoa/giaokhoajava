@@ -279,7 +279,7 @@ public class SharePolicyProjector {
         } catch (DataIntegrityViolationException race) {
             return partitions
                     .findByKindAndOwnerKey(AuthorizationPartition.Kind.GRANT, ownerKey)
-                    .map(AuthorizationPartition::getId)
+                    .map(partition -> partition.getId())
                     .orElseThrow(() ->
                             new IllegalStateException("Grant partition is missing: " + grantId));
         }
@@ -327,7 +327,7 @@ public class SharePolicyProjector {
         return partitions
                 .findByKindAndOwnerKey(
                         AuthorizationPartition.Kind.WORKSPACE, "workspace:" + workspaceId)
-                .map(AuthorizationPartition::getId)
+                .map(partition -> partition.getId())
                 .orElseThrow(() ->
                         new IllegalStateException(
                                 "Workspace authorization partition is missing: " + workspaceId));

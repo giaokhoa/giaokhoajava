@@ -262,7 +262,8 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
         // khi đó đi đường merge và kiểm tra version lúc flush thay vì persist như entity mới.
         tx.executeWithoutResult(_ -> bumpDesiredRevision(workspacePartition));
         AuthorizationPartition stale =
-                tx.execute(_ -> partitions.findById(workspacePartition)).orElseThrow();
+                Objects.requireNonNull(tx.execute(_ -> partitions.findById(workspacePartition)))
+                        .orElseThrow();
         tx.executeWithoutResult(_ -> bumpDesiredRevision(workspacePartition));
         stale.setDesiredRevision(stale.getDesiredRevision() + 1);
 
@@ -331,7 +332,8 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
         assertEquals(Boolean.TRUE, firstClaimed.get());
         assertEquals(Boolean.FALSE, secondClaimed.get());
         AuthorizationOperation stored =
-                tx.execute(_ -> operations.findById(operationId)).orElseThrow();
+                Objects.requireNonNull(tx.execute(_ -> operations.findById(operationId)))
+                        .orElseThrow();
         assertEquals(AuthorizationOperation.State.APPLYING, stored.getState());
         assertEquals(1, stored.getAttemptCount());
     }
@@ -355,7 +357,7 @@ class AuthorizationJpaProtocolIT extends IntegrationEnvironment {
                         PageRequest.of(0, 100));
         var locked =
                 operations.lockClaimableByIds(
-                        candidates.stream().map(AuthorizationOperation::getId).toList(),
+                        candidates.stream().map(operation -> operation.getId()).toList(),
                         List.of(
                                 AuthorizationOperation.State.PENDING,
                                 AuthorizationOperation.State.RETRYABLE_FAILURE),

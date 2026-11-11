@@ -1,7 +1,6 @@
 package com.giaokhoa.authorization.fence;
 
 import com.giaokhoa.authorization.model.AuthorizationPartition;
-import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.shared.http.ErrorCodes;
@@ -135,7 +134,7 @@ public class DependencyManifestResolver {
     private UUID partitionId(AuthorizationPartition.Kind kind, String ownerKey) {
         return partitions
                 .findByKindAndOwnerKey(kind, ownerKey)
-                .map(AuthorizationPartition::getId)
+                .map(partition -> partition.getId())
                 .orElseThrow(() ->
                         new HttpProblemException(
                                 HttpStatus.SERVICE_UNAVAILABLE,
@@ -157,7 +156,7 @@ public class DependencyManifestResolver {
     /** Chỉ cột dependency của mọi projection thuộc cả một tầng partition, trong một query. */
     private List<List<UUID>> dependencyIdsOf(List<UUID> partitionIds) {
         return projections.findByPartitionIdIn(partitionIds).stream()
-                .map(AuthorizationProjection::getDependencyPartitionIds)
+                .map(projection -> projection.getDependencyPartitionIds())
                 .toList();
     }
 }

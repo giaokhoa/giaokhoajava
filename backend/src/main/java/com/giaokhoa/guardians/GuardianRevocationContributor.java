@@ -60,7 +60,7 @@ public class GuardianRevocationContributor {
                 links.findByWorkspaceIdAndParentUserIdAndState(
                         workspaceId, parentUserId, GuardianLink.APPROVED);
         List<UUID> studentIds =
-                approved.stream().map(GuardianLink::getStudentUserId).distinct().toList();
+                approved.stream().map(link -> link.getStudentUserId()).distinct().toList();
         closeAll(approved);
         return groupPaths(workspaceId, studentIds);
     }

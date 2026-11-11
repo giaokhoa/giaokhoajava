@@ -216,7 +216,7 @@ public class ResourceCopies {
                                         edge.getDerivedResourceId(), edge.getDerivedVersionId()),
                                 resources
                                         .findById(edge.getDerivedResourceId())
-                                        .map(Resource::getOwnerWorkspaceId)
+                                        .map(resource -> resource.getOwnerWorkspaceId())
                                         .orElseThrow(() ->
                                                 new IllegalStateException(
                                                         "Copy resource is"
@@ -232,7 +232,7 @@ public class ResourceCopies {
             UUID sourceResourceId, UUID sourceVersionId, UUID grantId, UUID recipientWorkspaceId) {
         return copiesOf(sourceResourceId, sourceVersionId, grantId).stream()
                 .filter(location -> location.ownerWorkspaceId().equals(recipientWorkspaceId))
-                .map(CopyLocation::copy)
+                .map(location -> location.copy())
                 .findFirst();
     }
 
@@ -268,7 +268,7 @@ public class ResourceCopies {
         resources
                 .findAllById(
                         edges.stream()
-                                .map(ResourceDependency::getDerivedResourceId)
+                                .map(dependency -> dependency.getDerivedResourceId())
                                 .distinct()
                                 .toList())
                 .forEach(resource -> owners.put(resource.getId(), resource.getOwnerWorkspaceId()));
@@ -308,7 +308,7 @@ public class ResourceCopies {
                 .filter(edge ->
                         edge.getUsageConstraints()
                                 .startsWith(ResourcePolicyProjector.shareOriginMarker()))
-                .map(ResourceDependency::getDerivedVersionId)
+                .map(dependency -> dependency.getDerivedVersionId())
                 .findFirst();
     }
 }

@@ -171,7 +171,7 @@ public class ProjectionWorker {
             if (!queue.isEmpty()) {
                 for (AuthorizationOperation operation :
                         operations.lockClaimableByIds(
-                                queue.stream().map(QueueRow::id).toList(),
+                                queue.stream().map(row -> row.id()).toList(),
                                 DUE_STATES,
                                 State.APPLYING,
                                 now,

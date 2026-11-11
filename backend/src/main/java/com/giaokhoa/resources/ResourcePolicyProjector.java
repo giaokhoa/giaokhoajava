@@ -209,7 +209,7 @@ public class ResourcePolicyProjector {
     public static List<String> mapActions(List<String> actions) {
         return actions.stream()
                 .map(ResourcePolicyProjector::mapAction)
-                .flatMap(Optional::stream)
+                .flatMap(value -> value.stream())
                 .distinct()
                 .toList();
     }
@@ -602,11 +602,13 @@ public class ResourcePolicyProjector {
                 userAccounts
                         .findByIdIn(
                                 matching.stream()
-                                        .map(ResourceAssignment::getUserId)
+                                        .map(assignment -> assignment.getUserId())
                                         .distinct()
                                         .toList())
                         .stream()
-                        .collect(Collectors.toMap(UserAccount::getId, UserAccount::getKeycloakSub));
+                        .collect(
+                                Collectors.toMap(
+                                        user -> user.getId(), user -> user.getKeycloakSub()));
         Set<UUID> activeMembers =
                 CENTER_KIND.equals(contextKind)
                         ? preconditions.centerMembershipActiveUserIds(
@@ -727,7 +729,7 @@ public class ResourcePolicyProjector {
                 copies.grantsWithCopyAt(
                         resourceId,
                         versionId,
-                        applicable.stream().map(ShareGrant::getId).toList(),
+                        applicable.stream().map(grant -> grant.getId()).toList(),
                         workspaceId);
         for (ShareGrant grant : applicable) {
             List<String> scopes = mapActions(grant.getActions());
@@ -923,7 +925,7 @@ public class ResourcePolicyProjector {
         return partitions
                 .findByKindAndOwnerKeyIn(AuthorizationPartition.Kind.GRANT, ownerKeys)
                 .stream()
-                .map(AuthorizationPartition::getId)
+                .map(partition -> partition.getId())
                 .toList();
     }
 

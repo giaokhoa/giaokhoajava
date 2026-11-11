@@ -88,7 +88,7 @@ public class PlatformProjectionSeeder {
             } catch (DataIntegrityViolationException ex) {
                 partitionId =
                         Objects.requireNonNull(
-                                findPartition().map(AuthorizationPartition::getId).orElse(null),
+                                findPartition().map(partition -> partition.getId()).orElse(null),
                                 "platform partition");
             }
         }

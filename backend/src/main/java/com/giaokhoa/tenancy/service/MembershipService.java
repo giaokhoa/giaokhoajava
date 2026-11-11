@@ -3,7 +3,6 @@ package com.giaokhoa.tenancy.service;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.identity.repository.UserAccountRepository;
 import com.giaokhoa.identity.service.InitialCredentialService;
 import com.giaokhoa.shared.audit.AuditEvent;
@@ -209,9 +208,11 @@ public class MembershipService {
         List<CenterMembership> rows = page.subList(0, Math.min(pageSize, page.size()));
         Map<UUID, String> usernames =
                 accounts
-                        .findByIdIn(rows.stream().map(CenterMembership::getUserId).toList())
+                        .findByIdIn(
+                                rows.stream().map(membership -> membership.getUserId()).toList())
                         .stream()
-                        .collect(Collectors.toMap(UserAccount::getId, UserAccount::getUsername));
+                        .collect(
+                                Collectors.toMap(user -> user.getId(), user -> user.getUsername()));
         List<MembershipView> items =
                 rows.stream()
                         .map(membership ->
@@ -221,9 +222,7 @@ public class MembershipService {
                                         Objects.requireNonNull(
                                                 usernames.get(membership.getUserId()), "username"),
                                         membership.getRoles().stream()
-                                                .sorted(
-                                                        Comparator.comparing(
-                                                                MembershipRole.Role::name))
+                                                .sorted(Comparator.comparing(role -> role.name()))
                                                 .toList(),
                                         membership.getState().name(),
                                         membership.getVersion()))
