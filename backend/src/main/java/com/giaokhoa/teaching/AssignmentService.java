@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.service.SubscriptionService;
 import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
 import com.giaokhoa.teaching.model.CourseSubject;
 import com.giaokhoa.teaching.model.HomeroomAssignment;

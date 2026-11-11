@@ -1,4 +1,4 @@
-package com.giaokhoa.subscriptions;
+package com.giaokhoa.subscriptions.dto;
 
 import com.giaokhoa.subscriptions.model.SubscriptionPeriod;
 import java.time.Instant;

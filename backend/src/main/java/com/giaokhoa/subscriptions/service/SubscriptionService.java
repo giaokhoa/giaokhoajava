@@ -1,4 +1,4 @@
-package com.giaokhoa.subscriptions;
+package com.giaokhoa.subscriptions.service;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.AuthorizationOperationService;
@@ -12,6 +12,7 @@ import com.giaokhoa.shared.AdvisoryLocks;
 import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import com.giaokhoa.subscriptions.model.SubscriptionPeriod;
 import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
 import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;

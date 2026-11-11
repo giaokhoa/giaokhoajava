@@ -1,4 +1,4 @@
-package com.giaokhoa.subscriptions;
+package com.giaokhoa.subscriptions.web;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
@@ -8,6 +8,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.shared.http.Violation;
+import com.giaokhoa.subscriptions.service.SubscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;

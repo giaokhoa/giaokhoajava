@@ -1,5 +1,6 @@
 package com.giaokhoa.identity.eligibility;
 
+import com.giaokhoa.subscriptions.PersonalEntitlementProjector;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;

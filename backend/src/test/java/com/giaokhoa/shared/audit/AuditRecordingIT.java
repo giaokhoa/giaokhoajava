@@ -8,7 +8,7 @@ import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.identity.RecoveryService;
 import com.giaokhoa.identity.RecoveryService.Decision;
 import com.giaokhoa.identity.RecoveryService.RequestView;
-import com.giaokhoa.subscriptions.SubscriptionService;
+import com.giaokhoa.subscriptions.service.SubscriptionService;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.InvitationService;
 import com.giaokhoa.tenancy.InvitationService.InvitationIssued;
