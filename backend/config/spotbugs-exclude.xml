@@ -36,10 +36,10 @@
         <Field name="~(jdbc|projections)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CurrentIdentityClient, AuthorizationOperationService); không sao chép khi inject vào synchronizer. -->
+    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CurrentIdentityClient, AuthorizationOperationService, AuthzProjectionRepository, AuthzPartitionRepository); không sao chép khi inject vào synchronizer. -->
     <Match>
         <Class name="com.giaokhoa.identity.eligibility.IdentityEligibilityService"/>
-        <Field name="~(jdbc|identities|operations)"/>
+        <Field name="~(projections|partitions|identities|operations)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Dependency singleton do Spring quản lý (JdbcTemplate, CurrentIdentityClient); không sao chép khi inject vào service bootstrap. -->
@@ -147,10 +147,10 @@
         <Field name="~(jdbc|writer)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-    <!-- Dependency singleton do Spring quản lý (JdbcTemplate, IdentityProvisioningClient); không sao chép khi inject vào controller phiên. -->
+    <!-- Dependency singleton do Spring quản lý (IdentityProvisioningClient, AuthzProjectionRepository); không sao chép khi inject vào controller phiên. -->
     <Match>
         <Class name="com.giaokhoa.identity.SessionController"/>
-        <Field name="~(jdbc|provisioning)"/>
+        <Field name="~(provisioning|projections)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
     <!-- Dependency singleton do Spring quản lý (PolicyGraphWriter); không sao chép khi inject vào controller khôi phục. -->

@@ -2,8 +2,10 @@ package com.giaokhoa.identity;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
+import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
 import com.giaokhoa.identity.IdentityService.BootstrapResult;
 import com.giaokhoa.identity.IdentityService.CurrentUser;
 import com.giaokhoa.identity.keycloak.IdentityProvisioningClient;
@@ -20,7 +22,6 @@ import com.giaokhoa.verification.SystemPracticeService;
 import com.giaokhoa.verification.SystemPracticeService.PracticeEntry;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,6 @@ import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -55,7 +55,7 @@ public class SessionController {
     private final UserAccountRepository accounts;
     private final CenterRepository centers;
     private final SubscriptionPeriodRepository periods;
-    private final JdbcTemplate jdbc;
+    private final AuthzProjectionRepository projections;
 
     public SessionController(
             IdentityService identities,
@@ -66,7 +66,7 @@ public class SessionController {
             UserAccountRepository accounts,
             CenterRepository centers,
             SubscriptionPeriodRepository periods,
-            JdbcTemplate jdbc) {
+            AuthzProjectionRepository projections) {
         this.identities = identities;
         this.directory = directory;
         this.practice = practice;
@@ -75,7 +75,7 @@ public class SessionController {
         this.accounts = accounts;
         this.centers = centers;
         this.periods = periods;
-        this.jdbc = jdbc;
+        this.projections = projections;
     }
 
     public record CsrfView(String headerName, String token) {}
@@ -252,24 +252,16 @@ public class SessionController {
         return expiries;
     }
 
-    // authz_projection thuộc mặt phẳng authorization: điểm đọc này giữ SQL cho tới khi
-    // repository của mặt phẳng đó land cùng đợt chuyển đổi của module authorization.
     private Map<String, String> syncStatesOf(List<UUID> workspaceIds) {
         List<String> targetKeys = workspaceIds.stream().map(id -> "workspace:" + id).toList();
+        if (targetKeys.isEmpty()) {
+            return Map.of();
+        }
         Map<String, String> states = new HashMap<>();
-        jdbc.query(
-                "SELECT target_key, state FROM authz_projection WHERE target_key IN ("
-                        + placeholders(targetKeys)
-                        + ")",
-                rs -> {
-                    states.put(rs.getString("target_key"), rs.getString("state"));
-                },
-                targetKeys.toArray());
+        for (AuthorizationProjection projection : projections.findByTargetKeyIn(targetKeys)) {
+            states.put(projection.getTargetKey(), projection.getState().name());
+        }
         return states;
-    }
-
-    private static String placeholders(List<?> values) {
-        return String.join(", ", Collections.nCopies(values.size(), "?"));
     }
 
     private static CsrfView csrfOf(HttpServletRequest request) {
