@@ -4,6 +4,53 @@ Mọi kết quả dưới đây là bằng chứng chạy thật: integration te
 (PostgreSQL + Keycloak thật, làn riêng) và truy vấn trực tiếp trạng thái Keycloak/DB sau chạy.
 Không scenario nào được tick pass từ tài liệu.
 
+## Kết luận cuối — vòng 3: **ĐẠT** (11/11/2026)
+
+Gate #88 được nghiệm thu lại trên **main `59137da4223268efbe17bb07ebbddd7084eac8a0`**
+sau khi hai defect của vòng 2 đã được sửa (commit này bổ sung đúng ba test
+`ResourceAccessIT`, `ResourceSharingIT`, `ResourceFixture` từ PR gate vào main).
+Ba file test hiện có trên main **trùng blob SHA** với nhánh PR #274; đây không phải bộ
+test viết lại để lấy kết quả xanh.
+
+| Phần nghiệm thu | Bằng chứng vòng 3 | Kết quả |
+|---|---|---|
+| US7.1–US7.3 và nửa đính chính/cập nhật US7.2, hợp đồng tách body/answer | `ResourceAccessIT` 5/5 | **ĐẠT** |
+| US7.4–US7.9 (share, accept, save, fork, revoke, LONG_TERM, many-source ALL) | `ResourceSharingIT` 6/6 | **ĐẠT** |
+| US5 chạy lại, thu hồi và quyền độc lập | `RevocationMatrixIT`: lượt gộp bị 3 timeout lúc dựng fixture khi máy dùng chung quá tải; chạy lại **đơn độc trên cùng stack/SHA**: 6/6 | **ĐẠT** |
+| Unit và cổng tĩnh trong cùng lượt verify | Unit 252/252, cổng tĩnh đạt | **ĐẠT** |
+
+- Môi trường thực chạy: stack **TEST lane 2**, PostgreSQL cổng `15433`,
+  Keycloak cổng `18082`. Bằng chứng: `logs-gate88-r3/it-lane2-r3-r1.log`
+  và `logs-gate88-r3/it-lane2-r3-r2-revocation.log`, được người nghiệm thu
+  ghi nhận trong [kết luận issue #88](https://github.com/giaokhoa/giaokhoa/issues/88).
+  Đây là bằng chứng đã chạy trước đó, **không tuyên bố chạy native stack mới**
+  trong lần cập nhật tài liệu này.
+- Defect vòng 1 (group `managers` chưa provision) được sửa bởi PR #278 /
+  `06250030`. Defect vòng 2 (license scope sau copy-on-share và lỗi
+  `Timestamp` → `OffsetDateTime` ở `CORRECT_SOURCE`) được sửa trên main
+  `59137da`. Kiểm chứng vòng 3 xác nhận cả hai luồng share → đọc/fork tại
+  nơi nhận và đính chính → `RECEIVE_UPDATE` (điểm C7) đều đạt.
+- Sau gate vòng 3, main tiếp tục tiến lên qua #287/#291 mà không thay đổi
+  kết quả US7; CI hiện tại của main tại `fd6f66fc` (run
+  [43064501517](https://github.com/giaokhoa/giaokhoa/actions/runs/43064501517))
+  **8/8 jobs xanh**, gồm `backend (it-pure)`. Đây là CI hiện tại, không thay
+  thế kết quả nghiệm thu native ở trên.
+- **Issue #88 và #77 đã đóng** theo kết luận đạt. Công việc E2E UI #78 /
+  PR #216 còn mở, là phạm vi riêng; gate này chứng minh backend native US7
+  và US5 theo T086, không tuyên bố E2E UI #78 đã hoàn tất.
+
+**Chốt PR #274:** sau khi ghép `main` mới, ba file IT đã có trên `main` và
+trùng nguyên nội dung, nên phần cần nhập từ PR chỉ còn **file báo cáo
+`validation/us7.md`**. Không thêm lại các file test trùng, không mở rộng
+phạm vi hoặc sửa code production để cập nhật kết quả gate.
+
+---
+
+**Lưu ý lịch sử:** §0–§9 dưới đây giữ nguyên phân tích chi tiết của **vòng 2
+(đã KHÔNG ĐẠT)**, bao gồm phát hiện defect và yêu cầu mở lại issue tại thời
+điểm đó. Chúng **không phải trạng thái hiện tại**; kết luận cuối ở phần đầu
+văn bản này thay thế phán quyết vòng 2.
+
 ## 0. Trạng thái vòng nghiệm thu lại (main `0625003`, PR #278 đã land)
 
 - Base nghiệm thu lại: `main` tại `06250030d07a9ed4708c17f8e2b50f1532af01cb` (merge của PR #278:
@@ -225,7 +272,7 @@ Bằng chứng Keycloak lúc đó: 7 workspace có group, **0 workspace có `man
 - B89(iv): route tạo fixture không idempotent, chấp nhận cho công cụ kiểm chứng — giữ nguyên
   đánh giá; không phát hiện thêm hệ quả nào tại gate này.
 
-## 9. Kết luận gate #88 — KHÔNG ĐẠT
+## 9. Kết luận gate #88 tại vòng 2 — KHÔNG ĐẠT (lịch sử)
 
 - ĐẠT: US7.1, US7.2 (nửa cập nhật), US7.3, US7.8, US7.9; hợp đồng body/answer tách quyền đạt;
   US5 chạy lại: ma trận thu hồi 6/6 đạt.
