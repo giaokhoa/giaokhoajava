@@ -16,8 +16,8 @@
 // Lịch sử: spec viết test-first trên main d7adfb4f khi implementation US7 chưa
 // có (đỏ đúng lý do thiếu hành vi). Implementation đã land sau đó (panel /review,
 // SampleActionController đủ action, endpoint đọc body/answer tách riêng); spec
-// được rebase lên main 89fbef1a, neo tương tác của panel (discriminator cố định,
-// tên trường của hợp đồng, vùng kết quả) giữ theo mục B109 của Sổ điểm chưa chắc
+// được rebase lên main 74ab09c0, neo tương tác của panel (discriminator cố định,
+// tên trường của hợp đồng, vùng kết quả) giữ theo mục B110 của Sổ điểm chưa chắc
 // chắn/lệch spec.
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -507,7 +507,7 @@ COMMIT;
 // --- Panel review: mọi hành vi thuộc phạm vi test đều đi qua giao diện này. ---
 // Neo tương tác theo hợp đồng: route /review, discriminator action là chuỗi cố
 // định của hợp đồng SampleAction, tên trường là tên field của hợp đồng, kết quả
-// hiện trạng thái SUCCEEDED hoặc mã lỗi nghiệp vụ (ghi ở B109 của Sổ).
+// hiện trạng thái SUCCEEDED hoặc mã lỗi nghiệp vụ (ghi ở B110 của Sổ).
 
 async function moPanelReview(page: Page): Promise<void> {
   await page.goto(`${frontendOrigin}/review`);
