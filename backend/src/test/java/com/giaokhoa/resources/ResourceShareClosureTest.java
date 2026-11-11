@@ -15,7 +15,6 @@ import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
 import com.giaokhoa.resources.repository.ResourceScopePreconditions;
-import com.giaokhoa.resources.repository.ResourceVersionRepository;
 import com.giaokhoa.resources.repository.ResourcesAuthorizationOperationRepository;
 import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
 import com.giaokhoa.resources.repository.ShareGrantRepository;
@@ -105,7 +104,6 @@ class ResourceShareClosureTest {
                 mock(CanonicalResourceRepository.class),
                 mock(ShareGrantRepository.class),
                 mock(ResourceRepository.class),
-                mock(ResourceVersionRepository.class),
                 dependencies,
                 mock(ResourceAssignmentRepository.class),
                 mock(LibraryItemRepository.class),
