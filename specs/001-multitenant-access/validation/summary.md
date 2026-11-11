@@ -68,16 +68,22 @@ biến `JAVA_TOOL_OPTIONS`/`MAVEN_OPTS` chứa `-Djava.net.preferIPv4Stack=true`
 của sandbox — RUNBOOK mục 2). Thân lệnh giữ nguyên văn quickstart; hai bổ sung trên là
 cấu hình môi trường đã được các đội trước ghi ngay trong tiêu đề log.
 
-## Mục chờ gate
+## Mục gate
 
-- **Gate #88 (US7, native gate và nghiệm thu US7.1–US7.9)**: đang chạy vòng 3 trên
-  main `59137da4` tại thời điểm ghi summary này. Bằng chứng `verify-native.sh` tương
-  đương và kết luận gate thuộc đội gate — **chờ gate #88**, không khẳng định tại đây.
-  15 ca e2e cần `NATIVE_GATE_APP_ORIGIN` ở CMD26 cũng thuộc môi trường native gate
-  này.
+- **Gate #88 (US7, native gate và nghiệm thu US7.1–US7.9)**: vòng 3 đã kết luận
+  **ĐẠT** trên main `59137da4` (kiểm chứng ngày 2026-11-11): US7.1–US7.9 đạt đủ —
+  `ResourceAccessIT` 5/5, `ResourceSharingIT` 6/6, `RevocationMatrixIT` 6/6 ở lượt
+  chạy lại đơn độc (lượt gộp có ca timeout ở bước dựng dữ kiện do máy dùng chung
+  quá tải), unit 252/252. Issue #88 đã đóng kèm comment bằng chứng id `6796686919`.
+  Bằng chứng native gate tương đương mà CMD8 chờ thuộc kết luận này. 15 ca e2e cần
+  `NATIVE_GATE_APP_ORIGIN` ở CMD26 thuộc môi trường native gate của gate này; kết
+  luận gate ở trên là bằng chứng nghiệm thu US7 tương ứng, không phải kết quả chạy
+  lại các ca e2e đó trong lượt làn 3 này. Sau kết luận gate, main đã tiến tới
+  `89fbef1a` qua PR #287 và PR #291 (CI của cả hai đều 8/8).
 - **Gate #95 (US8)**: đội gate đã kết luận ĐẠT có điều kiện (7/7 scenario) trên main
-  `da8ba071`; việc đóng issue còn chờ land PR test US8 liên quan. Trạng thái đóng
-  cuối cùng thuộc điều phối — **chờ gate #95 hoàn tất đóng**.
+  `da8ba071`; việc đóng issue còn chờ land chuỗi sửa gia hạn gói và PR test US8
+  liên quan — tính đến ngày kiểm chứng 2026-11-11 vẫn **chờ gate #95 hoàn tất
+  đóng**.
 
 ## Giới hạn còn lại
 
@@ -111,12 +117,18 @@ cấu hình môi trường đã được các đội trước ghi ngay trong ti�
 
 ## Cập nhật `tasks.md`
 
-Không tick checkbox nào trong đợt này:
+Cập nhật ngày 2026-11-11, sau khi gate #88 vòng 3 có kết luận — vẫn không tick
+checkbox nào:
 
-- **T099 không tick**: điều kiện hoàn tất chưa đủ bằng chứng — bằng chứng native
-  gate còn chờ gate #88, và một phần lệnh quickstart (Docker) không thực thi được
-  trong môi trường kiểm chứng này. Tick khi chỉ mới chạy được phần native tương
-  đương sẽ biến giới hạn môi trường thành trạng thái đạt giả.
+- **T099 vẫn không tick**: một trong hai điều kiện thiếu trước đây đã được bổ
+  sung — bằng chứng native gate nay có kết luận gate #88 vòng 3 ĐẠT (mục "Mục
+  gate" ở trên). Điều kiện còn lại vẫn chưa đủ: một phần lệnh quickstart (Docker)
+  không thực thi được trong môi trường kiểm chứng này (CMD1 và các lệnh
+  `docker compose` ở mục 3, mục 4), mới chỉ có bản native tương đương. Tick khi
+  phần lệnh nguyên văn chưa từng chạy sẽ biến giới hạn môi trường thành trạng
+  thái đạt giả. Điều kiện còn thiếu để tick: chạy các lệnh Docker nguyên văn
+  trên máy có Docker, hoặc đối chiếu run `verification.yml` trên GitHub — do
+  điều phối quyết.
 - Các task khác (T094–T098) không thuộc bằng chứng của đội này nên không đụng vào,
   kể cả khi file đích của chúng đã có mặt trong repository.
 
@@ -124,7 +136,7 @@ Không tick checkbox nào trong đợt này:
 
 - Không publish, không deploy, không merge: PR của đợt này ở dạng draft, chỉ chứa
   file summary này.
-- Đề xuất bước tiếp theo cho điều phối: khi gate #88 vòng 3 có kết luận, bổ sung
-  bằng chứng native gate vào summary này và tick T099 nếu điều kiện đã đủ; muốn
-  kiểm chứng trọn vẹn các lệnh Docker nguyên văn thì chạy lại trên máy có Docker
-  (hoặc đối chiếu run CI `verification.yml` trên GitHub).
+- Bước tiếp theo cho điều phối: bằng chứng native gate của gate #88 đã bổ sung ở
+  cập nhật ngày 2026-11-11; T099 chỉ còn chờ điều kiện lệnh Docker nguyên văn —
+  chạy lại trên máy có Docker hoặc đối chiếu run CI `verification.yml` trên
+  GitHub, đạt thì tick T099.
