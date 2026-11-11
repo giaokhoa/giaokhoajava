@@ -17,12 +17,13 @@ import {
 describe("danh sách trung tâm và thành viên theo hợp đồng", () => {
   it("chấp nhận dạng {items} và danh sách trần, bỏ bản ghi thiếu trường", () => {
     expect(parseCenters({ items: [
-      { id: "center-1", name: "Trung tâm A" },
-      { id: "center-2" },
-      { name: "Thiếu mã" },
-    ] })).toEqual([{ id: "center-1", name: "Trung tâm A" }]);
-    expect(parseCenters([{ id: "center-3", name: "Trung tâm B" }]))
-      .toEqual([{ id: "center-3", name: "Trung tâm B" }]);
+      { id: "center-1", workspaceId: "workspace-1", name: "Trung tâm A" },
+      { id: "center-2", workspaceId: "workspace-2" },
+      { workspaceId: "workspace-3", name: "Thiếu mã" },
+      { id: "center-4", name: "Thiếu workspace" },
+    ] })).toEqual([{ id: "center-1", workspaceId: "workspace-1", name: "Trung tâm A" }]);
+    expect(parseCenters([{ id: "center-3", workspaceId: "workspace-3", name: "Trung tâm B" }]))
+      .toEqual([{ id: "center-3", workspaceId: "workspace-3", name: "Trung tâm B" }]);
     expect(parseCenters("khong-phai-object")).toEqual([]);
   });
 
