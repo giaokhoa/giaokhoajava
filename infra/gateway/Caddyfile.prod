@@ -1,11 +1,13 @@
 {
 	admin off
-	# Cloudflare Tunnel kết nối từ chính máy chủ này: giữ nguyên các header
-	# X-Forwarded-* (proto https, host, port 443) mà tunnel đã đặt, để backend
-	# (forward-headers-strategy: framework) và Keycloak (KC_PROXY_HEADERS)
-	# dựng đúng URL công khai.
+	# Mọi kết nối tới gateway đều từ chính máy chủ này: cổng host bind
+	# 127.0.0.1 và Cloudflare Tunnel kết nối từ localhost, nên phía container
+	# nguồn kết nối là gateway của Docker bridge (dải IP riêng). Giữ nguyên các
+	# header X-Forwarded-* (proto https, host, port 443) mà tunnel đã đặt, để
+	# backend (forward-headers-strategy: framework) và Keycloak
+	# (KC_PROXY_HEADERS) dựng đúng URL công khai.
 	servers {
-		trusted_proxies static 127.0.0.1/32 ::1
+		trusted_proxies static private_ranges
 	}
 }
 
