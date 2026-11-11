@@ -10,7 +10,7 @@ import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
 import com.giaokhoa.resources.repository.ResourceVersionRepository;
-import com.giaokhoa.tenancy.WorkspaceDirectoryService;
+import com.giaokhoa.tenancy.service.WorkspaceDirectoryService;
 import com.giaokhoa.verification.repository.VerificationAuthorizationOperationRepository;
 import com.giaokhoa.verification.repository.VerificationSubjectRepository;
 import com.giaokhoa.verification.web.VerificationFixtureController;

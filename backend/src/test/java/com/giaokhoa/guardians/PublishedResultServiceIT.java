@@ -20,7 +20,7 @@ import com.giaokhoa.guardians.service.GuardianLinkService;
 import com.giaokhoa.guardians.service.PublishedResultService;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.subscriptions.SubscriptionService;
+import com.giaokhoa.subscriptions.service.SubscriptionService;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;

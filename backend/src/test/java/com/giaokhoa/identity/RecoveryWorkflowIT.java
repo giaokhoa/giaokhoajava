@@ -7,10 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.identity.InitialCredentialService.Handoff;
-import com.giaokhoa.identity.RecoveryService.Decision;
-import com.giaokhoa.identity.RecoveryService.RequestView;
 import com.giaokhoa.identity.model.RecoveryRequest;
+import com.giaokhoa.identity.service.InitialCredentialService;
+import com.giaokhoa.identity.service.InitialCredentialService.Handoff;
+import com.giaokhoa.identity.service.RecoveryService;
+import com.giaokhoa.identity.service.RecoveryService.Decision;
+import com.giaokhoa.identity.service.RecoveryService.RequestView;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import java.net.URI;

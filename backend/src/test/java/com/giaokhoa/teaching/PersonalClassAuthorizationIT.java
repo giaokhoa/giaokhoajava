@@ -6,7 +6,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
-import com.giaokhoa.subscriptions.SubscriptionService;
+import com.giaokhoa.subscriptions.service.SubscriptionService;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
