@@ -57,8 +57,8 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
  * fragment cài đặt riêng của module authorization phải đi qua một context tối thiểu có {@code
  * EnableJpaRepositories} vì fragment chỉ được đăng ký ở tầng cấu hình đó (factory trần không tự
  * phát hiện fragment, đã kiểm chứng bằng thực nghiệm khi nối các đợt JPA). Cấu hình đó là {@link
- * AuthorizationFragmentRepositories} — một {@code @TestConfiguration} nên component scan không nhặt
- * vào context nào; chỉ context tự dựng này đăng ký tường minh nó mới có.
+ * AuthorizationFragmentRepositories} — một {@code @TestConfiguration} nên việc quét thành phần
+ * không nhặt vào ngữ cảnh nào; chỉ ngữ cảnh tự dựng này đăng ký tường minh nó mới có.
  */
 final class RuntimeJpaRepositories implements AutoCloseable {
     final EntityManagerFactory entityManagerFactory;

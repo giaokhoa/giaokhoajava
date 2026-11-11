@@ -4,27 +4,28 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 /**
- * Đăng ký repository của module authorization (kèm fragment riêng của chúng) cho một context tối
- * thiểu do test tự dựng.
+ * Đăng ký các kho truy cập dữ liệu (repository) của phân hệ authorization, kèm phần cài đặt riêng
+ * (fragment) của chúng, cho một ngữ cảnh (context) tối thiểu do kiểm thử tự dựng.
  *
- * <p>Context tối thiểu dùng lại EntityManagerFactory, JdbcTemplate và transaction manager của làn
- * runtime.
+ * <p>Ngữ cảnh tối thiểu dùng lại EntityManagerFactory, JdbcTemplate và trình quản lý giao dịch
+ * (transaction manager) của làn chạy kiểm thử (runtime).
  *
- * <p>Class mang {@code @TestConfiguration} ở top-level nên không bị nhặt ngoài ý muốn:
+ * <p>Lớp mang {@code @TestConfiguration} ở cấp ngoài cùng (top-level) nên không bị nhặt ngoài ý
+ * muốn:
  *
  * <ul>
- *   <li>Component scan bỏ qua {@code @TestConfiguration} ở top-level. Đây là cơ chế Spring Boot
- *       Reference mô tả ở mục "Excluding Test Configuration".
- *   <li>Nếu để {@code @Configuration} thường, component scan của ứng dụng quét cả test-classes. Khi
- *       đó chỉ ba repository authorization được đăng ký vào mọi context test. Auto-configuration
- *       repository vì thế lùi bước, và mọi repository khác không được đăng ký.
- *   <li>Package {@code testsupport} là package anh em của các package test. Nó không chứa class
- *       test nào và không phải package cha của package test nào. Cơ chế tự phát hiện
- *       {@code @TestConfiguration} của Spring Boot test vì vậy cũng không nhặt class này.
+ *   <li>Việc quét thành phần (component scan) bỏ qua {@code @TestConfiguration} ở cấp ngoài cùng.
+ *       Đây là cơ chế tài liệu Spring Boot Reference mô tả ở mục "Excluding Test Configuration".
+ *   <li>Nếu để {@code @Configuration} thường, việc quét thành phần của ứng dụng quét cả thư mục lớp
+ *       kiểm thử (test-classes). Khi đó chỉ ba kho truy cập dữ liệu của phân hệ authorization được
+ *       đăng ký vào mọi ngữ cảnh kiểm thử. Cấu hình tự động (auto-configuration) của kho truy cập
+ *       dữ liệu vì thế lùi bước, và mọi kho truy cập dữ liệu khác không được đăng ký.
+ *   <li>Gói (package) {@code testsupport} là gói anh em của các gói kiểm thử. Nó không chứa lớp
+ *       kiểm thử nào và không phải gói cha của gói kiểm thử nào. Cơ chế tự phát hiện
+ *       {@code @TestConfiguration} của kiểm thử Spring Boot vì vậy cũng không nhặt lớp này.
  * </ul>
  *
- * <p>Cả hai nơi dùng đều tự dựng AnnotationConfigApplicationContext và đăng ký tường minh class
- * này.
+ * <p>Cả hai nơi dùng đều tự dựng AnnotationConfigApplicationContext và đăng ký tường minh lớp này.
  */
 @TestConfiguration(proxyBeanMethods = false)
 @EnableJpaRepositories(basePackages = "com.giaokhoa.authorization.repository")
