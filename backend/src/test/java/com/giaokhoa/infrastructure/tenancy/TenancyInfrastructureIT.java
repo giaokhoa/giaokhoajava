@@ -129,7 +129,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
         Long tables =
                 raw.queryForObject(
                         "SELECT count(*) FROM pg_tables WHERE schemaname = ?", Long.class, schema);
-        assertEquals(26L, tables);
+        assertEquals(27L, tables);
         Long history =
                 raw.queryForObject(
                         "SELECT count(*) FROM " + schema + ".flyway_schema_history WHERE success",

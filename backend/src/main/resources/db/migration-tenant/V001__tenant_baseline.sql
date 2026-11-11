@@ -474,6 +474,27 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION guard_sample_attempt_opening_history() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'Sample attempt opening history cannot be hard-deleted'
+            USING ERRCODE = '23514';
+    END IF;
+    IF OLD.id IS DISTINCT FROM NEW.id
+        OR OLD.workspace_id IS DISTINCT FROM NEW.workspace_id
+        OR OLD.activity_id IS DISTINCT FROM NEW.activity_id
+        OR OLD.student_user_id IS DISTINCT FROM NEW.student_user_id
+        OR OLD.opened_by IS DISTINCT FROM NEW.opened_by
+        OR OLD.opened_at IS DISTINCT FROM NEW.opened_at
+        OR OLD.created_at IS DISTINCT FROM NEW.created_at THEN
+        RAISE EXCEPTION 'Sample attempt opening identity cannot change' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 CREATE FUNCTION guard_sample_result_history() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -771,6 +792,7 @@ CREATE FUNCTION validate_sample_submission() RETURNS trigger
 DECLARE
     activity_attempt_limit INTEGER;
     activity_course_subject_id UUID;
+    opened_attempts INTEGER;
 BEGIN
     SELECT attempt_limit, course_subject_id
         INTO activity_attempt_limit, activity_course_subject_id
@@ -780,7 +802,10 @@ BEGIN
         RAISE EXCEPTION 'Sample submission requires an activity in the same workspace'
             USING ERRCODE = '23514';
     END IF;
-    IF NEW.attempt_no > activity_attempt_limit THEN
+    SELECT count(*) INTO opened_attempts
+        FROM sample_attempt_opening
+        WHERE activity_id = NEW.activity_id AND student_user_id = NEW.student_user_id;
+    IF NEW.attempt_no > activity_attempt_limit + opened_attempts THEN
         RAISE EXCEPTION 'Sample submission attempt exceeds the activity attempt limit'
             USING ERRCODE = '23514';
     END IF;
@@ -1080,7 +1105,7 @@ CREATE TABLE sample_action_mutation (
     target_type character varying(16) NOT NULL,
     target_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT sample_action_mutation_target_type_check CHECK (((target_type)::text = ANY (ARRAY[('RESOURCE'::character varying)::text, ('ACTIVITY'::character varying)::text, ('SUBMISSION'::character varying)::text, ('RESULT'::character varying)::text, ('LIBRARY_ITEM'::character varying)::text, ('SHARE_GRANT'::character varying)::text])))
+    CONSTRAINT sample_action_mutation_target_type_check CHECK (((target_type)::text = ANY ((ARRAY['RESOURCE'::character varying, 'ACTIVITY'::character varying, 'SUBMISSION'::character varying, 'RESULT'::character varying, 'LIBRARY_ITEM'::character varying, 'SHARE_GRANT'::character varying, 'ATTEMPT_OPENING'::character varying, 'PRACTICE_ATTEMPT'::character varying])::text[])))
 );
 
 CREATE TABLE sample_activity (
@@ -1100,6 +1125,18 @@ CREATE TABLE sample_activity (
     version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT sample_activity_attempt_limit_check CHECK ((attempt_limit >= 1)),
     CONSTRAINT sample_activity_state_check CHECK (((state)::text = ANY (ARRAY[('ASSIGNED'::character varying)::text, ('CLOSED'::character varying)::text, ('ARCHIVED'::character varying)::text])))
+);
+
+CREATE TABLE sample_attempt_opening (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    activity_id uuid NOT NULL,
+    student_user_id uuid NOT NULL,
+    opened_by uuid NOT NULL,
+    opened_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    version bigint DEFAULT 0 NOT NULL
 );
 
 CREATE TABLE sample_result (
@@ -1274,6 +1311,9 @@ ALTER TABLE ONLY sample_action_mutation
 ALTER TABLE ONLY sample_activity
     ADD CONSTRAINT sample_activity_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY sample_attempt_opening
+    ADD CONSTRAINT sample_attempt_opening_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY sample_result
     ADD CONSTRAINT sample_result_pkey PRIMARY KEY (id);
 
@@ -1402,6 +1442,8 @@ CREATE INDEX ix_sample_activity_course_subject ON sample_activity USING btree (w
 
 CREATE INDEX ix_sample_activity_workspace_state ON sample_activity USING btree (workspace_id, state);
 
+CREATE INDEX ix_sample_attempt_opening_activity_student ON sample_attempt_opening USING btree (workspace_id, activity_id, student_user_id);
+
 CREATE INDEX ix_sample_result_course_subject ON sample_result USING btree (workspace_id, course_subject_id);
 
 CREATE INDEX ix_sample_result_workspace_state ON sample_result USING btree (workspace_id, state);
@@ -1480,6 +1522,8 @@ CREATE CONSTRAINT TRIGGER ck_role_owner AFTER INSERT OR DELETE OR UPDATE ON memb
 
 CREATE TRIGGER ck_sample_activity_preserve_history BEFORE DELETE OR UPDATE ON sample_activity FOR EACH ROW EXECUTE FUNCTION guard_sample_activity_history();
 
+CREATE TRIGGER ck_sample_attempt_opening_preserve_history BEFORE DELETE OR UPDATE ON sample_attempt_opening FOR EACH ROW EXECUTE FUNCTION guard_sample_attempt_opening_history();
+
 CREATE TRIGGER ck_sample_result_preserve_history BEFORE DELETE OR UPDATE ON sample_result FOR EACH ROW EXECUTE FUNCTION guard_sample_result_history();
 
 CREATE TRIGGER ck_sample_result_source BEFORE INSERT ON sample_result FOR EACH ROW EXECUTE FUNCTION validate_sample_result_source();
@@ -1525,13 +1569,14 @@ ALTER TABLE ONLY homeroom_assignment
 ALTER TABLE ONLY resource_dependency
     ADD CONSTRAINT fk_resource_dependency_derived_version FOREIGN KEY (derived_resource_id, derived_version_id) REFERENCES resource_version(resource_id, id);
 
---
-
 ALTER TABLE ONLY sample_activity
     ADD CONSTRAINT fk_sample_activity_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
 
 ALTER TABLE ONLY sample_activity
     ADD CONSTRAINT fk_sample_activity_subscription_period FOREIGN KEY (workspace_id, subscription_period_id) REFERENCES subscription_period(workspace_id, id);
+
+ALTER TABLE ONLY sample_attempt_opening
+    ADD CONSTRAINT fk_sample_attempt_opening_activity FOREIGN KEY (workspace_id, activity_id) REFERENCES sample_activity(workspace_id, id);
 
 ALTER TABLE ONLY sample_result
     ADD CONSTRAINT fk_sample_result_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
@@ -1554,11 +1599,11 @@ ALTER TABLE ONLY membership_role
 ALTER TABLE ONLY notification_receipt
     ADD CONSTRAINT notification_receipt_notice_id_fkey FOREIGN KEY (notice_id) REFERENCES correction_notice(id);
 
---
-
 ALTER TABLE ONLY resource_version
     ADD CONSTRAINT resource_version_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES resource(id);
 
+--
+--
 --
 --
 --

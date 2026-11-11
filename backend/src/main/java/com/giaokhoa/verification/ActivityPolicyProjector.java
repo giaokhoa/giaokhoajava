@@ -16,9 +16,12 @@ import com.giaokhoa.verification.repository.SampleActivityRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationPartitionRepository;
 import com.giaokhoa.verification.repository.VerificationCenterMembershipRepository;
 import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
+import com.giaokhoa.verification.repository.VerificationHomeroomAssignmentRepository;
+import com.giaokhoa.verification.repository.VerificationTeachingAssignmentRepository;
 import com.giaokhoa.verification.repository.VerificationUserAccountRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -31,21 +34,23 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Projector của hoạt động mẫu: nguồn sự thật duy nhất về desired native graph của các target hoạt
  * động ({@code workspace:{wid}:activity:{id}}) của một workspace, dựng thuần từ các dòng bền (hoạt
- * động và ghi danh của môn–khóa của hoạt động). Ở task này projector chỉ quản lý scope {@code
- * submit} theo hợp đồng HTTP của SUBMIT_ACTIVITY: nguồn duy nhất là chính học sinh đang ghi danh ở
- * môn–khóa của hoạt động — ở center thêm điều kiện membership ACTIVE kèm role STUDENT hiện hành, ở
- * personal chỉ cần ghi danh của lớp personal — đúng mẫu nhánh học sinh của {@link
- * ResultPolicyProjector}. Các scope còn lại của target hoạt động ({@code read}, {@code
- * schedule.extend}, {@code attempt.open}, {@code reassign}) chưa có nguồn nào ở task này nên không
- * thuộc bundle: quyết định PDP trên chúng luôn từ chối, fail-closed cho tới khi action tương ứng
- * được cài.
+ * động và ghi danh của môn–khóa của hoạt động). Projector quản lý scope {@code submit} theo hợp
+ * đồng HTTP của SUBMIT_ACTIVITY: nguồn duy nhất là chính học sinh đang ghi danh ở môn–khóa của hoạt
+ * động — ở center thêm điều kiện membership ACTIVE kèm role STUDENT hiện hành, ở personal chỉ cần
+ * ghi danh của lớp personal — đúng mẫu nhánh học sinh của {@link ResultPolicyProjector}. Ba scope
+ * quản lý hoạt động ({@code schedule.extend}, {@code attempt.open}, {@code reassign}) dùng chung
+ * một tập nguồn là tập thẩm quyền giao bài của hợp đồng authorization: ở center là giáo viên đang
+ * được phân công ở môn–khóa của hoạt động, chủ nhiệm của lớp chứa môn–khóa đó và chủ sở hữu/quản lý
+ * của center (mọi nguồn đều đòi membership ACTIVE hiện hành); ở personal là chủ sở hữu của
+ * workspace. Scope {@code read} của target hoạt động chưa có action nào dùng nên chưa thuộc bundle:
+ * quyết định PDP trên nó luôn từ chối, fail-closed.
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
  * workspace với scope danh nghĩa {@code submit}, cùng hình dạng với bundle kết quả. Projector này
  * vừa tính bundle khi ghi (qua {@link #recordActivityChange}), vừa dựng lại đúng bundle đó khi
  * {@code ProjectionReconciler} đối chiếu desired hash. Bundle được ghi lại ngay trước quyết định
- * nộp bài nên thu hồi ghi danh/membership được tôn trọng ở lượt nộp tiếp theo mà không cần đưa
- * bundle hoạt động vào các contributor thu hồi.
+ * nên thu hồi ghi danh/membership/phân công được tôn trọng ở lượt quyết định tiếp theo mà không cần
+ * đưa bundle hoạt động vào các contributor thu hồi.
  *
  * <p>Các bảng hoạt động/ghi danh nằm theo context workspace của transaction, mà phía reconcile
  * không có transaction bao quanh sẵn: mọi phép dựng bundle ở đây tự bọc trong một transaction ngắn
@@ -59,12 +64,21 @@ public class ActivityPolicyProjector {
     private static final String ACTOR_DESCRIPTOR = "ACTIVITY_ACTOR";
     private static final String BUNDLE_SCOPE = PermissionCatalog.ActivityScope.SUBMIT.scopeName();
 
+    /** Các scope quản lý hoạt động dùng chung một tập nguồn thẩm quyền giao bài. */
+    private static final List<String> MANAGEMENT_SCOPES =
+            List.of(
+                    PermissionCatalog.ActivityScope.SCHEDULE_EXTEND.scopeName(),
+                    PermissionCatalog.ActivityScope.ATTEMPT_OPEN.scopeName(),
+                    PermissionCatalog.ActivityScope.REASSIGN.scopeName());
+
     private final SampleActivityRepository activities;
     private final VerificationAuthorizationPartitionRepository partitions;
     private final VerificationEnrollmentRepository enrollments;
     private final VerificationWorkspaceRepository workspaces;
     private final VerificationUserAccountRepository userAccounts;
     private final VerificationCenterMembershipRepository memberships;
+    private final VerificationTeachingAssignmentRepository assignments;
+    private final VerificationHomeroomAssignmentRepository homeroomAssignments;
     private final WorkspaceTransaction workspaceTransaction;
     private final AuthorizationOperationService operations;
     private final TransactionTemplate transactions;
@@ -76,6 +90,8 @@ public class ActivityPolicyProjector {
             VerificationWorkspaceRepository workspaces,
             VerificationUserAccountRepository userAccounts,
             VerificationCenterMembershipRepository memberships,
+            VerificationTeachingAssignmentRepository assignments,
+            VerificationHomeroomAssignmentRepository homeroomAssignments,
             WorkspaceTransaction workspaceTransaction,
             AuthorizationOperationService operations,
             PlatformTransactionManager transactionManager) {
@@ -85,6 +101,8 @@ public class ActivityPolicyProjector {
         this.workspaces = workspaces;
         this.userAccounts = userAccounts;
         this.memberships = memberships;
+        this.assignments = assignments;
+        this.homeroomAssignments = homeroomAssignments;
         this.workspaceTransaction = workspaceTransaction;
         this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -97,13 +115,17 @@ public class ActivityPolicyProjector {
 
     /** Các scope mà projector này quản lý cho một target hoạt động, theo thứ tự catalog. */
     public static List<String> managedScopes() {
-        return List.of(BUNDLE_SCOPE);
+        return List.of(
+                PermissionCatalog.ActivityScope.SUBMIT.scopeName(),
+                PermissionCatalog.ActivityScope.SCHEDULE_EXTEND.scopeName(),
+                PermissionCatalog.ActivityScope.ATTEMPT_OPEN.scopeName(),
+                PermissionCatalog.ActivityScope.REASSIGN.scopeName());
     }
 
     /**
      * Toàn bộ descriptor của bundle của một target hoạt động, dựng từ dữ kiện nguồn hiện hành. Rỗng
-     * khi hoạt động không còn tồn tại hoặc không học sinh nào còn ghi danh hợp lệ — rỗng nghĩa là
-     * target đó phải bị thu hồi (retract), không phải được giữ nguyên.
+     * khi hoạt động không còn tồn tại hoặc không nguồn nào (học sinh ghi danh, thẩm quyền quản lý)
+     * còn hiệu lực — rỗng nghĩa là target đó phải bị thu hồi (retract), không phải được giữ nguyên.
      */
     public List<String> bundleDescriptors(String targetKey) {
         NativePolicyTemplates.TargetType type =
@@ -145,6 +167,18 @@ public class ActivityPolicyProjector {
                                                         subject,
                                                         targetKey,
                                                         BUNDLE_SCOPE)));
+                    }
+                    for (ManagerSource manager :
+                            activityManagers(workspaceId, activity.getCourseSubjectId(), center)) {
+                        for (String scope : MANAGEMENT_SCOPES) {
+                            descriptors.add(
+                                    actorDescriptor(
+                                            workspaceId,
+                                            manager.userId(),
+                                            manager.subject(),
+                                            targetKey,
+                                            scope));
+                        }
                     }
                     return descriptors.stream().sorted().distinct().toList();
                 });
@@ -235,6 +269,59 @@ public class ActivityPolicyProjector {
                 .findById(workspaceId)
                 .map(workspace -> workspace.getKind() == Workspace.Kind.CENTER)
                 .orElse(false);
+    }
+
+    /** Một người có thẩm quyền giao bài kèm định danh phiên của họ, là nguồn của scope quản lý. */
+    private record ManagerSource(UUID userId, String subject) {}
+
+    /**
+     * Mọi người có thẩm quyền giao bài trên môn–khóa của hoạt động, là nguồn của ba scope quản lý
+     * hoạt động: ở personal là chủ sở hữu của workspace; ở center là giáo viên đang được phân công
+     * ở môn–khóa, chủ nhiệm của lớp chứa môn–khóa và chủ sở hữu/quản lý của center, mọi nguồn đều
+     * đòi membership ACTIVE hiện hành như các projector khác của center.
+     */
+    private List<ManagerSource> activityManagers(
+            UUID workspaceId, UUID courseSubjectId, boolean center) {
+        if (!center) {
+            return workspaces
+                    .findById(workspaceId)
+                    .filter(workspace -> workspace.getKind() == Workspace.Kind.PERSONAL)
+                    .map(Workspace::getOwnerUserId)
+                    .flatMap(userAccounts::findById)
+                    .map(owner -> List.of(new ManagerSource(owner.getId(), owner.getKeycloakSub())))
+                    .orElse(List.of());
+        }
+        Set<UUID> candidateIds = new HashSet<>();
+        candidateIds.addAll(
+                assignments.findTeacherUserIdsByCourseSubject(workspaceId, courseSubjectId));
+        candidateIds.addAll(
+                homeroomAssignments.findTeacherUserIdsByCourseSubject(
+                        workspaceId, courseSubjectId));
+        memberships
+                .findByWorkspaceIdAndState(workspaceId, CenterMembership.State.ACTIVE)
+                .forEach(membership -> {
+                    Set<MembershipRole.Role> roles = Set.copyOf(membership.getRoles());
+                    if (roles.contains(MembershipRole.Role.OWNER)
+                            || roles.contains(MembershipRole.Role.MANAGER)) {
+                        candidateIds.add(membership.getUserId());
+                    }
+                });
+        List<ManagerSource> managers = new ArrayList<>();
+        for (UUID candidateId : candidateIds) {
+            // Mọi nguồn center đều đòi membership ACTIVE hiện hành của chính người đó.
+            if (memberships
+                    .findByWorkspaceIdAndUserIdAndState(
+                            workspaceId, candidateId, CenterMembership.State.ACTIVE)
+                    .isEmpty()) {
+                continue;
+            }
+            userAccounts
+                    .findById(candidateId)
+                    .ifPresent(account ->
+                            managers.add(
+                                    new ManagerSource(account.getId(), account.getKeycloakSub())));
+        }
+        return managers;
     }
 
     // ---------- Tiện ích dựng descriptor ----------

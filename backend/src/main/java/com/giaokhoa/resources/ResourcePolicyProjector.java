@@ -45,24 +45,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Projector của resource version: nguồn sự thật duy nhất về desired native graph của các target
- * {@code workspace:{wid}:resource:{rid}:version:{vid}}, dựng thuần từ các dòng bền qua các
- * repository JPA của module. Các nhánh nguồn tách scope theo hợp đồng authorization và thân issue:
- * chủ sở hữu native của resource (ở personal là owner của workspace kèm gate kỳ gói cho các scope
- * mở rộng; ở center là người tạo khi còn membership ACTIVE, scope mở rộng gate theo kỳ gói của
- * center), phân công tường minh {@code resource_assignment} ACTIVE của đúng workspace ngữ cảnh,
- * license {@code share_grant} đã ACCEPTED cho workspace nhận với cửa sổ hiệu lực là time policy và
- * phạm vi workspace cho phép là invariant của nhánh, và học sinh qua hoạt động đã giao trên đúng
  * version (chỉ {@code content.read}, không bao giờ {@code answer.read}). Version hệ thống đã LOCKED
- * chỉ cho {@code library.save} trước khi lưu và cho đọc/dùng/fork sau khi đã có mục thư viện không
- * gắn grant tại workspace nhận — chưa nhận cập nhật thì version mới của nguồn không có nhánh nào ở
- * workspace nhận. Bản phái sinh từ một grant (cạnh dependency mang dấu {@code origin=FORK} do fork
- * ghi hoặc {@code origin=SHARE} do copy-on-share ghi, kèm grant) chỉ còn nhánh license phái sinh
- * giới hạn ở các scope đọc/dùng của chính grant đó: nhánh owner/tác giả bị khử trên version phái
- * sinh để quyền của grantor không bị ghi đè bởi quyền sở hữu bản sao, và khi grant bị thu hồi thì
- * bản phái sinh mất mọi nguồn. Khi một grant tenant–tenant đã được vật chất hoá thành bản sao tại
- * workspace nhận (copy-on-share), nhánh license trên target của version nguồn chỉ còn giữ scope
- * {@code library.save} làm tay cầm lưu trữ — các scope đọc/dùng/fork/share trên bản gốc tắt, quyền
- * thật sống trên target của bản sao.
+ * cho {@code practice} với mọi actor đã đủ điều kiện danh tính, chỉ cho {@code library.save} trước
+ * khi lưu và cho đọc/dùng/fork sau khi đã có mục thư viện không
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
  * workspace ngữ cảnh với scope danh nghĩa {@code content.read}; projection mang dependency là GRANT
@@ -728,7 +713,10 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Nhánh version hệ thống đã công bố: {@code library.save} cho phía nhận đủ điều kiện của giấy
+     * Nhánh version hệ thống đã công bố: {@code practice} cho mọi actor đã đủ điều kiện danh tính
+     * (group điều kiện danh tính là nguồn duy nhất — làm đề hệ thống không cần gói, ghi danh hay
+     * mục thư viện theo bảng nguồn của hợp đồng authorization, và cổng điều kiện danh tính chung
+     * ngoài OR vẫn áp như mọi permission); {@code library.save} cho phía nhận đủ điều kiện của giấy
      * phép nền tảng trước cả khi lưu — ở personal là owner kèm gate kỳ gói cá nhân (điều kiện nhận
      * là cá nhân có gói), ở center là group thành viên không kèm kỳ gói của center (giấy phép nội
      * dung nền tảng không gắn gói center, theo bảng nguồn của hợp đồng authorization);
@@ -744,6 +732,14 @@ public class ResourcePolicyProjector {
             UUID versionId,
             String targetKey,
             List<ResourceScopePreconditions.SubscriptionPeriod> periods) {
+        if (PERSONAL_KIND.equals(contextKind) || CENTER_KIND.equals(contextKind)) {
+            descriptors.add(
+                    groupDescriptor(
+                            workspaceId,
+                            NativePolicyTemplates.ELIGIBILITY_GROUP,
+                            targetKey,
+                            PermissionCatalog.ResourceVersionScope.PRACTICE.scopeName()));
+        }
         String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
         if (PERSONAL_KIND.equals(contextKind)) {
             Optional<OwnerRow> owner = personalOwner(workspaceId);

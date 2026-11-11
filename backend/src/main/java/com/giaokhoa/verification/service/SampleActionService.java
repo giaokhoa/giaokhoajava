@@ -23,10 +23,12 @@ import com.giaokhoa.verification.dto.SampleActionRequest;
 import com.giaokhoa.verification.dto.SampleActionResult;
 import com.giaokhoa.verification.model.SampleActionMutation;
 import com.giaokhoa.verification.model.SampleActivity;
+import com.giaokhoa.verification.model.SampleAttemptOpening;
 import com.giaokhoa.verification.model.SampleResult;
 import com.giaokhoa.verification.model.SampleSubmission;
 import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import com.giaokhoa.verification.repository.SampleActivityRepository;
+import com.giaokhoa.verification.repository.SampleAttemptOpeningRepository;
 import com.giaokhoa.verification.repository.SampleResultRepository;
 import com.giaokhoa.verification.repository.SampleSubmissionRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationOperationRepository;
@@ -56,23 +58,24 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Nghiệp vụ của các sample action trong hợp đồng verification. Mọi action chạy qua cùng pipeline
  * manifest/fence/PDP như business action và không bao giờ chấp nhận actor thay thế. CREATE_RESOURCE
- * trả kết quả stub vì chưa có bảng sample-resource. ASSIGN_ACTIVITY, SUBMIT_ACTIVITY, GRADE_RESULT
- * và PUBLISH_RESULT ghi thật vào các bảng mẫu với target và scope đúng hợp đồng HTTP: giao bài còn
- * đòi quyết định {@code use} trên chính version được giao và mọi version thành phần trong closure
- * phụ thuộc đệ quy của nó (FR-041), và nộp bài được quyết bằng scope {@code submit} trên target
- * hoạt động do {@link ActivityPolicyProjector} chiếu cho học sinh đang ghi danh ở môn–khóa của hoạt
- * động; dữ kiện nguồn của một target có thể chưa từng được chiếu khi chuỗi được seed thẳng, nên
- * trước khi hỏi PDP mỗi action ghi lại bundle hiện hành của target qua cơ chế operation dùng chung
- * và chờ chiếu xong — chờ không xong thì fail-closed 503 như mọi protected request khác. Các action
- * thư viện SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE uỷ cho {@link ResourceLibraryService}, nơi
- * giữ pipeline và giao thức biên nhận của chúng; các action chia sẻ SHARE_VERSION, ACCEPT_SHARE,
- * REVOKE_SHARE uỷ cho {@link ResourceShareService} theo cùng mẫu; action phát hành đính chính
- * CORRECT_SOURCE uỷ cho {@link CorrectionService} và mang metadata của notice trong kết quả để phía
- * gọi hiển thị đúng thông báo vừa phát hành. Action lạ bị từ chối, không bao giờ được lặng lẽ cho
- * qua. Mọi action đều ghi biên nhận idempotency của chính mình trong cùng transaction với mutation
- * (bảng sample_action_mutation, theo tiền lệ recovery_mutation): retry cùng key và cùng payload trả
- * lại kết quả đầu tiên thay vì ghi thêm, cùng key khác payload trả 409 như quy tắc mutation chung
- * của hợp đồng HTTP.
+ * trả kết quả stub vì chưa có bảng sample-resource. ASSIGN_ACTIVITY, SUBMIT_ACTIVITY, GRADE_RESULT,
+ * PUBLISH_RESULT cùng ba action quản lý hoạt động EXTEND_DEADLINE, OPEN_ATTEMPT, REASSIGN_ACTIVITY
+ * ghi thật vào các bảng mẫu với target và scope đúng hợp đồng HTTP: giao bài còn đòi quyết định
+ * {@code use} trên chính version được giao và mọi version thành phần trong closure phụ thuộc đệ quy
+ * của nó (FR-041), và nộp bài được quyết bằng scope {@code submit} trên target hoạt động do {@link
+ * ActivityPolicyProjector} chiếu cho học sinh đang ghi danh ở môn–khóa của hoạt động; dữ kiện nguồn
+ * của một target có thể chưa từng được chiếu khi chuỗi được seed thẳng, nên trước khi hỏi PDP mỗi
+ * action ghi lại bundle hiện hành của target qua cơ chế operation dùng chung và chờ chiếu xong —
+ * chờ không xong thì fail-closed 503 như mọi protected request khác. Các action thư viện
+ * SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE và action luyện tập trên version hệ thống
+ * PRACTICE_SYSTEM_VERSION uỷ cho {@link ResourceLibraryService}, nơi giữ pipeline và giao thức biên
+ * nhận của chúng; các action chia sẻ SHARE_VERSION, ACCEPT_SHARE, REVOKE_SHARE uỷ cho {@link
+ * ResourceShareService} theo cùng mẫu; action phát hành đính chính CORRECT_SOURCE uỷ cho {@link
+ * CorrectionService} và mang metadata của notice trong kết quả để phía gọi hiển thị đúng thông báo
+ * vừa phát hành. Action lạ bị từ chối, không bao giờ được lặng lẽ cho qua. Mọi action đều ghi biên
+ * nhận idempotency của chính mình trong cùng transaction với mutation (bảng sample_action_mutation,
+ * theo tiền lệ recovery_mutation): retry cùng key và cùng payload trả lại kết quả đầu tiên thay vì
+ * ghi thêm, cùng key khác payload trả 409 như quy tắc mutation chung của hợp đồng HTTP.
  *
  * <p>Tầng dữ liệu của service chỉ đi qua các Spring Data repository: bảng mẫu qua repository của
  * chính module, dữ kiện của module khác (workspace, kỳ gói, môn–khóa, version, ghi danh) qua
@@ -84,6 +87,9 @@ public class SampleActionService {
     private static final Duration PROJECTION_WAIT = Duration.ofSeconds(60);
     private static final String OPERATION_SUCCEEDED = "SUCCEEDED";
     private static final String RESULT_TARGET = "RESULT";
+    private static final String ACTIVITY_TARGET = "ACTIVITY";
+    private static final String ACTIVITY_LABEL = "activity";
+    private static final String INVALID_ACTION = "INVALID_SAMPLE_ACTION";
 
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
@@ -103,6 +109,7 @@ public class SampleActionService {
     private final VerificationEnrollmentRepository enrollments;
     private final SampleActivityRepository activities;
     private final SampleSubmissionRepository submissions;
+    private final SampleAttemptOpeningRepository openings;
     private final SampleResultRepository results;
     private final SampleActionMutationRepository mutations;
     private final VerificationAuthorizationOperationRepository operations;
@@ -127,6 +134,7 @@ public class SampleActionService {
             VerificationEnrollmentRepository enrollments,
             SampleActivityRepository activities,
             SampleSubmissionRepository submissions,
+            SampleAttemptOpeningRepository openings,
             SampleResultRepository results,
             SampleActionMutationRepository mutations,
             VerificationAuthorizationOperationRepository operations,
@@ -149,6 +157,7 @@ public class SampleActionService {
         this.enrollments = enrollments;
         this.activities = activities;
         this.submissions = submissions;
+        this.openings = openings;
         this.results = results;
         this.mutations = mutations;
         this.operations = operations;
@@ -202,6 +211,38 @@ public class SampleActionService {
                             httpRequest);
             case "PUBLISH_RESULT" ->
                     publishResult(
+                            workspaceId,
+                            idempotencyKey,
+                            payloadHash,
+                            request,
+                            authentication,
+                            httpRequest);
+            case "PRACTICE_SYSTEM_VERSION" ->
+                    practiceSystemVersion(
+                            workspaceId,
+                            idempotencyKey,
+                            payloadHash,
+                            request,
+                            authentication,
+                            httpRequest);
+            case "EXTEND_DEADLINE" ->
+                    extendDeadline(
+                            workspaceId,
+                            idempotencyKey,
+                            payloadHash,
+                            request,
+                            authentication,
+                            httpRequest);
+            case "OPEN_ATTEMPT" ->
+                    openAttempt(
+                            workspaceId,
+                            idempotencyKey,
+                            payloadHash,
+                            request,
+                            authentication,
+                            httpRequest);
+            case "REASSIGN_ACTIVITY" ->
+                    reassignActivity(
                             workspaceId,
                             idempotencyKey,
                             payloadHash,
@@ -624,8 +665,11 @@ public class SampleActionService {
         long submitted =
                 submissions.countByWorkspaceIdAndActivityIdAndStudentUserId(
                         workspaceId, request.activityId(), actorUserId);
+        long opened =
+                openings.countByWorkspaceIdAndActivityIdAndStudentUserId(
+                        workspaceId, request.activityId(), actorUserId);
         int attemptNo = (int) submitted + 1;
-        if (attemptNo > activity.getAttemptLimit()) {
+        if (attemptNo > activity.getAttemptLimit() + opened) {
             throw new HttpProblemException(
                     HttpStatus.BAD_REQUEST,
                     "ATTEMPT_LIMIT_EXCEEDED",
@@ -774,6 +818,266 @@ public class SampleActionService {
     private SampleResult resultForUpdate(UUID workspaceId, UUID resultId) {
         return results.findByWorkspaceIdAndIdForUpdate(workspaceId, resultId)
                 .orElseThrow(() -> notFound());
+    }
+
+    // ---------- PRACTICE_SYSTEM_VERSION / EXTEND_DEADLINE / OPEN_ATTEMPT / REASSIGN_ACTIVITY
+    // ----------
+
+    private SampleActionResult practiceSystemVersion(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.resourceId() == null
+                || request.versionId() == null
+                || request.contentStub() == null
+                || request.contentStub().isBlank()) {
+            throw invalid();
+        }
+        UUID attemptId =
+                library.practice(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        request.resourceId(),
+                        request.versionId(),
+                        request.contentStub(),
+                        idempotencyKey,
+                        payloadHash);
+        return new SampleActionResult(
+                attemptId, OPERATION_SUCCEEDED, true, "PRACTICE_ATTEMPT", attemptId, null);
+    }
+
+    private SampleActionResult extendDeadline(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.activityId() == null || request.dueAt() == null) {
+            throw invalid();
+        }
+        UUID actorUserId = executor.actorUserId(authentication);
+        Objects.requireNonNull(
+                workspaces.inWorkspace(
+                        workspaceId, () -> activityRow(workspaceId, request.activityId())),
+                ACTIVITY_LABEL);
+        String targetKey = NativePolicyTemplates.activityKey(workspaceId, request.activityId());
+        ensureActivityProjection(actorUserId, workspaceId, idempotencyKey + "#extend", targetKey);
+        var target =
+                new ProtectedActionExecutor.Target(
+                        targetKey,
+                        List.of(PermissionCatalog.ActivityScope.SCHEDULE_EXTEND.scopeName()));
+        return executor.execute(
+                authentication,
+                httpRequest,
+                workspaceId,
+                List.of(target),
+                () ->
+                        Objects.requireNonNull(
+                                workspaces.inWorkspace(
+                                        workspaceId,
+                                        () ->
+                                                claimActionReceipt(
+                                                                actorUserId,
+                                                                workspaceId,
+                                                                idempotencyKey,
+                                                                payloadHash,
+                                                                ACTIVITY_TARGET,
+                                                                request.activityId())
+                                                        .orElseGet(() ->
+                                                                applyExtendDeadline(
+                                                                        workspaceId, request))),
+                                "extend"));
+    }
+
+    private SampleActionResult applyExtendDeadline(UUID workspaceId, SampleActionRequest request) {
+        SampleActivity activity = activityRow(workspaceId, request.activityId());
+        requireAssigned(activity);
+        requireActivePeriod(workspaceId);
+        if (!request.dueAt().toInstant().isAfter(activity.getDueAt())) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    INVALID_ACTION,
+                    "Hạn nộp mới phải sau hạn nộp hiện tại.");
+        }
+        activity.changeDueAt(request.dueAt().toInstant());
+        activities.flush();
+        return new SampleActionResult(
+                request.activityId(),
+                OPERATION_SUCCEEDED,
+                true,
+                ACTIVITY_TARGET,
+                request.activityId(),
+                null);
+    }
+
+    private SampleActionResult openAttempt(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.activityId() == null || request.studentUserId() == null) {
+            throw invalid();
+        }
+        UUID actorUserId = executor.actorUserId(authentication);
+        Objects.requireNonNull(
+                workspaces.inWorkspace(
+                        workspaceId, () -> activityRow(workspaceId, request.activityId())),
+                ACTIVITY_LABEL);
+        String targetKey = NativePolicyTemplates.activityKey(workspaceId, request.activityId());
+        ensureActivityProjection(
+                actorUserId, workspaceId, idempotencyKey + "#open-attempt", targetKey);
+        var target =
+                new ProtectedActionExecutor.Target(
+                        targetKey,
+                        List.of(PermissionCatalog.ActivityScope.ATTEMPT_OPEN.scopeName()));
+        return executor.execute(
+                authentication,
+                httpRequest,
+                workspaceId,
+                List.of(target),
+                () ->
+                        Objects.requireNonNull(
+                                workspaces.inWorkspace(
+                                        workspaceId,
+                                        () -> {
+                                            UUID openingId = UUID.randomUUID();
+                                            return claimActionReceipt(
+                                                            actorUserId,
+                                                            workspaceId,
+                                                            idempotencyKey,
+                                                            payloadHash,
+                                                            "ATTEMPT_OPENING",
+                                                            openingId)
+                                                    .orElseGet(() ->
+                                                            insertOpening(
+                                                                    workspaceId,
+                                                                    actorUserId,
+                                                                    request,
+                                                                    openingId));
+                                        }),
+                                "opening"));
+    }
+
+    private SampleActionResult insertOpening(
+            UUID workspaceId, UUID actorUserId, SampleActionRequest request, UUID openingId) {
+        SampleActivity activity = activityRow(workspaceId, request.activityId());
+        requireAssigned(activity);
+        requireActivePeriod(workspaceId);
+        long enrolled =
+                enrollments.countCurrentEnrollment(
+                        workspaceId, activity.getCourseSubjectId(), request.studentUserId());
+        if (enrolled == 0) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    INVALID_ACTION,
+                    "Học sinh không còn ghi danh ở môn–khóa của hoạt động.");
+        }
+        openings.save(
+                new SampleAttemptOpening(
+                        openingId,
+                        workspaceId,
+                        request.activityId(),
+                        request.studentUserId(),
+                        actorUserId,
+                        Instant.now()));
+        return new SampleActionResult(
+                openingId, OPERATION_SUCCEEDED, true, "ATTEMPT_OPENING", openingId, null);
+    }
+
+    private SampleActionResult reassignActivity(
+            UUID workspaceId,
+            String idempotencyKey,
+            String payloadHash,
+            SampleActionRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        if (request.activityId() == null || request.dueAt() == null) {
+            throw invalid();
+        }
+        UUID actorUserId = executor.actorUserId(authentication);
+        SampleActivity activity =
+                Objects.requireNonNull(
+                        workspaces.inWorkspace(
+                                workspaceId, () -> activityRow(workspaceId, request.activityId())),
+                        ACTIVITY_LABEL);
+        String targetKey = NativePolicyTemplates.activityKey(workspaceId, request.activityId());
+        ensureActivityProjection(actorUserId, workspaceId, idempotencyKey + "#reassign", targetKey);
+        List<String> versionTargetKeys =
+                versionUseTargetKeys(
+                        workspaceId, activity.getResourceId(), activity.getVersionId());
+        ensureResourceProjection(
+                actorUserId, workspaceId, idempotencyKey + "#reassign-use", versionTargetKeys);
+        List<ProtectedActionExecutor.Target> targets = new ArrayList<>();
+        targets.add(
+                new ProtectedActionExecutor.Target(
+                        targetKey, List.of(PermissionCatalog.ActivityScope.REASSIGN.scopeName())));
+        for (String versionTargetKey : versionTargetKeys) {
+            targets.add(
+                    new ProtectedActionExecutor.Target(
+                            versionTargetKey,
+                            List.of(PermissionCatalog.ResourceVersionScope.USE.scopeName())));
+        }
+        return executor.execute(
+                authentication,
+                httpRequest,
+                workspaceId,
+                targets,
+                () ->
+                        Objects.requireNonNull(
+                                workspaces.inWorkspace(
+                                        workspaceId,
+                                        () ->
+                                                claimActionReceipt(
+                                                                actorUserId,
+                                                                workspaceId,
+                                                                idempotencyKey,
+                                                                payloadHash,
+                                                                ACTIVITY_TARGET,
+                                                                request.activityId())
+                                                        .orElseGet(() ->
+                                                                applyReassign(
+                                                                        workspaceId, request))),
+                                "reassign"));
+    }
+
+    private SampleActionResult applyReassign(UUID workspaceId, SampleActionRequest request) {
+        SampleActivity activity = activityRow(workspaceId, request.activityId());
+        requireAssigned(activity);
+        requireActivePeriod(workspaceId);
+        activity.changeDueAt(request.dueAt().toInstant());
+        activities.flush();
+        return new SampleActionResult(
+                request.activityId(),
+                OPERATION_SUCCEEDED,
+                true,
+                ACTIVITY_TARGET,
+                request.activityId(),
+                null);
+    }
+
+    /** Ba action quản lý chỉ áp cho hoạt động còn đang giao; đóng/lưu trữ là trạng thái cuối. */
+    private static void requireAssigned(SampleActivity activity) {
+        if (!"ASSIGNED".equals(activity.getState())) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT, "ACTIVITY_NOT_OPEN", "Hoạt động không còn nhận thay đổi.");
+        }
+    }
+
+    /** Dòng hợp đồng của ba action quản lý đòi một kỳ gói còn hiệu lực của workspace. */
+    private void requireActivePeriod(UUID workspaceId) {
+        if (periods.countCurrent(workspaceId) == 0) {
+            throw new HttpProblemException(
+                    HttpStatus.FORBIDDEN,
+                    "SUBSCRIPTION_INACTIVE",
+                    "Gói sử dụng không còn hiệu lực.");
+        }
     }
 
     // ---------- Thư viện resource: lưu, fork, nhận cập nhật ----------

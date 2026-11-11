@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -117,6 +118,11 @@ public class SampleActivity {
 
     public Instant getDueAt() {
         return dueAt;
+    }
+
+    /** Đổi hạn nộp của hoạt động (gia hạn hoặc giao lại); các trường còn lại giữ nguyên. */
+    public void changeDueAt(Instant dueAt) {
+        this.dueAt = Objects.requireNonNull(dueAt, "dueAt");
     }
 
     public int getAttemptLimit() {
