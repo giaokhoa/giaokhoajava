@@ -21,6 +21,8 @@ import com.giaokhoa.guardians.service.GuardianLinkService;
 import com.giaokhoa.guardians.service.GuardianLinkService.GuardianLinkView;
 import com.giaokhoa.identity.InitialCredentialService;
 import com.giaokhoa.identity.repository.UserAccountRepository;
+import com.giaokhoa.infrastructure.tenancy.TenantConnectionProvider;
+import com.giaokhoa.infrastructure.tenancy.WorkspaceTenantResolver;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.HttpProblemException;
@@ -43,6 +45,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.hibernate.cfg.AvailableSettings;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -483,6 +486,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
     }
 
     @Test
+    @DisplayName("Role runtime không BYPASSRLS chỉ đọc và ghi guardian link trong đúng workspace")
     void serviceRunsUnderNonBypassRlsRole() {
         GuardianCenter center = seedGuardianCenter();
         KeycloakLogin otherOwner = createVerifiedUser("guardian-rls-owner");
@@ -520,6 +524,16 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 runtimeEmfBean.setDataSource(runtimeDataSource);
                 runtimeEmfBean.setPackagesToScan("com.giaokhoa");
                 runtimeEmfBean.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
+                runtimeEmfBean
+                        .getJpaPropertyMap()
+                        .put(
+                                AvailableSettings.MULTI_TENANT_CONNECTION_PROVIDER,
+                                new TenantConnectionProvider(runtimeDataSource));
+                runtimeEmfBean
+                        .getJpaPropertyMap()
+                        .put(
+                                AvailableSettings.MULTI_TENANT_IDENTIFIER_RESOLVER,
+                                new WorkspaceTenantResolver());
                 runtimeEmfBean.afterPropertiesSet();
                 try (EntityManagerFactory runtimeEmf =
                                 Objects.requireNonNull(runtimeEmfBean.getObject());
