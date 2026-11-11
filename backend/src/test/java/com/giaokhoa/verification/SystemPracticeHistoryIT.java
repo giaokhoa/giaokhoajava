@@ -16,6 +16,7 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.postgresql.util.PSQLException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -95,10 +96,12 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
 
         assertThatThrownBy(() -> insertAttempt(workspaceId, userId, resourceId, draft))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("published version");
+                .satisfies(
+                        failure -> assertRejectedByTrigger(failure, "validate_practice_attempt"));
         assertThatThrownBy(() -> insertAttempt(workspaceId, userId, resourceId, approved))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("published version");
+                .satisfies(
+                        failure -> assertRejectedByTrigger(failure, "validate_practice_attempt"));
         insertAttempt(
                 workspaceId, userId, resourceId, version(resourceId, "LOCKED", Instant.now()));
         assertThat(countAsOwner(workspaceId)).isEqualTo(1);
@@ -121,7 +124,8 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
 
         assertThatThrownBy(() -> insertAttempt(workspaceId, userId, ownResourceId, locked))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("system resource");
+                .satisfies(
+                        failure -> assertRejectedByTrigger(failure, "validate_practice_attempt"));
     }
 
     @Test
@@ -135,7 +139,8 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
                         insertAttempt(
                                 workspaceId, userId, published.resourceId(), other.versionId()))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("published version");
+                .satisfies(
+                        failure -> assertRejectedByTrigger(failure, "validate_practice_attempt"));
     }
 
     @DisplayName("Từ chối attempt vào personal workspace của người dùng khác")
@@ -148,10 +153,12 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
 
         assertThatThrownBy(() -> insertAttempt(otherWorkspace, userId, published))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("own personal workspace");
+                .satisfies(
+                        failure -> assertRejectedByTrigger(failure, "validate_practice_attempt"));
         assertThatThrownBy(() -> insertAttempt(published.systemWorkspaceId(), userId, published))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("own personal workspace");
+                .satisfies(
+                        failure -> assertRejectedByTrigger(failure, "validate_practice_attempt"));
     }
 
     @Test
@@ -170,12 +177,31 @@ class SystemPracticeHistoryIT extends IntegrationEnvironment {
                                 userWithPersonalWorkspace(),
                                 id))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("identity cannot change");
+                .satisfies(failure -> assertRejectedByTrigger(failure, "guard_practice_history"));
         assertThatThrownBy(() ->
                         jdbc.update("DELETE FROM system_practice_attempt_sample WHERE id = ?", id))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("cannot be hard-deleted");
+                .satisfies(failure -> assertRejectedByTrigger(failure, "guard_practice_history"));
         assertThat(countAsOwner(workspaceId)).isEqualTo(1);
+    }
+
+    /**
+     * Khẳng định lệnh ghi bị DB chặn bởi đúng hàm trigger với SQLState 23514 (check_violation):
+     * danh tính của lỗi thay cho câu chữ trong thông điệp RAISE, để đổi lời văn của trigger không
+     * làm đỏ test, còn đổi cơ chế chặn thì có.
+     */
+    private static void assertRejectedByTrigger(Throwable failure, String triggerFunction) {
+        Throwable cursor = failure;
+        while (cursor != null && !(cursor instanceof PSQLException)) {
+            cursor = cursor.getCause();
+        }
+        assertThat(cursor)
+                .as("chuỗi cause phải chứa lỗi PostgreSQL do trigger %s ném", triggerFunction)
+                .isNotNull();
+        PSQLException pgFailure = Objects.requireNonNull((PSQLException) cursor);
+        assertThat(pgFailure.getSQLState()).isEqualTo("23514");
+        assertThat(Objects.requireNonNull(pgFailure.getServerErrorMessage()).getWhere())
+                .contains("PL/pgSQL function " + triggerFunction + "()");
     }
 
     private record PublishedVersion(UUID systemWorkspaceId, UUID resourceId, UUID versionId) {}
