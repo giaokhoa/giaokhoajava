@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ch.qos.logback.classic.Level;
@@ -16,6 +18,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationPartition;
+import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.authorization.policy.PolicyGraphWriter;
@@ -41,6 +44,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -248,6 +252,87 @@ class ProjectionReconcilerTest {
         assertNull(event.getThrowableProxy());
     }
 
+    @Test
+    void grantReconcileEnsuresReferencedGroupsBeforeApplying() {
+        UUID grantId = RandomIds.randomId();
+        UUID recipient = RandomIds.randomId();
+        String target = "grant:" + grantId;
+        String ownersPath = NativePolicyTemplates.ownersGroup(recipient);
+        String managersPath = NativePolicyTemplates.managersGroup(recipient);
+        // Bundle của grant OFFERED tới một center, đúng định dạng SharePolicyProjector phát ra:
+        // descriptor owners + managers của workspace nhận cho scope accept.
+        List<String> bundle =
+                List.of(
+                        "RESOURCE_GROUP|workspace="
+                                + recipient
+                                + "|group="
+                                + ownersPath
+                                + "|target="
+                                + target
+                                + "|scope=accept",
+                        "RESOURCE_GROUP|workspace="
+                                + recipient
+                                + "|group="
+                                + managersPath
+                                + "|target="
+                                + target
+                                + "|scope=accept");
+        UUID partitionId = RandomIds.randomId();
+        UUID projectionId = RandomIds.randomId();
+        AuthorizationPartition partition =
+                new AuthorizationPartition(
+                        partitionId,
+                        AuthorizationPartition.Kind.GRANT,
+                        "grant:" + grantId,
+                        1L,
+                        0L,
+                        AuthorizationPartition.State.PENDING);
+        AuthorizationProjection projection =
+                new AuthorizationProjection(
+                        projectionId,
+                        partitionId,
+                        target,
+                        null,
+                        List.of(),
+                        List.of(),
+                        ProjectionReconciler.desiredHash(target, "accept", bundle),
+                        null,
+                        AuthorizationProjection.State.PENDING);
+        AuthzPartitionRepository partitions = mock(AuthzPartitionRepository.class);
+        AuthzProjectionRepository projections = mock(AuthzProjectionRepository.class);
+        when(partitions.findById(partitionId)).thenReturn(Optional.of(partition));
+        when(partitions.lockById(partitionId)).thenReturn(Optional.of(partition));
+        when(partitions.findDesiredRevisionById(partitionId)).thenReturn(Optional.of(1L));
+        when(projections.findByPartitionIdOrderByTargetKeyAsc(partitionId))
+                .thenReturn(List.of(projection));
+        when(projections.findById(projectionId)).thenReturn(Optional.of(projection));
+        when(projections.findDesiredHashById(projectionId))
+                .thenReturn(Optional.of(projection.getDesiredHash()));
+        PolicyGraphWriter writer = mock(PolicyGraphWriter.class);
+        when(writer.apply(any()))
+                .thenReturn(new PolicyGraphWriter.AppliedGraph("resource-1", List.of("policy-1")));
+        AuthorizationProvisioningClient directory = mock(AuthorizationProvisioningClient.class);
+        SharePolicyProjector shareProjector = mock(SharePolicyProjector.class);
+        when(shareProjector.bundleDescriptors(target)).thenReturn(bundle);
+        when(shareProjector.sourcesFor(target, "accept")).thenReturn(bundle);
+        when(shareProjector.sourcesFor(target, "revoke")).thenReturn(List.of());
+        ProjectionReconciler reconciler =
+                reconciler(partitions, projections, writer, directory, shareProjector);
+
+        reconciler.reconcilePartition(partitionId);
+
+        // Group managers chưa từng có member vẫn phải được bảo đảm tồn tại trước khi writer áp
+        // graph; thiếu bước này writer ném "Realm group is not provisioned" như defect gate #88
+        // đã bắt ở share tới trung tâm chưa từng có quản lý.
+        InOrder order = inOrder(directory, writer);
+        order.verify(directory).ensureRealmGroup(managersPath);
+        order.verify(writer).apply(any());
+        verify(directory).ensureRealmGroup(ownersPath);
+        verify(directory).ensureRealmGroup(NativePolicyTemplates.ELIGIBILITY_GROUP);
+        assertEquals(AuthorizationPartition.State.READY, partition.getState());
+        assertEquals(1L, partition.getAppliedRevision());
+    }
+
     private static AuthorizationPartition partition(
             UUID id,
             long desiredRevision,
@@ -268,6 +353,23 @@ class ProjectionReconcilerTest {
      */
     private static ProjectionReconciler reconcilerWithInlineLock(
             AuthzPartitionRepository partitions, AuthzProjectionRepository projections) {
+        return reconciler(
+                partitions,
+                projections,
+                mock(PolicyGraphWriter.class),
+                mock(AuthorizationProvisioningClient.class),
+                mock(SharePolicyProjector.class));
+    }
+
+    /**
+     * Như {@link #reconcilerWithInlineLock} nhưng writer, directory và share projector do test cấp.
+     */
+    private static ProjectionReconciler reconciler(
+            AuthzPartitionRepository partitions,
+            AuthzProjectionRepository projections,
+            PolicyGraphWriter writer,
+            AuthorizationProvisioningClient directory,
+            SharePolicyProjector shareProjector) {
         ResourceMutationCoordinator coordinator = mock(ResourceMutationCoordinator.class);
         when(coordinator.withResourceLock(anyString(), any()))
                 .thenAnswer(invocation -> {
@@ -277,15 +379,15 @@ class ProjectionReconcilerTest {
         return new ProjectionReconciler(
                 partitions,
                 projections,
-                mock(PolicyGraphWriter.class),
-                mock(AuthorizationProvisioningClient.class),
+                writer,
+                directory,
                 mock(CenterPolicyProjector.class),
                 mock(TeachingPolicyProjector.class),
                 mock(GuardianPolicyProjector.class),
                 mock(ResultPolicyProjector.class),
                 mock(ActivityPolicyProjector.class),
                 mock(ResourcePolicyProjector.class),
-                mock(SharePolicyProjector.class),
+                shareProjector,
                 mock(PersonalEntitlementProjector.class),
                 mock(PersonalTeachingPolicyProjector.class),
                 stubTransactions(),
