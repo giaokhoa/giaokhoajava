@@ -111,8 +111,7 @@ class SubscriptionServiceIT extends IntegrationEnvironment {
                         jdbc.queryForList(
                                                 "SELECT pid, wait_event, query"
                                                         + " FROM pg_stat_activity WHERE pid <> pg_backend_pid()"
-                                                        + " AND wait_event_type = 'Lock'",
-                                                String.class)
+                                                        + " AND wait_event_type = 'Lock'")
                                         .toString()
                                 + " firstDone="
                                 + first.isDone()
