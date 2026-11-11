@@ -13,8 +13,6 @@ import java.util.WeakHashMap;
 import javax.sql.DataSource;
 import org.hibernate.engine.jdbc.connections.spi.MultiTenantConnectionProvider;
 import org.hibernate.service.UnknownUnwrapTypeException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,8 +29,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class TenantConnectionProvider implements MultiTenantConnectionProvider<String> {
-    private static final Logger LOG = LoggerFactory.getLogger(TenantConnectionProvider.class);
-
     @Serial private static final long serialVersionUID = 1L;
 
     // transient: DataSource không Serializable còn interface SPI của Hibernate kế thừa
@@ -84,7 +80,7 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
             statement.execute();
         } catch (SQLException e) {
             borrowedPaths.remove(connection);
-            connection.close();
+            discardConnection(connection, e);
             throw e;
         }
         return connection;
@@ -100,15 +96,19 @@ public class TenantConnectionProvider implements MultiTenantConnectionProvider<S
                 statement.setString(1, originalPath);
                 statement.execute();
             } catch (SQLException e) {
-                // shortcut: khôi phục thất bại chỉ xảy ra khi connection đã hỏng; khi đó pool
-                // tự loại connection ở lần mượn sau. Ghi log để vận hành thấy thay vì nuốt lỗi.
-                LOG.warn(
-                        "Không khôi phục được search_path khi trả connection của tenant {}",
-                        tenantIdentifier,
-                        e);
+                discardConnection(connection, e);
+                throw e;
             }
         }
         connection.close();
+    }
+
+    private static void discardConnection(Connection connection, SQLException failure) {
+        try (connection) {
+            connection.abort(Runnable::run);
+        } catch (SQLException cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
     }
 
     @Override

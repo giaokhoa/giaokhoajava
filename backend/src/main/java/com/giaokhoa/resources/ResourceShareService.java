@@ -10,7 +10,6 @@ import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.model.LibraryItem;
 import com.giaokhoa.resources.model.ResourceAssignment;
 import com.giaokhoa.resources.model.ResourceDependency;
-import com.giaokhoa.resources.model.ResourceVersion;
 import com.giaokhoa.resources.model.ShareGrant;
 import com.giaokhoa.resources.repository.CanonicalResourceRepository;
 import com.giaokhoa.resources.repository.GrantRef;
@@ -19,7 +18,6 @@ import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
 import com.giaokhoa.resources.repository.ResourceRepository;
 import com.giaokhoa.resources.repository.ResourceScopePreconditions;
-import com.giaokhoa.resources.repository.ResourceVersionRepository;
 import com.giaokhoa.resources.repository.ResourcesAuthorizationOperationRepository;
 import com.giaokhoa.resources.repository.ResourcesWorkspaceRepository;
 import com.giaokhoa.resources.repository.ShareGrantRepository;
@@ -96,7 +94,6 @@ public class ResourceShareService {
     private final CanonicalResourceRepository repository;
     private final ShareGrantRepository grants;
     private final ResourceRepository resources;
-    private final ResourceVersionRepository versions;
     private final ResourceDependencyRepository dependencies;
     private final ResourceAssignmentRepository assignments;
     private final LibraryItemRepository libraryItems;
@@ -120,7 +117,6 @@ public class ResourceShareService {
             CanonicalResourceRepository repository,
             ShareGrantRepository grants,
             ResourceRepository resources,
-            ResourceVersionRepository versions,
             ResourceDependencyRepository dependencies,
             ResourceAssignmentRepository assignments,
             LibraryItemRepository libraryItems,
@@ -139,7 +135,6 @@ public class ResourceShareService {
         this.repository = repository;
         this.grants = grants;
         this.resources = resources;
-        this.versions = versions;
         this.dependencies = dependencies;
         this.assignments = assignments;
         this.libraryItems = libraryItems;
@@ -494,30 +489,8 @@ public class ResourceShareService {
         ShareGrant grant = row.grant();
         // Thân bài, đáp án và dòng version nguồn cũng là aggregate nguồn: đọc ghim context
         // workspace nguồn rồi đặt lại context workspace nhận trước khi vật chất hoá bản sao.
-        ResourceVersion sourceVersion =
-                Objects.requireNonNull(
-                                workspaces.inWorkspace(
-                                        row.sourceWorkspaceId(),
-                                        () -> versions.findById(grant.getSourceVersionId())),
-                                "source version")
-                        .orElseThrow(ResourceShareService::notFound);
-        String sourceBody =
-                Objects.requireNonNull(
-                                workspaces.inWorkspace(
-                                        row.sourceWorkspaceId(),
-                                        () ->
-                                                repository.body(
-                                                        grant.getSourceResourceId(),
-                                                        grant.getSourceVersionId())),
-                                "source body")
-                        .orElseThrow(ResourceShareService::notFound);
-        @Nullable String sourceAnswer =
-                workspaces.inWorkspace(
-                        row.sourceWorkspaceId(),
-                        () ->
-                                repository.answer(
-                                        grant.getSourceResourceId(), grant.getSourceVersionId()));
-        workspaces.applyContext(grant.getRecipientWorkspaceId());
+        ResourceCopies.VersionView sourceVersion =
+                copies.readVersion(metadata).orElseThrow(ResourceShareService::notFound);
         String usageConstraints =
                 ResourcePolicyProjector.shareOriginMarker()
                         + ";grant="
@@ -537,11 +510,11 @@ public class ResourceShareService {
                 grant.getGrantorUserId(),
                 grant.getRecipientWorkspaceId(),
                 metadata,
-                sourceVersion.getLabel(),
-                sourceBody,
-                sourceAnswer,
-                sourceVersion.getReviewState(),
-                sourceVersion.getLockedAt(),
+                sourceVersion.label(),
+                sourceVersion.body(),
+                sourceVersion.answer(),
+                sourceVersion.reviewState(),
+                sourceVersion.lockedAt(),
                 1,
                 grant.getId(),
                 usageConstraints);

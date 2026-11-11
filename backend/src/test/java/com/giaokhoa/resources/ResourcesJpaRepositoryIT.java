@@ -43,7 +43,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
-@Import(ResourceCopies.class)
+@Import({
+    ResourceCopies.class,
+    com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction.class,
+    com.giaokhoa.infrastructure.persistence.JpaConfiguration.class,
+    com.giaokhoa.infrastructure.tenancy.TenantConnectionProvider.class,
+    com.giaokhoa.infrastructure.tenancy.WorkspaceTenantResolver.class
+})
 class ResourcesJpaRepositoryIT extends IntegrationEnvironment {
 
     @Autowired private JdbcTemplate jdbc;

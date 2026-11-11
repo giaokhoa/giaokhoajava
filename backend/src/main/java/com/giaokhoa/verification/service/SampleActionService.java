@@ -10,10 +10,13 @@ import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.resources.CorrectionService;
 import com.giaokhoa.resources.ResourceLibraryService;
+import com.giaokhoa.resources.ResourcePolicyProjector;
 import com.giaokhoa.resources.ResourceShareService;
+import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.model.ResourceVersion;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.verification.ActivityPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import com.giaokhoa.verification.dto.CourseSubjectStateView;
 import com.giaokhoa.verification.dto.SampleActionRequest;
@@ -29,15 +32,19 @@ import com.giaokhoa.verification.repository.SampleSubmissionRepository;
 import com.giaokhoa.verification.repository.VerificationAuthorizationOperationRepository;
 import com.giaokhoa.verification.repository.VerificationCourseSubjectRepository;
 import com.giaokhoa.verification.repository.VerificationEnrollmentRepository;
+import com.giaokhoa.verification.repository.VerificationResourceDependencyRepository;
 import com.giaokhoa.verification.repository.VerificationResourceVersionRepository;
 import com.giaokhoa.verification.repository.VerificationSubscriptionPeriodRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -50,12 +57,15 @@ import tools.jackson.databind.json.JsonMapper;
  * Nghiệp vụ của các sample action trong hợp đồng verification. Mọi action chạy qua cùng pipeline
  * manifest/fence/PDP như business action và không bao giờ chấp nhận actor thay thế. CREATE_RESOURCE
  * trả kết quả stub vì chưa có bảng sample-resource. ASSIGN_ACTIVITY, SUBMIT_ACTIVITY, GRADE_RESULT
- * và PUBLISH_RESULT ghi thật vào các bảng mẫu với target và scope đúng hợp đồng HTTP; dữ kiện nguồn
- * của một target có thể chưa từng được chiếu khi chuỗi được seed thẳng, nên trước khi hỏi PDP mỗi
- * action ghi lại bundle hiện hành của target qua cơ chế operation dùng chung và chờ chiếu xong —
- * chờ không xong thì fail-closed 503 như mọi protected request khác. Các action thư viện
- * SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE uỷ cho {@link ResourceLibraryService}, nơi giữ
- * pipeline và giao thức biên nhận của chúng; các action chia sẻ SHARE_VERSION, ACCEPT_SHARE,
+ * và PUBLISH_RESULT ghi thật vào các bảng mẫu với target và scope đúng hợp đồng HTTP: giao bài còn
+ * đòi quyết định {@code use} trên chính version được giao và mọi version thành phần trong closure
+ * phụ thuộc đệ quy của nó (FR-041), và nộp bài được quyết bằng scope {@code submit} trên target
+ * hoạt động do {@link ActivityPolicyProjector} chiếu cho học sinh đang ghi danh ở môn–khóa của hoạt
+ * động; dữ kiện nguồn của một target có thể chưa từng được chiếu khi chuỗi được seed thẳng, nên
+ * trước khi hỏi PDP mỗi action ghi lại bundle hiện hành của target qua cơ chế operation dùng chung
+ * và chờ chiếu xong — chờ không xong thì fail-closed 503 như mọi protected request khác. Các action
+ * thư viện SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE uỷ cho {@link ResourceLibraryService}, nơi
+ * giữ pipeline và giao thức biên nhận của chúng; các action chia sẻ SHARE_VERSION, ACCEPT_SHARE,
  * REVOKE_SHARE uỷ cho {@link ResourceShareService} theo cùng mẫu; action phát hành đính chính
  * CORRECT_SOURCE uỷ cho {@link CorrectionService} và mang metadata của notice trong kết quả để phía
  * gọi hiển thị đúng thông báo vừa phát hành. Action lạ bị từ chối, không bao giờ được lặng lẽ cho
@@ -79,6 +89,8 @@ public class SampleActionService {
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator coordinator;
     private final ResultPolicyProjector resultProjector;
+    private final ActivityPolicyProjector activityProjector;
+    private final ResourcePolicyProjector resourceProjector;
     private final ResourceLibraryService library;
     private final ResourceShareService shareService;
     private final CorrectionService correctionService;
@@ -87,6 +99,7 @@ public class SampleActionService {
     private final VerificationSubscriptionPeriodRepository periods;
     private final VerificationCourseSubjectRepository courseSubjects;
     private final VerificationResourceVersionRepository resourceVersions;
+    private final VerificationResourceDependencyRepository resourceDependencies;
     private final VerificationEnrollmentRepository enrollments;
     private final SampleActivityRepository activities;
     private final SampleSubmissionRepository submissions;
@@ -100,6 +113,8 @@ public class SampleActionService {
             IdempotencyService idempotency,
             SourceRevocationCoordinator coordinator,
             ResultPolicyProjector resultProjector,
+            ActivityPolicyProjector activityProjector,
+            ResourcePolicyProjector resourceProjector,
             ResourceLibraryService library,
             ResourceShareService shareService,
             CorrectionService correctionService,
@@ -108,6 +123,7 @@ public class SampleActionService {
             VerificationSubscriptionPeriodRepository periods,
             VerificationCourseSubjectRepository courseSubjects,
             VerificationResourceVersionRepository resourceVersions,
+            VerificationResourceDependencyRepository resourceDependencies,
             VerificationEnrollmentRepository enrollments,
             SampleActivityRepository activities,
             SampleSubmissionRepository submissions,
@@ -119,6 +135,8 @@ public class SampleActionService {
         this.idempotency = idempotency;
         this.coordinator = coordinator;
         this.resultProjector = resultProjector;
+        this.activityProjector = activityProjector;
+        this.resourceProjector = resourceProjector;
         this.library = library;
         this.shareService = shareService;
         this.correctionService = correctionService;
@@ -127,6 +145,7 @@ public class SampleActionService {
         this.periods = periods;
         this.courseSubjects = courseSubjects;
         this.resourceVersions = resourceVersions;
+        this.resourceDependencies = resourceDependencies;
         this.enrollments = enrollments;
         this.activities = activities;
         this.submissions = submissions;
@@ -368,36 +387,100 @@ public class SampleActionService {
         String targetKey =
                 NativePolicyTemplates.courseSubjectKey(workspaceId, request.courseSubjectId());
         ensureTeachingProjection(actorUserId, workspaceId, idempotencyKey + "#assign", targetKey);
-        var target =
+        List<String> versionTargetKeys =
+                versionUseTargetKeys(workspaceId, request.resourceId(), request.versionId());
+        ensureResourceProjection(
+                actorUserId, workspaceId, idempotencyKey + "#assign-use", versionTargetKeys);
+        List<ProtectedActionExecutor.Target> targets = new ArrayList<>();
+        targets.add(
                 new ProtectedActionExecutor.Target(
                         targetKey,
-                        List.of(PermissionCatalog.CourseSubjectScope.ACTIVITY_ASSIGN.scopeName()));
-        return executor.execute(
-                authentication,
-                httpRequest,
-                workspaceId,
-                List.of(target),
-                () ->
-                        Objects.requireNonNull(
-                                workspaces.inWorkspace(
-                                        workspaceId,
-                                        () -> {
-                                            UUID activityId = UUID.randomUUID();
-                                            return claimActionReceipt(
-                                                            actorUserId,
-                                                            workspaceId,
-                                                            idempotencyKey,
-                                                            payloadHash,
-                                                            "ACTIVITY",
-                                                            activityId)
-                                                    .orElseGet(() ->
-                                                            insertActivity(
-                                                                    workspaceId,
+                        List.of(PermissionCatalog.CourseSubjectScope.ACTIVITY_ASSIGN.scopeName())));
+        for (String versionTargetKey : versionTargetKeys) {
+            targets.add(
+                    new ProtectedActionExecutor.Target(
+                            versionTargetKey,
+                            List.of(PermissionCatalog.ResourceVersionScope.USE.scopeName())));
+        }
+        SampleActionResult result =
+                executor.execute(
+                        authentication,
+                        httpRequest,
+                        workspaceId,
+                        targets,
+                        () ->
+                                Objects.requireNonNull(
+                                        workspaces.inWorkspace(
+                                                workspaceId,
+                                                () -> {
+                                                    UUID activityId = UUID.randomUUID();
+                                                    return claimActionReceipt(
                                                                     actorUserId,
-                                                                    request,
-                                                                    activityId));
-                                        }),
-                                "activity"));
+                                                                    workspaceId,
+                                                                    idempotencyKey,
+                                                                    payloadHash,
+                                                                    "ACTIVITY",
+                                                                    activityId)
+                                                            .orElseGet(() ->
+                                                                    insertActivity(
+                                                                            workspaceId,
+                                                                            actorUserId,
+                                                                            request,
+                                                                            activityId));
+                                                }),
+                                        "activity"));
+        // Hoạt động ASSIGNED vừa ghi là một nguồn của bundle của chính version được giao
+        // (nhánh học sinh đọc nội dung của ResourcePolicyProjector), nên bundle ghi trước
+        // quyết định không còn khớp nguồn; ghi lại bundle sau khi hoạt động đã bền để các
+        // lượt reconcile sau của partition không lệch hash.
+        ensureResourceProjection(
+                actorUserId,
+                workspaceId,
+                idempotencyKey + "#assign-use-refresh",
+                versionTargetKeys);
+        return result;
+    }
+
+    /**
+     * Target {@code use} của lượt giao: chính version được giao và mọi version thành phần trong
+     * closure phụ thuộc đệ quy của nó (cạnh {@code resource_dependency} từ bản phái sinh về nguồn),
+     * tất cả tại workspace của route — quyết định dùng một version tổng hợp phải thỏa quyền dùng
+     * của từng thành phần cần dùng theo FR-041.
+     */
+    private List<String> versionUseTargetKeys(UUID workspaceId, UUID resourceId, UUID versionId) {
+        List<String> targetKeys = new ArrayList<>();
+        targetKeys.add(
+                NativePolicyTemplates.resourceVersionKey(workspaceId, resourceId, versionId));
+        targetKeys.addAll(
+                Objects.requireNonNull(
+                        workspaces.inWorkspace(
+                                workspaceId, () -> closureComponentKeys(workspaceId, versionId)),
+                        "components"));
+        return targetKeys;
+    }
+
+    /** Closure duyệt theo tầng qua repository với tập đã thăm chống vòng, như module resources. */
+    private List<String> closureComponentKeys(UUID workspaceId, UUID versionId) {
+        List<String> keys = new ArrayList<>();
+        Set<UUID> visited = new LinkedHashSet<>();
+        visited.add(versionId);
+        List<UUID> frontier = List.of(versionId);
+        while (!frontier.isEmpty()) {
+            List<UUID> next = new ArrayList<>();
+            for (ResourceDependency dependency :
+                    resourceDependencies.findByDerivedVersionIdIn(frontier)) {
+                if (visited.add(dependency.getSourceVersionId())) {
+                    next.add(dependency.getSourceVersionId());
+                    keys.add(
+                            NativePolicyTemplates.resourceVersionKey(
+                                    workspaceId,
+                                    dependency.getSourceResourceId(),
+                                    dependency.getSourceVersionId()));
+                }
+            }
+            frontier = next;
+        }
+        return keys;
     }
 
     private SampleActionResult insertActivity(
@@ -471,20 +554,21 @@ public class SampleActionService {
             throw invalid();
         }
         UUID actorUserId = executor.actorUserId(authentication);
-        SampleActivity activity =
-                Objects.requireNonNull(
-                        workspaces.inWorkspace(
-                                workspaceId, () -> activityRow(workspaceId, request.activityId())),
-                        "activity");
-        UUID courseSubjectId = activity.getCourseSubjectId();
-        String targetKey = NativePolicyTemplates.courseSubjectKey(workspaceId, courseSubjectId);
-        ensureTeachingProjection(actorUserId, workspaceId, idempotencyKey + "#submit", targetKey);
-        // Cổng PDP của lượt nộp là nguồn ghi danh của chính actor trên môn–khóa của hoạt
-        // động (scope read do projector giảng dạy chiếu cho học sinh đang ghi danh); hoạt
-        // động cụ thể và lượt nộp được khóa tiếp bằng invariant và trigger của bảng mẫu.
+        // Đọc dòng hoạt động trong context của workspace trước quyết định: hoạt động không
+        // thuộc workspace của route thì 404, không lộ qua quyết định PDP trên target lạ.
+        Objects.requireNonNull(
+                workspaces.inWorkspace(
+                        workspaceId, () -> activityRow(workspaceId, request.activityId())),
+                "activity");
+        String targetKey = NativePolicyTemplates.activityKey(workspaceId, request.activityId());
+        ensureActivityProjection(actorUserId, workspaceId, idempotencyKey + "#submit", targetKey);
+        // Cổng PDP của lượt nộp là scope submit trên chính target hoạt động, do
+        // ActivityPolicyProjector chiếu cho học sinh đang ghi danh ở môn–khóa của hoạt
+        // động; hoạt động cụ thể và lượt nộp được khóa tiếp bằng invariant và trigger
+        // của bảng mẫu.
         var target =
                 new ProtectedActionExecutor.Target(
-                        targetKey, List.of(PermissionCatalog.CourseSubjectScope.READ.scopeName()));
+                        targetKey, List.of(PermissionCatalog.ActivityScope.SUBMIT.scopeName()));
         return executor.execute(
                 authentication,
                 httpRequest,
@@ -949,7 +1033,7 @@ public class SampleActionService {
                                 idempotencyKey,
                                 projectionPayloadHash(workspaceId, targetKey),
                                 List.of(targetKey)));
-        awaitProjection(Objects.requireNonNull(operation, "operation"));
+        awaitRecordedProjection(operation);
     }
 
     /** Ghi lại bundle kết quả hiện hành của target qua operation dùng chung và chờ chiếu xong. */
@@ -963,7 +1047,43 @@ public class SampleActionService {
                                 idempotencyKey,
                                 projectionPayloadHash(workspaceId, targetKey),
                                 List.of(targetKey)));
-        awaitProjection(Objects.requireNonNull(operation, "operation"));
+        awaitRecordedProjection(operation);
+    }
+
+    /** Ghi lại bundle hoạt động hiện hành của target qua operation dùng chung và chờ chiếu xong. */
+    private void ensureActivityProjection(
+            UUID actorUserId, UUID workspaceId, String idempotencyKey, String targetKey) {
+        AuthorizationOperation operation =
+                transactions.execute(_ ->
+                        activityProjector.recordActivityChange(
+                                actorUserId,
+                                workspaceId,
+                                idempotencyKey,
+                                projectionPayloadHash(workspaceId, targetKey),
+                                List.of(targetKey)));
+        awaitRecordedProjection(operation);
+    }
+
+    /** Ghi lại bundle resource version hiện hành của các target và chờ chiếu xong. */
+    private void ensureResourceProjection(
+            UUID actorUserId, UUID workspaceId, String idempotencyKey, List<String> targetKeys) {
+        AuthorizationOperation operation =
+                transactions.execute(_ ->
+                        resourceProjector.recordResourceChange(
+                                actorUserId,
+                                workspaceId,
+                                idempotencyKey,
+                                projectionPayloadHash(workspaceId, targetKeys),
+                                targetKeys));
+        awaitRecordedProjection(operation);
+    }
+
+    private String projectionPayloadHash(UUID workspaceId, List<String> targetKeys) {
+        var node = JSON.createObjectNode();
+        var targets = node.putArray("projectionTargets");
+        targetKeys.forEach(targets::add);
+        return idempotency.payloadHash(
+                "POST", "/api/workspaces/" + workspaceId + "/samples/actions", node);
     }
 
     private String projectionPayloadHash(UUID workspaceId, String targetKey) {
@@ -971,6 +1091,11 @@ public class SampleActionService {
                 "POST",
                 "/api/workspaces/" + workspaceId + "/samples/actions",
                 JSON.createObjectNode().put("projectionTarget", targetKey));
+    }
+
+    /** Chờ operation ghi projection hoàn tất chiếu; operation không được null. */
+    private void awaitRecordedProjection(AuthorizationOperation operation) {
+        awaitProjection(Objects.requireNonNull(operation, "operation"));
     }
 
     private void awaitProjection(AuthorizationOperation operation) {

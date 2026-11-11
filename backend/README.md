@@ -83,6 +83,37 @@ cookie/session, HTTP serialization, RLS và browser Back. Fixture có thể dùn
 danh tính trong một class, còn center, membership, schema và session của từng ca
 vẫn riêng. Không chia sẻ center để tiết kiệm setup khi mutation làm graph tích lũy.
 
+## Ranh giới tenant và transaction
+
+Workspace đã kích hoạt schema riêng phải đi vào `WorkspaceTransaction.inWorkspace` trước khi mở
+transaction JPA. `applyContext` trong một transaction chỉ chấp nhận schema mà EntityManager đã
+được mở; gọi từ session hệ thống sang schema tenant hoặc đổi A → B trong cùng transaction bị
+chặn trước khi ghi. Workspace chưa kích hoạt vẫn dùng schema hệ thống; bước chốt của #261
+(Wave 6) đã tháo RLS và GUC `app.workspace_id` khỏi plumbing này, cách ly dựa vào ranh giới
+schema và `TenantContext`.
+
+Đọc nguồn từ tenant khác qua `readInWorkspace`: schema khác dùng transaction đọc riêng
+(`REQUIRES_NEW`), cùng schema giữ transaction hiện hành để còn thấy dữ kiện chưa commit.
+Caller materialize dữ kiện thành DTO trước khi quay lại tenant đích. Các ghi bản sao, version,
+provenance và biên nhận của đích tiếp tục nằm trong cùng transaction ghi; transaction đọc không
+ghi nguồn. Context được khôi phục cả khi unit đọc rollback. Cách này theo
+[transaction synchronization của Spring](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/transaction/support/TransactionSynchronization.html)
+và ranh giới session của
+[Hibernate tenant resolver](https://docs.hibernate.org/orm/7.4/javadocs/org/hibernate/context/spi/CurrentTenantIdentifierResolver.html).
+
+Baseline tenant giữ FK cho đầu `derived` thuộc schema hiện tại, chuyển đầu nguồn và grant
+xuyên tenant thành ID thuần như hợp đồng #261 (thiết kế này vào baseline thẳng khi Wave 6 gộp
+chuỗi tenant, thay cho migration V003 riêng). Khi trả connection,
+reset schema thất bại thì dùng `Connection.abort` trước khi đóng để pool không tái sử dụng
+connection mang schema cũ.
+
+| Bằng chứng trong `TenancyInfrastructureIT` | Hành vi khóa |
+| --- | --- |
+| `rejectCrossTenantFlush`, `rejectLateTenant` | Session chọn đúng tenant từ đầu; chặn chuyển schema trước khi flush |
+| `isolateSourceRead`, `restoreJoinedContext` | Đọc nguồn bằng session riêng; commit/rollback khôi phục context |
+| `discardFailedReset` | Pool một connection sạch schema sau lỗi SQL và reset |
+| `copyAcrossSchemas` | Runtime role sao A → B đủ nội dung/provenance/dependency; FK derived vẫn chặn dữ kiện sai |
+
 ## VS Code và agent
 
 Mở thư mục gốc của worktree. `backend/.settings/org.eclipse.jdt.core.prefs` là cấu hình JDT dùng chung; các file `.settings` còn lại do IDE tự sinh được Git ignore. Giữ một `package-info.java` cho mỗi package trong `src/main/java`; không tạo bản trùng trong `src/test/java`. Package chỉ dành cho test có thể khai báo riêng. Với package JPA `@NullUnmarked`, đặt `@NullMarked` trực tiếp trên class test nếu cần kiểm tra null mà không tạo thêm `package-info.java` trùng. Nếu IDE chưa cập nhật, chạy **Java: Update Project Configuration**.

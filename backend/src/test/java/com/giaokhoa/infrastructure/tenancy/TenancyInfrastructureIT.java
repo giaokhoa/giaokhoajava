@@ -3,10 +3,16 @@ package com.giaokhoa.infrastructure.tenancy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.giaokhoa.resources.ResourceCopies;
+import com.giaokhoa.resources.repository.ResourceDependencyRepository;
+import com.giaokhoa.resources.repository.ResourceRepository;
+import com.giaokhoa.resources.repository.ResourceVersionRepository;
+import com.giaokhoa.resources.repository.VersionMetadata;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -19,6 +25,7 @@ import jakarta.persistence.Table;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,12 +47,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.support.JpaRepositoryFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.orm.jpa.EntityManagerFactoryUtils;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.orm.jpa.SharedEntityManagerCreator;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -340,6 +349,329 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
 
     private record ProbeWorkspace(UUID userId, UUID workspaceId) {}
 
+    @Test
+    @DisplayName(
+            "Chuyển tenant trong transaction JPA bị chặn trước khi flush dữ kiện sang schema khác")
+    void rejectCrossTenantFlush() {
+        ProbeWorkspace a = newWorkspace("boundary-a");
+        ProbeWorkspace b = newWorkspace("boundary-b");
+        String schemaA = provisioner.provisionSchema(a.workspaceId());
+        String schemaB = provisioner.provisionSchema(b.workspaceId());
+        UUID id = UUID.randomUUID();
+        try (var context = new AnnotationConfigApplicationContext(BridgeConfiguration.class)) {
+            WorkspaceTransaction tx = context.getBean(WorkspaceTransaction.class);
+            tx.inWorkspace(
+                    a.workspaceId(),
+                    () -> {
+                        EntityManager em =
+                                Objects.requireNonNull(
+                                        EntityManagerFactoryUtils.getTransactionalEntityManager(
+                                                context.getBean(EntityManagerFactory.class)));
+                        assertEquals(schemaA, em.unwrap(Session.class).getTenantIdentifierValue());
+                        em.persist(new ProbeSubscriptionPeriod(id, a.workspaceId(), a.userId()));
+                        assertThrows(
+                                IllegalStateException.class,
+                                () ->
+                                        tx.inWorkspace(
+                                                b.workspaceId(),
+                                                () -> {
+                                                    em.flush();
+                                                    return null;
+                                                }));
+                        em.flush();
+                        return null;
+                    });
+        }
+        assertEquals(1L, countIn(schemaA, id));
+        assertEquals(0L, countIn(schemaB, id));
+        assertNull(TenantContext.current());
+    }
+
+    @Test
+    @DisplayName("Đặt tenant sau khi EntityManager đã mở cho hệ thống bị từ chối")
+    void rejectLateTenant() {
+        ProbeWorkspace a = newWorkspace("boundary-late");
+        provisioner.provisionSchema(a.workspaceId());
+        try (var context = new AnnotationConfigApplicationContext(BridgeConfiguration.class)) {
+            var tx = context.getBean(WorkspaceTransaction.class);
+            var transactions =
+                    new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> transactions.executeWithoutResult(_ -> tx.applyContext(a.workspaceId())));
+        }
+        assertNull(TenantContext.current());
+    }
+
+    @Test
+    @DisplayName(
+            "Reset search_path trong transaction lỗi phải loại connection để lần mượn sau sạch tenant")
+    void discardFailedReset() throws Exception {
+        String schema = provisioner.provisionSchema(newWorkspace("boundary-pool").workspaceId());
+        HikariConfig config = poolConfig(1);
+        config.setConnectionInitSql("SET ROLE giaokhoa_runtime");
+        try (var pool = new HikariDataSource(config)) {
+            var provider = new TenantConnectionProvider(pool);
+            String original;
+            try (Connection connection = provider.getAnyConnection()) {
+                original = searchPath(connection);
+            }
+            try (Connection connection = provider.getConnection(schema)) {
+                connection.setAutoCommit(false);
+                try (var statement = connection.createStatement()) {
+                    assertThrows(SQLException.class, () -> statement.execute("SELECT 1 / 0"));
+                }
+                assertThrows(
+                        SQLException.class, () -> provider.releaseConnection(schema, connection));
+            }
+            try (Connection clean = provider.getConnection(TenantContext.SYSTEM_SCHEMA)) {
+                assertEquals(original, searchPath(clean));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Scope tham gia transaction cũ khôi phục ThreadLocal cả trước lẫn sau commit")
+    void restoreJoinedContext() {
+        ProbeWorkspace a = newWorkspace("joined-context");
+        var manager = new DataSourceTransactionManager(runtimeDataSource);
+        var jdbc = new JdbcTemplate(runtimeDataSource);
+        var tx = new WorkspaceTransaction(jdbc, manager);
+        new TransactionTemplate(manager)
+                .executeWithoutResult(_ -> {
+                    tx.inWorkspace(a.workspaceId(), () -> null);
+                    assertNull(TenantContext.current());
+                });
+        assertNull(TenantContext.current());
+    }
+
+    @Test
+    @DisplayName(
+            "Đọc tenant khác dùng EntityManager riêng và giữ nguyên ghi chờ flush cùng context của tenant đích")
+    void isolateSourceRead() {
+        ProbeWorkspace a = newWorkspace("read-a");
+        ProbeWorkspace b = newWorkspace("read-b");
+        String schemaA = provisioner.provisionSchema(a.workspaceId());
+        String schemaB = provisioner.provisionSchema(b.workspaceId());
+        UUID id = UUID.randomUUID();
+        UUID rejectedWrite = UUID.randomUUID();
+        try (var context = new AnnotationConfigApplicationContext(BridgeConfiguration.class)) {
+            var tx = context.getBean(WorkspaceTransaction.class);
+            var jdbc = context.getBean(JdbcTemplate.class);
+            tx.inWorkspace(
+                    a.workspaceId(),
+                    () -> {
+                        EntityManager em =
+                                Objects.requireNonNull(
+                                        EntityManagerFactoryUtils.getTransactionalEntityManager(
+                                                context.getBean(EntityManagerFactory.class)));
+                        em.persist(new ProbeSubscriptionPeriod(id, a.workspaceId(), a.userId()));
+                        assertEquals(
+                                schemaB,
+                                tx.readInWorkspace(
+                                        b.workspaceId(),
+                                        () -> {
+                                            EntityManager source =
+                                                    Objects.requireNonNull(
+                                                            EntityManagerFactoryUtils
+                                                                    .getTransactionalEntityManager(
+                                                                            context.getBean(
+                                                                                    EntityManagerFactory
+                                                                                            .class)));
+                                            assertNotSame(em, source);
+                                            return source.unwrap(Session.class)
+                                                    .getTenantIdentifierValue();
+                                        }));
+                        var failure =
+                                assertThrows(
+                                        org.springframework.dao.DataAccessException.class,
+                                        () ->
+                                                tx.readInWorkspace(
+                                                        b.workspaceId(),
+                                                        () ->
+                                                                jdbc.update(
+                                                                        "INSERT INTO subscription_period(id,workspace_id,valid_from,expires_at,confirmation_ref,confirmed_by,confirmed_at) VALUES (?,?,now(),now() + interval '1 hour',?,?,now())",
+                                                                        rejectedWrite,
+                                                                        b.workspaceId(),
+                                                                        "readonly-" + rejectedWrite,
+                                                                        b.userId())));
+                        assertEquals(
+                                "25006",
+                                ((SQLException) failure.getMostSpecificCause()).getSQLState());
+                        assertEquals(schemaA, TenantContext.currentSchema());
+                        assertEquals(
+                                schemaA,
+                                jdbc.queryForObject("SELECT current_schema()", String.class));
+                        assertEquals(
+                                a.workspaceId(),
+                                Objects.requireNonNull(TenantContext.current()).workspaceId());
+                        em.flush();
+                        return null;
+                    });
+        }
+        assertEquals(1L, countIn(schemaA, id));
+        assertEquals(0L, countIn(schemaB, id));
+        assertEquals(0L, countIn(schemaB, rejectedWrite));
+        assertNull(TenantContext.current());
+    }
+
+    @Test
+    @DisplayName(
+            "Copy giữa hai schema giữ nội dung, provenance và dependency nguồn qua runtime role")
+    void copyAcrossSchemas() {
+        ProbeWorkspace a = newWorkspace("copy-a");
+        ProbeWorkspace b = newWorkspace("copy-b");
+        String schemaA = provisioner.provisionSchema(a.workspaceId());
+        String schemaB = provisioner.provisionSchema(b.workspaceId());
+        UUID source = UUID.randomUUID();
+        UUID version = UUID.randomUUID();
+        UUID component = UUID.randomUUID();
+        UUID componentVersion = UUID.randomUUID();
+        UUID subject = UUID.randomUUID();
+        UUID grant = UUID.randomUUID();
+        for (UUID resource : List.of(source, component)) {
+            raw.update(
+                    "INSERT INTO "
+                            + schemaA
+                            + ".resource(id,owner_workspace_id,created_by_user_id,kind,subject_id,state) VALUES (?,?,?,'QUESTION',?,'ACTIVE')",
+                    resource,
+                    a.workspaceId(),
+                    a.userId(),
+                    subject);
+        }
+        raw.update(
+                "INSERT INTO "
+                        + schemaA
+                        + ".resource_version(id,resource_id,version_no,label,body_stub,answer_stub) VALUES (?,?,1,'Nguồn','Nội dung','Đáp án')",
+                version,
+                source);
+        raw.update(
+                "INSERT INTO "
+                        + schemaA
+                        + ".resource_version(id,resource_id,version_no,label,body_stub) VALUES (?,?,1,'Thành phần','Thành phần')",
+                componentVersion,
+                component);
+        raw.update(
+                "INSERT INTO "
+                        + schemaA
+                        + ".share_grant(id,source_resource_id,source_version_id,grantor_user_id,recipient_workspace_id,mode,state,actions,valid_from) VALUES (?,?,?,?,?,'REVOCABLE','OFFERED',ARRAY['use','share'],now())",
+                grant,
+                source,
+                version,
+                a.userId(),
+                b.workspaceId());
+        raw.update(
+                "INSERT INTO "
+                        + schemaA
+                        + ".resource_dependency(id,derived_resource_id,derived_version_id,source_resource_id,source_version_id,share_grant_id,usage_constraints) VALUES (?,?,?,?,?,?,'component')",
+                UUID.randomUUID(),
+                source,
+                version,
+                component,
+                componentVersion,
+                grant);
+        UUID copyResource = UUID.randomUUID();
+        UUID copyVersion = UUID.randomUUID();
+        try (var context = new AnnotationConfigApplicationContext(BridgeConfiguration.class)) {
+            var tx = context.getBean(WorkspaceTransaction.class);
+            var factory =
+                    new JpaRepositoryFactory(
+                            SharedEntityManagerCreator.createSharedEntityManager(
+                                    context.getBean(EntityManagerFactory.class)));
+            var copies =
+                    new ResourceCopies(
+                            factory.getRepository(ResourceRepository.class),
+                            factory.getRepository(ResourceVersionRepository.class),
+                            factory.getRepository(ResourceDependencyRepository.class),
+                            tx);
+            var metadata =
+                    new VersionMetadata(
+                            source,
+                            version,
+                            a.workspaceId(),
+                            "PERSONAL",
+                            a.userId(),
+                            subject,
+                            "QUESTION",
+                            "DRAFT");
+            tx.inWorkspace(
+                    b.workspaceId(),
+                    () -> {
+                        assertEquals(
+                                "giaokhoa_runtime",
+                                context.getBean(JdbcTemplate.class)
+                                        .queryForObject("SELECT current_user", String.class));
+                        var data = copies.readVersion(metadata).orElseThrow();
+                        return copies.copyVersion(
+                                copyResource,
+                                copyVersion,
+                                a.userId(),
+                                b.workspaceId(),
+                                metadata,
+                                data.label(),
+                                data.body(),
+                                data.answer(),
+                                data.reviewState(),
+                                data.lockedAt(),
+                                1,
+                                grant,
+                                "origin=SHARE");
+                    });
+        }
+        assertEquals(
+                "Nội dung",
+                raw.queryForObject(
+                        "SELECT body_stub FROM " + schemaB + ".resource_version WHERE id=?",
+                        String.class,
+                        copyVersion));
+        assertEquals(
+                "Đáp án",
+                raw.queryForObject(
+                        "SELECT answer_stub FROM " + schemaB + ".resource_version WHERE id=?",
+                        String.class,
+                        copyVersion));
+        assertEquals(
+                2,
+                raw.queryForObject(
+                        "SELECT count(*) FROM "
+                                + schemaB
+                                + ".resource_dependency WHERE derived_version_id=?",
+                        Integer.class,
+                        copyVersion));
+        assertEquals(
+                List.of(source, component).stream().sorted().toList(),
+                raw
+                        .queryForList(
+                                "SELECT source_resource_id FROM "
+                                        + schemaB
+                                        + ".resource_dependency WHERE derived_version_id=? ORDER BY source_resource_id",
+                                UUID.class,
+                                copyVersion)
+                        .stream()
+                        .sorted()
+                        .toList());
+        assertEquals(
+                0,
+                raw.queryForObject(
+                        "SELECT count(*) FROM " + schemaA + ".resource WHERE id=?",
+                        Integer.class,
+                        copyResource));
+        var invalid =
+                assertThrows(
+                        org.springframework.dao.DataIntegrityViolationException.class,
+                        () ->
+                                raw.update(
+                                        "INSERT INTO "
+                                                + schemaB
+                                                + ".resource_dependency(id,derived_resource_id,derived_version_id,source_resource_id,source_version_id,usage_constraints) VALUES (?,?,?,?,?,'invalid-derived')",
+                                        UUID.randomUUID(),
+                                        UUID.randomUUID(),
+                                        UUID.randomUUID(),
+                                        source,
+                                        version));
+        assertEquals("23503", ((SQLException) invalid.getMostSpecificCause()).getSQLState());
+    }
+
     private ProbeWorkspace newWorkspace(String name) {
         UUID userId = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
@@ -490,7 +822,9 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
 
         @Bean
         HikariDataSource dataSource() {
-            return new HikariDataSource(poolConfig(2));
+            HikariConfig config = poolConfig(2);
+            config.setConnectionInitSql("SET ROLE giaokhoa_runtime");
+            return new HikariDataSource(config);
         }
 
         @Bean
@@ -512,7 +846,8 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                     new LocalContainerEntityManagerFactoryBean();
             emf.setDataSource(dataSource);
             emf.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
-            emf.setPackagesToScan("com.giaokhoa.infrastructure.tenancy");
+            emf.setPackagesToScan(
+                    "com.giaokhoa.infrastructure.tenancy", "com.giaokhoa.resources.model");
             Map<String, Object> props = new HashMap<>();
             props.put(AvailableSettings.MULTI_TENANT_CONNECTION_PROVIDER, provider);
             props.put(AvailableSettings.MULTI_TENANT_IDENTIFIER_RESOLVER, resolver);

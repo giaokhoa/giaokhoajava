@@ -21,6 +21,7 @@ import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.verification.ActivityPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -72,6 +73,7 @@ public class ProjectionReconciler {
     private final TeachingPolicyProjector teachingProjector;
     private final GuardianPolicyProjector guardianProjector;
     private final ResultPolicyProjector resultProjector;
+    private final ActivityPolicyProjector activityProjector;
     private final ResourcePolicyProjector resourceProjector;
     private final SharePolicyProjector shareProjector;
     private final PersonalEntitlementProjector personalEntitlementProjector;
@@ -88,6 +90,7 @@ public class ProjectionReconciler {
             TeachingPolicyProjector teachingProjector,
             GuardianPolicyProjector guardianProjector,
             ResultPolicyProjector resultProjector,
+            ActivityPolicyProjector activityProjector,
             ResourcePolicyProjector resourceProjector,
             SharePolicyProjector shareProjector,
             PersonalEntitlementProjector personalEntitlementProjector,
@@ -102,6 +105,7 @@ public class ProjectionReconciler {
         this.teachingProjector = teachingProjector;
         this.guardianProjector = guardianProjector;
         this.resultProjector = resultProjector;
+        this.activityProjector = activityProjector;
         this.resourceProjector = resourceProjector;
         this.shareProjector = shareProjector;
         this.personalEntitlementProjector = personalEntitlementProjector;
@@ -653,6 +657,9 @@ public class ProjectionReconciler {
         if (type == NativePolicyTemplates.TargetType.RESULT) {
             return resolveResultBundle(projection);
         }
+        if (type == NativePolicyTemplates.TargetType.ACTIVITY) {
+            return resolveActivityBundle(projection);
+        }
         if (type == NativePolicyTemplates.TargetType.RESOURCE_VERSION) {
             return resolveResourceBundle(projection);
         }
@@ -909,6 +916,36 @@ public class ProjectionReconciler {
     }
 
     /**
+     * Bundle của một target hoạt động thuộc workspace (center hoặc personal): cùng hình dạng với
+     * bundle kết quả — desired hash đã ghi phải khớp đúng tập descriptor mà {@link
+     * ActivityPolicyProjector} dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa SUBMIT của
+     * projector.
+     */
+    private Resolved resolveActivityBundle(ProjectionRow projection) {
+        List<String> bundle = activityProjector.bundleDescriptors(projection.targetKey());
+        List<String> managedScopes = ActivityPolicyProjector.managedScopes();
+        if (bundle.isEmpty()) {
+            return new Resolved.RetractBundle(managedScopes);
+        }
+        String bundleScope = ActivityPolicyProjector.bundleScope();
+        if (!desiredHash(projection.targetKey(), bundleScope, bundle)
+                .equals(projection.desiredHash())) {
+            throw new ReconciliationException(
+                    ERROR_DESIRED_SOURCE_MISMATCH,
+                    "Desired hash does not match the activity sources rebuilt from durable rows: "
+                            + projection.targetKey());
+        }
+        Map<String, PolicyGraph> graphs = new LinkedHashMap<>();
+        for (String scope : managedScopes) {
+            List<String> sources = activityProjector.sourcesFor(projection.targetKey(), scope);
+            if (!sources.isEmpty()) {
+                graphs.put(scope, graphFor(projection.targetKey(), scope, sources));
+            }
+        }
+        return new Resolved.ApplyBundle(graphs, managedScopes);
+    }
+
+    /**
      * Bundle của một target resource version thuộc workspace ngữ cảnh: cùng hình dạng với bundle
      * kết quả — desired hash đã ghi phải khớp đúng tập descriptor mà {@link
      * ResourcePolicyProjector} dựng lại từ dữ kiện nguồn hiện hành, với scope danh nghĩa
@@ -1102,6 +1139,9 @@ public class ProjectionReconciler {
         }
         if (descriptor.startsWith("RESULT_")) {
             return new PolicyGraph.Source(ResultPolicyProjector.gatesFor(descriptor));
+        }
+        if (descriptor.startsWith("ACTIVITY_")) {
+            return new PolicyGraph.Source(ActivityPolicyProjector.gatesFor(descriptor));
         }
         if (descriptor.startsWith("RESOURCE_")) {
             return new PolicyGraph.Source(ResourcePolicyProjector.gatesFor(descriptor));

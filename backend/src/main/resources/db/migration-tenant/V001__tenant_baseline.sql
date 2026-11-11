@@ -4,6 +4,9 @@
 -- đây đi qua migration tăng dần mới; không sửa file này.
 --
 -- Cột resource.subject_id cố ý không có khóa ngoại — xem ghi chú ở baseline hệ thống.
+-- Các cột nguồn của resource_dependency (source_resource_id, source_version_id,
+-- share_grant_id) cũng cố ý không có khóa ngoại: đầu nguồn và grant có thể thuộc tenant
+-- khác, ứng dụng phân giải theo provenance; chỉ đầu derived (cùng schema) giữ khóa ngoại.
 
 -- Các hàm PL/pgSQL đứng trước bảng mà chúng tham chiếu trong file gộp này nên phải hoãn
 -- kiểm tra thân hàm tới lần chạy đầu tiên (đúng cách pg_restore xử lý dump); chỉ áp
@@ -1522,8 +1525,7 @@ ALTER TABLE ONLY homeroom_assignment
 ALTER TABLE ONLY resource_dependency
     ADD CONSTRAINT fk_resource_dependency_derived_version FOREIGN KEY (derived_resource_id, derived_version_id) REFERENCES resource_version(resource_id, id);
 
-ALTER TABLE ONLY resource_dependency
-    ADD CONSTRAINT fk_resource_dependency_source_version FOREIGN KEY (source_resource_id, source_version_id) REFERENCES resource_version(resource_id, id);
+--
 
 ALTER TABLE ONLY sample_activity
     ADD CONSTRAINT fk_sample_activity_course_subject FOREIGN KEY (workspace_id, course_subject_id) REFERENCES course_subject(workspace_id, id);
@@ -1552,8 +1554,7 @@ ALTER TABLE ONLY membership_role
 ALTER TABLE ONLY notification_receipt
     ADD CONSTRAINT notification_receipt_notice_id_fkey FOREIGN KEY (notice_id) REFERENCES correction_notice(id);
 
-ALTER TABLE ONLY resource_dependency
-    ADD CONSTRAINT resource_dependency_share_grant_id_fkey FOREIGN KEY (share_grant_id) REFERENCES share_grant(id);
+--
 
 ALTER TABLE ONLY resource_version
     ADD CONSTRAINT resource_version_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES resource(id);
