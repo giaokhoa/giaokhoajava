@@ -865,6 +865,10 @@ public class SampleActionService {
                 workspaces.inWorkspace(
                         workspaceId, () -> activityRow(workspaceId, request.activityId())),
                 ACTIVITY_LABEL);
+        // Kỳ gói đã hết thì chính descriptor ACTIVITY_ACTOR_PERIOD làm PDP từ chối trước khi
+        // lambda chạy, nên kiểm tra ở đây để lỗi mang mã SUBSCRIPTION_INACTIVE thay vì
+        // PERMISSION_DENIED của PDP; kiểm tra trong fence ở apply* vẫn giữ nguyên.
+        requireActivePeriod(workspaceId);
         String targetKey = NativePolicyTemplates.activityKey(workspaceId, request.activityId());
         ensureActivityProjection(actorUserId, workspaceId, idempotencyKey + "#extend", targetKey);
         var target =
@@ -930,6 +934,9 @@ public class SampleActionService {
                 workspaces.inWorkspace(
                         workspaceId, () -> activityRow(workspaceId, request.activityId())),
                 ACTIVITY_LABEL);
+        // Như extendDeadline: kỳ gói đã hết thì PDP từ chối trước lambda, nên kiểm tra ở đây
+        // để lỗi mang mã SUBSCRIPTION_INACTIVE thay vì PERMISSION_DENIED của PDP.
+        requireActivePeriod(workspaceId);
         String targetKey = NativePolicyTemplates.activityKey(workspaceId, request.activityId());
         ensureActivityProjection(
                 actorUserId, workspaceId, idempotencyKey + "#open-attempt", targetKey);
@@ -1007,6 +1014,9 @@ public class SampleActionService {
                         workspaces.inWorkspace(
                                 workspaceId, () -> activityRow(workspaceId, request.activityId())),
                         ACTIVITY_LABEL);
+        // Như extendDeadline: kỳ gói đã hết thì PDP từ chối trước lambda, nên kiểm tra ở đây
+        // để lỗi mang mã SUBSCRIPTION_INACTIVE thay vì PERMISSION_DENIED của PDP.
+        requireActivePeriod(workspaceId);
         String targetKey = NativePolicyTemplates.activityKey(workspaceId, request.activityId());
         ensureActivityProjection(actorUserId, workspaceId, idempotencyKey + "#reassign", targetKey);
         List<String> versionTargetKeys =
@@ -1070,7 +1080,12 @@ public class SampleActionService {
         }
     }
 
-    /** Dòng hợp đồng của ba action quản lý đòi một kỳ gói còn hiệu lực của workspace. */
+    /**
+     * Dòng hợp đồng của ba action quản lý đòi một kỳ gói còn hiệu lực của workspace. Gọi hai nơi:
+     * trước PDP để kỳ hết hạn trả SUBSCRIPTION_INACTIVE thay vì PERMISSION_DENIED (descriptor
+     * ACTIVITY_ACTOR_PERIOD hết cửa sổ làm PDP từ chối trước khi lambda chạy), và trong fence ở các
+     * apply* để kỳ hết hạn giữa request không lọt một allow đã cũ qua.
+     */
     private void requireActivePeriod(UUID workspaceId) {
         if (periods.countCurrent(workspaceId) == 0) {
             throw new HttpProblemException(

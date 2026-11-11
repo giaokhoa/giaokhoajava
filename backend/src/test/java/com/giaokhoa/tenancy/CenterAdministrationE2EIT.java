@@ -3,6 +3,7 @@ package com.giaokhoa.tenancy;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -286,6 +287,205 @@ class CenterAdministrationE2EIT extends KeycloakSessionFixture {
             }
         } finally {
             deleteUser(operator.subject());
+        }
+    }
+
+    /**
+     * Chuỗi kích hoạt đúng như production: operator tạo center qua API, owner đọc được lớp và thành
+     * viên ngay bằng workspaceId mà danh sách platform trả về (hai scope đọc này không qua gate
+     * gói), center id trong cùng bản ghi KHÔNG thay được cho workspaceId ở bước xác nhận gói, và
+     * xác nhận gói bằng workspaceId đưa gói thành hiệu lực rồi mở scope tạo lớp cho owner. Chuỗi
+     * này từng gãy ở production vì giao diện gửi center id vào trường workspaceId nên operator
+     * không bao giờ xác nhận được gói cho center mới.
+     */
+    @Test
+    void freshlyCreatedCenterActivatesThroughListedIdentifiers() throws Exception {
+        KeycloakLogin operator = createOperator();
+        KeycloakLogin ownerLogin = createVerifiedUser("center-activation-owner");
+        try {
+            seedAccount(operator.subject(), "SELF_REGISTERED", operator.email(), true);
+            UUID owner =
+                    seedAccount(ownerLogin.subject(), "SELF_REGISTERED", ownerLogin.email(), true);
+            String centerName =
+                    "Trung tâm kích hoạt " + UUID.randomUUID().toString().substring(0, 8);
+            UUID centerId;
+            UUID workspaceId;
+
+            try (var operatorSession = openSession(operator)) {
+                assertEquals(200, getWorkspacesWhenReadyHttp(operatorSession).status());
+                getWorkspacesWhenReadyHttp(operatorSession);
+                HttpTestClient.Response created =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/platform/centers",
+                                        operatorSession.cookie(),
+                                        true,
+                                        "{\"name\":\""
+                                                + centerName
+                                                + "\",\"ownerUserId\":\""
+                                                + owner
+                                                + "\"}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "center-activation-" + UUID.randomUUID()));
+                assertEquals(202, created.status(), created.body());
+                UUID createOperation =
+                        UUID.fromString(
+                                JSON.readTree(created.body()).get("operationId").stringValue());
+                awaitOperationSucceeded(operatorSession, createOperation);
+
+                HttpTestClient.Response list =
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .get(
+                                                        "/api/platform/centers",
+                                                        operatorSession.cookie()));
+                assertEquals(200, list.status(), list.body());
+                JsonNode listed = null;
+                for (JsonNode item : JSON.readTree(list.body()).get("items")) {
+                    if (centerName.equals(item.get("name").stringValue())) {
+                        listed = item;
+                    }
+                }
+                Objects.requireNonNull(listed, "Center vừa tạo phải có trong danh sách platform");
+                centerId = UUID.fromString(listed.get("id").stringValue());
+                workspaceId = UUID.fromString(listed.get("workspaceId").stringValue());
+                assertNotEquals(
+                        centerId,
+                        workspaceId,
+                        "Center id và workspace id là hai định danh khác nhau");
+
+                // Gửi center id vào trường workspaceId (đúng lỗi giao diện production từng mắc)
+                // phải bị từ chối là workspace không tồn tại, không ghi kỳ gói nào.
+                HttpTestClient.Response wrongKey =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/platform/subscriptions",
+                                        operatorSession.cookie(),
+                                        true,
+                                        subscriptionJson(centerId, 0, 365),
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "center-activation-wrong-" + UUID.randomUUID()));
+                assertEquals(404, wrongKey.status(), wrongKey.body());
+                assertEquals(
+                        "WORKSPACE_NOT_FOUND",
+                        JSON.readTree(wrongKey.body()).get("code").stringValue());
+            }
+
+            try (var ownerSession = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReadyHttp(ownerSession).status());
+                // Owner thấy center của mình với role OWNER và gói chưa hiệu lực trước xác nhận.
+                HttpTestClient.Response mine =
+                        realHttp().get("/api/me/workspaces", ownerSession.cookie());
+                assertEquals(200, mine.status(), mine.body());
+                JsonNode own = null;
+                for (JsonNode item : JSON.readTree(mine.body())) {
+                    if (workspaceId.toString().equals(item.get("id").stringValue())) {
+                        own = item;
+                    }
+                }
+                Objects.requireNonNull(own, "Owner phải thấy workspace của center vừa tạo");
+                assertEquals("OWNER", own.get("roles").get(0).stringValue());
+                assertFalse(
+                        own.get("subscription").get("effective").booleanValue(),
+                        "Chưa xác nhận gói thì gói chưa hiệu lực");
+
+                // Đọc lớp và thành viên không qua gate gói: chạy được ngay sau khi tạo center.
+                HttpTestClient.Response classes =
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .get(
+                                                        "/api/workspaces/"
+                                                                + workspaceId
+                                                                + "/classes",
+                                                        ownerSession.cookie()));
+                assertEquals(200, classes.status(), classes.body());
+                HttpTestClient.Response members =
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .get(
+                                                        "/api/workspaces/"
+                                                                + workspaceId
+                                                                + "/memberships",
+                                                        ownerSession.cookie()));
+                assertEquals(200, members.status(), members.body());
+            }
+
+            try (var operatorSession = openSession(operator)) {
+                assertEquals(200, getWorkspacesWhenReadyHttp(operatorSession).status());
+                getWorkspacesWhenReadyHttp(operatorSession);
+                HttpTestClient.Response confirmed =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/platform/subscriptions",
+                                        operatorSession.cookie(),
+                                        true,
+                                        subscriptionJson(workspaceId, 0, 365),
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "center-activation-confirm-" + UUID.randomUUID()));
+                assertEquals(202, confirmed.status(), confirmed.body());
+                UUID confirmOperation =
+                        UUID.fromString(
+                                JSON.readTree(confirmed.body()).get("operationId").stringValue());
+                awaitOperationSucceeded(operatorSession, confirmOperation);
+                assertEquals(
+                        1,
+                        jdbc.queryForObject(
+                                "SELECT count(*) FROM subscription_period WHERE workspace_id = ?",
+                                Integer.class,
+                                workspaceId),
+                        "Xác nhận bằng workspaceId phải ghi đúng một kỳ gói cho workspace");
+            }
+
+            try (var ownerSession = openSession(ownerLogin)) {
+                assertEquals(200, getWorkspacesWhenReadyHttp(ownerSession).status());
+                HttpTestClient.Response mine =
+                        realHttp().get("/api/me/workspaces", ownerSession.cookie());
+                JsonNode own = null;
+                for (JsonNode item : JSON.readTree(mine.body())) {
+                    if (workspaceId.toString().equals(item.get("id").stringValue())) {
+                        own = item;
+                    }
+                }
+                Objects.requireNonNull(own, "Owner vẫn phải thấy workspace sau xác nhận gói");
+                assertTrue(
+                        own.get("subscription").get("effective").booleanValue(),
+                        "Sau xác nhận, gói của center phải thành hiệu lực");
+
+                // Scope tạo lớp qua gate gói: chỉ mở sau khi kỳ gói đã chiếu hiệu lực.
+                String classKey = "center-activation-class-" + UUID.randomUUID();
+                HttpTestClient.Response classCreated =
+                        realHttp()
+                                .whenReady(() ->
+                                        realHttp()
+                                                .exchange(
+                                                        HttpMethod.POST,
+                                                        "/api/workspaces/"
+                                                                + workspaceId
+                                                                + "/classes",
+                                                        ownerSession.cookie(),
+                                                        true,
+                                                        "{\"name\":\"Lớp kích hoạt\"}",
+                                                        Map.of("Idempotency-Key", classKey)));
+                assertEquals(202, classCreated.status(), classCreated.body());
+                UUID classOperation =
+                        UUID.fromString(
+                                JSON.readTree(classCreated.body())
+                                        .get("operationId")
+                                        .stringValue());
+                awaitOperationSucceeded(ownerSession, classOperation);
+            }
+        } finally {
+            deleteUser(operator.subject());
+            deleteUser(ownerLogin.subject());
         }
     }
 
