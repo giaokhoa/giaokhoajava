@@ -23,6 +23,7 @@ import { parseWorkspaces, type WorkspaceView } from "@/features/identity/workspa
 
 export type CenterSummary = {
   id: string;
+  workspaceId: string;
   name: string;
 };
 
@@ -31,10 +32,11 @@ export function parseCenters(data: unknown): CenterSummary[] {
   for (const item of listItems(data)) {
     if (!isRecord(item)
         || typeof item.id !== "string" || !item.id
+        || typeof item.workspaceId !== "string" || !item.workspaceId
         || typeof item.name !== "string" || !item.name) {
       continue;
     }
-    centers.push({ id: item.id, name: item.name });
+    centers.push({ id: item.id, workspaceId: item.workspaceId, name: item.name });
   }
   return centers;
 }
@@ -284,7 +286,7 @@ function PlatformCentersInner() {
                       </div>
                     </dl>
                     <p>
-                      <Link href={`/centers/${encodeURIComponent(center.id)}/members`}>
+                      <Link href={`/centers/${encodeURIComponent(center.workspaceId)}/members`}>
                         Quản lý thành viên
                       </Link>
                     </p>
@@ -369,7 +371,7 @@ function PlatformCentersInner() {
                 >
                   <option value="">Chọn trung tâm</option>
                   {(centers ?? []).map((center) => (
-                    <option key={center.id} value={center.id}>{center.name}</option>
+                    <option key={center.id} value={center.workspaceId}>{center.name}</option>
                   ))}
                 </select>
               </div>
