@@ -7,68 +7,30 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.support.HttpTestClient;
-import com.giaokhoa.support.IntegrationEnvironment;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.time.Instant;
-import java.util.List;
+import com.giaokhoa.support.KeycloakSessionFixture;
 import java.util.Map;
 import java.util.Objects;
-import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.core.context.SecurityContextImpl;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.core.oidc.OidcIdToken;
-import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.security.web.csrf.CsrfToken;
-import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
-import org.springframework.session.SessionRepository;
-import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.web.context.WebApplicationContext;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Tag("e2e-backend")
-class SecurityConfigurationE2EIT extends IntegrationEnvironment {
+class SecurityConfigurationE2EIT extends KeycloakSessionFixture {
 
     // Mọi khẳng định của class này đều qua HTTP thật đồng bộ nên worker nền không thuộc
     // phạm vi kiểm thử: mock để nó không tự xử lý operation trong lúc class chạy.
     @MockitoBean ProjectionWorker scheduledWorker;
 
-    @Autowired ClientRegistrationRepository registrations;
-    @Autowired SessionRepositoryFilter<?> sessionFilter;
-    @Autowired SessionRepository<?> sessions;
-
-    private final WebApplicationContext context;
-    private @Nullable HttpTestClient httpClient;
-
-    SecurityConfigurationE2EIT(WebApplicationContext context) {
-        this.context = context;
-    }
-
-    private HttpTestClient realHttp() {
-        if (httpClient == null) {
-            httpClient = HttpTestClient.bind(context);
-        }
-        return httpClient;
-    }
-
     @Test
     void authorizationCodeRequestRequiresPkce() {
         var client =
-                java.util.Objects.requireNonNull(registrations.findByRegistrationId("keycloak"));
+                java.util.Objects.requireNonNull(
+                        clientRegistrations.findByRegistrationId("keycloak"));
         var response =
                 realHttp()
                         .exchange(
@@ -137,39 +99,35 @@ class SecurityConfigurationE2EIT extends IntegrationEnvironment {
     @Test
     void postLogoutRedirectsToEndSession() throws Exception {
         var client =
-                java.util.Objects.requireNonNull(registrations.findByRegistrationId("keycloak"));
-        var token =
-                new OidcIdToken(
-                        "test-id-token",
-                        Instant.now(),
-                        Instant.now().plusSeconds(600),
-                        Map.of(
-                                "iss", client.getProviderDetails().getIssuerUri(),
-                                "sub", "test-user",
-                                "aud", List.of(client.getClientId())));
-        var principal = new DefaultOidcUser(List.of(), token, "sub");
-        var auth = new OAuth2AuthenticationToken(principal, List.of(), "keycloak");
+                java.util.Objects.requireNonNull(
+                        clientRegistrations.findByRegistrationId("keycloak"));
+        KeycloakLogin login = createVerifiedUser("logout");
+        try (var session = openSession(login.username(), login.password(), login.subject())) {
+            var response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/logout",
+                                    session.cookie(),
+                                    true,
+                                    null,
+                                    Map.of());
 
-        FabricatedSession session = fabricateSession(auth);
-        var response =
-                realHttp()
-                        .exchange(
-                                HttpMethod.POST,
-                                "/api/logout",
-                                session.cookie(),
-                                false,
-                                null,
-                                Map.of(session.csrf().getHeaderName(), session.csrf().getToken()));
-
-        assertEquals(302, response.status());
-        String redirect = response.header("Location");
-        assertNotNull(redirect);
-        assertTrue(
-                redirect.startsWith(
-                        client.getProviderDetails().getIssuerUri()
-                                + "/protocol/openid-connect/logout?"));
-        assertTrue(redirect.contains("id_token_hint="));
-        assertTrue(redirect.contains("post_logout_redirect_uri="));
+            assertEquals(302, response.status());
+            String redirect = response.header("Location");
+            assertNotNull(redirect);
+            assertTrue(
+                    redirect.startsWith(
+                            client.getProviderDetails().getIssuerUri()
+                                    + "/protocol/openid-connect/logout?"));
+            assertTrue(redirect.contains("id_token_hint="));
+            assertTrue(redirect.contains("post_logout_redirect_uri="));
+            assertNull(
+                    sessions.findById(session.cookie().getValue()),
+                    "Logout phải xóa phiên JDBC trước khi chuyển hướng tới provider");
+        } finally {
+            deleteUser(login.subject());
+        }
     }
 
     @DisplayName(
@@ -209,43 +167,5 @@ class SecurityConfigurationE2EIT extends IntegrationEnvironment {
         assertNotEquals(200, bearer.status());
         assertNotEquals(200, basic.status());
         assertNull(bearer.header("WWW-Authenticate"));
-    }
-
-    /** Phiên JDBC thật mang sẵn SecurityContext và token CSRF của đúng phiên đó. */
-    private record FabricatedSession(Cookie cookie, CsrfToken csrf) {}
-
-    /**
-     * Dựng phiên JDBC thật cho một principal tổng hợp ngay trong tiến trình — cùng cơ chế fixture
-     * phiên thật của suite (chạy SessionRepositoryFilter với request giả để phiên được lưu vào
-     * JDBC), chỉ khác là danh tính ở đây không đi qua Keycloak. Token CSRF được sinh và lưu vào
-     * đúng phiên đó bằng repository của Spring Security, như một lượt tải trang thật sẽ làm, để
-     * request logout qua HTTP mang token thật của phiên.
-     */
-    private FabricatedSession fabricateSession(OAuth2AuthenticationToken authentication)
-            throws Exception {
-        var csrfRepository = new HttpSessionCsrfTokenRepository();
-        var captured = new Object[2];
-        var request = new MockHttpServletRequest("GET", "/");
-        var response = new MockHttpServletResponse();
-        sessionFilter.doFilter(
-                request,
-                response,
-                (wrapped, reply) -> {
-                    var servletRequest = (HttpServletRequest) wrapped;
-                    var servletResponse = (HttpServletResponse) reply;
-                    servletRequest
-                            .getSession(true)
-                            .setAttribute(
-                                    HttpSessionSecurityContextRepository
-                                            .SPRING_SECURITY_CONTEXT_KEY,
-                                    new SecurityContextImpl(authentication));
-                    CsrfToken token = csrfRepository.generateToken(servletRequest);
-                    csrfRepository.saveToken(token, servletRequest, servletResponse);
-                    captured[1] = token;
-                });
-        captured[0] = Objects.requireNonNull(response.getCookie("SESSION"));
-        Cookie cookie = (Cookie) captured[0];
-        assertNotNull(sessions.findById(cookie.getValue()), "Session must persist in JDBC");
-        return new FabricatedSession(cookie, (CsrfToken) captured[1]);
     }
 }
