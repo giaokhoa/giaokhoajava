@@ -42,13 +42,13 @@ import org.springframework.transaction.annotation.Transactional;
  * để tầng endpoint chuyển tới người được mời, không bao giờ được lưu hay ghi log ở đây. Chấp nhận
  * tra lời mời theo hash của token trình ra: không thấy là 404 không lộ tồn tại, thấy thì người chấp
  * nhận phải đúng đích đã mời — đúng user khi mời theo userId, hoặc account có email đã xác minh
- * trùng email đích khi mời theo email; tên trùng không bao giờ đủ để ghép tài khoản. Chấp nhận
+ * trùng email đích khi mời theo email. Tên trùng không bao giờ đủ để ghép tài khoản. Chấp nhận
  * không đụng vào user_account nên origin của danh tính được mời không đổi.
  *
  * <p>Role đích của lời mời không chứa OWNER (DB cũng chặn ở CHECK) và MANAGER chỉ do owner của
  * center mời: đó là quy tắc nghiệp vụ của service vì CHECK tĩnh không khóa được người mời, còn
  * quyết định cho phép ở endpoint vẫn do Keycloak PDP xét qua scope membership.invite/manager.assign
- * trước khi gọi vào đây. Tạo lời mời chưa tạo membership; membership chỉ xuất hiện khi chấp nhận.
+ * trước khi gọi vào đây. Tạo lời mời chưa tạo membership. Membership chỉ xuất hiện khi chấp nhận.
  * Cả tạo và chấp nhận đều kết thúc bằng operation ghi lại bundle của workspace qua {@link
  * MembershipPolicyProjector} — chấp nhận đổi dữ kiện membership, còn tạo lời mời tuy chưa đổi nguồn
  * quyền nhưng hợp đồng mutation vẫn đòi một operation hoàn tất được, và operation đó đồng thời bảo

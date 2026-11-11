@@ -50,35 +50,42 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Service chia sẻ resource của US7: cấp (share), nhận (accept) và thu hồi (revoke) một version cho
- * một workspace nhận theo đúng hợp đồng authorization và hợp đồng HTTP. Cấp quyền chỉ diễn ra sau
- * quyết định PDP {@code share} trên target version tại workspace nguồn, và invariant của service
- * chỉ có thể thu hẹp thêm chứ không cấp thay PDP: lượt cấp không được rộng hơn nguồn — hành động
- * xin cấp phải nằm trong trần quyền nguồn của chính người cấp tại workspace này (chủ sở hữu thì
- * toàn catalog; người giữ version theo grant hoặc theo phân công thì bị trần bởi actions của
- * grant/phân công đó), và mọi thành phần mà version xin chia sẻ phụ thuộc qua một grant đều phải
- * cho phép chia tiếp tới đúng nơi nhận và phạm vi đó (FR-035, FR-041). Lượt cấp ghi ở trạng thái
- * {@code OFFERED}: nơi nhận chưa có quyền nào cho tới khi người có thẩm quyền của nơi nhận accept
- * qua quyết định {@code accept} trên target {@code grant:{id}}. Thu hồi chỉ áp cho mode {@code
- * REVOCABLE} đã {@code ACCEPTED} qua quyết định {@code revoke} của chính người cấp; grant {@code
- * LONG_TERM} không có nguồn revoke trong graph nên bị từ chối 403 và không nối membership/gói của
- * người cấp — người cấp rời đi hay hết gói không đụng được lượt cấp lâu dài (FR-037). Khi thu hồi,
- * toàn bộ dependency closure của grant (nơi nhận, bản đã lưu, bản fork phái sinh) được ghi lại
- * trong cùng operation qua {@link ResourceRevocationContributor} và action chỉ báo thành công khi
- * operation đó {@code SUCCEEDED}; lịch sử không bị xóa ở bất kỳ bước nào.
+ * Service chia sẻ resource: cấp (share), nhận (accept) và thu hồi (revoke) một version cho một
+ * workspace nhận theo đúng hợp đồng authorization và hợp đồng HTTP.
  *
- * <p>Accept một lượt cấp giữa hai tenant khác nhau kích hoạt copy-on-share: resource, version và
+ * <p>Cấp quyền chỉ diễn ra sau quyết định PDP {@code share} trên target version tại workspace
+ * nguồn. Invariant của service chỉ có thể thu hẹp thêm chứ không cấp thay PDP. Lượt cấp không được
+ * rộng hơn nguồn: hành động xin cấp phải nằm trong trần quyền nguồn của chính người cấp tại
+ * workspace này. Chủ sở hữu thì trần là toàn catalog. Người giữ version theo grant hoặc theo phân
+ * công thì bị trần bởi actions của grant hoặc phân công đó. Mọi thành phần mà version xin chia sẻ
+ * phụ thuộc qua một grant đều phải cho phép chia tiếp tới đúng nơi nhận và phạm vi đó.
+ *
+ * <p>Lượt cấp ghi ở trạng thái {@code OFFERED}. Nơi nhận chưa có quyền nào cho tới khi người có
+ * thẩm quyền của nơi nhận accept qua quyết định {@code accept} trên target {@code grant:{id}}.
+ *
+ * <p>Thu hồi chỉ áp cho mode {@code REVOCABLE} đã {@code ACCEPTED}, qua quyết định {@code revoke}
+ * của chính người cấp. Grant {@code LONG_TERM} không có nguồn revoke trong graph nên bị từ chối
+ * 403. Nó cũng không nối membership hay gói của người cấp: người cấp rời đi hay hết gói không đụng
+ * được lượt cấp lâu dài.
+ *
+ * <p>Khi thu hồi, toàn bộ dependency closure của grant (nơi nhận, bản đã lưu, bản fork phái sinh)
+ * được ghi lại trong cùng operation qua {@link ResourceRevocationContributor}. Action chỉ báo thành
+ * công khi operation đó {@code SUCCEEDED}. Lịch sử không bị xóa ở bất kỳ bước nào.
+ *
+ * <p>Accept một lượt cấp giữa hai tenant khác nhau kích hoạt copy-on-share. Resource, version và
  * closure phụ thuộc được sao vào mặt phẳng của workspace nhận kèm cạnh provenance về nguồn (qua
- * {@link ResourceCopies}), và mục thư viện của phía nhận được tạo trỏ bản sao đó; từ thời điểm này
- * quyền của phía nhận sống trên bản sao và thu hồi tác động qua projector trên bản sao thay vì thu
- * hồi dây chuyền tức thì trên tham chiếu sống như mô hình trước đây. Lượt cấp từ hệ thống
- * (workspace sở hữu có kind SYSTEM) và lượt cấp trong cùng một tenant giữ nguyên tham chiếu sống.
+ * {@link ResourceCopies}). Mục thư viện của phía nhận được tạo trỏ bản sao đó. Từ thời điểm này
+ * quyền của phía nhận sống trên bản sao, và thu hồi tác động qua projector trên bản sao thay vì thu
+ * hồi dây chuyền tức thì trên tham chiếu sống. Lượt cấp từ hệ thống (workspace sở hữu có kind
+ * SYSTEM) và lượt cấp trong cùng một tenant giữ nguyên tham chiếu sống.
  *
  * <p>Mọi action ghi biên nhận idempotency của chính mình trong cùng transaction với mutation (bảng
- * {@code sample_action_mutation}, cùng giao thức với service thư viện): replay cùng key và cùng
- * payload trả lại kết quả đầu tiên, khác payload trả 409. Trước khi hỏi PDP, service ghi lại bundle
- * hiện hành của target qua projector tương ứng bằng operation dùng chung và chờ chiếu xong — chờ
- * không xong thì fail-closed 503, không bao giờ báo quyền đã đồng bộ khi operation còn PENDING.
+ * {@code sample_action_mutation}, cùng giao thức với service thư viện). Replay cùng key và cùng
+ * payload trả lại kết quả đầu tiên. Khác payload trả 409.
+ *
+ * <p>Trước khi hỏi PDP, service ghi lại bundle hiện hành của target qua projector tương ứng bằng
+ * operation dùng chung và chờ chiếu xong. Chờ không xong thì fail-closed 503. Không bao giờ báo
+ * quyền đã đồng bộ khi operation còn PENDING.
  */
 @Service
 public class ResourceShareService {
@@ -248,11 +255,13 @@ public class ResourceShareService {
     }
 
     /**
-     * Trần quyền nguồn của người cấp tại workspace nguồn (FR-035): chủ sở hữu của version thì toàn
-     * catalog scope mức version; ngược lại, actions xin cấp (đã map sang scope) phải nằm trong hợp
-     * của các scope mà các grant đã ACCEPTED còn trong cửa sổ hiệu lực giao version này cho
-     * workspace và các phân công tường minh ACTIVE của chính người cấp cấp được. PDP đã cho qua
-     * scope {@code share} không tự làm trần này rộng hơn dữ kiện nguồn.
+     * Trần quyền nguồn của người cấp tại workspace nguồn. Chủ sở hữu của version thì toàn catalog
+     * scope mức version.
+     *
+     * <p>Ngược lại, actions xin cấp (đã map sang scope) phải nằm trong hợp của các scope mà các
+     * grant đã ACCEPTED còn trong cửa sổ hiệu lực giao version này cho workspace, và các phân công
+     * tường minh ACTIVE của chính người cấp cấp được. PDP đã cho qua scope {@code share} không tự
+     * làm trần này rộng hơn dữ kiện nguồn.
      */
     private void enforceSourceCeiling(
             UUID actorUserId, UUID workspaceId, VersionMetadata metadata, List<String> actions) {
@@ -287,15 +296,20 @@ public class ResourceShareService {
     }
 
     /**
-     * Ràng buộc thành phần (FR-041): duyệt toàn bộ closure phụ thuộc của version xin chia sẻ theo
-     * tầng (frontier loop) — mỗi tầng nạp các cạnh có đầu derived thuộc frontier hiện tại, các đầu
-     * source chưa thăm thành frontier kế tiếp, tập đã thăm khóa vòng lặp; mọi cạnh mang một grant
-     * trên các đỉnh đã thăm đều là nguồn giới hạn của version này. Grant đó phải còn {@code
-     * ACCEPTED} và còn trong cửa sổ hiệu lực của nó, phải tự cho phép chia tiếp (scope {@code
-     * share}), và phạm vi mới không được rộng hơn phạm vi của nó: nơi nhận phải nằm trong danh sách
-     * workspace cho phép của grant thành phần khi danh sách đó không rỗng, và danh sách cho phép
-     * của lượt cấp mới phải là tập con của nó; actions của lượt cấp mới cũng phải là tập con của
-     * actions của grant thành phần.
+     * Ràng buộc thành phần: duyệt toàn bộ closure phụ thuộc của version xin chia sẻ theo tầng
+     * (frontier loop). Mỗi tầng nạp các cạnh có đầu derived thuộc frontier hiện tại. Các đầu source
+     * chưa thăm thành frontier kế tiếp. Tập đã thăm khóa vòng lặp. Mọi cạnh mang một grant trên các
+     * đỉnh đã thăm đều là nguồn giới hạn của version này.
+     *
+     * <p>Grant đó phải còn {@code ACCEPTED} và còn trong cửa sổ hiệu lực của nó. Nó phải tự cho
+     * phép chia tiếp (scope {@code share}). Phạm vi mới không được rộng hơn phạm vi của nó:
+     *
+     * <ul>
+     *   <li>nơi nhận phải nằm trong danh sách workspace cho phép của grant thành phần khi danh sách
+     *       đó không rỗng
+     *   <li>danh sách cho phép của lượt cấp mới phải là tập con của danh sách đó
+     *   <li>actions của lượt cấp mới phải là tập con của actions của grant thành phần
+     * </ul>
      */
     private void enforceComponentConstraints(
             UUID resourceId,
@@ -647,8 +661,8 @@ public class ResourceShareService {
 
     /**
      * Chèn biên nhận của action trong cùng transaction với mutation, cùng giao thức với service thư
-     * viện: chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp; đã có biên nhận cùng
-     * payload thì trả định danh đích đầu tiên thay vì ghi lại; khác payload thì 409.
+     * viện. Chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp. Đã có biên nhận cùng
+     * payload thì trả định danh đích đầu tiên thay vì ghi lại. Khác payload thì 409.
      */
     private Optional<UUID> claimReceipt(
             UUID actorUserId,

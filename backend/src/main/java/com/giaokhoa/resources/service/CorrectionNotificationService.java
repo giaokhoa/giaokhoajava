@@ -7,16 +7,24 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Thông báo đính chính của US7 (FR-034): khi nguồn phát hành một {@code correction_notice}, mỗi
- * workspace từng nhận version bị lỗi nhận đúng một {@code notification_receipt} — receipt chỉ là dữ
- * kiện thông báo gồm định danh notice và nơi nhận, không mang nội dung, không tham chiếu nguồn
- * quyền nào và không tự cấp quyền xem version thay thế (data-model của correction). Tập nơi nhận
- * chốt tại thời điểm phát hành từ năm bề mặt đã nhận version đó: mục thư viện đã lưu đúng version,
- * lượt cấp share của đúng version còn {@code OFFERED} hoặc đã {@code ACCEPTED}, phân công tài
- * nguyên {@code ACTIVE} khớp resource hoặc môn của resource, hoạt động đã giao trên đúng version,
- * và workspace đang giữ bản sao hoặc bản phái sinh của version theo cạnh provenance; workspace sở
- * hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính tập nơi nhận đọc xuyên
- * workspace theo đúng tiền lệ {@code ResourceRevocationContributor.affectedWorkspaces}.
+ * Thông báo đính chính: khi nguồn phát hành một {@code correction_notice}, mỗi workspace từng nhận
+ * version bị lỗi nhận đúng một {@code notification_receipt}. Receipt chỉ là dữ kiện thông báo gồm
+ * định danh notice và nơi nhận. Nó không mang nội dung, không tham chiếu nguồn quyền nào và không
+ * tự cấp quyền xem version thay thế.
+ *
+ * <p>Tập nơi nhận chốt tại thời điểm phát hành từ các bề mặt đã nhận version đó:
+ *
+ * <ul>
+ *   <li>mục thư viện đã lưu đúng version
+ *   <li>lượt cấp share của đúng version còn {@code OFFERED} hoặc đã {@code ACCEPTED}
+ *   <li>phân công tài nguyên {@code ACTIVE} khớp resource hoặc môn của resource
+ *   <li>hoạt động đã giao trên đúng version
+ *   <li>workspace đang giữ bản sao hoặc bản phái sinh của version theo cạnh provenance
+ * </ul>
+ *
+ * <p>Workspace sở hữu nguồn bị loại vì nguồn không tự thông báo cho chính mình. Việc tính tập nơi
+ * nhận đọc xuyên workspace theo đúng tiền lệ {@code
+ * ResourceRevocationContributor.affectedWorkspaces}.
  *
  * <p>Xác nhận đã biết đính chính không có action riêng trong danh mục: mốc {@code acknowledged_at}
  * được ghi khi nơi nhận chủ động nhận version thay thế của notice qua {@code RECEIVE_UPDATE} — đúng

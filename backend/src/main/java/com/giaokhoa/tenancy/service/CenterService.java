@@ -43,7 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
  * đều đi qua authorization operation và desired projection của {@link CenterPolicyProjector}:
  * service chỉ ghi dữ kiện nguồn và operation trong transaction của app-db, không tự quyết quyền
  * thay Keycloak PDP và không báo đồng bộ xong khi operation còn PENDING. Quyết định cho phép ở
- * endpoint vẫn do PDP xét trước khi gọi vào đây; các kiểm tra trong service này là bất biến dữ kiện
+ * endpoint vẫn do PDP xét trước khi gọi vào đây. Các kiểm tra trong service này là bất biến dữ kiện
  * (đúng workspace, owner đích đã có danh tính, không gỡ owner cuối cùng) chứ không phải một engine
  * quyền thứ hai.
  *
@@ -52,10 +52,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Vì dữ kiện nguồn nằm ngoài callback của operation, mỗi mutation tự tuần tự hoá trên (actor,
  * idempotency key) hoặc trên membership bằng advisory lock trong chính transaction hiện hành, rồi
  * mới kiểm tra replay: hai lời gọi đồng thời cùng key không thể cùng đi qua điểm kiểm tra. OWNER
- * chỉ đến từ lúc tạo center; đường đổi role không cấp mới OWNER và không gỡ OWNER khỏi membership
+ * chỉ đến từ lúc tạo center. Đường đổi role không cấp mới OWNER và không gỡ OWNER khỏi membership
  * của chủ sở hữu, vì center phải luôn có đúng một owner.
  *
- * <p>Dữ kiện directory đọc/ghi qua repository JPA; {@link JdbcOperations} chỉ còn phục vụ advisory
+ * <p>Dữ kiện directory đọc/ghi qua repository JPA. {@link JdbcOperations} chỉ còn phục vụ advisory
  * lock trong transaction (hạ tầng khóa của PostgreSQL, không phải đường truy cập dữ kiện). Trước
  * khi gọi các cộng tác viên của module khác đọc dữ kiện nguồn bằng đường riêng của chúng, service
  * flush tường minh để thay đổi JPA đã ghi luôn nhìn thấy được trong cùng transaction.

@@ -21,11 +21,8 @@ import tools.jackson.databind.JsonNode;
  * động nhận bản mới, và fork tạo định danh mới còn truy vết nguồn trong khi người chỉ có quyền dùng
  * không fork được.
  *
- * <p>Đây là test viết trước cho story kho tài nguyên (ban đầu ở PR test-first #218, đỏ vì route đọc
- * thân/đáp án và các action SAVE_VERSION, FORK_VERSION, RECEIVE_UPDATE, CORRECT_SOURCE chưa được
- * cài đặt). Bản này được port vào gate nghiệm thu US7 sau khi hành vi đã land trên main; fixture
- * chỉ seed dữ kiện canonical có thật (resource, resource_version, workspace, gói, chuỗi ghi danh)
- * bằng JDBC.
+ * <p>Fixture chỉ nạp sẵn dữ kiện chuẩn có thật (resource, resource_version, workspace, gói, chuỗi
+ * ghi danh) bằng JDBC.
  */
 @SpringBootTest
 class ResourceAccessIT extends ResourceFixture {

@@ -38,33 +38,36 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Ma trận thu hồi US5: sáu scenario khóa hành vi thu hồi ở tầng HTTP với phiên thật và worker thật,
- * theo hợp đồng quyền trong thân issue.
+ * Ma trận thu hồi: sáu scenario khóa hành vi thu hồi ở tầng HTTP với phiên thật và worker thật.
  *
  * <ul>
- *   <li>US5.1 — gỡ phân công giáo viên: cùng phiên cũ đọc roster môn đó phải 403, giáo viên còn lại
- *       vẫn 200.
- *   <li>US5.2 — gỡ membership tại một center: cùng phiên cũ đọc roster center đó phải 403, danh
- *       sách workspace còn center kia mà không còn center này, thành viên khác không ảnh hưởng.
- *   <li>US5.3 — gỡ ghi danh: học sinh đọc kết quả công bố của mình chuyển từ 1 mục thành 0 mục
- *       (HTTP 200 với danh sách rỗng — B56: chính học sinh nhận tập được phép, có thể rỗng, không
- *       phải 403), biến mất khỏi roster theo góc nhìn của giáo viên (1 mục thành 0 mục); giáo viên
- *       còn thẩm quyền vẫn đọc kết quả 200 (lịch sử giữ). Học sinh không bao giờ đọc được danh sách
- *       roster môn — xem Sổ B66.
- *   <li>US5.4 — header {@code X-Tenant-Id} giả không ghi đè route; id môn của center khác nhúng vào
- *       route này phải 404.
- *   <li>US5.5 — nguồn quyền OR độc lập: gỡ một môn thì môn còn lại vẫn 200.
- *   <li>US5.6 — DELETE trả 202 PENDING với operationId; yêu cầu được bảo vệ ngay sau 202 không bao
- *       giờ 200 (403 hoặc 503 fail-closed); operation view nhất quán; chờ SUCCEEDED rồi roster 403.
+ *   <li>Gỡ phân công giáo viên: cùng phiên cũ đọc roster môn đó phải 403, giáo viên còn lại vẫn
+ *       200.
+ *   <li>Gỡ membership tại một center: cùng phiên cũ đọc roster center đó phải 403, danh sách
+ *       workspace còn center kia mà không còn center này, thành viên khác không ảnh hưởng.
+ *   <li>Gỡ ghi danh: học sinh đọc kết quả công bố của mình chuyển từ 1 mục thành 0 mục (HTTP 200
+ *       với danh sách rỗng: chính học sinh nhận tập được phép, có thể rỗng, không phải 403), và
+ *       biến mất khỏi roster theo góc nhìn của giáo viên (1 mục thành 0 mục). Giáo viên còn thẩm
+ *       quyền vẫn đọc kết quả 200 (lịch sử giữ). Học sinh không bao giờ đọc được danh sách roster
+ *       môn.
+ *   <li>Header {@code X-Tenant-Id} giả không ghi đè route. Id môn của center khác nhúng vào route
+ *       này phải 404.
+ *   <li>Nguồn quyền OR độc lập: gỡ một môn thì môn còn lại vẫn 200.
+ *   <li>DELETE trả 202 PENDING với operationId. Yêu cầu được bảo vệ ngay sau 202 không bao giờ 200
+ *       (403 hoặc 503 fail-closed). Operation view nhất quán. Chờ SUCCEEDED rồi roster 403.
  * </ul>
  *
- * <p>Không bao phủ ở đây: cạnh tranh thu hồi đồng thời nhiều partition (đã có {@code
- * ConcurrentRevocationE2EIT}, tái dùng thay vì viết lại); khôi phục sau lỗi ở biên worker (đã có
- * {@code ProjectionRecoveryIT}); lỗi directory/graph/commit ép buộc (không lái được qua route HTTP
- * công khai — xem Sổ B62); action chấm/công bố mẫu là US7 (xem Sổ B63); case share hoãn sang gate
- * US7 (xem Sổ B64).
+ * <p>Không bao phủ ở đây:
  *
- * <p>Plumbing Keycloak/phiên dùng chung ở {@code KeycloakSessionFixture} (package support), cùng
+ * <ul>
+ *   <li>cạnh tranh thu hồi đồng thời nhiều partition (đã có {@code ConcurrentRevocationE2EIT}, tái
+ *       dùng thay vì viết lại)
+ *   <li>khôi phục sau lỗi ở biên worker (đã có {@code ProjectionRecoveryIT})
+ *   <li>lỗi directory/graph/commit ép buộc (không lái được qua route HTTP công khai)
+ *   <li>action chấm/công bố mẫu và case share
+ * </ul>
+ *
+ * <p>Phần nối Keycloak/phiên dùng chung ở {@code KeycloakSessionFixture} (package support), cùng
  * mẫu với fixture của các nhóm test khác.
  */
 @SpringBootTest
@@ -151,7 +154,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
         deleteUser(identities.studentY().subject());
     }
 
-    // ---------- US5.1: gỡ phân công giáo viên ----------
+    // ---------- Gỡ phân công giáo viên ----------
 
     @DisplayName("Giáo viên bị revoke mất quyền đọc roster ngay trong cùng session")
     @Test
@@ -217,7 +220,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
                     403,
                     getRaw(teacherA, results).getStatus(),
                     "Cùng phiên cũ sau khi gỡ phân công, giáo viên không còn đọc được kết quả"
-                            + " của học sinh (B56: actor khác mà tập được phép rỗng thì 403)");
+                            + " của học sinh (actor khác mà tập được phép rỗng thì 403)");
             assertEquals(
                     1,
                     getJson(teacherB, results, 200).get("items").size(),
@@ -229,7 +232,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
         }
     }
 
-    // ---------- US5.2: gỡ membership tại một center ----------
+    // ---------- Gỡ membership tại một center ----------
 
     @DisplayName("Thành viên bị gỡ mất cả workspace và roster ngay trong cùng session")
     @Test
@@ -288,7 +291,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
                     403,
                     getRaw(teacherA, resultsA).getStatus(),
                     "Cùng phiên cũ sau khi gỡ membership, giáo viên không còn đọc được kết quả"
-                            + " của học sinh (B56: actor khác mà tập được phép rỗng thì 403)");
+                            + " của học sinh (actor khác mà tập được phép rỗng thì 403)");
             assertEquals(
                     1,
                     getJson(teacherB, resultsA, 200).get("items").size(),
@@ -307,7 +310,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
         }
     }
 
-    // ---------- US5.3: gỡ ghi danh ----------
+    // ---------- Gỡ ghi danh ----------
 
     @DisplayName("Học sinh bị hủy ghi danh mất quyền đọc kết quả và biến mất khỏi roster")
     @Test
@@ -356,7 +359,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
                     0,
                     getJson(studentX, results, 200).get("items").size(),
                     "Cùng phiên cũ sau khi gỡ ghi danh, học sinh không còn thấy kết quả của mình"
-                            + " (B56: chính học sinh nhận tập được phép, có thể rỗng,"
+                            + " (chính học sinh nhận tập được phép, có thể rỗng,"
                             + " HTTP 200 — không phải 403)");
             assertEquals(
                     0,
@@ -369,7 +372,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
         }
     }
 
-    // ---------- US5.4: tenant giả và id ngoài phạm vi ----------
+    // ---------- Tenant giả và id ngoài phạm vi ----------
 
     @DisplayName("Tenant header giả mạo và subject của tenant khác đều bị từ chối")
     @Test
@@ -422,7 +425,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
         }
     }
 
-    // ---------- US5.5: nguồn quyền OR độc lập ----------
+    // ---------- Nguồn quyền OR độc lập ----------
 
     @Test
     void revokingOneSubjectKeepsOtherSubject() throws Exception {
@@ -473,7 +476,7 @@ class RevocationMatrixIT extends KeycloakSessionFixture {
         }
     }
 
-    // ---------- US5.6: 202 và fail-closed trước khi hoàn tất ----------
+    // ---------- 202 và fail-closed trước khi hoàn tất ----------
 
     @DisplayName(
             "Revoke trả 202 và request tiếp theo không bao giờ thành công trước khi việc thu hồi hoàn tất")

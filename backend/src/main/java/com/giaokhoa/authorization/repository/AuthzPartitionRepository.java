@@ -16,9 +16,7 @@ import org.springframework.data.repository.query.Param;
 
 /**
  * Repository của partition authorization. Các điểm đọc UserAccount/Workspace ở cuối là điểm đọc mặt
- * phẳng hệ thống neo theo partition mà mặt phẳng điều khiển cần (xác minh graph, eligibility); khi
- * repository của module directory land, điều phối có thể chuyển các điểm đọc này sang đó mà không
- * đổi chữ ký service của module authorization.
+ * phẳng hệ thống neo theo partition mà mặt phẳng điều khiển cần (xác minh graph, eligibility).
  */
 public interface AuthzPartitionRepository extends JpaRepository<AuthorizationPartition, UUID> {
 

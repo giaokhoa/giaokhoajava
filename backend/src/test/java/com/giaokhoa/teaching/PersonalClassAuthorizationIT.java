@@ -20,17 +20,10 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Nhánh giảng dạy cá nhân của US6 ở tầng HTTP: lớp personal dùng owner và enrollment, không dùng
+ * Nhánh giảng dạy cá nhân ở tầng HTTP: lớp personal dùng owner và enrollment, không dùng
  * center_membership hay role nghề nghiệp. Owner có gói tổ chức lớp/khóa/roster/ghi danh, giao bài
  * và chấm/công bố cho người học đã ghi danh; giáo viên center không gói vẫn biên soạn được tại
  * center nhưng không mở được kho/lớp cá nhân, và rời center không làm mất quyền cá nhân.
- *
- * <p>Đây là test viết trước phần implementation còn thiếu của US6. Kiểm chứng tại thời điểm viết:
- * route giảng dạy trên personal workspace đã chạy cho owner có gói (tổ chức lớp/khóa/roster/ghi
- * danh và rời center đều xanh), nhưng hai khoảng trống còn đỏ đúng lý do — tạo lớp personal chưa bị
- * cổng gói chặn (chưa có gói vẫn nhận 202 thay vì 403) và các sample action ASSIGN_ACTIVITY,
- * SUBMIT_ACTIVITY, GRADE_RESULT, PUBLISH_RESULT chưa được cài đặt (400 UNSUPPORTED_SAMPLE_ACTION).
- * Đỏ đó là bằng chứng red có ý nghĩa của task test-first, không phải lỗi fixture hay môi trường.
  */
 @SpringBootTest
 class PersonalClassAuthorizationIT extends TeachingFixture {
@@ -130,9 +123,9 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
             UUID courseSubjectId;
             List<UUID> subjects;
             try (var owner = openSession(ownerLogin)) {
-                UUID classId = createClass(owner, center, "Lớp center US6");
+                UUID classId = createClass(owner, center, "Lớp center");
                 subjects = subjectIds(owner, 1);
-                UUID courseId = createCourse(owner, center, classId, "Khóa center US6", subjects);
+                UUID courseId = createCourse(owner, center, classId, "Khóa center", subjects);
                 courseSubjectId = courseSubjectId(courseId, subjects.getFirst());
                 assignTeachers(owner, center, courseSubjectId, List.of(teacherId));
             }
@@ -320,8 +313,8 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
                     seedAccount(
                             studentLogin.subject(), "SELF_REGISTERED", studentLogin.email(), true);
             UUID personal = personalWorkspaceOf(ownerId);
-            // Đọc kết quả rỗng phải qua fence của đúng workspace đang đọc (thay đổi của #200):
-            // seed kỳ gói bằng JDBC không tạo partition của workspace nên fence trả 503.
+            // Đọc kết quả rỗng phải qua fence của đúng workspace đang đọc.
+            // Seed kỳ gói bằng JDBC không tạo partition của workspace nên fence trả 503.
             // Xác nhận qua SubscriptionService để operation tạo partition và ghi bundle,
             // chờ SUCCEEDED rồi mới đọc.
             Instant from = OffsetDateTime.now(ZoneOffset.UTC).minusDays(1).toInstant();
@@ -518,10 +511,9 @@ class PersonalClassAuthorizationIT extends TeachingFixture {
             UUID courseSubjectId;
             List<UUID> subjects;
             try (var centerOwner = openSession(centerOwnerLogin)) {
-                UUID classId = createClass(centerOwner, center, "Lớp center US6.5");
+                UUID classId = createClass(centerOwner, center, "Lớp center");
                 subjects = subjectIds(centerOwner, 1);
-                UUID courseId =
-                        createCourse(centerOwner, center, classId, "Khóa center US6.5", subjects);
+                UUID courseId = createCourse(centerOwner, center, classId, "Khóa center", subjects);
                 courseSubjectId = courseSubjectId(courseId, subjects.getFirst());
                 assignTeachers(centerOwner, center, courseSubjectId, List.of(userId));
             }

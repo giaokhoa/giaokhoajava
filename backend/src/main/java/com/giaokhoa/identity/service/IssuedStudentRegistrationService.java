@@ -24,12 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Cấp danh tính học sinh do center phát hành. Registrar chỉ ghi phía directory: account (origin
  * CENTER_ISSUED do server xác lập) kèm personal workspace và membership STUDENT trong center. Việc
- * tạo user trên Keycloak và bàn giao credential tạm thuộc task workflow khôi phục (caller tạo
- * Keycloak user trước rồi đưa Keycloak sub vào đây); registrar không tạo user Keycloak, không đặt
- * mật khẩu, không trả mật khẩu cho ai. Account đã có không bao giờ bị đổi origin hay ghi đè: mời
- * account có sẵn chỉ thêm membership, không reset danh tính. Rời center chỉ thu hồi membership,
- * không xóa account hay personal workspace — việc thu hồi thuộc luồng riêng, registrar không xóa
- * gì.
+ * tạo user trên Keycloak và bàn giao credential tạm thuộc về caller (caller tạo Keycloak user trước
+ * rồi đưa Keycloak sub vào đây). Registrar không tạo user Keycloak, không đặt mật khẩu, không trả
+ * mật khẩu cho ai. Account đã có không bao giờ bị đổi origin hay ghi đè: mời account có sẵn chỉ
+ * thêm membership, không reset danh tính. Rời center chỉ thu hồi membership, không xóa account hay
+ * personal workspace — việc thu hồi thuộc luồng riêng, registrar không xóa gì.
  */
 @Service
 public class IssuedStudentRegistrationService {

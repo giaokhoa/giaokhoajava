@@ -37,9 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
  * nhân mọi môn–khóa đã chọn) và thu hồi một ghi danh. Ghi danh là thay đổi nguồn quyền — học sinh
  * thành nguồn của group học sinh thuộc môn–khóa — nên mỗi mutation ghi một authorization operation
  * qua {@link SourceRevocationCoordinator} với bundle hiện hành của từng môn–khóa bị ảnh hưởng kèm
- * toàn bộ bundle kết quả của workspace (ghi danh là nguồn của {@code read.published}), và ghi danh
- * chỉ được coi là đã đồng bộ khi operation SUCCEEDED; service không tự quyết quyền thay Keycloak
- * PDP (quyết định cho phép ở route) và không báo hoàn tất khi operation còn PENDING.
+ * toàn bộ bundle kết quả của workspace (ghi danh là nguồn của {@code read.published}). Ghi danh chỉ
+ * được coi là đã đồng bộ khi operation SUCCEEDED. Service không tự quyết quyền thay Keycloak PDP
+ * (quyết định cho phép ở route) và không báo hoàn tất khi operation còn PENDING.
  *
  * <p>Toàn bộ lô được kiểm tra trước khi ghi bất cứ dòng nào (theo mẫu lô roster): danh sách hai
  * phía không được rỗng, mọi dòng roster phải hiện hành và thuộc đúng workspace, mọi môn–khóa phải
@@ -47,7 +47,7 @@ import org.springframework.transaction.annotation.Transactional;
  * không ghi phần nào (trigger cùng-lớp ở DB chỉ là chốt chặn cuối). Ghi danh theo ngữ nghĩa hợp
  * tập: cặp đã có dòng hiện hành thì giữ nguyên dòng đó, chưa có thì tạo dòng ACTIVE mới (kể cả khi
  * từng có dòng đã thu hồi — lịch sử cũ không bị phục hồi). Ghi danh là thao tác mở rộng nên bị chặn
- * khi gói đã hết hiệu lực; thu hồi thì không bị chặn bởi gói. Với workspace CENTER, dòng roster
+ * khi gói đã hết hiệu lực. Thu hồi thì không bị chặn bởi gói. Với workspace CENTER, dòng roster
  * hiện hành đã kéo theo membership ACTIVE tại lúc vào lớp và việc gỡ membership đóng cả roster lẫn
  * ghi danh qua contributor, nên service không kiểm tra lại membership ở đây; ghi danh cho PERSONAL
  * đi cùng đường này (owner tổ chức qua route), nguồn personal thuộc projector riêng.

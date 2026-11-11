@@ -32,9 +32,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * Khóa phép duyệt closure phụ thuộc của ràng buộc thành phần (FR-041) sau khi thay truy vấn đệ quy
- * bằng duyệt lặp theo tầng: grant điều phối phải thu đủ qua nhiều tầng, cạnh không mang grant không
- * đóng góp gì, và vòng lặp trong đồ thị phụ thuộc không làm phép duyệt treo hay thu trùng.
+ * Khóa phép duyệt closure phụ thuộc của ràng buộc thành phần bằng duyệt lặp theo tầng. Grant điều
+ * phối phải thu đủ qua nhiều tầng. Cạnh không mang grant không đóng góp gì. Vòng lặp trong đồ thị
+ * phụ thuộc không làm phép duyệt treo hay thu trùng.
  */
 class ResourceShareClosureTest {
 

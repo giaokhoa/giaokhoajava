@@ -28,8 +28,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Schema và entity của recovery_request trên schema dùng chung của suite: vòng đời REQUESTED →
  * VERIFIED → RESOLVED/REJECTED được khóa tại DB qua cặp verified_by/resolved_at, và lịch sử xác
- * minh không bị hard-delete hay đổi định danh. Workflow gửi/xử lý yêu cầu thuộc các task sau; class
- * này chỉ khóa record nền.
+ * minh không bị hard-delete hay đổi định danh. Workflow gửi và xử lý yêu cầu được khóa ở {@code
+ * RecoveryWorkflowIT}. Lớp kiểm thử này chỉ khóa bản ghi nền.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

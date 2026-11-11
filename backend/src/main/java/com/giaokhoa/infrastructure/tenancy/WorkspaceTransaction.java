@@ -18,10 +18,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Chốt tenant trước khi mở transaction/EntityManager. Một transaction chỉ dùng một schema; đọc
- * nguồn ở schema khác chạy trong transaction đọc riêng và trả dữ kiện đã materialize. Cách ly
- * tenant dựa vào ranh giới schema và {@link TenantContext}; không còn context ở tầng cơ sở dữ liệu
- * (RLS và GUC app.workspace_id đã tháo ở bước chốt của #261).
+ * Chốt tenant trước khi mở transaction/EntityManager. Một transaction chỉ dùng một schema. Đọc
+ * nguồn ở schema khác chạy trong transaction đọc riêng và trả dữ kiện đã materialize.
+ *
+ * <p>Cách ly tenant dựa vào ranh giới schema và {@link TenantContext}. Không còn context ở tầng cơ
+ * sở dữ liệu: RLS và GUC app.workspace_id đã được tháo bỏ.
  */
 @Component
 public class WorkspaceTransaction {

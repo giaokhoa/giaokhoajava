@@ -47,7 +47,7 @@ import tools.jackson.databind.json.JsonMapper;
  * role đích, sai đích bị từ chối, token chỉ dùng được một lần, lời mời hết hạn bị từ chối, chấp
  * nhận vào membership đang chờ thì kích hoạt mà giữ nguyên lịch sử tham gia, cộng role mới vào
  * membership hiện hành làm tăng row version, và cấp học sinh phát lại theo cùng khoá không tái lộ
- * handoff. Test gọi thẳng service, không qua endpoint HTTP thuộc task controller riêng.
+ * handoff. Test gọi thẳng service, không qua endpoint HTTP.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
