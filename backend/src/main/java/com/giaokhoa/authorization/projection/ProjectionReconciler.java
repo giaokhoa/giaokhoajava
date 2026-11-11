@@ -296,11 +296,15 @@ public class ProjectionReconciler {
                         "Dependency partition is not READY: " + dependency);
             }
         }
-        // Group của workspace là tiền đề mà policy tham chiếu: writer chỉ lấy id của group đã
-        // tồn tại, nên phải đối chiếu membership (tạo group qua ensureRealmGroup khi có member
-        // ACTIVE) TRƯỚC khi áp bundle; mọi descriptor trong bundle đều có ít nhất một member
-        // ACTIVE nên group của nó luôn được tạo ở bước này. Đường eligibility giữ sau apply
-        // như cũ vì group đó đã tồn tại sẵn từ fixture.
+        // Group là tiền đề mà policy tham chiếu: writer chỉ lấy id của group đã tồn tại, nên
+        // mọi group path mà các graph sắp áp tham chiếu phải tồn tại TRƯỚC khi áp bundle.
+        // Membership sync của WORKSPACE partition chỉ tạo group khi có member ACTIVE cần vào
+        // group đó, nên descriptor trỏ vào group chưa từng có member nào (như managers của
+        // trung tâm nhận share chưa từng có quản lý) không được bước sync nào tạo ra — bảo
+        // đảm tồn tại ở đây chỉ tạo group rỗng, không cấp quyền cho ai; membership vẫn do
+        // các đường sync sở hữu. Đường eligibility giữ sau apply như cũ vì group đó đã tồn
+        // tại sẵn từ fixture.
+        ensureReferencedGroups(resolved);
         syncWorkspaceGroupMemberships(partitionId);
         List<Outcome> outcomes = new ArrayList<>();
         for (int i = 0; i < projections.size(); i++) {
@@ -429,6 +433,44 @@ public class ProjectionReconciler {
         // Và guardian group theo student: phép chiếu duy nhất biến một guardian link đã
         // duyệt thành tư cách thành viên group mà policy của kết quả tham chiếu.
         guardianProjector.syncGroupMemberships(workspaceId);
+    }
+
+    /**
+     * Bảo đảm mọi realm group mà các graph sắp áp tham chiếu đều đã tồn tại trong Keycloak, tạo
+     * group rỗng qua {@link AuthorizationProvisioningClient#ensureRealmGroup} cho path chưa có. Chỉ
+     * các bước Apply/ApplyBundle mới tham chiếu group; bước thu hồi không áp graph nào nên không
+     * cần bảo đảm. Group rỗng không cho ai qua gate của nó, và membership live vẫn do các đường
+     * sync của workspace/guardian/teaching sở hữu như cũ.
+     */
+    private void ensureReferencedGroups(List<Resolved> resolved) {
+        Set<String> groupPaths = new TreeSet<>();
+        for (Resolved step : resolved) {
+            if (step instanceof Resolved.Apply apply) {
+                collectGroupPaths(apply.graph(), groupPaths);
+            } else if (step instanceof Resolved.ApplyBundle bundle) {
+                for (PolicyGraph graph : bundle.graphs().values()) {
+                    collectGroupPaths(graph, groupPaths);
+                }
+            }
+        }
+        groupPaths.forEach(directory::ensureRealmGroup);
+    }
+
+    private static void collectGroupPaths(PolicyGraph graph, Set<String> groupPaths) {
+        for (PolicyGraph.Gate gate : graph.commonGates()) {
+            collectGroupPath(gate, groupPaths);
+        }
+        for (PolicyGraph.Source source : graph.sources()) {
+            for (PolicyGraph.Gate gate : source.gates()) {
+                collectGroupPath(gate, groupPaths);
+            }
+        }
+    }
+
+    private static void collectGroupPath(PolicyGraph.Gate gate, Set<String> groupPaths) {
+        if (gate instanceof PolicyGraph.Gate.GroupMembership group) {
+            groupPaths.add(group.groupPath());
+        }
     }
 
     /** Fence một partition và các projection của nó; dùng trước khi sửa drift ngoài hệ thống. */
