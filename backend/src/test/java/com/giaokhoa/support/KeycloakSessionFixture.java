@@ -91,6 +91,19 @@ public abstract class KeycloakSessionFixture extends IntegrationEnvironment {
                 .build();
     }
 
+    private @Nullable HttpTestClient httpClient;
+
+    /**
+     * Client HTTP thật của tầng e2e-backend (B107), bind lười vào server RANDOM_PORT của context.
+     * Chỉ các class e2e dùng; các class it-pure giữ nguyên đường MockMvc ở trên.
+     */
+    protected HttpTestClient realHttp() {
+        if (httpClient == null) {
+            httpClient = HttpTestClient.bind(webContext);
+        }
+        return httpClient;
+    }
+
     protected <T> T tx(java.util.function.Supplier<T> action) {
         return new TransactionTemplate(transactionManager).execute(_ -> action.get());
     }
@@ -124,6 +137,18 @@ public abstract class KeycloakSessionFixture extends IntegrationEnvironment {
      */
     protected MockHttpServletResponse getWorkspacesWhenReady(RealSession session) throws Exception {
         return requestWhenReady(mockMvc(), get("/api/me/workspaces").cookie(session.cookie()));
+    }
+
+    /** Bản HTTP thật của {@link #getWorkspacesWhenReady(RealSession)} cho tầng e2e-backend. */
+    protected HttpTestClient.Response getWorkspacesWhenReadyHttp(RealSession session) {
+        return realHttp().whenReady(() -> realHttp().get("/api/me/workspaces", session.cookie()));
+    }
+
+    /** Bản HTTP thật của {@link #openSession(KeycloakLogin)} cho tầng e2e-backend. */
+    protected RealSession openSessionHttp(KeycloakLogin login) throws Exception {
+        RealSession session = openSession(login.username(), login.password(), login.subject());
+        getWorkspacesWhenReadyHttp(session);
+        return session;
     }
 
     // ---------- Keycloak TEST realm qua Admin API ----------
