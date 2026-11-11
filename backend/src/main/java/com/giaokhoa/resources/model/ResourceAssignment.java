@@ -114,6 +114,13 @@ public class ResourceAssignment {
         return state;
     }
 
+    /**
+     * Kích hoạt phân công có hiệu lực ngay khi ghi (mẫu dữ kiện kiểm chứng, luồng cấp trực tiếp).
+     */
+    public void activate() {
+        this.state = State.ACTIVE;
+    }
+
     public @Nullable Instant getRevokedAt() {
         return revokedAt;
     }
