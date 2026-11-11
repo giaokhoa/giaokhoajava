@@ -1,4 +1,4 @@
-package com.giaokhoa.tenancy;
+package com.giaokhoa.tenancy.service;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
@@ -11,6 +11,7 @@ import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
+import com.giaokhoa.tenancy.MembershipPolicyProjector;
 import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;
 import com.giaokhoa.tenancy.model.Workspace;

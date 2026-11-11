@@ -1,4 +1,4 @@
-package com.giaokhoa.tenancy;
+package com.giaokhoa.tenancy.service;
 
 import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;

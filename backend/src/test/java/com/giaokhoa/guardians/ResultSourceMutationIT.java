@@ -9,7 +9,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.guardians.service.GuardianLinkService;
 import com.giaokhoa.teaching.service.AssignmentService;
 import com.giaokhoa.teaching.service.EnrollmentService;
-import com.giaokhoa.tenancy.CenterService;
+import com.giaokhoa.tenancy.service.CenterService;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;

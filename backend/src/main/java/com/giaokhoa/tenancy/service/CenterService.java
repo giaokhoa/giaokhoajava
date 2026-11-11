@@ -1,4 +1,4 @@
-package com.giaokhoa.tenancy;
+package com.giaokhoa.tenancy.service;
 
 import com.giaokhoa.authorization.keycloak.AuthorizationProvisioningClient;
 import com.giaokhoa.authorization.model.AuthorizationOperation;
@@ -14,6 +14,8 @@ import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.TeachingRevocationContributor;
+import com.giaokhoa.tenancy.CenterPolicyProjector;
+import com.giaokhoa.tenancy.MembershipIndexSynchronizer;
 import com.giaokhoa.tenancy.model.Center;
 import com.giaokhoa.tenancy.model.CenterMembership;
 import com.giaokhoa.tenancy.model.MembershipRole;

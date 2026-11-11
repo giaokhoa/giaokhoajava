@@ -6,8 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
-import com.giaokhoa.tenancy.CenterService;
 import com.giaokhoa.tenancy.model.MembershipRole;
+import com.giaokhoa.tenancy.service.CenterService;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;

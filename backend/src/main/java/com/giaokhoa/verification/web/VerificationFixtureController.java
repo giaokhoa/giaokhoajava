@@ -16,7 +16,7 @@ import com.giaokhoa.resources.repository.ResourceRepository;
 import com.giaokhoa.resources.repository.ResourceVersionRepository;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.teaching.model.Subject;
-import com.giaokhoa.tenancy.WorkspaceDirectoryService;
+import com.giaokhoa.tenancy.service.WorkspaceDirectoryService;
 import com.giaokhoa.verification.repository.VerificationAuthorizationOperationRepository;
 import com.giaokhoa.verification.repository.VerificationSubjectRepository;
 import jakarta.servlet.http.HttpServletRequest;

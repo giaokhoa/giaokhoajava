@@ -2,7 +2,7 @@ package com.giaokhoa.verification;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
-import com.giaokhoa.tenancy.WorkspaceDirectoryService;
+import com.giaokhoa.tenancy.service.WorkspaceDirectoryService;
 import com.giaokhoa.verification.repository.SystemPracticeAttemptRepository;
 import java.time.Instant;
 import java.util.List;
