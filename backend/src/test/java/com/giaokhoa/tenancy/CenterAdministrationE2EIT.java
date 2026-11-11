@@ -38,15 +38,13 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Contract US2 ở tầng quản trị trung tâm: operator tạo tenant và xác nhận gói thủ công, owner bổ
- * nhiệm manager, manager mời thành viên và đổi role theo scope riêng, gói hết hạn chặn thêm quyền
- * nhưng không chặn thu hồi, giáo viên không tạo được lớp center, và người quản trị không tự đọc
- * được nội dung riêng của người khác.
+ * Contract ở tầng quản trị trung tâm: operator tạo tenant và xác nhận gói thủ công, owner bổ nhiệm
+ * manager, manager mời thành viên và đổi role theo scope riêng, gói hết hạn chặn thêm quyền nhưng
+ * không chặn thu hồi, giáo viên không tạo được lớp center, và người quản trị không tự đọc được nội
+ * dung riêng của người khác.
  *
- * <p>Đây là task test-first: các endpoint US2 chưa được triển khai nên test khẳng định đúng hợp
- * đồng HTTP (202 operation chưa hoàn tất, 403 khi thiếu quyền, 400 khi kỳ gói sai) và hiện đỏ với
- * 404 vì route chưa tồn tại — đỏ đó là có ý nghĩa, không phải lỗi hạ tầng. Các test dùng endpoint
- * đã có (workspaces, operations, capabilities) để khóa hành vi nền thì xanh ngay.
+ * <p>Test khẳng định đúng hợp đồng HTTP: 202 khi operation chưa hoàn tất, 403 khi thiếu quyền, 400
+ * khi kỳ gói sai.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

@@ -47,14 +47,25 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Eligibility của actor luôn qua PDP profile và ACCOUNT fence. Quyết định role ở tầng này tính
  * từ đúng dữ kiện nguồn mà CenterPolicyProjector chiếu lên native graph: role của membership ACTIVE
- * của chính actor trong workspace và cửa sổ hiệu lực của các kỳ gói đã xác nhận. Bảng nguồn áp dụng
- * theo projector: xem danh sách chỉ cần là thành viên hiện hành; mời, đổi role (phần thêm) và cấp
- * học sinh cần owner/manager cộng gói chưa hết hiệu lực; bổ nhiệm hoặc gỡ manager chỉ thuộc owner;
- * thu hồi không bị gate bởi gói. Route tạo lớp đã chuyển sang controller giảng dạy với cùng biên
- * quyết quyền bằng dữ kiện nguồn này. Gói chỉ chặn khi center đã từng có kỳ gói mà không kỳ nào còn
- * hiệu lực — center chưa từng được xác nhận gói vẫn do owner/manager quản trị, đúng hành vi hợp
- * đồng US2 yêu cầu. Các service giữ tiền điều kiện dữ kiện riêng của thao tác ghi (đúng một đích
- * mời, OWNER không mời được, học sinh trùng username) và trả lỗi nghiệp vụ của chúng.
+ * của chính actor trong workspace và cửa sổ hiệu lực của các kỳ gói đã xác nhận.
+ *
+ * <p>Bảng nguồn áp dụng theo projector:
+ *
+ * <ul>
+ *   <li>xem danh sách chỉ cần là thành viên hiện hành
+ *   <li>mời, đổi role (phần thêm) và cấp học sinh cần owner/manager cộng gói chưa hết hiệu lực
+ *   <li>bổ nhiệm hoặc gỡ manager chỉ thuộc owner
+ *   <li>thu hồi không bị gate bởi gói
+ * </ul>
+ *
+ * <p>Route tạo lớp đã chuyển sang controller giảng dạy với cùng biên quyết quyền bằng dữ kiện nguồn
+ * này.
+ *
+ * <p>Gói chỉ chặn khi center đã từng có kỳ gói mà không kỳ nào còn hiệu lực. Center chưa từng được
+ * xác nhận gói vẫn do owner/manager quản trị, đúng hành vi hợp đồng yêu cầu.
+ *
+ * <p>Các service giữ tiền điều kiện dữ kiện riêng của thao tác ghi (đúng một đích mời, OWNER không
+ * mời được, học sinh trùng username) và trả lỗi nghiệp vụ của chúng.
  */
 @RestController
 @RequestMapping("/api")

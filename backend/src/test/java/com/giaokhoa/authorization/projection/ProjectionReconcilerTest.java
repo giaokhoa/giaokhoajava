@@ -322,8 +322,8 @@ class ProjectionReconcilerTest {
         reconciler.reconcilePartition(partitionId);
 
         // Group managers chưa từng có member vẫn phải được bảo đảm tồn tại trước khi writer áp
-        // graph; thiếu bước này writer ném "Realm group is not provisioned" như defect gate #88
-        // đã bắt ở share tới trung tâm chưa từng có quản lý.
+        // graph. Thiếu bước này, writer ném "Realm group is not provisioned" ở share tới trung
+        // tâm chưa từng có quản lý.
         InOrder order = inOrder(directory, writer);
         order.verify(directory).ensureRealmGroup(managersPath);
         order.verify(writer).apply(any());

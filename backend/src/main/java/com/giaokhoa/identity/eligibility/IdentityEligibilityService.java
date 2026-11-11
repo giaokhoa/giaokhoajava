@@ -31,25 +31,30 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
 
 /**
- * Giữ eligibility gate của danh tính khớp với danh tính Keycloak hiện hành. Origin của account là
- * dữ liệu do server kiểm soát: chỉ record do chính backend tạo mới tính là CENTER_ISSUED, mọi
- * trường hợp còn lại là SELF_REGISTERED và chỉ eligible khi email của profile hiện hành — đọc mới
- * qua Admin API, không lấy từ request của browser hay token cũ — đã verified. Khi profile vừa đọc
- * làm thay đổi input eligibility đã ghi, input mới được lưu và thay đổi được ghi thành desired
- * state trên ACCOUNT partition của actor trong cùng transaction, để worker bền chiếu lại membership
- * của group eligibility cùng mọi graph phụ thuộc sau fence; operation còn pending thì account vẫn
- * bị fence và không quyết định bảo vệ nào được dùng trạng thái cũ. Profile không đọc được, hoặc
- * subject không khớp account, đều fail-closed 503 và không ghi gì.
+ * Giữ eligibility gate của danh tính khớp với danh tính Keycloak hiện hành.
  *
- * <p>Dữ kiện directory (account, workspace) đọc qua repository của module identity/tenancy; dữ kiện
- * của mặt phẳng authorization (projection, partition) đọc qua repository của module authorization.
+ * <p>Origin của account là dữ liệu do server kiểm soát. Chỉ record do chính backend tạo mới tính là
+ * CENTER_ISSUED. Mọi trường hợp còn lại là SELF_REGISTERED, và chỉ eligible khi email của profile
+ * hiện hành đã verified. Profile hiện hành được đọc mới qua Admin API, không lấy từ request của
+ * browser hay token cũ.
+ *
+ * <p>Khi profile vừa đọc làm thay đổi input eligibility đã ghi, input mới được lưu. Thay đổi được
+ * ghi thành desired state trên ACCOUNT partition của actor trong cùng transaction, để worker bền
+ * chiếu lại membership của group eligibility cùng mọi graph phụ thuộc sau fence. Operation còn
+ * pending thì account vẫn bị fence, và không quyết định bảo vệ nào được dùng trạng thái cũ.
+ *
+ * <p>Profile không đọc được, hoặc subject không khớp account, đều fail-closed 503 và không ghi gì.
+ *
+ * <p>Dữ kiện directory (account, workspace) đọc qua repository của module identity và tenancy. Dữ
+ * kiện của mặt phẳng authorization (projection, partition) đọc qua repository của module
+ * authorization.
  */
 @Service
 public class IdentityEligibilityService {
 
     /**
-     * Checkpoint account ghi cùng nguồn actor/eligibility cho hai scope đọc US1, mỗi scope có root
-     * native riêng.
+     * Checkpoint account ghi cùng nguồn actor và eligibility cho hai scope đọc của profile. Mỗi
+     * scope có root native riêng.
      */
     private static final String ELIGIBILITY_SCOPE =
             PermissionCatalog.ProfileScope.WORKSPACE_LIST.scopeName();

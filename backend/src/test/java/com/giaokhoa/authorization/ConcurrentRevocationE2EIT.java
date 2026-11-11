@@ -678,8 +678,7 @@ class ConcurrentRevocationE2EIT extends IntegrationEnvironment {
     @Test
     void workerReconcilesPartialGraph() throws Exception {
         // Reconciliation worker production phải tiếp tục operation này; nguồn là một
-        // PERSONAL owner thật trong V001, không phải share_grant bịa ra
-        // (vốn chưa có schema production trước các task user-story sau này).
+        // PERSONAL owner thật trong V001, không phải share_grant bịa ra.
         try (var nativeGate = new NativeRevocationFixture()) {
             nativeGate.provisionEligibilityForWorkerFixture();
             ActorScope actor = actorWithReadyPersonalWorkspace(nativeGate.userSubject());

@@ -32,15 +32,15 @@ import org.springframework.transaction.support.TransactionTemplate;
  * của đúng student trong đúng center, không có liên kết gia đình toàn cục nào.
  *
  * <p>Hai nửa của phép chiếu: (1) descriptor canonical {@code GUARDIAN_GROUP} mà read side kết quả
- * (task phía sau) gắn làm nguồn của scope {@code read.published} trên từng result target, kèm
- * {@link #gatesFor} để reconciliation dựng lại đúng gate group của nó; (2) membership thật của
- * group trong realm, được {@link #syncGroupMemberships} đối chiếu từ dữ kiện nguồn mỗi khi
- * partition của workspace được reconcile — chỉ parent có link APPROVED đồng thời còn membership
- * ACTIVE kèm role PARENT hiện hành, và student còn membership ACTIVE kèm role STUDENT hiện hành,
- * mới ở trong group. Mọi thay đổi vòng đời link ghi một authorization operation trên WORKSPACE
- * partition qua {@link #recordGuardianChange}: operation chỉ SUCCEEDED sau khi partition đã
- * reconcile tại revision mới, tức group đã khớp dữ kiện nguồn — kể cả đường gỡ, nên cùng một phiên
- * cũ bị chặn ngay ở lần đọc sau khi thu hồi hoàn tất.
+ * gắn làm nguồn của scope {@code read.published} trên từng result target, kèm {@link #gatesFor} để
+ * reconciliation dựng lại đúng gate group của nó; (2) membership thật của group trong realm, được
+ * {@link #syncGroupMemberships} đối chiếu từ dữ kiện nguồn mỗi khi partition của workspace được
+ * reconcile — chỉ parent có link APPROVED đồng thời còn membership ACTIVE kèm role PARENT hiện
+ * hành, và student còn membership ACTIVE kèm role STUDENT hiện hành, mới ở trong group. Mọi thay
+ * đổi vòng đời link ghi một authorization operation trên WORKSPACE partition qua {@link
+ * #recordGuardianChange}: operation chỉ SUCCEEDED sau khi partition đã reconcile tại revision mới,
+ * tức group đã khớp dữ kiện nguồn — kể cả đường gỡ, nên cùng một phiên cũ bị chặn ngay ở lần đọc
+ * sau khi thu hồi hoàn tất.
  */
 @Component
 public class GuardianPolicyProjector {

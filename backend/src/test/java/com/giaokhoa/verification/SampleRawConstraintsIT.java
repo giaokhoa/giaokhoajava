@@ -33,9 +33,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Kiểm chứng FK và trigger của ba bảng mẫu (hoạt động, bài nộp, kết quả) bằng SQL thô qua một role
  * không phải chủ sở hữu bảng, không qua service. Các lớp chốt chặn ở tầng DB phải đứng vững ngay cả
  * khi tầng ứng dụng bị bỏ qua: FK composite (môn–khóa, kỳ gói, cặp resource/version và chuỗi hoạt
- * động → bài nộp → kết quả cùng workspace), và các trigger nghiệp vụ ở tầng DB (bài nộp cần ghi
- * danh hiện hành và không vượt số lượt snapshot; học sinh/môn của kết quả suy ra từ bài nộp;
- * snapshot của hoạt động và kết quả đã công bố bất biến; cấm hard-delete). Cách ly workspace ở tầng
+ * động → bài nộp → kết quả cùng workspace). Các trigger nghiệp vụ ở tầng DB gồm: bài nộp cần ghi
+ * danh hiện hành và không vượt số lượt snapshot. Học sinh và môn của kết quả suy ra từ bài nộp.
+ * Snapshot của hoạt động và kết quả đã công bố bất biến. Cấm hard-delete. Cách ly workspace ở tầng
  * DB nằm ở ranh giới schema, không còn policy theo từng hàng.
  *
  * <p>Seed đồ thị mẫu bằng SQL thô qua kết nối ứng dụng trong schema cô lập; phần khẳng định chạy

@@ -25,8 +25,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * reconciliation dùng để đối chiếu. Seed platform là hành động hệ thống không có initiator nên
  * seeder ghi trực tiếp qua repository của mặt phẳng điều khiển — theo tiền lệ seed partition trong
  * baseline hệ thống — thay vì qua {@code AuthorizationOperationService}, vốn đòi một user thật làm
- * initiator; cơ chế áp graph vẫn là reconciler và worker như mọi target khác. Idempotent: khởi động
- * lại khi desired đã khớp không sinh revision mới; hợp đồng đổi thì fence partition, ghi hash mới
+ * initiator. Cơ chế áp graph vẫn là reconciler và worker như mọi target khác. Idempotent: khởi động
+ * lại khi desired đã khớp không sinh revision mới. Hợp đồng đổi thì fence partition, ghi hash mới
  * và tăng đúng một revision.
  */
 @Component

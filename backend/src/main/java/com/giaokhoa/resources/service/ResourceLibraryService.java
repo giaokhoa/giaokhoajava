@@ -41,28 +41,35 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Service thư viện resource của US7: đọc contextual (thân bài/đáp án), lưu version về kho, fork và
- * nhận cập nhật cho bản đã lưu, luyện tập trên version hệ thống đã phát hành — mọi thao tác đều qua
+ * Service thư viện resource: đọc contextual (thân bài và đáp án), lưu version về kho, fork, nhận
+ * cập nhật cho bản đã lưu, và luyện tập trên version hệ thống đã phát hành. Mọi thao tác đều qua
  * canonical repository và chỉ sau quyết định PDP trên target version tại workspace ngữ cảnh, theo
- * đúng giao thức của hợp đồng authorization: trước khi hỏi PDP, service ghi lại bundle hiện hành
- * của target qua {@link ResourcePolicyProjector} bằng operation dùng chung và chờ chiếu xong (chờ
- * không xong thì fail-closed 503); mutation ghi biên nhận idempotency của chính action trong cùng
- * transaction với mutation (bảng {@code sample_action_mutation}, cùng giao thức với các sample
- * action khác) và ghi lại bundle sau khi đổi dữ kiện nguồn để graph phản ánh trạng thái mới.
+ * đúng giao thức của hợp đồng authorization.
  *
- * <p>Lưu không nhân bản resource/version và không đổi chủ sở hữu canonical: mục thư viện trỏ về
- * đúng version nguồn, custody OWNED khi workspace nhận là chủ sở hữu, LICENSED khi version đến từ
- * hệ thống hoặc một grant. Ngoại lệ duy nhất là copy-on-share: version đến từ một grant
- * tenant–tenant đã được vật chất hoá thành bản sao trong mặt phẳng của workspace nhận thì mục thư
- * viện trỏ bản sao đó (vẫn LICENSED theo grant), vì phía nhận giữ dữ liệu ở mặt phẳng của mình thay
- * vì tham chiếu sống sang mặt phẳng của tenant khác. Fork tạo resource mới thuộc workspace nhận với
- * người tạo là actor, giữ đúng môn và nội dung của version nguồn, ghi cạnh provenance về version
- * nguồn kèm grant đã cấp quyền fork (nếu căn cứ là license) và sao toàn bộ dependency của version
- * nguồn; fork không bao giờ ghi đè quyền của chủ sở hữu nguồn. Nhận cập nhật tạo mục thư viện mới
- * trỏ version thay thế của cùng resource, giữ nguyên custody và grant của mục gốc, không đụng hoạt
- * động hay lịch sử đã giao trên version cũ — riêng mục trỏ bản sao copy-on-share thì bản cập nhật
- * được ghi thành một version sao mới trên resource sao, để phía nhận không bao giờ phải trỏ sang
- * version sống của tenant nguồn.
+ * <p>Trước khi hỏi PDP, service ghi lại bundle hiện hành của target qua {@link
+ * ResourcePolicyProjector} bằng operation dùng chung và chờ chiếu xong. Chờ không xong thì
+ * fail-closed 503. Mutation ghi biên nhận idempotency của chính action trong cùng transaction với
+ * mutation (bảng {@code sample_action_mutation}, cùng giao thức với các sample action khác). Sau
+ * khi đổi dữ kiện nguồn, service ghi lại bundle để graph phản ánh trạng thái mới.
+ *
+ * <p>Lưu không nhân bản resource hay version và không đổi chủ sở hữu canonical. Mục thư viện trỏ về
+ * đúng version nguồn. Custody là OWNED khi workspace nhận là chủ sở hữu, LICENSED khi version đến
+ * từ hệ thống hoặc một grant.
+ *
+ * <p>Ngoại lệ duy nhất là copy-on-share. Version đến từ một grant tenant–tenant đã được vật chất
+ * hoá thành bản sao trong mặt phẳng của workspace nhận thì mục thư viện trỏ bản sao đó, vẫn
+ * LICENSED theo grant. Lý do là phía nhận giữ dữ liệu ở mặt phẳng của mình thay vì tham chiếu sống
+ * sang mặt phẳng của tenant khác.
+ *
+ * <p>Fork tạo resource mới thuộc workspace nhận với người tạo là actor. Nó giữ đúng môn và nội dung
+ * của version nguồn, ghi cạnh provenance về version nguồn kèm grant đã cấp quyền fork (nếu căn cứ
+ * là license), và sao toàn bộ dependency của version nguồn. Fork không bao giờ ghi đè quyền của chủ
+ * sở hữu nguồn.
+ *
+ * <p>Nhận cập nhật tạo mục thư viện mới trỏ version thay thế của cùng resource. Nó giữ nguyên
+ * custody và grant của mục gốc, và không đụng hoạt động hay lịch sử đã giao trên version cũ. Riêng
+ * mục trỏ bản sao copy-on-share thì bản cập nhật được ghi thành một version sao mới trên resource
+ * sao, để phía nhận không bao giờ phải trỏ sang version sống của tenant nguồn.
  */
 @Service
 public class ResourceLibraryService {
@@ -752,8 +759,8 @@ public class ResourceLibraryService {
 
     /**
      * Chèn biên nhận của action trong cùng transaction với mutation, cùng giao thức với các sample
-     * action khác: chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp; đã có biên nhận cùng
-     * payload thì trả định danh đích đầu tiên thay vì ghi lại; khác payload thì 409.
+     * action khác. Chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp. Đã có biên nhận cùng
+     * payload thì trả định danh đích đầu tiên thay vì ghi lại. Khác payload thì 409.
      */
     private Optional<UUID> claimReceipt(
             UUID actorUserId,

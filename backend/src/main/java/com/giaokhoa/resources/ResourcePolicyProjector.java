@@ -50,12 +50,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Projector của resource version: nguồn sự thật duy nhất về desired native graph của các target
  * version (chỉ {@code content.read}, không bao giờ {@code answer.read}). Version hệ thống đã LOCKED
- * cho {@code practice} với mọi actor đã đủ điều kiện danh tính, chỉ cho {@code library.save} trước
- * khi lưu và cho đọc/dùng/fork sau khi đã có mục thư viện không
+ * cho {@code practice} với mọi actor đã đủ điều kiện danh tính. Nó chỉ cho {@code library.save}
+ * trước khi lưu, và cho đọc/dùng/fork sau khi đã có mục thư viện không gắn grant.
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
- * workspace ngữ cảnh với scope danh nghĩa {@code content.read}; projection mang dependency là GRANT
- * partition của các grant làm nguồn cho nó để fence của protected request và phép đóng phụ thuộc
+ * workspace ngữ cảnh với scope danh nghĩa {@code content.read}. Projection mang dependency là GRANT
+ * partition của các grant làm nguồn cho nó, để fence của protected request và phép đóng phụ thuộc
  * luôn thấy grant đang đổi trạng thái. Projector vừa tính bundle khi ghi (qua {@link
  * #recordResourceChange}), vừa dựng lại đúng bundle đó khi {@code ProjectionReconciler} đối chiếu
  * desired hash. Các bảng thư viện/phân công/hoạt động nằm trong schema tenant của workspace ngữ
@@ -187,9 +187,9 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Map một token action lưu ở tầng grant/assignment sang scope mức version tương ứng: {@code
-     * draft.edit} trên target version nghĩa là tạo bản chỉnh sửa, tức scope {@code fork}; các token
-     * trùng tên scope thì giữ nguyên; token lạ không cho scope nào.
+     * Map một token action lưu ở tầng grant/assignment sang scope mức version tương ứng. Token
+     * {@code draft.edit} trên target version nghĩa là tạo bản chỉnh sửa, tức scope {@code fork}.
+     * Các token trùng tên scope thì giữ nguyên. Token lạ không cho scope nào.
      */
     public static Optional<String> mapAction(String action) {
         return switch (action) {
@@ -772,16 +772,21 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Nhánh version hệ thống đã công bố: {@code practice} cho mọi actor đã đủ điều kiện danh tính
-     * (group điều kiện danh tính là nguồn duy nhất — làm đề hệ thống không cần gói, ghi danh hay
-     * mục thư viện theo bảng nguồn của hợp đồng authorization, và cổng điều kiện danh tính chung
-     * ngoài OR vẫn áp như mọi permission); {@code library.save} cho phía nhận đủ điều kiện của giấy
-     * phép nền tảng trước cả khi lưu — ở personal là owner kèm gate kỳ gói cá nhân (điều kiện nhận
-     * là cá nhân có gói), ở center là group thành viên không kèm kỳ gói của center (giấy phép nội
-     * dung nền tảng không gắn gói center, theo bảng nguồn của hợp đồng authorization);
-     * đọc/dùng/fork chỉ sau khi workspace đã có mục thư viện của chính version này không gắn grant
-     * — bản lưu đứng yên ở version đã lưu, version mới của nguồn chưa được nhận thì không có nhánh
-     * đọc.
+     * Nhánh version hệ thống đã công bố, theo ba nhóm scope:
+     *
+     * <ul>
+     *   <li>{@code practice} cho mọi actor đã đủ điều kiện danh tính. Group điều kiện danh tính là
+     *       nguồn duy nhất: làm đề hệ thống không cần gói, ghi danh hay mục thư viện theo bảng
+     *       nguồn của hợp đồng authorization, và cổng điều kiện danh tính chung ngoài OR vẫn áp như
+     *       mọi permission.
+     *   <li>{@code library.save} cho phía nhận đủ điều kiện của giấy phép nền tảng trước cả khi
+     *       lưu. Ở personal là owner kèm gate kỳ gói cá nhân (điều kiện nhận là cá nhân có gói). Ở
+     *       center là group thành viên không kèm kỳ gói của center, vì giấy phép nội dung nền tảng
+     *       không gắn gói center theo bảng nguồn của hợp đồng authorization.
+     *   <li>Đọc, dùng và fork chỉ sau khi workspace đã có mục thư viện của chính version này không
+     *       gắn grant. Bản lưu đứng yên ở version đã lưu. Version mới của nguồn chưa được nhận thì
+     *       không có nhánh đọc.
+     * </ul>
      */
     private void systemSources(
             List<String> descriptors,

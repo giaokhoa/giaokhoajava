@@ -20,10 +20,8 @@ import tools.jackson.databind.JsonNode;
  * thu hồi, giáo viên không gói cá nhân vẫn lưu được tại center mà không mở kho cá nhân, và đề gộp
  * nhiều nguồn chỉ chia sẻ được khi mọi thành phần cùng cho phép.
  *
- * <p>Đây là test viết trước cho story kho tài nguyên (ban đầu ở PR test-first #218, đỏ vì các
- * action SHARE_VERSION, ACCEPT_SHARE, REVOKE_SHARE và route đọc thân bài chưa được cài đặt). Bản
- * này được port vào gate nghiệm thu US7 sau khi hành vi đã land trên main. Scenario đề gộp seed
- * quan hệ thành phần vào bảng resource_dependency; fixture còn lại seed dữ kiện có thật bằng JDBC.
+ * <p>Kịch bản đề gộp nạp sẵn quan hệ thành phần vào bảng resource_dependency. Fixture còn lại nạp
+ * dữ kiện có thật bằng JDBC.
  */
 @SpringBootTest
 class ResourceSharingIT extends ResourceFixture {
@@ -643,7 +641,7 @@ class ResourceSharingIT extends ResourceFixture {
                 sampleActionExpectCreated(ownerA, centerA, acceptJson(grantId));
             }
 
-            // Đề gộp gồm cả hai câu: quan hệ thành phần là dữ kiện canonical của story này.
+            // Đề gộp gồm cả hai câu: quan hệ thành phần là dữ kiện canonical.
             seedDependency(exam, ownQuestion, null);
             seedDependency(exam, restrictedQuestion, grantId);
 
@@ -706,9 +704,9 @@ class ResourceSharingIT extends ResourceFixture {
 
     private void seedDependency(
             VersionRef derived, VersionRef source, @Nullable UUID shareGrantId) {
-        // usage_constraints là NOT NULL trên main hiện tại (V024) và theo định dạng
-        // "<marker>;grant=..;actions=..;allowed=.." của các cạnh provenance do production ghi;
-        // cạnh ở đây là quan hệ thành phần do tác giả dựng sẵn, không phải cạnh fork/share.
+        // usage_constraints là NOT NULL (V024) và theo định dạng
+        // "<marker>;grant=..;actions=..;allowed=.." của các cạnh provenance do production ghi.
+        // Cạnh ở đây là quan hệ thành phần do tác giả dựng sẵn, không phải cạnh fork/share.
         String usageConstraints =
                 shareGrantId == null
                         ? "origin=COMPOSITION;grant=-;actions=-;allowed=-"

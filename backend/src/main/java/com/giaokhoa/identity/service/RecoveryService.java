@@ -28,21 +28,21 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Workflow hỗ trợ khôi phục danh tính cho tài khoản không tự khôi phục được qua email. Người dùng
- * chỉ gửi yêu cầu cho chính mình; OWNER/MANAGER ACTIVE của center được gửi cho thành viên trong
+ * chỉ gửi yêu cầu cho chính mình. OWNER/MANAGER ACTIVE của center được gửi cho thành viên trong
  * center mình quản lý. Đích ngoài phạm vi và đích không tồn tại đều trả cùng một 404 để không lộ sự
  * tồn tại của tài khoản. Chỉ platform operator được xác minh và xử lý, với quyết định PDP tại
  * endpoint.
  *
  * <p>Service ép thứ tự REQUESTED → VERIFIED → RESOLVED/REJECTED bằng chuyển trạng thái trên entity
- * đã nạp kèm kiểm tra lạc quan {@code @Version}; DB giữ tính nhất quán của verified_by/resolved_at.
+ * đã nạp kèm kiểm tra lạc quan {@code @Version}. DB giữ tính nhất quán của verified_by/resolved_at.
  * APPROVE chỉ ghi VERIFIED và giữ yêu cầu PENDING. Operator khôi phục trực tiếp trên Keycloak và
  * bàn giao credential qua kênh riêng cho đúng người dùng trước khi xác nhận COMPLETE để ghi
  * RESOLVED. COMPLETE ghi nhận xác nhận của operator, không tự kiểm chứng thao tác credential trên
  * Keycloak.
  *
- * <p>Service không đặt lại credential hay đổi origin của danh tính dùng chung; credential không đi
+ * <p>Service không đặt lại credential hay đổi origin của danh tính dùng chung. Credential không đi
  * qua response/list/poll của workflow và không trả cho center đã gửi yêu cầu. Các mutation HTTP
- * kiểm tra idempotency theo actor/key/payload và version khi resolve; lịch sử yêu cầu được DB bảo
+ * kiểm tra idempotency theo actor/key/payload và version khi resolve. Lịch sử yêu cầu được DB bảo
  * vệ khỏi hard-delete hoặc đổi định danh.
  */
 @Service

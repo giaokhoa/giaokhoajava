@@ -19,12 +19,12 @@ import org.springframework.web.client.RestClientResponseException;
 /**
  * Bàn giao credential ban đầu khi center cấp danh tính học sinh MỚI: tạo user Keycloak kèm
  * credential tạm, sau đó registrar mới ghi account/membership phía directory. Credential tạm chỉ
- * tồn tại trong kết quả của lần gọi này — không lưu xuống DB, không ghi log; caller chỉ được lộ nó
- * trong response tạo đầu tiên, mất kết quả thì đi qua khôi phục tập trung chứ không cấp lại qua
+ * tồn tại trong kết quả của lần gọi này — không lưu xuống DB, không ghi log. Caller chỉ được lộ nó
+ * trong response tạo đầu tiên. Mất kết quả thì đi qua khôi phục tập trung chứ không cấp lại qua
  * đường này. Chỉ tạo user mới: username đã tồn tại trên Keycloak trả 409, danh tính đã có không bị
  * nhận nuôi và không bị đặt lại credential. Lỗi nghiệp vụ hoặc lỗi DB sau khi identity đã tạo
  * (registrar từ chối, transaction hỏng) đều được reconcile bằng cách xoá user Keycloak vừa tạo:
- * user đó chưa có account hay eligibility nào nên xoá là an toàn và giải phóng username/sub; lỗi
+ * user đó chưa có account hay eligibility nào nên xoá là an toàn và giải phóng username/sub. Lỗi
  * khi xoá (nếu có) được gắn suppressed vào lỗi gốc thay vì nuốt mất dấu vết.
  */
 @Service

@@ -41,9 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Như {@link ClassService}, service này chỉ giữ bất biến dữ kiện và trạng thái — không tự quyết
  * quyền thay Keycloak PDP, không ghi authorization operation. Bất biến riêng của khóa: danh sách
- * môn lúc tạo không được rỗng (kiểm tra ở đây trước khi ghi bất cứ thứ gì, DB cố ý không có trigger
- * đếm vì khóa được phép trở nên rỗng về sau khi gỡ môn cuối cùng); môn gắn vào khóa phải có trong
- * danh mục đang ACTIVE; gắn thêm môn chỉ tạo dòng môn–khóa mới, tuyệt đối không tự tạo ghi danh hay
+ * môn lúc tạo không được rỗng. Kiểm tra ở đây trước khi ghi bất cứ thứ gì: DB cố ý không có trigger
+ * đếm vì khóa được phép trở nên rỗng về sau khi gỡ môn cuối cùng. Môn gắn vào khóa phải có trong
+ * danh mục đang ACTIVE. Gắn thêm môn chỉ tạo dòng môn–khóa mới, tuyệt đối không tự tạo ghi danh hay
  * phân công cho môn đó. Mở rộng (tạo khóa, gắn môn) bị chặn khi gói đã hết hiệu lực, thu hồi thì
  * không.
  */

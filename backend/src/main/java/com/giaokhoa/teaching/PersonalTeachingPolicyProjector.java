@@ -30,8 +30,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * lớp, khóa và môn–khóa của một PERSONAL workspace, dựng thuần từ các dòng bền (chủ sở hữu của
  * workspace, roster và ghi danh hiện hành, các kỳ gói đã xác nhận). Mọi nguồn đều là user policy
  * native của một người cụ thể — chủ sở hữu cho các scope quản trị, từng học sinh đang ghi danh cho
- * scope đọc của môn–khóa — không group, không membership center, không role nghề nghiệp toàn cục;
- * namespace và dữ kiện tách hẳn khỏi bundle giảng dạy của center ở {@link TeachingPolicyProjector}.
+ * scope đọc của môn–khóa. Không group, không membership center, không role nghề nghiệp toàn cục.
+ * Namespace và dữ kiện tách hẳn khỏi bundle giảng dạy của center ở {@link TeachingPolicyProjector}.
  *
  * <p>Gate gói đi theo đúng hình của bundle center: các scope mở rộng (tạo khóa, thêm roster, ghi
  * danh, soạn học liệu, giao bài) AND thêm cửa sổ hiệu lực của từng kỳ gói qua time policy, còn

@@ -48,8 +48,8 @@ import org.springframework.web.client.RestClientResponseException;
  * Workflow khôi phục danh tính và bàn giao credential ban đầu trên stack TEST thật: RecoveryService
  * ép phạm vi gửi yêu cầu và thứ tự REQUESTED → VERIFIED → RESOLVED/REJECTED trên schema dùng chung
  * của suite, InitialCredentialService tạo identity trên Keycloak 26.8.1 thật rồi mới ghi directory,
- * và mọi lỗi sau identity-create đều reconcile sạch. Endpoint HTTP thuộc task sau; class này khóa
- * hành vi service mà endpoint sẽ gọi.
+ * và mọi lỗi sau identity-create đều reconcile sạch. Lớp kiểm thử này khóa hành vi ở tầng service.
+ * Tầng HTTP do {@code RecoveryFlowE2EIT} khóa.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
