@@ -637,8 +637,10 @@ class GuardianLinkServiceIT extends GuardianFixture {
                     assertEquals(
                             0,
                             runtimeJdbc.queryForObject(
-                                    "SELECT count(*) FROM guardian_link", Integer.class),
-                            "Không có context thì role runtime không thấy hàng nào (fail-closed)");
+                                    "SELECT count(*) FROM guardian_link WHERE workspace_id = ?",
+                                    Integer.class,
+                                    center.workspaceId()),
+                            "Chưa có liên kết nào thuộc workspace này trước khi tạo");
                     Objects.requireNonNull(
                             runtimeTx.execute(_ ->
                                     runtimeLinks.requestLink(

@@ -105,9 +105,12 @@ class CenterServiceIT extends IntegrationEnvironment {
                             hash("{}"));
             awaitOperationSucceeded(revoked.getId());
             addMembership(workspace, member.userId(), "STUDENT");
-            jdbc.execute(
-                    "CREATE INDEX review_membership_order ON center_membership (joined_at DESC, id)");
-            jdbc.execute("CLUSTER center_membership USING review_membership_order");
+            // DDL sắp xếp lại vật lý là thao tác của chủ sở hữu đối tượng: đi qua credential
+            // migration, không phải datasource ứng dụng (role runtime).
+            migratorJdbc()
+                    .execute(
+                            "CREATE INDEX review_membership_order ON center_membership (joined_at DESC, id)");
+            migratorJdbc().execute("CLUSTER center_membership USING review_membership_order");
             assertEquals(
                     List.of("ACTIVE", "REVOKED"),
                     jdbc.queryForList(
@@ -123,7 +126,7 @@ class CenterServiceIT extends IntegrationEnvironment {
         } finally {
             // Index vật lý do test này tự tạo phải tự dọn: schema dùng chung giữa các class
             // không còn tự xoá DDL như schema riêng trước đây.
-            jdbc.execute("DROP INDEX IF EXISTS review_membership_order");
+            migratorJdbc().execute("DROP INDEX IF EXISTS review_membership_order");
             operator.delete();
             owner.delete();
             member.delete();

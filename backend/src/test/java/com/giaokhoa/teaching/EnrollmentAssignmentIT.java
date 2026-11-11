@@ -61,8 +61,6 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.orm.jpa.SharedEntityManagerCreator;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -522,13 +520,6 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                                     runtime.memberships,
                                     runtime.enrollments,
                                     runtime.accounts));
-            // Projector nhận EntityManager qua @PersistenceContext khi chạy trong context;
-            // ở làn dựng tay này phải gán EntityManager dùng chung của bộ repository runtime.
-            ReflectionTestUtils.setField(
-                    runtimeResourceProjector,
-                    "entityManager",
-                    SharedEntityManagerCreator.createSharedEntityManager(
-                            runtime.entityManagerFactory));
             SourceRevocationCoordinator runtimeRevocations =
                     new SourceRevocationCoordinator(
                             runtime.authzPartitions,
