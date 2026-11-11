@@ -19,35 +19,45 @@ import org.springframework.stereotype.Component;
 
 /**
  * Ghi operation cho một lần thu hồi (hoặc cấp) nguồn quyền, kèm toàn bộ dependency closure của nó
- * trong cùng revision. {@link com.giaokhoa.authorization.projection.ProjectionReconciler} đối chiếu
- * desired hash của MỌI projection trong partition khi reconcile, nên một mutation chỉ được ghi lại
- * bundle của target nó chạm trực tiếp sẽ làm operation chết {@code DESIRED_SOURCE_MISMATCH} ngay
- * khi một projection khác của cùng workspace đổi nguồn theo — đúng lỗi B67: gỡ ghi danh chỉ ghi
- * bundle môn–khóa trong khi bundle kết quả mất nguồn học sinh của {@code read.published}. Vì vậy
- * mọi đường ghi ở đây luôn ghi kèm bundle kết quả của toàn bộ workspace: nguồn của kết quả là phân
- * công giảng dạy, ghi danh, liên kết phụ huynh đã duyệt và membership/role tiền đề của chúng, tức
- * đúng các nguồn mà một lần thu hồi role/membership/lớp/ phân công/ghi danh/phụ huynh có thể đổi;
- * bundle nào không đổi thì hash khớp nguyên nên chỉ là ghi lại, không đổi graph. Cùng lý do đó,
- * bundle resource version của toàn bộ workspace cũng được ghi kèm: nguồn của nó có nhánh tác giả và
- * phân công tường minh tiền đề là membership hiện hành, và nhánh học sinh tiền đề là hoạt động được
- * giao từ phân công/ghi danh.
+ * trong cùng revision.
+ *
+ * <p>{@link com.giaokhoa.authorization.projection.ProjectionReconciler} đối chiếu desired hash của
+ * MỌI projection trong partition khi reconcile. Một mutation chỉ ghi lại bundle của target nó chạm
+ * trực tiếp sẽ làm operation chết {@code DESIRED_SOURCE_MISMATCH} ngay khi một projection khác của
+ * cùng workspace đổi nguồn theo. Ví dụ: gỡ ghi danh chỉ ghi bundle môn–khóa, trong khi bundle kết
+ * quả mất nguồn học sinh của {@code read.published}.
+ *
+ * <p>Vì vậy mọi đường ghi ở đây luôn ghi kèm bundle kết quả của toàn bộ workspace. Nguồn của kết
+ * quả là phân công giảng dạy, ghi danh, liên kết phụ huynh đã duyệt và membership/role tiền đề của
+ * chúng. Đó là đúng các nguồn mà một lần thu hồi role, membership, lớp, phân công, ghi danh hay phụ
+ * huynh có thể đổi. Bundle nào không đổi thì hash khớp nguyên, nên chỉ là ghi lại chứ không đổi
+ * graph.
+ *
+ * <p>Cùng lý do đó, bundle resource version của toàn bộ workspace cũng được ghi kèm. Nguồn của nó
+ * có nhánh tác giả và phân công tường minh với tiền đề là membership hiện hành. Nhánh học sinh của
+ * nó có tiền đề là hoạt động được giao từ phân công và ghi danh.
  *
  * <p>Closure này chỉ bao phủ các bundle thuộc WORKSPACE partition của workspace đó. Mọi nguồn của
- * sáu nhóm đều là dòng bền trong workspace và mọi projection bị ảnh hưởng đều thuộc cùng partition
- * đó, nên operation chỉ cần bump+fence đúng partition này; fence của protected request luôn chứa
- * partition workspace (xem {@link com.giaokhoa.authorization.fence.DependencyManifestResolver}) nên
- * request sau thu hồi không thể quyết trên revision cũ. Partition ACCOUNT không bị chạm vì
- * projection eligibility của nó chỉ phụ thuộc danh tính, không phụ thuộc membership/giảng dạy.
- * Không ghi gì thêm vào {@link com.giaokhoa.authorization.fence.DependencyManifestResolver}:
- * closure truyền dẫn của nó chỉ có ý nghĩa với phụ thuộc khác partition, mà ở đây không có.
+ * sáu nhóm đều là dòng bền trong workspace, và mọi projection bị ảnh hưởng đều thuộc cùng partition
+ * đó. Operation vì vậy chỉ cần bump và fence đúng partition này. Fence của protected request luôn
+ * chứa partition workspace (xem {@link
+ * com.giaokhoa.authorization.fence.DependencyManifestResolver}), nên request sau thu hồi không thể
+ * quyết trên revision cũ.
  *
- * <p>Coordinator không tự quyết quyền và không chạm {@code ProjectionReconciler} (file do owner #68
- * giữ): nó chỉ soạn danh sách desired projection rồi ghi qua {@code AuthorizationOperationService}
- * trong cùng transaction của service đã đổi dữ kiện nguồn — đúng giao thức mutation của hợp đồng
- * authorization mục 6 (ghi desired state + tăng revision + PENDING trong một transaction, commit
- * trước khi gọi mạng). Đường ghi guardian giữ nguyên ở {@code GuardianPolicyProjector} vì đã ghi
- * kèm toàn bộ bundle kết quả theo mẫu B58; đường ghi gói giữ nguyên ở {@code SubscriptionService}
- * vì bundle kết quả không có gate kỳ gói.
+ * <p>Partition ACCOUNT không bị chạm. Projection eligibility của nó chỉ phụ thuộc danh tính, không
+ * phụ thuộc membership hay giảng dạy.
+ *
+ * <p>Không ghi gì thêm vào {@link com.giaokhoa.authorization.fence.DependencyManifestResolver}.
+ * Closure truyền dẫn của nó chỉ có ý nghĩa với phụ thuộc khác partition, mà ở đây không có.
+ *
+ * <p>Coordinator không tự quyết quyền và không chạm {@code ProjectionReconciler}. Nó chỉ soạn danh
+ * sách desired projection rồi ghi qua {@code AuthorizationOperationService} trong cùng transaction
+ * của service đã đổi dữ kiện nguồn. Đó là giao thức mutation của hợp đồng authorization: ghi
+ * desired state, tăng revision và đặt PENDING trong một transaction, commit trước khi gọi mạng.
+ *
+ * <p>Đường ghi guardian giữ nguyên ở {@code GuardianPolicyProjector} vì đã ghi kèm toàn bộ bundle
+ * kết quả. Đường ghi gói giữ nguyên ở {@code SubscriptionService} vì bundle kết quả không có gate
+ * kỳ gói.
  */
 @Component
 public class SourceRevocationCoordinator {
@@ -79,11 +89,13 @@ public class SourceRevocationCoordinator {
     /**
      * Ghi operation cho một thay đổi giảng dạy vừa được ghi trong cùng transaction của service: ghi
      * danh/phân công/chủ nhiệm (cấp hoặc thu hồi) và thu hồi lớp/khóa/môn–khóa/roster qua route.
-     * Ghi lại bundle hiện hành của các target giảng dạy bị ảnh hưởng, kèm toàn bộ bundle kết quả
-     * của workspace — phân công/ghi danh là nguồn của bundle kết quả nên gỡ chúng mà không ghi lại
-     * bundle kết quả sẽ làm reconcile chết {@code DESIRED_SOURCE_MISMATCH} (B67). Replay cùng
-     * idempotency key và payload trả lại operation đã ghi mà không ghi lại gì, còn cùng key khác
-     * payload là 409 — cả hai do cơ chế operation dùng chung xử lý.
+     *
+     * <p>Ghi lại bundle hiện hành của các target giảng dạy bị ảnh hưởng, kèm toàn bộ bundle kết quả
+     * của workspace. Phân công và ghi danh là nguồn của bundle kết quả, nên gỡ chúng mà không ghi
+     * lại bundle kết quả sẽ làm reconcile chết {@code DESIRED_SOURCE_MISMATCH}.
+     *
+     * <p>Replay cùng idempotency key và payload trả lại operation đã ghi mà không ghi lại gì. Cùng
+     * key khác payload là 409. Cả hai do cơ chế operation dùng chung xử lý.
      */
     public AuthorizationOperation recordTeachingRevocation(
             UUID initiatorUserId,
@@ -120,9 +132,9 @@ public class SourceRevocationCoordinator {
      * service: tạo center, đổi role, thu hồi membership, chấp nhận lời mời, cấp học sinh. Ghi lại
      * bundle workspace hiện hành, toàn bộ bundle giảng dạy (nguồn quản trị owner/manager có mặt
      * trong mọi bundle, và phép đóng nguồn phụ thuộc vừa đổi dữ kiện nguồn của các bundle đó), kèm
-     * toàn bộ bundle kết quả của workspace — membership/role là tiền đề của nguồn học sinh và nguồn
-     * phụ huynh trong bundle kết quả nên gỡ chúng mà không ghi lại bundle kết quả sẽ làm reconcile
-     * chết {@code DESIRED_SOURCE_MISMATCH} như B67. Replay và 409 như trên.
+     * toàn bộ bundle kết quả của workspace. Membership và role là tiền đề của nguồn học sinh và
+     * nguồn phụ huynh trong bundle kết quả, nên gỡ chúng mà không ghi lại bundle kết quả sẽ làm
+     * reconcile chết {@code DESIRED_SOURCE_MISMATCH}. Replay và 409 như trên.
      */
     public AuthorizationOperation recordMembershipRevocation(
             UUID initiatorUserId, UUID workspaceId, String idempotencyKey, String payloadHash) {

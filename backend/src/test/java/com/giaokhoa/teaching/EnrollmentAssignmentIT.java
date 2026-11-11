@@ -82,7 +82,7 @@ import tools.jackson.databind.json.JsonMapper;
  * projector chạy end-to-end với worker thật và Keycloak TEST: group của giáo viên/học sinh/chủ
  * nhiệm chỉ phản ánh quan hệ hiện hành kèm membership ACTIVE hiện hành. Seed phần service thuần
  * bằng JDBC trong schema dùng chung của suite; phần projector tạo tài khoản Keycloak thật theo mẫu
- * CenterServiceIT. Route HTTP thuộc task route riêng nên test gọi thẳng service.
+ * CenterServiceIT. Test gọi thẳng service, không qua route HTTP.
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

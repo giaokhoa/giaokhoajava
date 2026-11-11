@@ -21,8 +21,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 /**
  * Tạo và xoá user trên Keycloak bằng credential provisioner nội bộ, phục vụ luồng cấp danh tính
  * mới. Tạo user kèm credential password tạm (temporary=true) khiến Keycloak tự gắn required action
- * UPDATE_PASSWORD cho lần đăng nhập đầu. Client chỉ thực thi lệnh Admin API và truyền lỗi lên trên;
- * quyết định nghiệp vụ (trùng username, reconcile sau lỗi) thuộc workflow gọi nó.
+ * UPDATE_PASSWORD cho lần đăng nhập đầu. Client chỉ thực thi lệnh Admin API và truyền lỗi lên trên.
+ * Quyết định nghiệp vụ (trùng username, reconcile sau lỗi) thuộc workflow gọi nó.
  */
 @Component
 public class IdentityProvisioningClient {

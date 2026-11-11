@@ -1120,7 +1120,8 @@ public class ProjectionReconciler {
                 + profileBundleDescriptor(targetKey, scope);
     }
 
-    // Hai scope đọc của US1 dùng cùng actor và eligibility; một checkpoint ghi theo target.
+    // Hai scope đọc của profile dùng cùng actor và eligibility nên được chiếu cùng nhau: một
+    // checkpoint ghi theo target.
     private static List<String> projectedScopes(String targetKey, String scope) {
         return targetKey.startsWith("account:")
                         && PermissionCatalog.ProfileScope.WORKSPACE_LIST.scopeName().equals(scope)

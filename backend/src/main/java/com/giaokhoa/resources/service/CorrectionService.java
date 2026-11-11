@@ -29,25 +29,30 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Phát hành đính chính nguồn của US7 (FR-033, FR-034): nguồn công bố một version thay thế cho một
- * version bị lỗi bằng một {@code correction_notice} bất biến và thông báo tới từng nơi từng nhận
- * version bị lỗi qua {@link CorrectionNotificationService}. Đính chính không sửa version bị lỗi,
- * không đụng mục thư viện, hạn nộp, bài nộp hay kết quả đã phát sinh: bản đã lưu và bài đã giao
- * đứng yên ở version cũ, và bên nhận chỉ dùng bản thay thế khi chủ động nhận cập nhật cho lần dùng
- * sau qua {@code RECEIVE_UPDATE} của {@link ResourceLibraryService} — cơ chế nhận thay thế đã có,
- * service này không cài đường nhận thứ hai.
+ * Phát hành đính chính nguồn: nguồn công bố một version thay thế cho một version bị lỗi bằng một
+ * {@code correction_notice} bất biến và thông báo tới từng nơi từng nhận version bị lỗi qua {@link
+ * CorrectionNotificationService}.
  *
- * <p>Thẩm quyền nguồn khóa hai lớp như các action nguồn khác: route phải là đúng workspace sở hữu
- * resource (workspace khác thì 403), và quyết định PDP {@code review} trên target của version bị
- * ảnh hưởng tại workspace đó phải cho phép — {@code review} là scope phát hành/duyệt version mà
- * nhánh chủ sở hữu và tác giả của {@link ResourcePolicyProjector} cấp tại workspace nguồn, còn
- * target {@code resource:{id}} với scope {@code version.create} của hợp đồng chưa có projector (đã
- * ghi ở Sổ B84(iii), thuộc luồng soạn thật). Trước khi hỏi PDP, service ghi lại bundle hiện hành
- * của target qua projector bằng operation dùng chung và chờ chiếu xong — chờ không xong thì
- * fail-closed 503. Notice và toàn bộ receipt ghi trong cùng transaction với biên nhận idempotency
- * của action (bảng {@code sample_action_mutation}, đích {@code CORRECTION_NOTICE}): replay cùng key
- * và cùng payload trả lại đúng notice đầu tiên, khác payload trả 409. Đính chính không đổi dữ kiện
- * nguồn nào của graph nên không cần ghi lại bundle sau mutation.
+ * <p>Đính chính không sửa version bị lỗi. Nó không đụng mục thư viện, hạn nộp, bài nộp hay kết quả
+ * đã phát sinh. Bản đã lưu và bài đã giao đứng yên ở version cũ. Bên nhận chỉ dùng bản thay thế khi
+ * chủ động nhận cập nhật cho lần dùng sau qua {@code RECEIVE_UPDATE} của {@link
+ * ResourceLibraryService}. Cơ chế nhận thay thế đã có sẵn, nên service này không cài đường nhận thứ
+ * hai.
+ *
+ * <p>Thẩm quyền nguồn khóa hai lớp như các action nguồn khác. Route phải là đúng workspace sở hữu
+ * resource. Workspace khác thì 403. Quyết định PDP {@code review} trên target của version bị ảnh
+ * hưởng tại workspace đó phải cho phép. Scope {@code review} là scope phát hành và duyệt version mà
+ * nhánh chủ sở hữu và tác giả của {@link ResourcePolicyProjector} cấp tại workspace nguồn. Target
+ * {@code resource:{id}} với scope {@code version.create} trong hợp đồng chưa có projector cấp, nên
+ * không dùng để quyết định tại đây.
+ *
+ * <p>Trước khi hỏi PDP, service ghi lại bundle hiện hành của target qua projector bằng operation
+ * dùng chung và chờ chiếu xong. Chờ không xong thì fail-closed 503.
+ *
+ * <p>Notice và toàn bộ receipt ghi trong cùng transaction với biên nhận idempotency của action
+ * (bảng {@code sample_action_mutation}, đích {@code CORRECTION_NOTICE}). Replay cùng key và cùng
+ * payload trả lại đúng notice đầu tiên. Khác payload trả 409. Đính chính không đổi dữ kiện nguồn
+ * nào của graph nên không cần ghi lại bundle sau mutation.
  */
 @Service
 public class CorrectionService {
@@ -223,8 +228,8 @@ public class CorrectionService {
 
     /**
      * Chèn biên nhận của action trong cùng transaction với mutation, cùng giao thức với các sample
-     * action khác: chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp; đã có biên nhận cùng
-     * payload thì trả notice đầu tiên thay vì ghi lại; khác payload thì 409.
+     * action khác. Chèn được thì biên nhận chưa tồn tại và mutation chạy tiếp. Đã có biên nhận cùng
+     * payload thì trả notice đầu tiên thay vì ghi lại. Khác payload thì 409.
      */
     private Optional<CorrectionNoticeView> claimReceipt(
             UUID actorUserId,

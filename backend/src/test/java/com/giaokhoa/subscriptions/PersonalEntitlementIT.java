@@ -29,10 +29,10 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Chiều gói của US6 ở tầng HTTP: gói personal là nguồn entitlement duy nhất cho kho/lớp cá nhân —
- * chưa có gói thì tạo học liệu personal bị từ chối nhưng lịch sử practice vẫn đọc được; operator
- * kích hoạt gói thì tạo được ngay, không cần xác minh nghề nghiệp; membership center không thay gói
- * personal và gói personal không thay quyền tại center.
+ * Chiều gói ở tầng HTTP: gói personal là nguồn entitlement duy nhất cho kho/lớp cá nhân. Chưa có
+ * gói thì tạo học liệu personal bị từ chối nhưng lịch sử practice vẫn đọc được. Operator kích hoạt
+ * gói thì tạo được ngay, không cần xác minh nghề nghiệp. Membership center không thay gói personal
+ * và gói personal không thay quyền tại center.
  *
  * <p>Nhánh CREATE_RESOURCE cho personal owner trong SampleActionController đã có sẵn (kiểm tra kỳ
  * gói còn hiệu lực bên trong fence), nên các khẳng định ở đây khóa hành vi hiện hành; phần lớp

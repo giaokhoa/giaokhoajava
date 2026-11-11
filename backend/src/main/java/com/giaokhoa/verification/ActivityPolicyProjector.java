@@ -36,21 +36,30 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Projector của hoạt động mẫu: nguồn sự thật duy nhất về desired native graph của các target hoạt
  * động ({@code workspace:{wid}:activity:{id}}) của một workspace, dựng thuần từ các dòng bền (hoạt
- * động và ghi danh của môn–khóa của hoạt động). Projector quản lý scope {@code submit} theo hợp
- * đồng HTTP của SUBMIT_ACTIVITY: nguồn duy nhất là chính học sinh đang ghi danh ở môn–khóa của hoạt
- * động — ở center thêm điều kiện membership ACTIVE kèm role STUDENT hiện hành, ở personal chỉ cần
- * ghi danh của lớp personal — đúng mẫu nhánh học sinh của {@link ResultPolicyProjector}. Ba scope
- * quản lý hoạt động ({@code schedule.extend}, {@code attempt.open}, {@code reassign}) dùng chung
- * một tập nguồn là tập thẩm quyền giao bài của hợp đồng authorization: ở center là giáo viên đang
- * được phân công ở môn–khóa của hoạt động, chủ nhiệm của lớp chứa môn–khóa đó và chủ sở hữu/quản lý
- * của center (mọi nguồn đều đòi membership ACTIVE hiện hành); ở personal là chủ sở hữu của
- * workspace. Mọi nguồn quản lý còn AND thêm cửa sổ hiệu lực của từng kỳ gói đã xác nhận của
- * workspace qua time policy native: gói hết hạn thì chính PDP từ chối gia hạn, mở lượt mới và giao
- * lại, còn {@code submit} là đường hoàn tất bài đã giao nên không qua gate gói — nguồn của nó chỉ
- * theo ghi danh và membership hiện hành như trên. Vì bundle được ghi lại trước mọi quyết định, một
- * kỳ gói mới chỉ mở lại các scope quản lý cho người còn giữ thẩm quyền giao bài ở lần dựng lại đó;
- * nguồn đã bị thu hồi không hồi lại theo kỳ mới. Scope {@code read} của target hoạt động chưa có
- * action nào dùng nên chưa thuộc bundle: quyết định PDP trên nó luôn từ chối, fail-closed.
+ * động và ghi danh của môn–khóa của hoạt động).
+ *
+ * <p>Projector quản lý scope {@code submit} theo hợp đồng HTTP của SUBMIT_ACTIVITY. Nguồn duy nhất
+ * là chính học sinh đang ghi danh ở môn–khóa của hoạt động, đúng mẫu nhánh học sinh của {@link
+ * ResultPolicyProjector}. Ở center thêm điều kiện membership ACTIVE kèm role STUDENT hiện hành. Ở
+ * personal chỉ cần ghi danh của lớp personal.
+ *
+ * <p>Ba scope quản lý hoạt động ({@code schedule.extend}, {@code attempt.open}, {@code reassign})
+ * dùng chung một tập nguồn là tập thẩm quyền giao bài của hợp đồng authorization. Ở center là giáo
+ * viên đang được phân công ở môn–khóa của hoạt động, chủ nhiệm của lớp chứa môn–khóa đó và chủ sở
+ * hữu/quản lý của center. Mọi nguồn đều đòi membership ACTIVE hiện hành. Ở personal là chủ sở hữu
+ * của workspace.
+ *
+ * <p>Mọi nguồn quản lý còn AND thêm cửa sổ hiệu lực của từng kỳ gói đã xác nhận của workspace qua
+ * time policy native. Gói hết hạn thì chính PDP từ chối gia hạn, mở lượt mới và giao lại. Còn
+ * {@code submit} là đường hoàn tất bài đã giao nên không qua gate gói: nguồn của nó chỉ theo ghi
+ * danh và membership hiện hành như trên.
+ *
+ * <p>Vì bundle được ghi lại trước mọi quyết định, một kỳ gói mới chỉ mở lại các scope quản lý cho
+ * người còn giữ thẩm quyền giao bài ở lần dựng lại đó. Nguồn đã bị thu hồi không hồi lại theo kỳ
+ * mới.
+ *
+ * <p>Scope {@code read} của target hoạt động chưa có action nào dùng nên chưa thuộc bundle. Quyết
+ * định PDP trên nó luôn từ chối, fail-closed.
  *
  * <p>Mỗi target được ghi thành một projection bundle duy nhất trên WORKSPACE partition của
  * workspace với scope danh nghĩa {@code submit}, cùng hình dạng với bundle kết quả. Projector này

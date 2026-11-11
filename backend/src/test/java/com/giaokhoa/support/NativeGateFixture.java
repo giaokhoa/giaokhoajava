@@ -117,9 +117,8 @@ public final class NativeGateFixture {
     }
 
     /**
-     * Tóm tắt chẩn đoán phục vụ gate cho một operation. Chỉ chọn các cột trạng thái: idempotency
-     * key và payload hash không bao giờ được truy vấn vào đây, nên chuỗi kết quả không thể chứa
-     * chúng.
+     * Tóm tắt chẩn đoán cho một operation. Chỉ chọn các cột trạng thái: idempotency key và payload
+     * hash không bao giờ được truy vấn vào đây, nên chuỗi kết quả không thể chứa chúng.
      */
     public String diagnostics(UUID operationId) {
         List<Map<String, Object>> rows =

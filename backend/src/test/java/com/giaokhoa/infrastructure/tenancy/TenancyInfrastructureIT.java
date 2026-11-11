@@ -121,7 +121,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     @DisplayName(
             "Tạo workspace mới thì schema tenant được tạo, migrate đủ 25 bảng và chạy lại không lỗi")
     void provisioningCreatesSchema() {
-        UUID workspaceId = newWorkspace("wave0-provisioning").workspaceId();
+        UUID workspaceId = newWorkspace("provisioning").workspaceId();
 
         String schema = provisioner.provisionSchema(workspaceId);
 
@@ -154,7 +154,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     @Test
     @DisplayName("Runner cấp được schema cho workspace chưa từng cấp (schema_name còn NULL)")
     void runnerProvisionsWorkspaceWithoutSchema() {
-        UUID workspaceId = newWorkspace("wave0-runner-retry").workspaceId();
+        UUID workspaceId = newWorkspace("runner-retry").workspaceId();
         assertNull(
                 raw.queryForObject(
                         "SELECT schema_name FROM workspace WHERE id = ?",
@@ -236,7 +236,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
             "Gọi applyContext trực tiếp thì TenantContext được khôi phục khi transaction kết thúc,"
                     + " cả khi commit lẫn rollback")
     void directApplyContextRestoresTenantContext() {
-        ProbeWorkspace probe = newWorkspace("wave0-context-restore");
+        ProbeWorkspace probe = newWorkspace("context-restore");
         try (AnnotationConfigApplicationContext context =
                 new AnnotationConfigApplicationContext(BridgeConfiguration.class)) {
             WorkspaceTransaction workspaceTransaction = context.getBean(WorkspaceTransaction.class);
@@ -266,7 +266,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     @Test
     @DisplayName("Connection trả về pool không mang search_path của tenant trước sang lần mượn sau")
     void searchPathDoesNotLeak() throws Exception {
-        UUID workspaceId = newWorkspace("wave0-searchpath").workspaceId();
+        UUID workspaceId = newWorkspace("searchpath").workspaceId();
         String schema = provisioner.provisionSchema(workspaceId);
         HikariConfig config = poolConfig(1);
         try (HikariDataSource pool = new HikariDataSource(config)) {
@@ -290,8 +290,8 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     @Test
     @DisplayName("Hai tenant qua cùng một EntityManagerFactory không thấy dữ liệu của nhau")
     void tenantsAreIsolated() {
-        ProbeWorkspace a = newWorkspace("wave0-isolation-a");
-        ProbeWorkspace b = newWorkspace("wave0-isolation-b");
+        ProbeWorkspace a = newWorkspace("isolation-a");
+        ProbeWorkspace b = newWorkspace("isolation-b");
         UUID workspaceA = a.workspaceId();
         UUID workspaceB = b.workspaceId();
         String schemaA = provisioner.provisionSchema(workspaceA);
@@ -344,8 +344,8 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     @DisplayName(
             "JdbcTemplate thấy dữ liệu JPA chưa commit trong cùng transaction và rollback cùng nhau")
     void jpaAndJdbcShareTransaction() {
-        ProbeWorkspace a = newWorkspace("wave0-bridge-a");
-        ProbeWorkspace b = newWorkspace("wave0-bridge-b");
+        ProbeWorkspace a = newWorkspace("bridge-a");
+        ProbeWorkspace b = newWorkspace("bridge-b");
         UUID workspaceA = a.workspaceId();
         UUID workspaceB = b.workspaceId();
         String schemaA = provisioner.provisionSchema(workspaceA);

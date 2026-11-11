@@ -46,10 +46,16 @@ import org.springframework.web.client.RestClient;
 /**
  * Bootstrap profile/user/personal workspace, thư mục workspace và cấp danh tính học sinh trên stack
  * TEST thật: bootstrap đọc profile hiện hành từ Keycloak 26.8.1, directory và registrar chỉ chạm
- * PostgreSQL. Nghiệm thu US1.1–US1.9/T1–T2 ở tầng service: cùng account chuyển A/B đúng quyền,
- * không email không bị ép bổ sung, khôi phục không cấp lại mật khẩu cho quản lý, rời một center
- * không mất danh tính. Endpoint HTTP thuộc task sau; class này khóa hành vi service mà endpoint sẽ
- * gọi.
+ * PostgreSQL.
+ *
+ * <p>Ở tầng service, lớp kiểm thử này khóa các hành vi sau:
+ *
+ * <ul>
+ *   <li>cùng account chuyển A/B đúng quyền
+ *   <li>không email không bị ép bổ sung
+ *   <li>khôi phục không cấp lại mật khẩu cho quản lý
+ *   <li>rời một center không mất danh tính
+ * </ul>
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

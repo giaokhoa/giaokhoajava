@@ -89,7 +89,7 @@ public class RecoveryRequest {
 
     /**
      * Kết thúc vòng đời yêu cầu ở RESOLVED hoặc REJECTED. Ghi chú truyền vào null thì giữ ghi chú
-     * xác minh đã ghi, đúng ngữ nghĩa COALESCE của đường ghi trước đây.
+     * xác minh đã ghi, đúng ngữ nghĩa COALESCE.
      */
     public void resolve(State outcome, Instant resolvedAt, @Nullable String verificationNote) {
         this.state = outcome;

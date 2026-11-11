@@ -53,12 +53,20 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Kiểm chứng tầng service của quản trị center: tạo tenant qua operation tới SUCCEEDED mới có
- * center, Organization và group membership thật trên Keycloak TEST; replay không nhân bản tenant;
- * đổi role chạm row membership và chiếu lại group; tiền điều kiện của đổi role; owner cuối cùng
- * không bị gỡ; thu hồi giữ lịch sử và gỡ user khỏi mọi group của workspace; kỳ gói còn hiệu lực
- * chiếu thành time policy trên các scope bị gate và bundle đã áp được verify là nguyên vẹn.
- * Endpoint HTTP thuộc task controller riêng nên test này gọi thẳng service, không qua MockMvc.
+ * Kiểm chứng tầng service của quản trị center. Test này gọi thẳng service, không qua MockMvc, và
+ * khóa các hành vi sau:
+ *
+ * <ul>
+ *   <li>tạo tenant qua operation tới SUCCEEDED mới có center, Organization và group membership thật
+ *       trên Keycloak TEST
+ *   <li>replay không nhân bản tenant
+ *   <li>đổi role chạm row membership và chiếu lại group
+ *   <li>tiền điều kiện của đổi role
+ *   <li>owner cuối cùng không bị gỡ
+ *   <li>thu hồi giữ lịch sử và gỡ người dùng khỏi mọi group của workspace
+ *   <li>kỳ gói còn hiệu lực chiếu thành time policy trên các scope bị gate, và bundle đã áp được
+ *       verify là nguyên vẹn
+ * </ul>
  */
 @SpringBootTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)

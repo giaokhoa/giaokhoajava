@@ -18,8 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Bề mặt HTTP đọc kết quả đã công bố của một học sinh. Ủy thác toàn bộ quyết quyền cho
- * PublishedResultService: PDP xét scope read.published trên từng hàng kết quả, và khi tập được phép
- * rỗng thì học sinh tự đọc nhận danh sách rỗng còn actor khác nhận 403 (B56).
+ * PublishedResultService. PDP xét scope read.published trên từng hàng kết quả. Khi tập được phép
+ * rỗng, học sinh tự đọc nhận danh sách rỗng còn actor khác nhận 403.
  */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/students/{studentUserId}/results")

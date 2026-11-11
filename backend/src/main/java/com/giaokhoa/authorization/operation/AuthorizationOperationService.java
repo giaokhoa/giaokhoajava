@@ -202,8 +202,8 @@ public class AuthorizationOperationService {
      * của cơ sở dữ liệu tại từng câu lệnh (chúng vốn deferred, nhưng giao thức phải đúng cả khi bị
      * ép chạy ngay): một partition chỉ được đổi trạng thái sau khi mọi projection phụ thuộc vào nó
      * đã fenced, và một projection chỉ được fence sau khi partition sở hữu nó đã fenced. Hai ràng
-     * buộc này tạo thành một đồ thị trên các bước fence; sắp xếp topo cho thứ tự thỏa cả hai. Đồ
-     * thị phụ thuộc theo thiết kế không có chu trình; nếu gặp chu trình, phần còn lại fence
+     * buộc này tạo thành một đồ thị trên các bước fence. Sắp xếp topo cho thứ tự thỏa cả hai. Đồ
+     * thị phụ thuộc theo thiết kế không có chu trình. Nếu gặp chu trình, phần còn lại fence
      * projection trước partition.
      */
     private void fenceInDependencyOrder(

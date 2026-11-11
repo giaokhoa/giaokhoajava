@@ -29,19 +29,19 @@ import org.springframework.transaction.annotation.Transactional;
  * chính mình, owner/manager quyết định duyệt hoặc từ chối, và gỡ link đã duyệt. Parent của link
  * luôn là actor của lời gọi — service không nhận parent từ bất kỳ tham số nào khác, nên không đường
  * nào tạo được link cho phụ huynh khác. Mỗi mutation ghi một authorization operation qua {@link
- * GuardianPolicyProjector} trong cùng transaction, và link chỉ được coi là đã đồng bộ nguồn khi
- * operation SUCCEEDED; service không tự quyết quyền thay Keycloak PDP (quyết định cho phép ở route)
+ * GuardianPolicyProjector} trong cùng transaction. Link chỉ được coi là đã đồng bộ nguồn khi
+ * operation SUCCEEDED. Service không tự quyết quyền thay Keycloak PDP (quyết định cho phép ở route)
  * và không báo hoàn tất khi operation còn PENDING.
  *
  * <p>Tiền đề role được kiểm tra trên dữ kiện nguồn trước khi ghi, theo đúng chỗ trigger DB không
  * kiểm: lúc gửi request, actor phải có membership ACTIVE kèm role PARENT trong đúng center và học
- * sinh phải có membership ACTIVE kèm role STUDENT trong đúng center (học sinh ngoài phạm vi trả 404
- * để không lộ sự tồn tại); lúc duyệt, cả hai tiền đề được xét lại tại thời điểm quyết định.
- * REJECTED là kết thúc — muốn liên kết lại phải gửi request mới tạo hàng mới; thu hồi chỉ đi từ
- * APPROVED và không bị chặn bởi gói hết hạn, còn duyệt là thao tác mở quyền nên bị chặn khi gói đã
- * hết hiệu lực. Mọi mutation đều ghi một dòng {@code audit_event} RELATIONSHIP_CHANGE gắn operation
- * của nó, để quyết định từ chối — vốn không ghi người quyết định lên hàng link theo hình dạng trạng
- * thái của schema — vẫn truy được actor đã quyết.
+ * sinh phải có membership ACTIVE kèm role STUDENT trong đúng center. Học sinh ngoài phạm vi trả 404
+ * để không lộ sự tồn tại. Lúc duyệt, cả hai tiền đề được xét lại tại thời điểm quyết định. REJECTED
+ * là kết thúc — muốn liên kết lại phải gửi request mới tạo hàng mới; thu hồi chỉ đi từ APPROVED và
+ * không bị chặn bởi gói hết hạn, còn duyệt là thao tác mở quyền nên bị chặn khi gói đã hết hiệu
+ * lực. Mọi mutation đều ghi một dòng {@code audit_event} RELATIONSHIP_CHANGE gắn operation của nó,
+ * để quyết định từ chối — vốn không ghi người quyết định lên hàng link theo hình dạng trạng thái
+ * của schema — vẫn truy được actor đã quyết.
  *
  * <p>Như các service nguồn quyền khác, mỗi phương thức đặt context workspace cho transaction qua
  * {@link WorkspaceTransaction} ngay khi bắt đầu vì bảng guardian_link nằm trong schema tenant của

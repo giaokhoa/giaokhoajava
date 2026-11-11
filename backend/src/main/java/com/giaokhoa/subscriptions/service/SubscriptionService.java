@@ -40,14 +40,14 @@ import org.springframework.transaction.annotation.Transactional;
  * (không có payment gateway, không có giá gói trong bản đầu), service chỉ ghi nhận kỳ đã xác nhận
  * kèm confirmationRef và audit người xác nhận/thời điểm, rồi đưa hiệu lực của kỳ vào desired native
  * graph qua authorization operation như mọi thay đổi quyền khác. Kỳ chỉ có hiệu lực khi operation
- * đã SUCCEEDED; service không tự tính allow thay Keycloak PDP và không báo đồng bộ khi operation
+ * đã SUCCEEDED. Service không tự tính allow thay Keycloak PDP và không báo đồng bộ khi operation
  * còn PENDING.
  *
  * <p>Idempotency theo hợp đồng operation: replay cùng key và cùng payload trả lại đúng operation đã
  * ghi — không ghi kỳ hay audit thứ hai — còn cùng key khác payload là 409. Vì dữ kiện nguồn nằm
  * ngoài callback của operation, mutation tự tuần tự hoá trên (actor, idempotency key) bằng advisory
  * lock trong chính transaction rồi mới kiểm tra replay, nên hai lời gọi đồng thời cùng key không
- * thể cùng đi qua điểm kiểm tra. Kỳ gói là lịch sử bất biến: chỉ INSERT, không sửa hay xoá; gia hạn
+ * thể cùng đi qua điểm kiểm tra. Kỳ gói là lịch sử bất biến: chỉ INSERT, không sửa hay xoá. Gia hạn
  * là một kỳ mới, không mở lại kỳ cũ và không phục hồi nguồn đã thu hồi.
  *
  * <p>Dữ kiện directory/gói đọc/ghi qua repository JPA; {@link JdbcOperations} chỉ còn phục vụ

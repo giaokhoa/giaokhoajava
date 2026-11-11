@@ -40,9 +40,11 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Bề mặt HTTP vòng đời guardian link: phụ huynh gửi request, quản lý duyệt, quản lý gỡ liên kết, và
- * danh sách theo quyền. Ghi operation qua service rồi trả receipt 202; quyết quyền route theo dữ
- * kiện nguồn mà CenterPolicyProjector chiếu, vì center seed bằng JDBC không có projection cho
- * workspace target nên hỏi PDP trên workspace target sẽ luôn deny (xem B57).
+ * danh sách theo quyền.
+ *
+ * <p>Ghi operation qua service rồi trả receipt 202. Quyết quyền route theo dữ kiện nguồn mà
+ * CenterPolicyProjector chiếu. Trung tâm nạp sẵn bằng JDBC không có projection cho workspace
+ * target, nên hỏi PDP trên workspace target sẽ luôn deny.
  */
 @RestController
 @RequestMapping("/api/workspaces/{workspaceId}/guardian-links")

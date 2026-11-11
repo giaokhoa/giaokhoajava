@@ -20,12 +20,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Transaction fence của một protected request. Việc lấy snapshot khóa mọi partition của manifest
- * bằng {@code FOR SHARE} theo một thứ tự ổn định trong một transaction ngắn, xác nhận từng
- * partition đang READY tại applied revision của nó và ghi lại các revision; khóa được nhả khi
+ * bằng {@code FOR SHARE} theo một thứ tự ổn định trong một transaction ngắn. Nó xác nhận từng
+ * partition đang READY tại applied revision của nó và ghi lại các revision. Khóa được nhả khi
  * commit, nên không transaction nào bị giữ qua một lời gọi mạng. Nếu dependency closure đã dịch
  * chuyển trong lúc resolve, bước lấy snapshot sẽ resolve lại và thử lại thay vì khóa một tập đã cũ.
  * Trước khi caller materialize dữ liệu, {@link #atSnapshot} khóa lại chính các dòng đó và chứng
- * minh các revision đã ghi không đổi; một lần thu hồi commit chen giữa sẽ bump revision hoặc fence
+ * minh các revision đã ghi không đổi. Một lần thu hồi commit chen giữa sẽ bump revision hoặc fence
  * một partition nên luôn bị nhìn thấy. Mọi partition PENDING hoặc FAILED đều fail closed với 503.
  */
 @Component

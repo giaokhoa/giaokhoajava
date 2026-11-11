@@ -37,9 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Contract US2 ở tầng lời mời và cấp học sinh: mời account đã có không đổi origin, token chấp nhận
- * một lần và phải đúng người, cấp học sinh mới là create mới (username trùng không chiếm user đã
- * có), handoff không email chỉ xuất hiện trong response CREATE đầu tiên.
+ * Contract ở tầng lời mời và cấp học sinh: mời account đã có không đổi origin, token chấp nhận một
+ * lần và phải đúng người, cấp học sinh mới là create mới (username trùng không chiếm user đã có),
+ * handoff không email chỉ xuất hiện trong response CREATE đầu tiên.
  *
  * <p>Test mời account đã có ở đây là nơi bao phủ hợp đồng invitations đó; bản trùng ở
  * IdentityFlowE2EIT đã gỡ để tránh trùng lặp.

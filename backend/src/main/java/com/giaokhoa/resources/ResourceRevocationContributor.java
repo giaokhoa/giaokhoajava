@@ -24,14 +24,17 @@ import org.springframework.stereotype.Component;
  * chép mang toàn bộ cạnh dependency của nguồn nên cạnh mang grant luôn là cạnh trực tiếp của bản
  * phái sinh) đều phải mất nguồn trong cùng một operation, và operation chỉ đạt {@code SUCCEEDED}
  * khi toàn bộ closure đó đã READY ở revision mới, đúng giao thức thu hồi của hợp đồng
- * authorization. Contributor tính tập workspace bị ảnh hưởng từ dữ kiện bền (nơi nhận của grant,
- * các kho đã lưu theo grant, workspace sở hữu các bản phái sinh mang cạnh của grant), rồi ghi trong
- * một operation: GRANT partition của grant với bundle đã rỗng, cộng WORKSPACE partition của từng
- * workspace bị ảnh hưởng với toàn bộ bundle resource version hiện hành của workspace đó — bundle
- * nào không đổi thì hash khớp nguyên nên chỉ là ghi lại, bundle nào mất nhánh license thì được thu
- * hồi đúng, theo cùng kỷ luật closure của {@code SourceRevocationCoordinator} (một projection đổi
- * nguồn mà desired hash không được ghi lại sẽ làm operation chết {@code DESIRED_SOURCE_MISMATCH}).
- * Lịch sử không bị xóa ở bất kỳ bước nào.
+ * authorization.
+ *
+ * <p>Contributor tính tập workspace bị ảnh hưởng từ dữ kiện bền: nơi nhận của grant, các kho đã lưu
+ * theo grant, và workspace sở hữu các bản phái sinh mang cạnh của grant. Nó ghi trong một
+ * operation: GRANT partition của grant với bundle đã rỗng, cộng WORKSPACE partition của từng
+ * workspace bị ảnh hưởng với toàn bộ bundle resource version hiện hành của workspace đó. Bundle nào
+ * không đổi thì hash khớp nguyên nên chỉ là ghi lại. Bundle nào mất nhánh license thì được thu hồi
+ * đúng. Đây là cùng kỷ luật closure của {@code SourceRevocationCoordinator}: một projection đổi
+ * nguồn mà desired hash không được ghi lại sẽ làm operation chết {@code DESIRED_SOURCE_MISMATCH}.
+ *
+ * <p>Lịch sử không bị xóa ở bất kỳ bước nào.
  */
 @Component
 public class ResourceRevocationContributor {
@@ -85,12 +88,13 @@ public class ResourceRevocationContributor {
     }
 
     /**
-     * Ghi operation thu hồi cho một grant vừa chuyển {@code REVOKED} trong luồng của service gọi:
-     * GRANT partition của grant được bump với bundle hiện hành (đã rỗng sau thu hồi), từng
-     * workspace bị ảnh hưởng được bump với toàn bộ bundle resource version hiện hành của nó. Caller
-     * bọc trong transaction của mình và chờ operation {@code SUCCEEDED} trước khi báo thu hồi thành
-     * công — chừng nào closure chưa READY đủ thì thu hồi chưa được ghi nhận, đúng FR-049/FR-052.
-     * Replay cùng idempotency key và payload trả lại operation đã ghi.
+     * Ghi operation thu hồi cho một grant vừa chuyển {@code REVOKED} trong luồng của service gọi.
+     * GRANT partition của grant được bump với bundle hiện hành (đã rỗng sau thu hồi). Từng
+     * workspace bị ảnh hưởng được bump với toàn bộ bundle resource version hiện hành của nó.
+     *
+     * <p>Caller bọc trong transaction của mình và chờ operation {@code SUCCEEDED} trước khi báo thu
+     * hồi thành công. Chừng nào closure chưa READY đủ thì thu hồi chưa được ghi nhận. Replay cùng
+     * idempotency key và payload trả lại operation đã ghi.
      */
     public AuthorizationOperation recordShareRevocation(
             UUID initiatorUserId,

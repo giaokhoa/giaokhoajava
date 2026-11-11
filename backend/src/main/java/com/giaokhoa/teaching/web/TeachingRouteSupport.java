@@ -43,11 +43,12 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Quyết quyền ở tầng route tính từ đúng dữ kiện nguồn mà {@link TeachingPolicyProjector} chiếu
  * lên native graph — role của membership ACTIVE, phân công chủ nhiệm/giảng dạy hiện hành, ghi danh
- * hiện hành và chủ sở hữu của personal workspace — theo ngoại lệ SQL đã ghi ở mục 10 của hợp đồng
- * authorization (mở rộng cho route giảng dạy): quyết định có hiệu lực ngay từ dữ kiện nguồn, không
- * chờ projection áp xong, nên thu hồi phân công/membership chặn lời gọi tiếp theo trong cùng phiên.
- * Mỗi request đồng bộ eligibility hiện hành qua ACCOUNT/target fence trước khi quyết role bằng SQL;
- * khóa workspace bao trọn kiểm tra role, đọc/ghi nguồn và ghi operation tới commit.
+ * hiện hành và chủ sở hữu của personal workspace. Đây là ngoại lệ SQL mà hợp đồng authorization mở
+ * rộng cho route giảng dạy: quyết định có hiệu lực ngay từ dữ kiện nguồn, không chờ projection áp
+ * xong. Thu hồi phân công hay membership vì vậy chặn lời gọi tiếp theo trong cùng phiên.
+ *
+ * <p>Mỗi request đồng bộ eligibility hiện hành qua ACCOUNT/target fence trước khi quyết role bằng
+ * SQL. Khóa workspace bao trọn kiểm tra role, đọc/ghi nguồn và ghi operation tới commit.
  *
  * <p>Mọi đọc ghi chạm bảng giảng dạy (nằm trong schema tenant của workspace) chạy trong {@link
  * WorkspaceTransaction#inWorkspace} để context được đặt trước truy vấn đầu tiên; thiếu context thì
