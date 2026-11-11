@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.PlatformProjectionSeeder;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
+import com.giaokhoa.identity.service.RecoveryService;
 import com.giaokhoa.support.KeycloakSessionFixture;
 import jakarta.servlet.http.Cookie;
 import java.net.URI;

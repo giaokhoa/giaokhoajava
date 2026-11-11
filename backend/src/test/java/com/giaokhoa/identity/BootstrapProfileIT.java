@@ -7,10 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.identity.IdentityService.BootstrapResult;
-import com.giaokhoa.identity.IdentityService.CurrentUser;
-import com.giaokhoa.identity.IssuedStudentRegistrationService.IssuedStudent;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.identity.service.IdentityService;
+import com.giaokhoa.identity.service.IdentityService.BootstrapResult;
+import com.giaokhoa.identity.service.IdentityService.CurrentUser;
+import com.giaokhoa.identity.service.IssuedStudentRegistrationService;
+import com.giaokhoa.identity.service.IssuedStudentRegistrationService.IssuedStudent;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.MembershipService;

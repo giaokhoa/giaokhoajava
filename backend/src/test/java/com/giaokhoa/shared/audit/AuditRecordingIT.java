@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
-import com.giaokhoa.identity.RecoveryService;
-import com.giaokhoa.identity.RecoveryService.Decision;
-import com.giaokhoa.identity.RecoveryService.RequestView;
+import com.giaokhoa.identity.service.RecoveryService;
+import com.giaokhoa.identity.service.RecoveryService.Decision;
+import com.giaokhoa.identity.service.RecoveryService.RequestView;
 import com.giaokhoa.subscriptions.service.SubscriptionService;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.InvitationService;

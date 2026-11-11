@@ -1,7 +1,7 @@
-package com.giaokhoa.identity;
+package com.giaokhoa.identity.service;
 
-import com.giaokhoa.identity.IssuedStudentRegistrationService.IssuedStudent;
 import com.giaokhoa.identity.keycloak.IdentityProvisioningClient;
+import com.giaokhoa.identity.service.IssuedStudentRegistrationService.IssuedStudent;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
 import java.security.SecureRandom;

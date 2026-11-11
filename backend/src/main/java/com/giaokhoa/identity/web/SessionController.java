@@ -1,4 +1,4 @@
-package com.giaokhoa.identity;
+package com.giaokhoa.identity.web;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
@@ -6,11 +6,12 @@ import com.giaokhoa.authorization.model.AuthorizationProjection;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.repository.AuthzProjectionRepository;
-import com.giaokhoa.identity.IdentityService.BootstrapResult;
-import com.giaokhoa.identity.IdentityService.CurrentUser;
 import com.giaokhoa.identity.keycloak.IdentityProvisioningClient;
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.identity.repository.UserAccountRepository;
+import com.giaokhoa.identity.service.IdentityService;
+import com.giaokhoa.identity.service.IdentityService.BootstrapResult;
+import com.giaokhoa.identity.service.IdentityService.CurrentUser;
 import com.giaokhoa.subscriptions.repository.SubscriptionPeriodRepository;
 import com.giaokhoa.tenancy.WorkspaceDirectoryService;
 import com.giaokhoa.tenancy.WorkspaceDirectoryService.ListedWorkspace;

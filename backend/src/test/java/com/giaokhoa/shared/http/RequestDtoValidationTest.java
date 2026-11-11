@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.giaokhoa.authorization.decision.CapabilitiesController;
 import com.giaokhoa.guardians.web.GuardianLinkController;
-import com.giaokhoa.identity.RecoveryController;
+import com.giaokhoa.identity.web.RecoveryController;
 import com.giaokhoa.subscriptions.web.SubscriptionController;
 import com.giaokhoa.teaching.AssignmentController;
 import com.giaokhoa.teaching.ClassController;

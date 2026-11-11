@@ -1,4 +1,4 @@
-package com.giaokhoa.identity;
+package com.giaokhoa.identity.service;
 
 import com.giaokhoa.authorization.policy.ResourceMutationCoordinator;
 import com.giaokhoa.identity.eligibility.IdentityEligibilityService;

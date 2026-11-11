@@ -13,6 +13,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.identity.eligibility.IdentityEligibilityService;
+import com.giaokhoa.identity.service.IdentityService;
+import com.giaokhoa.identity.service.RecoveryService;
 import com.giaokhoa.support.KeycloakSessionFixture;
 import com.giaokhoa.support.RealmFoundation;
 import com.giaokhoa.tenancy.WorkspaceDirectoryService;

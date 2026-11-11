@@ -1,12 +1,13 @@
-package com.giaokhoa.identity;
+package com.giaokhoa.identity.web;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
-import com.giaokhoa.identity.RecoveryService.Decision;
-import com.giaokhoa.identity.RecoveryService.RequestView;
+import com.giaokhoa.identity.service.RecoveryService;
+import com.giaokhoa.identity.service.RecoveryService.Decision;
+import com.giaokhoa.identity.service.RecoveryService.RequestView;
 import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.shared.http.Violation;

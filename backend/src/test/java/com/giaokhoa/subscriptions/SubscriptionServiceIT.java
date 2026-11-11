@@ -1,6 +1,5 @@
 package com.giaokhoa.subscriptions;
 
-import com.giaokhoa.subscriptions.service.SubscriptionService;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -11,6 +10,7 @@ import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.projection.ProjectionReconciler;
 import com.giaokhoa.authorization.projection.ProjectionWorker;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.subscriptions.service.SubscriptionService;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import java.sql.Array;

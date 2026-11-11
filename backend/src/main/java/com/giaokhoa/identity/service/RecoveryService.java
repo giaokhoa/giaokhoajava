@@ -1,4 +1,4 @@
-package com.giaokhoa.identity;
+package com.giaokhoa.identity.service;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.identity.model.RecoveryMutation;
