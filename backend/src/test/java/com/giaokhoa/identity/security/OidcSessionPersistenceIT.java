@@ -188,6 +188,37 @@ class OidcSessionPersistenceIT extends IntegrationEnvironment {
         }
     }
 
+    @DisplayName(
+            "Đổi id phiên sau đăng nhập lại không vỡ khóa chính khi tương quan của id mới đã tồn tại")
+    @Test
+    void sessionRotateKeepsNewCorrelationOnConflict() {
+        var session = persistedSession(sessions);
+        String newId = java.util.UUID.randomUUID().toString();
+        try {
+            // Phiên cũ đã đăng nhập trước đó; đăng nhập lại đổi id trong bộ nhớ rồi
+            // registry ghi tương quan theo id mới trước khi Spring Session flush đổi id.
+            registry.saveSessionInformation(info(session.getId(), "user-4", "sid-old", "csrf-old"));
+            registry.saveSessionInformation(info(newId, "user-4", "sid-4", "csrf-4"));
+            assertEquals(
+                    1,
+                    jdbc.update(
+                            "UPDATE spring_session SET session_id = ? WHERE session_id = ?",
+                            newId,
+                            session.getId()));
+            assertNull(registry.removeSessionInformation(session.getId()));
+            var kept = Objects.requireNonNull(registry.removeSessionInformation(newId));
+            assertEquals(newId, kept.getSessionId());
+            assertEquals("user-4", kept.getPrincipal().getSubject());
+            assertEquals("sid-4", kept.getPrincipal().getClaimAsString("sid"));
+            assertEquals(Map.of("X-CSRF-TOKEN", "csrf-4"), kept.getAuthorities());
+        } finally {
+            registry.removeSessionInformation(session.getId());
+            registry.removeSessionInformation(newId);
+            sessions.deleteById(session.getId());
+            sessions.deleteById(newId);
+        }
+    }
+
     @DisplayName("Session đã hết hạn không thể được chọn cho back-channel logout")
     @Test
     void expiredSessionSkipsBackChannel() {
