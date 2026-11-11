@@ -52,9 +52,9 @@ import org.springframework.transaction.annotation.Transactional;
  * phân công.
  *
  * <p>Như các service giảng dạy khác, mỗi phương thức đặt context workspace cho transaction qua
- * {@link WorkspaceTransaction} ngay khi bắt đầu vì các bảng phân công nằm dưới RLS theo đúng
- * context đó, và các mutation trong cùng một workspace được tuần tự hoá bằng khóa workspace thống
- * nhất giữ tới commit như ở {@code EnrollmentService}.
+ * {@link WorkspaceTransaction} ngay khi bắt đầu vì các bảng phân công nằm trong schema tenant của
+ * đúng workspace đó, và các mutation trong cùng một workspace được tuần tự hoá bằng khóa workspace
+ * thống nhất giữ tới commit như ở {@code EnrollmentService}.
  */
 @Service
 public class AssignmentService {

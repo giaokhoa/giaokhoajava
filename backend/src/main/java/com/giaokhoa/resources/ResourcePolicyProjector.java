@@ -54,9 +54,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * partition của các grant làm nguồn cho nó để fence của protected request và phép đóng phụ thuộc
  * luôn thấy grant đang đổi trạng thái. Projector vừa tính bundle khi ghi (qua {@link
  * #recordResourceChange}), vừa dựng lại đúng bundle đó khi {@code ProjectionReconciler} đối chiếu
- * desired hash. Các bảng thư viện/phân công/hoạt động nằm dưới RLS theo workspace ngữ cảnh nên mọi
- * phép dựng bundle tự bọc trong một transaction ngắn có đặt context của đúng workspace trước truy
- * vấn đầu tiên, như các projector bundle khác.
+ * desired hash. Các bảng thư viện/phân công/hoạt động nằm trong schema tenant của workspace ngữ
+ * cảnh nên mọi phép dựng bundle tự bọc trong một transaction ngắn có đặt context của đúng workspace
+ * trước truy vấn đầu tiên, như các projector bundle khác.
  */
 @Component
 public class ResourcePolicyProjector {

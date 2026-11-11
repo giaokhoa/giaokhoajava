@@ -48,8 +48,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * và group giảng dạy chỉ chứa người còn membership ACTIVE kèm role tiền đề đúng (TEACHER cho phân
  * công, STUDENT cho ghi danh) tại thời điểm đối chiếu.
  *
- * <p>Các bảng giảng dạy nằm dưới RLS theo context workspace của transaction, mà phía reconcile
- * không có transaction bao quanh sẵn: mọi phép dựng bundle và đồng bộ group ở đây tự bọc trong một
+ * <p>Các bảng giảng dạy nằm trong schema tenant của workspace, mà phía reconcile không có
+ * transaction bao quanh sẵn: mọi phép dựng bundle và đồng bộ group ở đây tự bọc trong một
  * transaction ngắn có đặt context của đúng workspace qua {@link WorkspaceTransaction} trước truy
  * vấn đầu tiên. Phía ghi đã có transaction của service (context do service đặt cùng workspace) thì
  * phép bọc này chỉ nối vào, không đổi ngữ nghĩa. Dữ kiện giảng dạy đọc qua các repository của

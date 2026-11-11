@@ -41,10 +41,10 @@ import org.springframework.stereotype.Component;
  * chính dòng đó đã nằm ở {@code ClassService.revokeStudent} qua repository, theo hợp đồng của route
  * roster.revoke, nên không lặp lại ở đây.
  *
- * <p>Các bảng giảng dạy nằm dưới RLS theo context workspace của transaction, mà một số lời gọi (đổi
- * role, thu hồi membership ở tầng tenancy) không tự đặt context: contributor tự đặt context của
- * đúng workspace qua {@link WorkspaceTransaction} ở đầu mỗi phép đóng, trước truy vấn đầu tiên.
- * Contributor chỉ cập nhật dữ kiện nguồn; việc đối chiếu group/policy ở Keycloak thuộc {@link
+ * <p>Các bảng giảng dạy nằm trong schema tenant của workspace, mà một số lời gọi (đổi role, thu hồi
+ * membership ở tầng tenancy) không tự đặt context: contributor tự đặt context của đúng workspace
+ * qua {@link WorkspaceTransaction} ở đầu mỗi phép đóng, trước truy vấn đầu tiên. Contributor chỉ
+ * cập nhật dữ kiện nguồn; việc đối chiếu group/policy ở Keycloak thuộc {@link
  * TeachingPolicyProjector} khi operation của thay đổi tiền đề được reconcile, và các role/nguồn độc
  * lập còn lại của cùng người không bị đụng tới vì mọi phép đóng đều khóa đúng phạm vi tiền đề đã
  * gỡ.

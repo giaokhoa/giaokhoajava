@@ -30,11 +30,11 @@ import org.springframework.transaction.annotation.Transactional;
  * trong roster của đúng một lớp thuộc đúng một workspace. Mọi thao tác đi qua các repository đã
  * khóa phạm vi theo workspace nên dữ kiện của workspace khác không tồn tại đối với service này. Mỗi
  * phương thức đặt context workspace cho transaction qua {@link WorkspaceTransaction} ngay khi bắt
- * đầu: các bảng giảng dạy nằm dưới RLS theo đúng context đó, thiếu nó thì runtime role không
- * BYPASSRLS không thấy và không ghi được hàng nào. Mọi phương thức ghi giữ khóa workspace thống
- * nhất qua {@link ResourceMutationCoordinator} ngay sau khi đặt context — cùng mẫu các writer dữ
- * kiện nguồn khác — để dữ kiện nguồn mà projector chiếu không bao giờ thiếu một mutation đang chạy
- * đồng thời của cùng workspace.
+ * đầu: các bảng giảng dạy nằm trong schema tenant của đúng workspace đó; thiếu nó thì truy vấn
+ * không chạy trong schema tenant nên không thấy và không ghi được hàng nào. Mọi phương thức ghi giữ
+ * khóa workspace thống nhất qua {@link ResourceMutationCoordinator} ngay sau khi đặt context — cùng
+ * mẫu các writer dữ kiện nguồn khác — để dữ kiện nguồn mà projector chiếu không bao giờ thiếu một
+ * mutation đang chạy đồng thời của cùng workspace.
  *
  * <p>Service chỉ giữ bất biến dữ kiện và trạng thái, không tự quyết quyền thay Keycloak PDP và
  * không ghi authorization operation: quyết định cho phép ở route (PDP/fence hay biên SQL) và việc

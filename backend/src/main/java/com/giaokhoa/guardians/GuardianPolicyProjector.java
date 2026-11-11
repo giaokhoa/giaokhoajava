@@ -131,7 +131,7 @@ public class GuardianPolicyProjector {
      * ACTIVE và role tiền đề hiện hành của cả hai phía suy ra, không thuộc guardian group nào khác
      * của workspace. Chỉ ghi khi live đang lệch, để reconcile không đổi gì vẫn là kiểm chứng đọc.
      * Tự đặt context workspace vì phía reconcile không có transaction bao quanh sẵn và bảng
-     * guardian_link nằm dưới RLS theo đúng context đó.
+     * guardian_link nằm trong schema tenant của đúng workspace đó.
      */
     public void syncGroupMemberships(UUID workspaceId) {
         transactions.executeWithoutResult(_ -> {

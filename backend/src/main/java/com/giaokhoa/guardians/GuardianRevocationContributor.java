@@ -35,10 +35,10 @@ import org.springframework.stereotype.Component;
  * GuardianPolicyProjector} đối chiếu lại từ dữ kiện nguồn ở vòng reconcile của chính operation đã
  * đóng link, nên contributor chỉ cập nhật dữ kiện nguồn, không gọi Keycloak.
  *
- * <p>Bảng guardian_link nằm dưới RLS theo context workspace của transaction, mà các lời gọi ở tầng
- * tenancy không tự đặt context: contributor tự đặt context của đúng workspace qua {@link
- * WorkspaceTransaction} ở đầu mỗi phép đóng, trước truy vấn đầu tiên. Mỗi phép đóng trả lại các
- * guardian group path mà desired membership của chúng vừa đổi vì phép đóng.
+ * <p>Bảng guardian_link nằm trong schema tenant của workspace, mà các lời gọi ở tầng tenancy không
+ * tự đặt context: contributor tự đặt context của đúng workspace qua {@link WorkspaceTransaction} ở
+ * đầu mỗi phép đóng, trước truy vấn đầu tiên. Mỗi phép đóng trả lại các guardian group path mà
+ * desired membership của chúng vừa đổi vì phép đóng.
  */
 @Component
 public class GuardianRevocationContributor {
