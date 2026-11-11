@@ -211,7 +211,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [chromium-core, chromium-teaching-guardians]
+        # Các ca resource action nặng chạy riêng, vẫn giữ globalTimeout 20 phút.
+        project: [chromium-core, chromium-teaching-guardians, chromium-resources]
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
