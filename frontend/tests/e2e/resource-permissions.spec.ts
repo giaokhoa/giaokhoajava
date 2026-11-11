@@ -733,10 +733,11 @@ test("lưu giữ nguyên định danh nguồn và không mở kho soạn cá nh�
     const nguon = await dungCenterCoTaiNguyen(page, origin, env, daTao);
     const { resourceId, versionId } = nguon.taiNguyen;
 
-    // Manager của center (không phải author) lưu version vào kho của center:
-    // thao tác thành công và mục đã lưu vẫn mang đúng resource id + version id
-    // của nguồn, không sinh định danh nghiệp vụ mới, không đổi chủ sở hữu.
-    await dangNhapLai(page, origin, nguon.manager);
+    // Author lưu version vào kho của center nhà: thao tác thành công và mục đã
+    // lưu vẫn mang đúng resource id + version id của nguồn, không sinh định danh
+    // nghiệp vụ mới, không đổi chủ sở hữu. Manager không lưu được ở đây vì nhánh
+    // tác giả của projector chỉ cấp library.save cho chính author (Sổ B86(ii)).
+    await dangNhapLai(page, origin, nguon.tacGia);
     await chayHanhDong(page, "SAVE_VERSION", {
       workspaceId: nguon.workspaceId, resourceId, versionId,
     });
@@ -782,8 +783,11 @@ test("fork tạo định danh mới giữ truy vết nguồn; người chỉ có
 
     const grantId = await chiaSeToiWorkspace(
       page, nguon, benB.workspaceId, "use,content.read");
+    // Accept do owner của workspace nhận thực hiện: nguồn accept của grant chỉ
+    // có owner/manager nơi nhận (Sổ B86(ii)), giáo viên thường bị PDP từ chối.
+    await dangNhapLai(page, origin, benB.owner);
+    await chapNhanChiaSe(page, benB.workspaceId, grantId);
     const { page: trangNhan } = await moBoiCanhDangNhap(browser, origin, giaoVienB);
-    await chapNhanChiaSe(trangNhan, benB.workspaceId, grantId);
 
     // Người nhận chỉ có quyền dùng theo điều kiện share: fork bị từ chối.
     await chayHanhDong(trangNhan, "FORK_VERSION", {
@@ -831,8 +835,11 @@ test("quyền dùng tại workspace nhận không rò sang nơi khác: chia sẻ
 
     const grantId = await chiaSeToiWorkspace(
       page, nguon, benB.workspaceId, "use,content.read");
+    // Accept do owner của workspace nhận thực hiện: nguồn accept của grant chỉ
+    // có owner/manager nơi nhận (Sổ B86(ii)), giáo viên thường bị PDP từ chối.
+    await dangNhapLai(page, origin, benB.owner);
+    await chapNhanChiaSe(page, benB.workspaceId, grantId);
     const { page: trangNhan } = await moBoiCanhDangNhap(browser, origin, giaoVienB);
-    await chapNhanChiaSe(trangNhan, benB.workspaceId, grantId);
 
     // Trong đúng ngữ cảnh được chia sẻ, người nhận mở được nội dung.
     await moNoiDung(trangNhan, benB.workspaceId,
@@ -924,8 +931,11 @@ test("đáp án tách khỏi nội dung: quyền dùng không mở được đá
     // Share chỉ gồm quyền dùng và đọc nội dung — không có scope đáp án.
     const grantId = await chiaSeToiWorkspace(
       page, nguon, benB.workspaceId, "use,content.read");
+    // Accept do owner của workspace nhận thực hiện: nguồn accept của grant chỉ
+    // có owner/manager nơi nhận (Sổ B86(ii)), giáo viên thường bị PDP từ chối.
+    await dangNhapLai(page, origin, benB.owner);
+    await chapNhanChiaSe(page, benB.workspaceId, grantId);
     const { page: trangNhan } = await moBoiCanhDangNhap(browser, origin, giaoVienB);
-    await chapNhanChiaSe(trangNhan, benB.workspaceId, grantId);
 
     // Mở nội dung: body hiện, đáp án không xuất hiện ở bất cứ đâu trên trang —
     // đáp án không đi kèm DTO nội dung và không mở từ quyền dùng/soạn.
@@ -966,10 +976,13 @@ test("thu hồi chia sẻ: nội dung đã mở không còn truy cập được 
       giaoVienB, ["TEACHER"]);
 
     const grantId = await chiaSeToiWorkspace(
-      page, nguon, benB.workspaceId, "use,content.read");
+      page, nguon, benB.workspaceId, "use,content.read,library.save");
     // Người nhận giữ nguyên một phiên/context trong suốt kịch bản thu hồi.
+    // Accept do owner của workspace nhận thực hiện: nguồn accept của grant chỉ
+    // có owner/manager nơi nhận (Sổ B86(ii)), giáo viên thường bị PDP từ chối.
+    await dangNhapLai(page, origin, benB.owner);
+    await chapNhanChiaSe(page, benB.workspaceId, grantId);
     const { page: trangNhan } = await moBoiCanhDangNhap(browser, origin, giaoVienB);
-    await chapNhanChiaSe(trangNhan, benB.workspaceId, grantId);
 
     // Trước thu hồi: mở được nội dung và lưu được vào kho của workspace nhận.
     await moNoiDung(trangNhan, benB.workspaceId,
