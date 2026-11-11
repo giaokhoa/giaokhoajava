@@ -109,6 +109,7 @@ public final class ErrorCodes {
     public static final String USERNAME_MISMATCH = "USERNAME_MISMATCH";
     public static final String USERNAME_TAKEN = "USERNAME_TAKEN";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
+    public static final String VERIFICATION_EMAIL_COOLDOWN = "VERIFICATION_EMAIL_COOLDOWN";
     public static final String VERSION_CONFLICT = "VERSION_CONFLICT";
     public static final String WORKSPACE_NOT_FOUND = "WORKSPACE_NOT_FOUND";
 }

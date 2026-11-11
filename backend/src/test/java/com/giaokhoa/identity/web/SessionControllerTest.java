@@ -1,10 +1,14 @@
 package com.giaokhoa.identity.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
@@ -20,6 +24,7 @@ import com.giaokhoa.support.RandomIds;
 import com.giaokhoa.tenancy.repository.CenterRepository;
 import com.giaokhoa.tenancy.service.WorkspaceDirectoryService;
 import com.giaokhoa.verification.SystemPracticeService;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -76,6 +81,57 @@ class SessionControllerTest {
         assertEquals(ErrorCodes.IDENTITY_UNAVAILABLE, problem.getCode());
     }
 
+    @Test
+    @DisplayName("Chưa từng gửi email xác minh thì gửi ngay và ghi mốc thời gian gửi")
+    void firstRequestSendsAndRecordsTheTimestamp() {
+        Fixture fixture = fixture(account());
+
+        var response = fixture.controller().requestVerification(mock(Authentication.class));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(fixture.provisioning()).sendVerifyEmail(KEYCLOAK_SUB);
+        assertNotNull(fixture.account().getVerifyEmailSentAt());
+        verify(fixture.accounts()).save(fixture.account());
+    }
+
+    @Test
+    @DisplayName("Gửi lại trong cửa sổ cooldown thì đáp 429 và không gửi thêm email nào")
+    void secondRequestWithinCooldownIsRejected() {
+        UserAccount account = account();
+        account.markVerifyEmailSent(Instant.now());
+        Fixture fixture = fixture(account);
+
+        HttpProblemException problem =
+                assertThrows(
+                        HttpProblemException.class,
+                        () -> fixture.controller().requestVerification(mock(Authentication.class)));
+
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, problem.getStatus());
+        assertEquals(ErrorCodes.VERIFICATION_EMAIL_COOLDOWN, problem.getCode());
+        verify(fixture.provisioning(), never()).sendVerifyEmail(any());
+    }
+
+    @Test
+    @DisplayName("Gửi lại sau khi cửa sổ cooldown đã qua thì gửi tiếp và cập nhật mốc thời gian")
+    void requestAfterCooldownSendsAndRefreshesTheTimestamp() {
+        UserAccount account = account();
+        Instant previousSentAt = Instant.now().minusSeconds(61);
+        account.markVerifyEmailSent(previousSentAt);
+        Fixture fixture = fixture(account);
+
+        var response = fixture.controller().requestVerification(mock(Authentication.class));
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(fixture.provisioning()).sendVerifyEmail(KEYCLOAK_SUB);
+        assertTrue(account.getVerifyEmailSentAt().isAfter(previousSentAt));
+    }
+
+    private record Fixture(
+            SessionController controller,
+            IdentityProvisioningClient provisioning,
+            UserAccountRepository accounts,
+            UserAccount account) {}
+
     private static SessionController controllerWithKeycloakStatus(HttpStatus keycloakStatus) {
         IdentityProvisioningClient provisioning = mock(IdentityProvisioningClient.class);
         doThrow(
@@ -88,26 +144,31 @@ class SessionControllerTest {
                                 null))
                 .when(provisioning)
                 .sendVerifyEmail(KEYCLOAK_SUB);
-        return controller(provisioning, account());
+        return fixture(provisioning, account()).controller();
     }
 
-    private static SessionController controller(
-            IdentityProvisioningClient provisioning, UserAccount account) {
+    private static Fixture fixture(UserAccount account) {
+        return fixture(mock(IdentityProvisioningClient.class), account);
+    }
+
+    private static Fixture fixture(IdentityProvisioningClient provisioning, UserAccount account) {
         ProtectedActionExecutor executor = mock(ProtectedActionExecutor.class);
         when(executor.actorUserId(any())).thenReturn(ACTOR);
         UserAccountRepository accounts = mock(UserAccountRepository.class);
         when(accounts.findById(ACTOR)).thenReturn(Optional.of(account));
         when(accounts.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        return new SessionController(
-                mock(IdentityService.class),
-                mock(WorkspaceDirectoryService.class),
-                mock(SystemPracticeService.class),
-                provisioning,
-                executor,
-                accounts,
-                mock(CenterRepository.class),
-                mock(SubscriptionPeriodRepository.class),
-                mock(AuthzProjectionRepository.class));
+        SessionController controller =
+                new SessionController(
+                        mock(IdentityService.class),
+                        mock(WorkspaceDirectoryService.class),
+                        mock(SystemPracticeService.class),
+                        provisioning,
+                        executor,
+                        accounts,
+                        mock(CenterRepository.class),
+                        mock(SubscriptionPeriodRepository.class),
+                        mock(AuthzProjectionRepository.class));
+        return new Fixture(controller, provisioning, accounts, account);
     }
 
     private static UserAccount account() {

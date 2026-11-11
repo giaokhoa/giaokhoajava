@@ -24,6 +24,7 @@ import com.giaokhoa.tenancy.service.WorkspaceDirectoryService.ListedWorkspace;
 import com.giaokhoa.verification.SystemPracticeService;
 import com.giaokhoa.verification.SystemPracticeService.PracticeEntry;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -54,6 +55,8 @@ import org.springframework.web.client.RestClientResponseException;
 @RestController
 @RequestMapping("/api")
 public class SessionController {
+    private static final Duration VERIFY_EMAIL_COOLDOWN = Duration.ofSeconds(60);
+
     private final IdentityService identities;
     private final WorkspaceDirectoryService directory;
     private final SystemPracticeService practice;
@@ -190,7 +193,18 @@ public class SessionController {
                         .orElseThrow(() ->
                                 new IllegalStateException(
                                         "Account row without Keycloak subject for actor " + actor));
+        // Cooldown chống gửi lặp: mốc gửi gần nhất nằm trên chính dòng account, chỉ ghi sau khi
+        // gửi thành công nên lần gửi hỏng không khoá lần thử lại ngay sau đó.
+        Instant lastSentAt = account.getVerifyEmailSentAt();
+        if (lastSentAt != null && Instant.now().isBefore(lastSentAt.plus(VERIFY_EMAIL_COOLDOWN))) {
+            throw new HttpProblemException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    ErrorCodes.VERIFICATION_EMAIL_COOLDOWN,
+                    "Email xác minh vừa được gửi, chờ một phút rồi thử lại.");
+        }
         sendVerifyEmail(account.getKeycloakSub());
+        account.markVerifyEmailSent(Instant.now());
+        accounts.save(account);
         // Gửi email là tác vụ phụ trợ đồng bộ, không có thực thể operation để poll: biên nhận hoàn
         // tất ngay mang chính định danh của actor theo hình dạng tracked operation của hợp đồng.
         return ResponseEntity.ok()
