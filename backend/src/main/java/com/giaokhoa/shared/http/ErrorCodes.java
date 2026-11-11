@@ -29,6 +29,7 @@ public final class ErrorCodes {
     public static final String COURSE_SUBJECT_NOT_FOUND = "COURSE_SUBJECT_NOT_FOUND";
     public static final String DATA_CONFLICT = "DATA_CONFLICT";
     public static final String DECISION_UNVERIFIABLE = "DECISION_UNVERIFIABLE";
+    public static final String EMAIL_TAKEN = "EMAIL_TAKEN";
     public static final String ENROLLMENT_ALREADY_REVOKED = "ENROLLMENT_ALREADY_REVOKED";
     public static final String ENROLLMENT_BATCH_REQUIRED = "ENROLLMENT_BATCH_REQUIRED";
     public static final String ENROLLMENT_CLASS_MISMATCH = "ENROLLMENT_CLASS_MISMATCH";
