@@ -7,12 +7,14 @@ import com.giaokhoa.authorization.permission.PermissionCatalog;
 import com.giaokhoa.authorization.policy.NativePolicyTemplates;
 import com.giaokhoa.authorization.policy.PolicyGraph;
 import com.giaokhoa.identity.model.UserAccount;
+import com.giaokhoa.resources.model.CorrectionNotice;
 import com.giaokhoa.resources.model.LibraryItem;
 import com.giaokhoa.resources.model.Resource;
 import com.giaokhoa.resources.model.ResourceAssignment;
 import com.giaokhoa.resources.model.ResourceDependency;
 import com.giaokhoa.resources.model.ResourceVersion;
 import com.giaokhoa.resources.model.ShareGrant;
+import com.giaokhoa.resources.repository.CorrectionNoticeRepository;
 import com.giaokhoa.resources.repository.LibraryItemRepository;
 import com.giaokhoa.resources.repository.ResourceAssignmentRepository;
 import com.giaokhoa.resources.repository.ResourceDependencyRepository;
@@ -27,7 +29,9 @@ import com.giaokhoa.resources.repository.ShareGrantRepository;
 import com.giaokhoa.tenancy.model.Workspace;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -128,8 +132,8 @@ public class ResourcePolicyProjector {
     private final ResourcesUserAccountRepository userAccounts;
     private final ResourcesSampleActivityRepository activities;
     private final ResourcesAuthorizationPartitionRepository partitions;
-    private final ResourceCopies copies;
     private final ResourceScopePreconditions preconditions;
+    private final CorrectionNoticeRepository corrections;
 
     public ResourcePolicyProjector(
             AuthorizationOperationService operations,
@@ -144,8 +148,8 @@ public class ResourcePolicyProjector {
             ResourcesUserAccountRepository userAccounts,
             ResourcesSampleActivityRepository activities,
             ResourcesAuthorizationPartitionRepository partitions,
-            ResourceCopies copies,
-            ResourceScopePreconditions preconditions) {
+            ResourceScopePreconditions preconditions,
+            CorrectionNoticeRepository corrections) {
         this.operations = operations;
         this.transactions = new TransactionTemplate(transactionManager);
         this.versions = versions;
@@ -158,8 +162,8 @@ public class ResourcePolicyProjector {
         this.userAccounts = userAccounts;
         this.activities = activities;
         this.partitions = partitions;
-        this.copies = copies;
         this.preconditions = preconditions;
+        this.corrections = corrections;
     }
 
     /** Scope danh nghĩa ghi trên projection row của mọi bundle resource version. */
@@ -702,11 +706,19 @@ public class ResourcePolicyProjector {
     }
 
     /**
-     * Nhánh license: mỗi grant ACCEPTED cho workspace nhận trên đúng version cấp các scope do
-     * actions của grant quyết định, trong cửa sổ hiệu lực của grant và chỉ khi workspace nhận nằm
-     * trong phạm vi workspace cho phép (rỗng nghĩa là không giới hạn). Ngoại lệ copy-on-share:
-     * grant đã có bản sao tại workspace nhận thì chỉ còn scope {@code library.save} trên target của
-     * version nguồn — quyền đọc/dùng sống trên target của bản sao.
+     * Nhánh license: mỗi grant ACCEPTED cho workspace nhận trên đúng version cấp toàn bộ scope do
+     * actions của grant quyết định trên target của version nguồn, trong cửa sổ hiệu lực của grant
+     * và chỉ khi workspace nhận nằm trong phạm vi workspace cho phép (rỗng nghĩa là không giới
+     * hạn). Bản sao copy-on-share không đổi nhánh này: mọi đường đọc/dùng/fork đều hỏi quyết định
+     * trên target của version nguồn, nên quyền phải đủ ngay trên target nguồn; target của bản sao
+     * mang các scope phái sinh riêng qua {@link #derivedLicenseSources}. Thu hồi vẫn chặn cả hai
+     * target vì cả hai nhánh đều chỉ phát nguồn khi grant còn ACCEPTED.
+     *
+     * <p>Grant cũng đi theo cạnh đính chính: notice đính chính chỉ định version thay thế là bản
+     * tiếp nối của đúng version bị ảnh hưởng cho những nơi đã nhận version đó, nên grant trên
+     * version bị ảnh hưởng cũng cấp trên target của version thay thế (đường nhận cập nhật
+     * RECEIVE_UPDATE và đường đọc bản đính chính đều hỏi quyết định trên target thay thế). Version
+     * kế tiếp thường không có notice thì không được mở rộng.
      */
     private void licenseSources(
             List<String> descriptors,
@@ -715,36 +727,46 @@ public class ResourcePolicyProjector {
             UUID resourceId,
             UUID versionId,
             String targetKey) {
-        String saveScope = PermissionCatalog.ResourceVersionScope.LIBRARY_SAVE.scopeName();
-        List<ShareGrant> applicable =
-                grants
-                        .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
-                                workspaceId, resourceId, versionId, ShareGrant.State.ACCEPTED)
-                        .stream()
-                        .filter(grant -> allowedHere(grant, workspaceId))
-                        .toList();
-        Set<UUID> copiedGrantIds =
-                copies.grantsWithCopyAt(
-                        resourceId,
-                        versionId,
-                        applicable.stream().map(ShareGrant::getId).toList(),
-                        workspaceId);
+        List<ShareGrant> applicable = new ArrayList<>();
+        for (UUID sourceVersionId : licenseSourceVersions(resourceId, versionId)) {
+            applicable.addAll(
+                    grants
+                            .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
+                                    workspaceId,
+                                    resourceId,
+                                    sourceVersionId,
+                                    ShareGrant.State.ACCEPTED));
+        }
         for (ShareGrant grant : applicable) {
-            List<String> scopes = mapActions(grant.getActions());
-            boolean copied = copiedGrantIds.contains(grant.getId());
-            if (copied) {
-                if (scopes.contains(saveScope)) {
-                    descriptors.add(
-                            licenseDescriptor(
-                                    workspaceId, contextKind, grant, targetKey, saveScope));
-                }
+            if (!allowedHere(grant, workspaceId)) {
                 continue;
             }
-            for (String scope : scopes) {
+            for (String scope : mapActions(grant.getActions())) {
                 descriptors.add(
                         licenseDescriptor(workspaceId, contextKind, grant, targetKey, scope));
             }
         }
+    }
+
+    /**
+     * Tập version mà grant trên đó cũng cấp cho target của {@code versionId}: chính version đó cộng
+     * các version bị ảnh hưởng trong chuỗi đính chính dẫn tới nó (đi ngược cạnh thay thế → bị ảnh
+     * hưởng của {@code correction_notice} cùng resource cho tới khi hết chuỗi).
+     */
+    private Set<UUID> licenseSourceVersions(UUID resourceId, UUID versionId) {
+        Set<UUID> covered = new LinkedHashSet<>();
+        Deque<UUID> pending = new ArrayDeque<>(List.of(versionId));
+        while (!pending.isEmpty()) {
+            UUID current = pending.pop();
+            if (!covered.add(current)) {
+                continue;
+            }
+            for (CorrectionNotice notice :
+                    corrections.findByResourceIdAndReplacementVersionId(resourceId, current)) {
+                pending.push(notice.getAffectedVersionId());
+            }
+        }
+        return covered;
     }
 
     /**
@@ -905,10 +927,12 @@ public class ResourcePolicyProjector {
     private List<UUID> grantDependencyPartitions(
             UUID workspaceId, UUID resourceId, UUID versionId) {
         Set<UUID> grantIds = new LinkedHashSet<>();
-        for (ShareGrant grant :
-                grants.findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionId(
-                        workspaceId, resourceId, versionId)) {
-            grantIds.add(grant.getId());
+        for (UUID sourceVersionId : licenseSourceVersions(resourceId, versionId)) {
+            for (ShareGrant grant :
+                    grants.findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionId(
+                            workspaceId, resourceId, sourceVersionId)) {
+                grantIds.add(grant.getId());
+            }
         }
         for (ResourceDependency dependency :
                 dependencies.findByDerivedResourceIdAndDerivedVersionId(resourceId, versionId)) {
