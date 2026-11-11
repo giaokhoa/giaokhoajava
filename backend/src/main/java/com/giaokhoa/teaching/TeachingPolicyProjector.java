@@ -408,9 +408,9 @@ public class TeachingPolicyProjector {
                 PermissionCatalog.CourseScope.READ.scopeName(), managers, managersActive, false);
         sources.add(
                 PermissionCatalog.CourseScope.READ.scopeName(), homeroom, homeroomPresent, false);
-        sources.add(PermissionCatalog.CourseScope.UPDATE.scopeName(), owners, ownersActive, false);
+        sources.add(PermissionCatalog.CourseScope.UPDATE.scopeName(), owners, ownersActive, true);
         sources.add(
-                PermissionCatalog.CourseScope.UPDATE.scopeName(), managers, managersActive, false);
+                PermissionCatalog.CourseScope.UPDATE.scopeName(), managers, managersActive, true);
         sources.add(
                 PermissionCatalog.CourseScope.SUBJECT_ADD.scopeName(), owners, ownersActive, true);
         sources.add(
