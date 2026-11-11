@@ -1,4 +1,4 @@
-package com.giaokhoa.teaching;
+package com.giaokhoa.teaching.repository;
 
 import com.giaokhoa.identity.model.UserAccount;
 import com.giaokhoa.identity.repository.UserAccountRepository;

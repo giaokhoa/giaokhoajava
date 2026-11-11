@@ -1,4 +1,4 @@
-package com.giaokhoa.teaching;
+package com.giaokhoa.teaching.web;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.giaokhoa.authorization.decision.ProtectedActionExecutor;
@@ -11,7 +11,7 @@ import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
+import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.teaching.repository.ClassStudentRepository;
 import com.giaokhoa.teaching.repository.CourseRepository;
 import com.giaokhoa.teaching.repository.CourseSubjectRepository;
@@ -20,6 +20,8 @@ import com.giaokhoa.teaching.repository.HomeroomAssignmentRepository;
 import com.giaokhoa.teaching.repository.SchoolClassRepository;
 import com.giaokhoa.teaching.repository.TeachingAssignmentRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions.WorkspaceInfo;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Objects;

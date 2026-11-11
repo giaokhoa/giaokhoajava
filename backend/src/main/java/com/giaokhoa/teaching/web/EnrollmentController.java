@@ -1,9 +1,10 @@
-package com.giaokhoa.teaching;
+package com.giaokhoa.teaching.web;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpConstants;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.teaching.service.EnrollmentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;

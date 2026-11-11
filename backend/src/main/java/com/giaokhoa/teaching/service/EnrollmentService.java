@@ -1,4 +1,4 @@
-package com.giaokhoa.teaching;
+package com.giaokhoa.teaching.service;
 
 import com.giaokhoa.authorization.model.AuthorizationOperation;
 import com.giaokhoa.authorization.operation.IdempotencyService;
@@ -8,7 +8,6 @@ import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
-import com.giaokhoa.teaching.TeachingScopePreconditions.WorkspaceInfo;
 import com.giaokhoa.teaching.model.ClassStudent;
 import com.giaokhoa.teaching.model.CourseSubject;
 import com.giaokhoa.teaching.model.Enrollment;
@@ -20,6 +19,8 @@ import com.giaokhoa.teaching.repository.EnrollmentRepository;
 import com.giaokhoa.teaching.repository.SchoolClassRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions;
+import com.giaokhoa.teaching.repository.TeachingScopePreconditions.WorkspaceInfo;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
