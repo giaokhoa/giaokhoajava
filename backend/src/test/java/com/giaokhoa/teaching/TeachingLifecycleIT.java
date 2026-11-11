@@ -24,7 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-/** Kiểm tra dữ kiện và desired hash; HTTP/PDP thật được kiểm chứng riêng ở TeachingAccessIT. */
+/** Kiểm tra dữ kiện và desired hash; HTTP/PDP thật được kiểm chứng riêng ở TeachingAccessE2EIT. */
 @SpringBootTest
 class TeachingLifecycleIT extends TeachingFixture {
     @MockitoBean private ProjectionWorker scheduledWorker;

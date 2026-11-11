@@ -5,12 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.giaokhoa.support.HttpTestClient;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -18,8 +17,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -40,11 +39,30 @@ import tools.jackson.databind.JsonNode;
  * tên field item. Tên field của {@code CourseView} và danh mục môn thì hợp đồng đã chốt nên khẳng
  * định trực tiếp.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Tag("e2e-backend")
-class TeachingStructureIT extends TeachingFixture {
+class TeachingStructureE2EIT extends TeachingFixture {
+
+    // Tầng e2e-backend (B107): mọi request vào ứng dụng đi qua HTTP thật — chuyển ba điểm nối
+    // vận chuyển của fixture sang biến thể HTTP để toàn bộ helper tổ hợp chảy qua server thật.
+    @Override
+    protected RealSession openSession(KeycloakLogin login) throws Exception {
+        return openSessionHttp(login);
+    }
+
+    @Override
+    protected UUID postMutation(RealSession session, String uri, String json, String method)
+            throws Exception {
+        return postMutationHttp(session, uri, json, method);
+    }
+
+    @Override
+    protected JsonNode getJson(RealSession session, String uri, int expectedStatus)
+            throws Exception {
+        return getJsonHttp(session, uri, expectedStatus);
+    }
 
     // Danh tính Keycloak + tài khoản seed một lần cho cả class (phần seed đắt). Center chuẩn
     // cũng dựng một lần và dùng chung: cô lập nằm ở phân vùng thực thể con — tên lớp của mỗi
@@ -73,18 +91,16 @@ class TeachingStructureIT extends TeachingFixture {
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 1A");
 
-            MockHttpServletResponse read =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/classes/"
-                                                    + classId)
-                                            .cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(200, read.getStatus(), "Đọc metadata lớp vừa tạo phải thành công");
-            JsonNode body = JSON.readTree(read.getContentAsString());
+            HttpTestClient.Response read =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + classId,
+                                    session.cookie());
+            assertEquals(200, read.status(), "Đọc metadata lớp vừa tạo phải thành công");
+            JsonNode body = JSON.readTree(read.body());
             assertEquals(classId.toString(), body.get("id").stringValue());
             assertEquals("Lớp 1A", body.get("name").stringValue());
         }
@@ -106,20 +122,16 @@ class TeachingStructureIT extends TeachingFixture {
         // khẳng định thêm "không để lại lớp" bằng truy vấn DB.
         Fixture fixture = sharedExpiredCenter;
         try (var session = openSession(fixture.owner())) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/" + fixture.workspaceId() + "/classes")
-                                            .cookie(session.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-exp-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content("{\"name\":\"Lớp hết gói\"}"))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(403, response.getStatus(), "Gói hết hạn chặn tạo lớp mới");
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/" + fixture.workspaceId() + "/classes",
+                                    session.cookie(),
+                                    true,
+                                    "{\"name\":\"Lớp hết gói\"}",
+                                    Map.of("Idempotency-Key", "teaching-exp-" + UUID.randomUUID()));
+            assertEquals(403, response.status(), "Gói hết hạn chặn tạo lớp mới");
         }
     }
 
@@ -128,24 +140,22 @@ class TeachingStructureIT extends TeachingFixture {
         Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
             UUID classId = createClass(session, fixture.workspaceId(), "Lớp 2A");
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/classes/"
-                                                    + classId
-                                                    + "/courses")
-                                            .cookie(session.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-empty-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content("{\"name\":\"Khóa rỗng\",\"subjectIds\":[]}"))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(400, response.getStatus(), "Khóa phải có ít nhất một môn");
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/classes/"
+                                            + classId
+                                            + "/courses",
+                                    session.cookie(),
+                                    true,
+                                    "{\"name\":\"Khóa rỗng\",\"subjectIds\":[]}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-empty-" + UUID.randomUUID()));
+            assertEquals(400, response.status(), "Khóa phải có ít nhất một môn");
             assertEquals(
                     0,
                     getJson(
@@ -185,18 +195,16 @@ class TeachingStructureIT extends TeachingFixture {
             UUID courseId =
                     createCourse(session, fixture.workspaceId(), classId, "Khóa ba môn", subjects);
 
-            MockHttpServletResponse read =
-                    mockMvc()
-                            .perform(
-                                    get("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/courses/"
-                                                    + courseId)
-                                            .cookie(session.cookie()))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(200, read.getStatus(), "Đọc khóa vừa tạo phải thành công");
-            JsonNode body = JSON.readTree(read.getContentAsString());
+            HttpTestClient.Response read =
+                    realHttp()
+                            .get(
+                                    "/api/workspaces/"
+                                            + fixture.workspaceId()
+                                            + "/courses/"
+                                            + courseId,
+                                    session.cookie());
+            assertEquals(200, read.status(), "Đọc khóa vừa tạo phải thành công");
+            JsonNode body = JSON.readTree(read.body());
             assertEquals(classId.toString(), body.get("classId").stringValue());
             assertEquals("Khóa ba môn", body.get("name").stringValue());
             assertEquals(3, body.get("subjects").size(), "Khóa giữ đủ ba môn");
@@ -351,29 +359,20 @@ class TeachingStructureIT extends TeachingFixture {
                             fixture.workspaceId(),
                             firstClass,
                             fixture.studentIds().getFirst());
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/"
-                                                    + fixture.workspaceId()
-                                                    + "/enrollments")
-                                            .cookie(session.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-mix-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"classStudentIds\":[\""
-                                                            + classStudentId
-                                                            + "\"],\"courseSubjectIds\":[\""
-                                                            + courseSubjectId(
-                                                                    secondCourse, subjects.get(0))
-                                                            + "\"]}"))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(
-                    400, response.getStatus(), "Ghi danh trộn hai lớp khác nhau phải bị từ chối");
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/" + fixture.workspaceId() + "/enrollments",
+                                    session.cookie(),
+                                    true,
+                                    "{\"classStudentIds\":[\""
+                                            + classStudentId
+                                            + "\"],\"courseSubjectIds\":[\""
+                                            + courseSubjectId(secondCourse, subjects.get(0))
+                                            + "\"]}",
+                                    Map.of("Idempotency-Key", "teaching-mix-" + UUID.randomUUID()));
+            assertEquals(400, response.status(), "Ghi danh trộn hai lớp khác nhau phải bị từ chối");
             assertEquals(
                     0,
                     jdbc.queryForObject(
@@ -400,27 +399,22 @@ class TeachingStructureIT extends TeachingFixture {
                         createCourse(other, second.workspaceId(), otherClass, "Khóa 9B", subjects);
                 foreignSubject = courseSubjectId(otherCourse, subjects.get(0));
             }
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/" + first.workspaceId() + "/enrollments")
-                                            .cookie(session.cookie())
-                                            .with(csrf())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-xws-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content(
-                                                    "{\"classStudentIds\":[\""
-                                                            + classStudentId
-                                                            + "\"],\"courseSubjectIds\":[\""
-                                                            + foreignSubject
-                                                            + "\"]}"))
-                            .andReturn()
-                            .getResponse();
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/" + first.workspaceId() + "/enrollments",
+                                    session.cookie(),
+                                    true,
+                                    "{\"classStudentIds\":[\""
+                                            + classStudentId
+                                            + "\"],\"courseSubjectIds\":[\""
+                                            + foreignSubject
+                                            + "\"]}",
+                                    Map.of("Idempotency-Key", "teaching-xws-" + UUID.randomUUID()));
             assertEquals(
                     400,
-                    response.getStatus(),
+                    response.status(),
                     "Lô ghi danh trộn workspace khác vi phạm invariant cùng lớp/workspace");
             assertEquals(
                     0,
@@ -448,29 +442,24 @@ class TeachingStructureIT extends TeachingFixture {
                             true);
             try (var session = openSession(fixture.owner())) {
                 UUID classId = createClass(session, fixture.workspaceId(), "Lớp 10A");
-                MockHttpServletResponse response =
-                        mockMvc()
-                                .perform(
-                                        post("/api/workspaces/"
-                                                        + fixture.workspaceId()
-                                                        + "/classes/"
-                                                        + classId
-                                                        + "/students")
-                                                .cookie(session.cookie())
-                                                .with(csrf())
-                                                .header(
-                                                        "Idempotency-Key",
-                                                        "teaching-nomember-" + UUID.randomUUID())
-                                                .contentType(MediaType.APPLICATION_JSON)
-                                                .content(
-                                                        "{\"studentUserIds\":[\""
-                                                                + outsider
-                                                                + "\"]}"))
-                                .andReturn()
-                                .getResponse();
+                HttpTestClient.Response response =
+                        realHttp()
+                                .exchange(
+                                        HttpMethod.POST,
+                                        "/api/workspaces/"
+                                                + fixture.workspaceId()
+                                                + "/classes/"
+                                                + classId
+                                                + "/students",
+                                        session.cookie(),
+                                        true,
+                                        "{\"studentUserIds\":[\"" + outsider + "\"]}",
+                                        Map.of(
+                                                "Idempotency-Key",
+                                                "teaching-nomember-" + UUID.randomUUID()));
                 assertEquals(
                         400,
-                        response.getStatus(),
+                        response.status(),
                         "Người không phải thành viên center không được vào roster");
                 assertEquals(
                         0,
@@ -547,16 +536,15 @@ class TeachingStructureIT extends TeachingFixture {
     }
 
     @Test
-    void anonymousClassListReceivesProblemUnauthorized() throws Exception {
-        MockHttpServletResponse response =
-                mockMvc()
-                        .perform(
-                                get("/api/workspaces/" + UUID.randomUUID() + "/classes")
-                                        .accept(MediaType.APPLICATION_JSON))
-                        .andReturn()
-                        .getResponse();
-        assertEquals(401, response.getStatus());
-        JsonNode body = JSON.readTree(response.getContentAsString());
+    void anonymousClassListReceivesProblemUnauthorized() {
+        HttpTestClient.Response response =
+                realHttp()
+                        .get(
+                                "/api/workspaces/" + UUID.randomUUID() + "/classes",
+                                null,
+                                Map.of("Accept", MediaType.APPLICATION_JSON_VALUE));
+        assertEquals(401, response.status());
+        JsonNode body = JSON.readTree(response.body());
         assertEquals(
                 "UNAUTHORIZED",
                 body.get("code").stringValue(),
@@ -567,19 +555,18 @@ class TeachingStructureIT extends TeachingFixture {
     void classMutationWithoutCsrfIsRejected() throws Exception {
         Fixture fixture = sharedCenter;
         try (var session = openSession(fixture.owner())) {
-            MockHttpServletResponse response =
-                    mockMvc()
-                            .perform(
-                                    post("/api/workspaces/" + fixture.workspaceId() + "/classes")
-                                            .cookie(session.cookie())
-                                            .header(
-                                                    "Idempotency-Key",
-                                                    "teaching-nocsrf-" + UUID.randomUUID())
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .content("{\"name\":\"Lớp không CSRF\"}"))
-                            .andReturn()
-                            .getResponse();
-            assertEquals(403, response.getStatus(), "Mutation trình duyệt thiếu CSRF bị chặn");
+            HttpTestClient.Response response =
+                    realHttp()
+                            .exchange(
+                                    HttpMethod.POST,
+                                    "/api/workspaces/" + fixture.workspaceId() + "/classes",
+                                    session.cookie(),
+                                    false,
+                                    "{\"name\":\"Lớp không CSRF\"}",
+                                    Map.of(
+                                            "Idempotency-Key",
+                                            "teaching-nocsrf-" + UUID.randomUUID()));
+            assertEquals(403, response.status(), "Mutation trình duyệt thiếu CSRF bị chặn");
         }
     }
 
