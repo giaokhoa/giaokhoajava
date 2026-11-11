@@ -663,10 +663,13 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
       try {
         await choQuaMocHetHan(mocHetHan);
 
-        // Đọc bằng cookie cũ vẫn được cho cả học sinh lẫn owner.
-        const docLop = await guiGet(
-          boiCanhStudent.page, origin, `/api/workspaces/${workspaceId}/classes`);
-        expect(docLop.status()).toBe(200);
+        // Đọc bằng cookie cũ vẫn được cho cả học sinh lẫn owner. Học sinh không
+        // liệt kê được lớp (chỉ quản trị/chủ nhiệm được đọc danh sách lớp) nên
+        // đường đọc còn hiệu lực của học sinh là kết quả đã công bố của chính mình.
+        const ketQuaHocSinh = await guiGet(
+          boiCanhStudent.page, origin,
+          `/api/workspaces/${workspaceId}/students/${student.appId}/results`);
+        expect(ketQuaHocSinh.status()).toBe(200);
         csrf = await dangNhapLai(page, origin, owner);
         const docThanhVien = await guiGet(page, origin, `/api/workspaces/${workspaceId}/memberships`);
         expect(docThanhVien.status()).toBe(200);
@@ -709,6 +712,14 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
         expect(ketQua.status()).toBe(200);
         const ketQuaJson = (await ketQua.json()) as TrangDanhSach<KetQuaView>;
         expect(ketQuaJson.items.some((item) => item.id === resultId)).toBe(true);
+
+        // Học sinh tự đọc được kết quả đã công bố của mình bằng cookie cũ sau hết hạn.
+        const ketQuaCuaMinh = await guiGet(
+          boiCanhStudent.page, origin,
+          `/api/workspaces/${workspaceId}/students/${student.appId}/results`);
+        expect(ketQuaCuaMinh.status()).toBe(200);
+        const ketQuaCuaMinhJson = (await ketQuaCuaMinh.json()) as TrangDanhSach<KetQuaView>;
+        expect(ketQuaCuaMinhJson.items.some((item) => item.id === resultId)).toBe(true);
 
         // Tăng thêm bằng cookie cũ bị chặn: gia hạn hạn nộp, mở thêm lượt, giao bài
         // mới và tạo lớp đều bị từ chối sau mốc hết hạn.
