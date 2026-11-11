@@ -61,7 +61,7 @@ Bản đầu lớp cá nhân dùng cùng cấu trúc lớp/khóa/môn/ghi danh. 
 
 Canonical resource/version không bị nhân bản thành resource mới khi lưu về kho khác. Authorization projection được định danh thêm workspace; không đưa workspace nhận vào business owner của nguồn. Chỉnh sửa từ nguồn khác tạo resource mới và dependency vào version/gate nguồn còn áp dụng.
 
-RLS áp dụng `library_item` theo workspace nhận. Canonical resource/version/dependency dùng repository riêng: resolve metadata đích tối thiểu để lấy authorization key; chỉ đọc body/answer sau quyết định tương ứng. Không có endpoint/repository generic trả tất cả nội dung canonical cho actor hoặc cho frontend.
+Mục `library_item` thuộc về workspace nhận (cột `workspace_id`); cách ly do schema tenant khi đã kích hoạt, lọc theo `workspace_id` ở truy vấn ứng dụng khi chưa kích hoạt. Canonical resource/version/dependency dùng repository riêng: resolve metadata đích tối thiểu để lấy authorization key; chỉ đọc body/answer sau quyết định tương ứng. Không có endpoint/repository generic trả tất cả nội dung canonical cho actor hoặc cho frontend.
 
 ## Hoạt động và kết quả mẫu
 
@@ -99,9 +99,9 @@ Không phân phối revision qua cookie hoặc tin revision frontend gửi. Mọ
 
 ## Cách ly, khóa và chỉ mục
 
-1. RLS cho lớp, class_student, course, course_subject, phân công, enrollment, guardian_link, library_item, sample_activity/submission/result, personal practice history và nguồn resource_assignment theo workspace. Runtime role không owner/BYPASSRLS; `SET LOCAL` workspace trong transaction, thiếu context không thấy hàng. Session JDBC/OIDC correlation và control directory không dùng tenant RLS; có repository/service chuyên biệt.
+1. Cách ly tenant theo schema: mỗi workspace một schema riêng chứa trọn dữ liệu của tenant đó; connection đặt `search_path` = schema tenant + schema hệ thống và khôi phục bắt buộc khi trả về pool. Runtime role không owner/BYPASSRLS và chỉ có quyền theo mô hình grant theo schema (USAGE trên schema, DML trên bảng của schema đó). Không còn RLS hay `SET LOCAL app.workspace_id` ở cả hai schema (đã tháo ở bước chốt của #261, Sổ B103); workspace chưa kích hoạt schema riêng còn ở schema hệ thống và được lọc bằng `workspace_id` trong truy vấn ứng dụng. Session JDBC/OIDC correlation và control directory không dùng cách ly tenant; có repository/service chuyên biệt.
 2. Mọi unique/FK dạy học bao gồm workspace và parent keys; không thể gắn enrollment của lớp A vào course_subject lớp B. Môn dùng FK danh mục nhưng course_subject có ID phạm vi riêng.
-3. Đọc danh sách học sinh/kết quả không chỉ dựa vào RLS: xét quyền từng row hoặc tập cặp đầy đủ với Keycloak trước khi trả DTO. Phụ huynh không nhận entity JPA, hidden fields hoặc tổng số hàng của học sinh khác.
+3. Đọc danh sách học sinh/kết quả không chỉ dựa vào cách ly ở tầng dữ liệu: xét quyền từng row hoặc tập cặp đầy đủ với Keycloak trước khi trả DTO. Phụ huynh không nhận entity JPA, hidden fields hoặc tổng số hàng của học sinh khác.
 4. Mutation dùng expected row version; stale version trả 409. Nguồn thu hồi serialize với protected action qua authz partitions; lock nhiều partition theo thứ tự ổn định, không giữ transaction khi chờ worker provision mạng.
 5. Chỉ mục theo `(workspace_id, state)`, các FK parent, `(course_subject_id, student/teacher)`, `(resource_id, version_no)`, `(source_version_id, share_grant_id)`, `(recipient_workspace_id, state)`, `(state, next_attempt_at)` và target_key của projection.
 6. ID/password/token chỉ dùng đúng chức năng; migration role, runtime role, Keycloak provisioning client và confidential web client có credential riêng, không chia sẻ quyền quản trị realm cho người dùng trung tâm.
