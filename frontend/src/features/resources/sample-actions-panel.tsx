@@ -88,7 +88,7 @@ export function buildSampleActionPayload(
     if (field.kind === "number") {
       const parsed = Number(raw);
       payload[field.name] = Number.isFinite(parsed) ? parsed : raw;
-    } else if (field.name === "allowedWorkspaceIds") {
+    } else if (field.name === "allowedWorkspaceIds" || field.name === "actions") {
       payload[field.name] = raw.split(",").map((item) => item.trim()).filter(Boolean);
     } else {
       payload[field.name] = raw;
