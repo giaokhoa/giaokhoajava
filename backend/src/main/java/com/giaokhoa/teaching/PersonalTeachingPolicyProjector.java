@@ -261,7 +261,7 @@ public class PersonalTeachingPolicyProjector {
             return Map.of();
         }
         sources.addOwner(PermissionCatalog.CourseScope.READ.scopeName(), false);
-        sources.addOwner(PermissionCatalog.CourseScope.UPDATE.scopeName(), false);
+        sources.addOwner(PermissionCatalog.CourseScope.UPDATE.scopeName(), true);
         sources.addOwner(PermissionCatalog.CourseScope.SUBJECT_ADD.scopeName(), true);
         return sources.byScope();
     }
