@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -437,6 +438,28 @@ class ResourceAccessIT extends ResourceFixture {
                             2,
                             "THAN-BAI-DA-DINH-CHINH",
                             "DAP-AN-DA-DINH-CHINH");
+
+            // Tiền đề nhận hợp lệ xuyên workspace: version của trung tâm chỉ tới được
+            // workspace khác qua grant đã accept (nhánh license của ResourcePolicyProjector),
+            // không lưu trực tiếp được từ ngoài. Share → accept → save rồi mới đính chính.
+            UUID grantId;
+            try (var author = openSession(authorLogin)) {
+                JsonNode shared =
+                        sampleActionExpectCreated(
+                                author,
+                                center,
+                                shareJson(
+                                        version.resourceId(),
+                                        version.versionId(),
+                                        saverPersonal,
+                                        "REVOCABLE",
+                                        List.of("content.read", "use", "library.save"),
+                                        List.of(saverPersonal)));
+                grantId = targetIdOf(shared);
+            }
+            try (var saver = openSession(saverLogin)) {
+                sampleActionExpectCreated(saver, saverPersonal, acceptJson(grantId));
+            }
 
             UUID libraryItemId;
             try (var saver = openSession(saverLogin)) {
