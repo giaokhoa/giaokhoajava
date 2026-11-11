@@ -57,6 +57,7 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [classes, setClasses] = useState<TeachingClass[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMoreClasses, setLoadingMoreClasses] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterEntry[] | null>(null);
@@ -154,6 +155,25 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
         ? parseWorkspaces(workspaceResult.value.data).find((item) => item.id === workspaceId) ?? null
         : null);
     });
+  }
+
+  // Cờ đang bay của tải thêm: hai lượt cùng cursor chạy song song sẽ append trùng
+  // một trang, nên lượt gọi sau bị bỏ qua tới khi lượt trước xong (kể cả khi lỗi).
+  async function loadMoreClasses() {
+    if (!nextCursor || loadingMoreClasses) return;
+    setLoadingMoreClasses(true);
+    try {
+      const result = await requestWhenReady<unknown>(
+        `${classesPath}?cursor=${encodeURIComponent(nextCursor)}`,
+      );
+      if (result.kind !== "data") throw new Error("Phản hồi danh sách lớp không hợp lệ.");
+      setClasses((current) => [...(current ?? []), ...parseClasses(result.data)]);
+      setNextCursor(parsePage(result.data).nextCursor);
+    } catch (error) {
+      setListError(teachingErrorMessage(error, "Không tải thêm được danh sách lớp."));
+    } finally {
+      setLoadingMoreClasses(false);
+    }
   }
 
   useEffect(() => {
@@ -491,21 +511,8 @@ function CenterClassesInner({ workspaceId }: { workspaceId: string }) {
               <button
                 className="secondary-button"
                 type="button"
-                disabled={busy}
-                onClick={() => {
-                  void (async () => {
-                    try {
-                      const result = await requestWhenReady<unknown>(
-                        `${classesPath}?cursor=${encodeURIComponent(nextCursor)}`,
-                      );
-                      if (result.kind !== "data") throw new Error("Phản hồi danh sách lớp không hợp lệ.");
-                      setClasses((current) => [...(current ?? []), ...parseClasses(result.data)]);
-                      setNextCursor(parsePage(result.data).nextCursor);
-                    } catch (error) {
-                      setListError(teachingErrorMessage(error, "Không tải thêm được danh sách lớp."));
-                    }
-                  })();
-                }}
+                disabled={busy || loadingMoreClasses}
+                onClick={() => void loadMoreClasses()}
               >
                 Tải thêm lớp
               </button>

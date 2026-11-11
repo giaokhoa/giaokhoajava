@@ -132,6 +132,7 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
   const [operation, setOperation] = useState<TrackedOperation | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [loadingMoreMembers, setLoadingMoreMembers] = useState(false);
   const attempts = useRef(new Map<string, string>());
   const userId = session.status === "authenticated" ? session.user.id : null;
 
@@ -163,8 +164,11 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
     }
   }, [userId, membersPath, workspaceId]);
 
+  // Cờ đang bay của tải thêm: hai lượt cùng cursor chạy song song sẽ append trùng
+  // một trang, nên lượt gọi sau bị bỏ qua tới khi lượt trước xong (kể cả khi lỗi).
   async function loadMoreMembers() {
-    if (!membersNextCursor) return;
+    if (!membersNextCursor || loadingMoreMembers) return;
+    setLoadingMoreMembers(true);
     try {
       const result = await requestWhenReady(
         `${membersPath}?cursor=${encodeURIComponent(membersNextCursor)}`,
@@ -174,6 +178,8 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
       setMembersNextCursor(pageNextCursor(result.data));
     } catch {
       setListError("Không tải thêm được thành viên; hãy thử lại.");
+    } finally {
+      setLoadingMoreMembers(false);
     }
   }
 
@@ -471,7 +477,12 @@ function CenterMembersInner({ workspaceId }: { workspaceId: string }) {
             ) : null}
             {membersNextCursor ? (
               <div className="section">
-                <button className="secondary-button" type="button" onClick={() => void loadMoreMembers()}>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={loadingMoreMembers}
+                  onClick={() => void loadMoreMembers()}
+                >
                   Tải thêm thành viên
                 </button>
               </div>

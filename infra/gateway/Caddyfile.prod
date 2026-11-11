@@ -1,0 +1,46 @@
+{
+	admin off
+	# Mọi kết nối tới gateway đều từ chính máy chủ này: cổng host bind
+	# 127.0.0.1 và Cloudflare Tunnel kết nối từ localhost, nên phía container
+	# nguồn kết nối là gateway của Docker bridge (dải IP riêng). Giữ nguyên các
+	# header X-Forwarded-* (proto https, host, port 443) mà tunnel đã đặt, để
+	# backend (forward-headers-strategy: framework) và Keycloak
+	# (KC_PROXY_HEADERS) dựng đúng URL công khai.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# Hai tenant test dùng chung một ứng dụng với trang chính: cùng site block,
+# đăng nhập OIDC vẫn quy về APP_ORIGIN https://giaokhoa.fuckr.net.
+http://giaokhoa.fuckr.net, http://trung-tam-1.fuckr.net, http://trung-tam-2.fuckr.net {
+	@backend path /api /api/* /oauth2/* /login /login/* /logout /logout/* /actuator/*
+	handle @backend {
+		reverse_proxy backend:8080 {
+			header_up X-Forwarded-Port 443
+			header_up -X-Forwarded-Prefix
+		}
+	}
+	handle {
+		# Header bảo mật cho tài liệu HTML do Next phục vụ; `>` (defer) để đặt
+		# sau khi proxy đã ghi header của nó. script-src cần 'unsafe-inline'
+		# vì Next chèn inline script chứa RSC payload — không có nonce thì
+		# 'self' trần chặn hydration (nâng cấp: cấp nonce theo request).
+		# form-action phải khai cả origin Keycloak production: Chrome áp
+		# form-action lên cả redirect sau POST, mà logout OIDC bắt buộc form
+		# POST /api/logout rồi redirect qua end_session của Keycloak — thiếu
+		# origin này thì trình duyệt hủy điều hướng, logout không hoàn tất.
+		header {
+			>Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self' https://auth.fuckr.net"
+			>X-Content-Type-Options "nosniff"
+		}
+		reverse_proxy frontend:3001
+	}
+}
+
+http://auth.fuckr.net {
+	reverse_proxy keycloak:8080 {
+		header_up X-Forwarded-Port 443
+		header_up -X-Forwarded-Prefix
+	}
+}
