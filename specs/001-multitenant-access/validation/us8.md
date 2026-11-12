@@ -1,5 +1,31 @@
 # Nghiệm thu US8 — Hết hạn gói và bảo lưu dữ liệu (T093, issue #95)
 
+## Đối chiếu cập nhật 2026-11-12 — chờ đóng tiền đề T092/#94
+
+**Trạng thái cổng T093/#95 tại thời điểm cập nhật: CHƯA CHỐT.** Đây là kiểm chứng trên `main` đã có PR #288, **không kế thừa phán quyết có điều kiện của lần chạy cũ** và không đánh dấu đạt khi #94 chưa merge. Những mục phía dưới nhãn “Hồ sơ lịch sử” là biên bản chạy tại `da8ba071` ngày 11/11, không phải danh sách defect còn tồn tại trên `main` hiện tại.
+
+- **Cây sản phẩm/test đã tích hợp:** PR #282 (completion), #284 (history guard / frontend nền), #295 (normalize `SUBSCRIPTION_INACTIVE`, gate `CourseScope.UPDATE`, sửa guard Javadoc), #298 (re-record desired activity/result khi renewal), #216 (US7 E2E) và #288 (US8 E2E/native). PR #288 đã merge ngày 12/11 tại `f3d2e618be74f574c03d8301a04d9a0427bdbc98`. PR #302 là phần UI cá nhân còn thiếu và vẫn OPEN/DRAFT (head đang kiểm chứng `dbcc5fb47cf630a4fe94dab30be9b3f0504e8710`).
+- **Native stack đã chạy thật:** CI của PR #288 run `43135465805` trên `035ab27798c95f04692906954332fcbf965e952a`: **10/10 jobs SUCCESS**, bao gồm `backend (it-pure)` (40m56s), `backend (e2e-backend)`, Keycloak native provisioning (`verify-native.sh`) và OIDC signed back-channel logout qua restart trong `chromium-core`. Đây là bằng chứng CI độc lập thay cho các lượt local `da8ba071` bị OOM/thiếu role; **không được sửa hồi tố log lịch sử**.
+- **Native IT thuộc US8:** artifact JUnit trong CI `43075764316` ghi `SubscriptionExpiryIT` **7/7** + `CompletionAfterExpiryIT` **3/3**, không fail/error/skip. Git blob hai file IT ở head PR #288 không đổi sau lượt xanh đó; run `43135465805` cũng pass lane `backend (it-pure)` ở head tích hợp. Rà trên các nhánh policy thực, clock/native half-open `[validFrom, expiresAt)` và revision fence.
+- **E2E browser US8 ở head tích hợp:** artifact `e2e-reports-chromium-expiry` run `43135465805` ghi **2/2 passed, 0 skipped, 0 unexpected, 0 flaky**; actor Keycloak thật và cookie cũ được giữ qua cutoff; center đòi create/extend bị từ chối sau hết hạn, UI read-only báo đúng và khóa `Tạo lớp`, gia hạn lại phải dựa nguồn hợp lệ; personal no-package và expired phải từ chối tạo, nhưng đọc cũ còn được. Cùng CI này các project browser khác cũng SUCCESS: **43 core + 13 teaching/guardians + 6 resources + 2 expiry = 64 E2E**.
+- **Ngoại lệ nguyên gốc US2 đã xác nhận:** center **chưa từng có subscription period** vẫn có quyền tạo lớp khi owner/membership hợp lệ (`202` + operation SUCCEEDED), theo `contracts/authorization.md` mục 10 và `TeachingServiceIT.subscriptionPolicyMatchesRealPostgresLifecycle`. Khác với center **đã có kỳ rồi hết hạn** (`403`) và personal **chưa có gói** (`403`). CI `43134096141` báo đỏ khi một assertion nhầm đòi 403 của trường hợp center đầu, sau đó `035ab27` sửa **test theo contract**, không sửa backend cho xanh giả; 2/2 E2E ở head mới pass.
+- **Không còn là defect hiện hành:** nhận xét bên dưới về `extend/open-attempt/reassign` trả `PERMISSION_DENIED`, `CourseScope.UPDATE` chưa gate, Javadoc `HistoricalDataGuard` không đúng và renewal `DESIRED_SOURCE_MISMATCH` là **hành vi trên commit cũ**, lần lượt đã được sửa ở PR #295 và #298. Gate chỉ coi là fixed sau khi đối chiếu code/CI trên `main` đã merge.
+- **T092/#94 UI pending:** PR #302 tách quyền quản lý/thu hồi của personal khỏi khả năng mở rộng theo gói; khi gói inactive sẽ khóa create/enroll/rename UI, vẫn cho xem và thu hồi lớp/khóa/roster cũ. Trên head cũ `272dbeb`, CI `43136773872` **9/9 jobs SUCCESS** và `chromium-core` **43/43 pass**. Head mới `dbcc5fb` (merge PR #288 + khóa rename course) chạy CI `43140659247`: `backend-build`, `frontend`, `chromium-resources`, `chromium-expiry`, `chromium-core` đã SUCCESS; **artifact Playwright `chromium-core` 43/43 pass, 0 skip/fail/flaky** trên đúng head `dbcc5fb`. Các job khác vẫn chưa kết thúc tại thời điểm cập nhật. Local TypeScript/ESLint, **118/118 unit** và test render revoke/expand pass. **Không được tính head cũ thay head mới hoặc coi CI tổng đã xanh trước khi tất cả job kết thúc.**
+
+| Scenario | Kiểm tra bắt buộc | Bằng chứng đang có | Chốt T093 |
+| --- | --- | --- | --- |
+| US8.1 | Personal hết hạn: còn đọc theo quyền, không create lớp/resource | `SubscriptionExpiryIT.expiredKeepsReadsLosesCreates`, browser personal 1/1 pass | Chờ #94 merge |
+| US8.2 | Bài personal đã giao: submit/grade/publish sau hết hạn; không extend/open/reassign | `CompletionAfterExpiryIT.completionSurvivesExpiry`, native half-open + error fix #295 | Chờ tích hợp UI và gate |
+| US8.3 | Center hết hạn: read/parent read và UI read-only; create/assign mở rộng bị chặn | `SubscriptionExpiryIT.expiredKeepsReadsLosesIncreases`, browser center 1/1 pass | Chờ tích hợp UI và gate |
+| US8.4 | Bài center giao trước cutoff: giữ completion bằng phiên cũ | `CompletionAfterExpiryIT.completionSurvivesExpiry`, browser center pass | Chờ gate |
+| US8.5 | Thu hồi có hiệu lực sau expiry, không hard-delete lịch sử | `SubscriptionExpiryIT.revokeAfterExpiryStillWorks`, `ResultSourceMutationIT`, guard B106, UI unit PR #302 | Chờ #94 merge |
+| US8.6 | Personal và center expiry độc lập | `SubscriptionExpiryIT.personalAndCenterIndependent`, PersonalEntitlementIT và E2E | Chờ gate |
+| US8.7 | Renewal không hồi sinh revoked sources; grantor hết gói không tự revoke share | `SubscriptionExpiryIT.renewalDoesNotResurrectRevoked`, `CompletionAfterExpiryIT.enrollmentRevokeBlocksCompletion`, PR #298 | Chờ gate |
+
+**Điều kiện đóng #95:** #94 CLOSED sau review và CI xanh trên code đã merge; đối chiếu 7 scenario và log thực tế trên tree hiện hành; ghi merge SHA + run id cuối và phán quyết mới. Từ khóa ĐẠT trong hồ sơ lịch sử bên dưới **không** thực hiện việc đóng gate. Không nhận vơ đủ 56 acceptance scenarios của #96, 7 case security của #97 hoặc usability thật của #98.
+
+## Hồ sơ nghiệm thu lịch sử tại main `da8ba071` — 2026-11-11 (chỉ để đối chiếu)
+
 - **Main dùng để nghiệm thu:** `da8ba0719fa99b8f878c5a440c1a8845c8fe7a83` (PR #282 lõi US8 + PR #284 guard và frontend + PR #286 sửa OIDC đã land vào main)
 - **Stack:** TEST native làn 1 (PostgreSQL 18.6 `127.0.0.1:15432`, Keycloak 26.8.1 `127.0.0.1:18081`, realm `giaokhoa-it`), JDK 25, đồng hồ thật, không mock thời gian trong PDP.
 - **Phạm vi:** US8.1–US8.7 theo `spec.md` User Story 8 + checkpoint của issue #95; FR-042–FR-047; SC-007.
@@ -35,7 +61,7 @@ Phần kiểm chứng dưới đây mô tả **lịch sử nghiệm thu trên `d
 | US8.6 | Gói cá nhân hết hạn nhưng trung tâm còn hiệu lực (và ngược lại): quyền ở nơi kia không đổi | ĐẠT | `SubscriptionExpiryIT.personalAndCenterIndependent` (PR #288); `PersonalEntitlementIT.centerMembershipOpensNoAuthoring` + `personalPlanOpensNoCenterClass` đạt (Lượt A) |
 | US8.7 | Gia hạn không phục hồi quan hệ đã gỡ; gói của grantor hết hạn không tự hủy share; nguồn đã thu hồi vẫn chặn hoàn tất bài | ĐẠT | `SubscriptionExpiryIT.renewalDoesNotResurrectRevoked` (PR #288); `CompletionAfterExpiryIT.enrollmentRevokeBlocksCompletion` (PR #288); `NativeGateAcceptanceIT.longTermGrantSurvivesGrantorExit` (cơ chế native, đã có trên main) |
 
-## Điểm lệch đã chốt
+## Điểm lệch ghi nhận tại `da8ba071` (đã sửa ở PR #295/#298)
 
 ### 1. extend / open-attempt / reassign sau hết hạn: 403 `PERMISSION_DENIED` ở tầng PDP (không phải `SUBSCRIPTION_INACTIVE`)
 
@@ -76,7 +102,7 @@ Phần kiểm chứng dưới đây mô tả **lịch sử nghiệm thu trên `d
 - **Unit test backend:** không chạy lại độc lập — CI tại đúng commit `da8ba071` đã 8/8 xanh (kiểm chứng trực tiếp qua API: backend, backend-build, it-pure, e2e-backend, frontend, integration, chromium-core, chromium-teaching-guardians đều `completed/success`), bao gồm toàn bộ unit test (`ActivityPolicyProjectorTest`, `ResourcePolicyProjectorTest`, `HistoricalDataGuardTest` 4 test, `ResourceHistoryGuardTest` 6 test — đã đọc code test, khẳng định đúng mã 409). Chạy xác nhận 2 ca `TeachingAuthorizationIT` từng trượt: bị gián đoạn bởi VM khởi động lại giữa chừng, chưa hoàn tất — xem dưới.
 - **Việc chưa hoàn tất và lý do:** (1) Chạy lại 2 ca `TeachingAuthorizationIT` trên máy yên tĩnh — chưa xong do VM khởi động lại + máy quá tải sau đó (xem phân tích 6 ca trượt ở trên). (2) Chạy lại Lượt B tới xanh — chưa xong do hết bộ nhớ. (3) `bash infra/keycloak/verify-native.sh` cho `NativeGateAcceptanceIT`/`NativeTimePolicyIT` — chưa chạy (cần stack native riêng, máy đang quá tải). Cả ba đều là bằng chứng củng cố, không phải tiền đề chặn: các tiêu chí US8.1–US8.7 đã có bằng chứng từ đội test-first + đọc code + các lượt chạy trên main.
 
-## Kết luận
+## Kết luận lịch sử tại `da8ba071` (không dùng để đóng gate 2026-11-12)
 
 **ĐẠT — đề nghị merge PR #288 (đợi CI 8/8 trên main mới) rồi đóng #95.**
 
