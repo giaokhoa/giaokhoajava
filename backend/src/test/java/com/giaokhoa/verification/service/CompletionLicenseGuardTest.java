@@ -145,4 +145,78 @@ class CompletionLicenseGuardTest {
         when(grants.findById(grantId)).thenReturn(Optional.of(revocable));
         assertNotDurable();
     }
+
+    private void assertCurrentDenied() {
+        HttpProblemException error =
+                assertThrows(
+                        HttpProblemException.class,
+                        () -> guard.requireCurrentSources(WORKSPACE, SOURCE, VERSION, NOW));
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatus());
+        assertEquals("RESOURCE_LICENSE_INACTIVE", error.getCode());
+    }
+
+    @Test
+    @DisplayName("REVOCABLE hợp lệ cho phép hoàn tất, thu hồi là chặn ngay ở lần nộp/chấm tiếp")
+    void revokeStopsCurrentCompletionWithoutErasingSource() {
+        sourceOwnedBy(SOURCE, UUID.randomUUID());
+        ShareGrant revocable = grant(ShareGrant.Mode.REVOCABLE, NOW.plusSeconds(3600), true);
+        sourceHasGrant(revocable);
+        assertDoesNotThrow(() -> guard.requireCurrentSources(WORKSPACE, SOURCE, VERSION, NOW));
+        when(revocable.getState()).thenReturn(ShareGrant.State.REVOKED);
+        assertCurrentDenied();
+    }
+
+    @Test
+    @DisplayName("Hạn license của phiên bản bằng thời điểm nộp thì từ chối, mốc sau thì còn hợp lệ")
+    void currentLicenseIsHalfOpen() {
+        sourceOwnedBy(SOURCE, UUID.randomUUID());
+        sourceHasGrant(grant(ShareGrant.Mode.LONG_TERM, NOW, true));
+        assertCurrentDenied();
+        sourceHasGrant(grant(ShareGrant.Mode.LONG_TERM, NOW.plusSeconds(1), true));
+        assertDoesNotThrow(() -> guard.requireCurrentSources(WORKSPACE, SOURCE, VERSION, NOW));
+    }
+
+    @Test
+    @DisplayName("Thu hồi một grant độc lập không làm mất grant khác còn hiệu lực")
+    void independentGrantSurvivesRevocation() {
+        sourceOwnedBy(SOURCE, UUID.randomUUID());
+        ShareGrant revoked = grant(ShareGrant.Mode.REVOCABLE, null, true);
+        when(revoked.getState()).thenReturn(ShareGrant.State.REVOKED);
+        ShareGrant independent = grant(ShareGrant.Mode.LONG_TERM, null, true);
+        when(grants
+                        .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
+                                WORKSPACE, SOURCE, VERSION, ShareGrant.State.ACCEPTED))
+                .thenReturn(List.of(revoked, independent));
+        assertDoesNotThrow(() -> guard.requireCurrentSources(WORKSPACE, SOURCE, VERSION, NOW));
+        assertDoesNotThrow(() -> guard.requireDurableSources(WORKSPACE, SOURCE, VERSION, NOW));
+    }
+
+    @Test
+    @DisplayName(
+            "Bản tổng hợp thuộc sở hữu nhưng một thành phần REVOCABLE bị thu hồi thì chặn hoàn tất")
+    void revokedComponentBlocksCurrentCompletion() {
+        UUID component = UUID.randomUUID();
+        UUID componentVersion = UUID.randomUUID();
+        sourceOwnedBy(SOURCE, WORKSPACE);
+        sourceOwnedBy(component, UUID.randomUUID());
+        ShareGrant license = grant(ShareGrant.Mode.REVOCABLE, null, true);
+        when(grants
+                        .findByRecipientWorkspaceIdAndSourceResourceIdAndSourceVersionIdAndStateOrderByCreatedAtAscIdAsc(
+                                WORKSPACE, component, componentVersion, ShareGrant.State.ACCEPTED))
+                .thenReturn(List.of(license));
+        when(dependencies.findByDerivedVersionIdIn(List.of(VERSION)))
+                .thenReturn(
+                        List.of(
+                                new ResourceDependency(
+                                        UUID.randomUUID(),
+                                        SOURCE,
+                                        VERSION,
+                                        component,
+                                        componentVersion,
+                                        null,
+                                        "{}")));
+        assertDoesNotThrow(() -> guard.requireCurrentSources(WORKSPACE, SOURCE, VERSION, NOW));
+        when(license.getState()).thenReturn(ShareGrant.State.REVOKED);
+        assertCurrentDenied();
+    }
 }

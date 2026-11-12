@@ -1,19 +1,26 @@
 package com.giaokhoa.verification;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.giaokhoa.resources.repository.ResourceRepository;
+import com.giaokhoa.resources.repository.ShareGrantRepository;
+import com.giaokhoa.shared.http.HttpProblemException;
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.verification.model.SampleActivity;
 import com.giaokhoa.verification.model.SampleResult;
 import com.giaokhoa.verification.model.SampleSubmission;
+import com.giaokhoa.verification.repository.VerificationResourceDependencyRepository;
+import com.giaokhoa.verification.service.CompletionLicenseGuard;
 import jakarta.persistence.EntityManager;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -21,6 +28,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -42,6 +50,9 @@ class SamplePrimitivesSchemaIT extends IntegrationEnvironment {
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+    @Autowired private ResourceRepository resources;
+    @Autowired private ShareGrantRepository grants;
+    @Autowired private VerificationResourceDependencyRepository dependencies;
 
     @Test
     void entitiesRoundTripSamplePrimitives() {
@@ -155,6 +166,115 @@ class SamplePrimitivesSchemaIT extends IntegrationEnvironment {
                                 graph.courseSubjectId()))
                 .isInstanceOf(DataIntegrityViolationException.class);
         jdbc.update("ROLLBACK TO SAVEPOINT published_without_timestamp");
+    }
+
+    @Test
+    @DisplayName(
+            "PostgreSQL: grant REVOCABLE bị gỡ làm mất license closure, giữ bài giao và nguồn độc lập")
+    void revokedLicenseBlocksCompletionButPreservesHistory() {
+        SeedGraph graph = seedGraph();
+        UUID activityId = seedActivity(graph);
+        UUID foreignOwner = user();
+        UUID foreignWorkspace = personalWorkspaceOf(foreignOwner);
+        UUID subjectId =
+                Objects.requireNonNull(
+                        jdbc.queryForObject(
+                                "SELECT subject_id FROM resource WHERE id = ?",
+                                UUID.class,
+                                graph.resourceId()));
+        UUID externalResource = UUID.randomUUID();
+        UUID externalVersion = UUID.randomUUID();
+        jdbc.update(
+                "INSERT INTO resource (id, owner_workspace_id, created_by_user_id, kind,"
+                        + " subject_id, state) VALUES (?, ?, ?, 'QUESTION', ?, 'ACTIVE')",
+                externalResource,
+                foreignWorkspace,
+                foreignOwner,
+                subjectId);
+        jdbc.update(
+                "INSERT INTO resource_version (id, resource_id, version_no, label, body_stub,"
+                        + " answer_stub, review_state) VALUES (?, ?, 1, 'Nguồn ngoài', 'Body',"
+                        + " 'Answer', 'APPROVED')",
+                externalVersion,
+                externalResource);
+        jdbc.update(
+                "INSERT INTO resource_dependency (id, derived_resource_id, derived_version_id,"
+                        + " source_resource_id, source_version_id, usage_constraints)"
+                        + " VALUES (?, ?, ?, ?, ?, '{}')",
+                UUID.randomUUID(),
+                graph.resourceId(),
+                graph.versionId(),
+                externalResource,
+                externalVersion);
+        UUID revokedGrantId = UUID.randomUUID();
+        UUID independentGrantId = UUID.randomUUID();
+        insertAcceptedGrant(
+                revokedGrantId,
+                graph.workspaceId(),
+                foreignOwner,
+                externalResource,
+                externalVersion);
+        CompletionLicenseGuard guard = new CompletionLicenseGuard(resources, grants, dependencies);
+        assertThat(guard).isNotNull();
+        assertThatCode(() ->
+                        guard.requireCurrentSources(
+                                graph.workspaceId(),
+                                graph.resourceId(),
+                                graph.versionId(),
+                                Instant.now()))
+                .doesNotThrowAnyException();
+        jdbc.update(
+                "UPDATE share_grant SET state = 'REVOKED', revoked_at = now(),"
+                        + " version = version + 1 WHERE id = ?",
+                revokedGrantId);
+        entityManager.clear();
+        HttpProblemException denied =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        HttpProblemException.class,
+                        () ->
+                                guard.requireCurrentSources(
+                                        graph.workspaceId(),
+                                        graph.resourceId(),
+                                        graph.versionId(),
+                                        Instant.now()));
+        assertEquals(HttpStatus.FORBIDDEN, denied.getStatus());
+        assertEquals("RESOURCE_LICENSE_INACTIVE", denied.getCode());
+        assertEquals(
+                1,
+                jdbc.queryForObject(
+                        "SELECT count(*) FROM sample_activity WHERE id = ?",
+                        Integer.class,
+                        activityId));
+        insertAcceptedGrant(
+                independentGrantId,
+                graph.workspaceId(),
+                foreignOwner,
+                externalResource,
+                externalVersion);
+        entityManager.clear();
+        assertThatCode(() ->
+                        guard.requireCurrentSources(
+                                graph.workspaceId(),
+                                graph.resourceId(),
+                                graph.versionId(),
+                                Instant.now()))
+                .doesNotThrowAnyException();
+    }
+
+    private void insertAcceptedGrant(
+            UUID grantId, UUID recipient, UUID grantor, UUID resource, UUID version) {
+        jdbc.update(
+                "INSERT INTO share_grant (id, source_resource_id, source_version_id,"
+                        + " grantor_user_id, recipient_workspace_id, mode, state, actions,"
+                        + " valid_from, accepted_at) VALUES (?, ?, ?, ?, ?, 'REVOCABLE',"
+                        + " 'ACCEPTED', ARRAY['use'], ?, ?)",
+                grantId,
+                resource,
+                version,
+                grantor,
+                recipient,
+                Timestamp.from(Instant.now().minusSeconds(60)),
+                Timestamp.from(Instant.now()));
     }
 
     private record SeedGraph(

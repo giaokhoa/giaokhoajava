@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,6 +27,8 @@ import com.giaokhoa.verification.ResultPolicyProjector;
 import com.giaokhoa.verification.dto.SampleActionRequest;
 import com.giaokhoa.verification.dto.SampleActionResult;
 import com.giaokhoa.verification.model.SampleActivity;
+import com.giaokhoa.verification.model.SampleResult;
+import com.giaokhoa.verification.model.SampleSubmission;
 import com.giaokhoa.verification.repository.SampleActionMutationRepository;
 import com.giaokhoa.verification.repository.SampleActivityRepository;
 import com.giaokhoa.verification.repository.SampleAttemptOpeningRepository;
@@ -38,8 +42,10 @@ import com.giaokhoa.verification.repository.VerificationResourceVersionRepositor
 import com.giaokhoa.verification.repository.VerificationSubscriptionPeriodRepository;
 import com.giaokhoa.verification.repository.VerificationWorkspaceRepository;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -62,10 +68,19 @@ class SampleActionServiceTest {
     private static final UUID ACTOR = UUID.randomUUID();
     private static final UUID ACTIVITY = UUID.randomUUID();
     private static final UUID STUDENT = UUID.randomUUID();
+    private static final UUID RESOURCE = UUID.randomUUID();
+    private static final UUID VERSION = UUID.randomUUID();
+    private static final UUID SUBMISSION = UUID.randomUUID();
 
     private final ProtectedActionExecutor executor = mock(ProtectedActionExecutor.class);
     private final IdempotencyService idempotency = mock(IdempotencyService.class);
     private final ActivityPolicyProjector activityProjector = mock(ActivityPolicyProjector.class);
+    private final ResultPolicyProjector resultProjector = mock(ResultPolicyProjector.class);
+    private final CompletionLicenseGuard completionLicense = mock(CompletionLicenseGuard.class);
+    private final SampleSubmissionRepository submissions = mock(SampleSubmissionRepository.class);
+    private final SampleResultRepository results = mock(SampleResultRepository.class);
+    private final SampleActionMutationRepository mutations =
+            mock(SampleActionMutationRepository.class);
     private final WorkspaceTransaction workspaces = mock(WorkspaceTransaction.class);
     private final VerificationSubscriptionPeriodRepository periods =
             mock(VerificationSubscriptionPeriodRepository.class);
@@ -164,6 +179,91 @@ class SampleActionServiceTest {
         verify(executor).execute(any(), any(), eq(WORKSPACE), any(), any());
     }
 
+    @Test
+    @DisplayName(
+            "Sau thu hồi nguồn, submit/grade/publish đều bị chặn bên trong fence; không ghi một phần")
+    void licenseRevocationBlocksEveryCompletionMutation() {
+        SampleActionService service = service();
+        SampleActivity activity = mock(SampleActivity.class);
+        when(activity.getState()).thenReturn("ASSIGNED");
+        when(activity.acceptsSubmissionAt(any(Instant.class))).thenReturn(true);
+        when(activity.getResourceId()).thenReturn(RESOURCE);
+        when(activity.getVersionId()).thenReturn(VERSION);
+        when(activities.findByWorkspaceIdAndId(WORKSPACE, ACTIVITY))
+                .thenReturn(Optional.of(activity));
+        SampleResult result = mock(SampleResult.class);
+        when(result.getSubmissionId()).thenReturn(SUBMISSION);
+        when(results.findByWorkspaceIdAndIdForUpdate(WORKSPACE, ACTIVITY))
+                .thenReturn(Optional.of(result));
+        SampleSubmission submission = mock(SampleSubmission.class);
+        when(submission.getActivityId()).thenReturn(ACTIVITY);
+        when(submissions.findByWorkspaceIdAndId(WORKSPACE, SUBMISSION))
+                .thenReturn(Optional.of(submission));
+        when(mutations.claim(any(), any(), any(), any(), any(), any())).thenReturn(1);
+        when(executor.execute(any(), any(), eq(WORKSPACE), any(), any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(4)).get());
+        doThrow(
+                        new HttpProblemException(
+                                HttpStatus.FORBIDDEN,
+                                "RESOURCE_LICENSE_INACTIVE",
+                                "Nguồn tài nguyên không còn hiệu lực."))
+                .when(completionLicense)
+                .requireCurrentSources(
+                        eq(WORKSPACE), eq(RESOURCE), eq(VERSION), any(Instant.class));
+
+        for (String action : List.of("SUBMIT_ACTIVITY", "GRADE_RESULT", "PUBLISH_RESULT")) {
+            HttpProblemException error =
+                    assertThrows(
+                            HttpProblemException.class,
+                            () ->
+                                    service.act(
+                                            WORKSPACE,
+                                            "license-" + action,
+                                            completionRequest(action),
+                                            mock(Authentication.class),
+                                            mock(HttpServletRequest.class)));
+            assertEquals(HttpStatus.FORBIDDEN, error.getStatus());
+            assertEquals("RESOURCE_LICENSE_INACTIVE", error.getCode());
+        }
+        verify(completionLicense, times(3))
+                .requireCurrentSources(
+                        eq(WORKSPACE), eq(RESOURCE), eq(VERSION), any(Instant.class));
+        verify(submissions, never()).save(any());
+        verify(results, never()).flush();
+        verify(periods, never()).countCurrent(any());
+    }
+
+    @SuppressWarnings("NullAway")
+    private static SampleActionRequest completionRequest(String action) {
+        return new SampleActionRequest(
+                action,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                ACTIVITY,
+                "nội dung",
+                ACTIVITY,
+                "9",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
     private SampleActionService service() {
         when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
@@ -177,16 +277,18 @@ class SampleActionServiceTest {
         when(operation.getId()).thenReturn(UUID.randomUUID());
         when(activityProjector.recordActivityChange(any(), any(), any(), any(), any()))
                 .thenReturn(operation);
+        when(resultProjector.recordResultChange(any(), any(), any(), any(), any()))
+                .thenReturn(operation);
         when(operations.findStateById(any()))
                 .thenReturn(Optional.of(AuthorizationOperation.State.SUCCEEDED));
         return new SampleActionService(
                 executor,
                 idempotency,
                 mock(SourceRevocationCoordinator.class),
-                mock(ResultPolicyProjector.class),
+                resultProjector,
                 activityProjector,
                 mock(ResourcePolicyProjector.class),
-                mock(CompletionLicenseGuard.class),
+                completionLicense,
                 mock(ResourceLibraryService.class),
                 mock(ResourceShareService.class),
                 mock(CorrectionService.class),
@@ -198,10 +300,10 @@ class SampleActionServiceTest {
                 mock(VerificationResourceDependencyRepository.class),
                 mock(VerificationEnrollmentRepository.class),
                 activities,
-                mock(SampleSubmissionRepository.class),
+                submissions,
                 mock(SampleAttemptOpeningRepository.class),
-                mock(SampleResultRepository.class),
-                mock(SampleActionMutationRepository.class),
+                results,
+                mutations,
                 operations,
                 transactionManager);
     }

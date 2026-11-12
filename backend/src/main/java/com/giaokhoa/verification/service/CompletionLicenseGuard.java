@@ -41,6 +41,20 @@ public class CompletionLicenseGuard {
 
     public void requireDurableSources(
             UUID workspaceId, UUID resourceId, UUID versionId, Instant now) {
+        requireSources(workspaceId, resourceId, versionId, now, true);
+    }
+
+    /**
+     * FR-038/044/045: khi nộp/chấm/công bố, license vẫn phải hợp lệ cho root và từng component. Gọi
+     * bên TRONG authorization fence transaction, không yêu cầu gói còn hạn.
+     */
+    public void requireCurrentSources(
+            UUID workspaceId, UUID resourceId, UUID versionId, Instant now) {
+        requireSources(workspaceId, resourceId, versionId, now, false);
+    }
+
+    private void requireSources(
+            UUID workspaceId, UUID resourceId, UUID versionId, Instant now, boolean guaranteed) {
         Set<UUID> visited = new HashSet<>();
         List<ResourceVersionRef> frontier = List.of(new ResourceVersionRef(resourceId, versionId));
         while (!frontier.isEmpty()) {
@@ -52,7 +66,7 @@ public class CompletionLicenseGuard {
                 Resource resource =
                         resources
                                 .findById(version.resourceId())
-                                .orElseThrow(CompletionLicenseGuard::notDurable);
+                                .orElseThrow(() -> missingSource(guaranteed));
                 List<ResourceDependency> provenance =
                         edges.stream()
                                 .filter(edge ->
@@ -66,7 +80,12 @@ public class CompletionLicenseGuard {
                                                         Objects.requireNonNull(
                                                                 edge.getShareGrantId(),
                                                                 "shareGrantId"))
-                                                .filter(grant -> durable(grant, workspaceId, now))
+                                                .filter(grant ->
+                                                        permitted(
+                                                                grant,
+                                                                workspaceId,
+                                                                now,
+                                                                guaranteed))
                                                 .isPresent());
                 boolean owned = workspaceId.equals(resource.getOwnerWorkspaceId());
                 boolean directLongTerm =
@@ -77,8 +96,10 @@ public class CompletionLicenseGuard {
                                         version.versionId(),
                                         ShareGrant.State.ACCEPTED)
                                 .stream()
-                                .anyMatch(grant -> durable(grant, workspaceId, now));
-                if (!provenanceDurable || !(owned || directLongTerm)) throw notDurable();
+                                .anyMatch(grant -> permitted(grant, workspaceId, now, guaranteed));
+                if (!provenanceDurable || !(owned || directLongTerm)) {
+                    throw missingSource(guaranteed);
+                }
             }
             for (ResourceDependency edge : edges) {
                 if (!visited.contains(edge.getSourceVersionId())) {
@@ -92,15 +113,32 @@ public class CompletionLicenseGuard {
     }
 
     static boolean durable(ShareGrant grant, UUID workspaceId, Instant now) {
+        return permitted(grant, workspaceId, now, true);
+    }
+
+    private static boolean permitted(
+            ShareGrant grant, UUID workspaceId, Instant now, boolean guaranteed) {
         return grant.getState() == ShareGrant.State.ACCEPTED
-                && grant.getMode() == ShareGrant.Mode.LONG_TERM
-                && grant.getExpiresAt() == null
+                && (!guaranteed
+                        || (grant.getMode() == ShareGrant.Mode.LONG_TERM
+                                && grant.getExpiresAt() == null))
+                && (guaranteed
+                        || grant.getExpiresAt() == null
+                        || now.isBefore(grant.getExpiresAt()))
                 && !grant.getValidFrom().isAfter(now)
                 && workspaceId.equals(grant.getRecipientWorkspaceId())
                 && (grant.getAllowedWorkspaceIds().isEmpty()
                         || grant.getAllowedWorkspaceIds().contains(workspaceId))
                 && ResourcePolicyProjector.mapActions(grant.getActions())
                         .contains(PermissionCatalog.ResourceVersionScope.USE.scopeName());
+    }
+
+    private static HttpProblemException missingSource(boolean guaranteed) {
+        if (guaranteed) return notDurable();
+        return new HttpProblemException(
+                HttpStatus.FORBIDDEN,
+                "RESOURCE_LICENSE_INACTIVE",
+                "Một nguồn tài nguyên của bài đã bị thu hồi hoặc hết thời hạn sử dụng.");
     }
 
     private static HttpProblemException notDurable() {
