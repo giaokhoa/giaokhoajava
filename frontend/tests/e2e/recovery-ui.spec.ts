@@ -71,8 +71,13 @@ test("recovery giữ key khi retry, gửi If-Match và chỉ hoàn tất sau xá
   expect(mutations[2].key).not.toBe(mutations[1].key);
 });
 
-// Chỉ SUCCEEDED của operation thật mới được coi là yêu cầu/duyệt/hoàn tất.
-async function waitForLastRecoveryOperation(page: import("@playwright/test").Page, origin: string) {
+// OperationId của recovery là ID hồ sơ kéo dài qua REQUESTED/VERIFIED/RESOLVED:
+// trước khi bàn giao nó PHẢI PENDING; chỉ COMPLETE/REJECT mới kết thúc SUCCEEDED.
+async function waitForLastRecoveryOperation(
+  page: import("@playwright/test").Page,
+  origin: string,
+  expected: "PENDING" | "SUCCEEDED",
+) {
   const id = (await page.locator('section[aria-labelledby="operation-title"] code').last()
     .textContent())?.trim();
   expect(id).toMatch(/^[0-9a-f-]{36}$/i);
@@ -81,7 +86,8 @@ async function waitForLastRecoveryOperation(page: import("@playwright/test").Pag
     if (response.status() !== 200) return `HTTP_${response.status()}`;
     const body = (await response.json()) as { state: string; completed: boolean };
     return body.completed ? body.state : `PENDING:${body.state}`;
-  }, { timeout: 60_000, message: `Recovery operation ${id} chưa SUCCEEDED` }).toBe("SUCCEEDED");
+  }, { timeout: 60_000, message: `Recovery hồ sơ ${id} chưa đạt ${expected}` })
+    .toBe(expected === "SUCCEEDED" ? "SUCCEEDED" : "PENDING:PENDING");
 }
 
 // QT-03 REAL: không page.route, không fake actor, phiên Keycloak riêng requester/operator.
@@ -115,7 +121,7 @@ test("QT-03: requester thật gửi khôi phục, người thường không th�
     await page.getByLabel("Lý do cần hỗ trợ").fill(reason);
     await page.getByRole("button", { name: "Gửi yêu cầu khôi phục" }).click();
     await expect(page.getByRole("heading", { name: "Trạng thái thao tác" })).toBeVisible();
-    await waitForLastRecoveryOperation(page, apiOrigin);
+    await waitForLastRecoveryOperation(page, apiOrigin, "PENDING");
     // Cookie cùng requester không cấp quyền platform.account.recover.
     const denied = await appRequestWhenReady(page, `${apiOrigin}/api/platform/recovery-requests`);
     expect(denied.status()).toBe(403);
@@ -132,7 +138,7 @@ test("QT-03: requester thật gửi khôi phục, người thường không th�
     await expect(row).toContainText(requesterId!);
     await row.getByLabel("Ghi chú xác minh").fill("Đối chiếu đúng người yêu cầu ngoài hệ thống");
     await row.getByRole("button", { name: "Đã xác minh danh tính" }).click();
-    await waitForLastRecoveryOperation(operatorPage, apiOrigin);
+    await waitForLastRecoveryOperation(operatorPage, apiOrigin, "PENDING");
     await expect(row.getByText("Đã xác minh", { exact: true }))
       .toBeVisible({ timeout: 60_000 });
 
@@ -141,7 +147,7 @@ test("QT-03: requester thật gửi khôi phục, người thường không th�
     await env.resetTestUserPassword(requester, newPassword);
     await row.getByLabel("Ghi chú xác minh").fill("Đã đổi credential qua kênh riêng, bàn giao đúng người");
     await row.getByRole("button", { name: "Xác nhận đã khôi phục và bàn giao" }).click();
-    await waitForLastRecoveryOperation(operatorPage, apiOrigin);
+    await waitForLastRecoveryOperation(operatorPage, apiOrigin, "SUCCEEDED");
     await expect(row.getByText("Đã giải quyết", { exact: true }))
       .toBeVisible({ timeout: 60_000 });
 
