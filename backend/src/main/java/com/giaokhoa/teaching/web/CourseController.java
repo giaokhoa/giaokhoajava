@@ -97,7 +97,18 @@ public class CourseController {
                         }
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.page(courses.pageCourses(workspaceId, classId, cursor, limit));
+                    return support.scopedPage(
+                            actor,
+                            workspaceId,
+                            "courses",
+                            classId,
+                            limit,
+                            courses.pageCourses(
+                                    workspaceId,
+                                    classId,
+                                    support.pageAnchor(
+                                            actor, workspaceId, "courses", classId, limit, cursor),
+                                    limit));
                 });
     }
 

@@ -15,6 +15,7 @@ import {
   type TeachingMutate,
 } from "./class-management";
 import { EnrollmentEditor } from "./enrollment-editor";
+import { replacementTeacherNotice } from "@/features/subscriptions/subscription-state";
 
 export type CourseSubjectEntry = {
   id: string;
@@ -136,6 +137,7 @@ function TeacherAssignmentList({
   courseSubjectId,
   teachers,
   canManage,
+  subscriptionExpired,
   busy,
   refreshTick,
   userId,
@@ -145,6 +147,7 @@ function TeacherAssignmentList({
   courseSubjectId: string;
   teachers: Membership[];
   canManage: boolean;
+  subscriptionExpired: boolean;
   busy: boolean;
   refreshTick: number;
   userId: string | null;
@@ -206,7 +209,14 @@ function TeacherAssignmentList({
       {assignments === null ? <p role="status">Đang tải danh sách phân công…</p> : null}
       {loadError ? <p role="alert">{loadError}</p> : null}
       {assignments !== null && assignments.length === 0 && !loadError ? (
-        <p>Chưa có giáo viên nào đang phân công môn này.</p>
+        <>
+          <p>Chưa có giáo viên nào đang phân công môn này.</p>
+          {replacementTeacherNotice(subscriptionExpired, assignments.length) ? (
+            <p role="status">
+              {replacementTeacherNotice(subscriptionExpired, assignments.length)}
+            </p>
+          ) : null}
+        </>
       ) : null}
       {assignments !== null && assignments.length > 0 ? (
         <ul>
@@ -575,6 +585,7 @@ export function CourseSubjectEditor({
                           courseSubjectId={entry.id}
                           teachers={teachers}
                           canManage={canManage}
+                          subscriptionExpired={subscriptionExpired}
                           busy={busy}
                           refreshTick={refreshTick}
                           userId={userId}

@@ -75,9 +75,23 @@ public class EnrollmentController {
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.page(
+                    return support.scopedPage(
+                            actor,
+                            workspaceId,
+                            "enrollments",
+                            courseSubjectId,
+                            limit,
                             enrollments.pageEnrollments(
-                                    workspaceId, courseSubjectId, cursor, limit));
+                                    workspaceId,
+                                    courseSubjectId,
+                                    support.pageAnchor(
+                                            actor,
+                                            workspaceId,
+                                            "enrollments",
+                                            courseSubjectId,
+                                            limit,
+                                            cursor),
+                                    limit));
                 });
     }
 

@@ -1,5 +1,11 @@
 # Ma trận nghiệm thu T094 — bản gốc và phần bổ sung 12/11/2026
 
+> **Quyết định scope 2026-11-12:** chủ repo miễn gate sử dụng với người thật
+> SC-001/002/009, T16/T096/#98; các dòng **CHƯA ĐẠT** của T16 phía dưới là
+> biên bản lịch sử (chưa đo), **không phải gate bắt buộc hiện hành và không được
+> đổi thành ĐẠT**. Gate hiện hành phải kiểm chứng 61 scenario kỹ thuật và các
+> task Phase 12 theo đúng code/CI; không lấp bằng số liệu giả.
+
 ## Phạm vi hiện hành — chưa nghiệm thu toàn bộ
 
 Spec hiện có 57 FR và 61 scenarios: 56 gốc + US3.9/US4.6/US7.10/US7.11/US8.8. Các kết quả bên dưới là lịch sử trên revision đã ghi, không phải phán quyết cho code hiện tại hoặc phần bổ sung. Parent #2 vẫn giữ #95 và #96 OPEN tại snapshot `f3d2e618`. [Báo cáo hội tụ](../../../docs/doi-chieu-spec-code-20261112.md) và [bản đồ luồng theo vai](../../../docs/luong-nghiep-vu-theo-vai-tro.md) chỉ rõ actor, đường chạy và khoảng hở.

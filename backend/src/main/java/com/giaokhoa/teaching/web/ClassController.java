@@ -81,8 +81,19 @@ public class ClassController {
                         // Không có lớp được đọc: không trả danh sách trống như một center admin.
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.page(
-                            classes.pageClasses(workspaceId, cursor, limit, admin ? null : actor));
+                    String query = admin ? "classes-admin" : "classes-homeroom";
+                    return support.scopedPage(
+                            actor,
+                            workspaceId,
+                            query,
+                            null,
+                            limit,
+                            classes.pageClasses(
+                                    workspaceId,
+                                    support.pageAnchor(
+                                            actor, workspaceId, query, null, limit, cursor),
+                                    limit,
+                                    admin ? null : actor));
                 });
     }
 
@@ -233,7 +244,23 @@ public class ClassController {
                         classes.getClass(workspaceId, classId);
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.page(classes.pageStudents(workspaceId, classId, cursor, limit));
+                    return support.scopedPage(
+                            actor,
+                            workspaceId,
+                            "class-students",
+                            classId,
+                            limit,
+                            classes.pageStudents(
+                                    workspaceId,
+                                    classId,
+                                    support.pageAnchor(
+                                            actor,
+                                            workspaceId,
+                                            "class-students",
+                                            classId,
+                                            limit,
+                                            cursor),
+                                    limit));
                 });
     }
 

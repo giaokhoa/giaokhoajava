@@ -168,7 +168,7 @@ public class MembershipController {
                     }
                     int pageSize = limit == null ? 20 : Math.min(Math.max(limit, 1), 100);
                     MembershipService.MembershipPage page =
-                            memberships.pageMemberships(workspaceId, cursor, pageSize);
+                            memberships.pageMemberships(actor, workspaceId, cursor, pageSize);
                     return protectedOk(
                             new MembershipPage(
                                     page.items().stream().map(MembershipController::item).toList(),

@@ -99,3 +99,38 @@ Mỗi flow chỉ hoàn tất khi có đối chứng được phép và bị ch�
 Mỗi vai có một trang mục lục dẫn tới các mã luồng mình thực hiện. Mỗi hướng dẫn dùng cùng mẫu: mục đích → điều kiện bắt đầu → thao tác trên màn hình → dấu hiệu hoàn tất → lý do thường bị chặn → bước xử lý tiếp theo. Tránh đưa scope, partition, SQL, policy hoặc thao tác fixture vào hướng dẫn người dùng. Chỉ viết hướng dẫn tính năng đã có UI; luồng đang ở mức mẫu hoặc chưa triển khai phải ghi rõ trạng thái đó.
 
 NV-03 giữ chủ nhiệm ở phạm vi điều phối trung tâm; NV-06 điều chỉnh điểm sau công bố là thiết kế sau; NV-07 cần chốt loại hình hoạt động và trách nhiệm vận hành trước pilot. Những nội dung này không tự biến thành tính năng sổ điểm, xác minh giấy tờ hoặc module pháp lý.
+
+## Hướng dẫn khởi động theo vai — mẫu bàn giao (T114)
+
+**Đợt 2026-11-12:** chủ repo đã bỏ gate đo với năm người dùng thật #98/T096;
+**không có kết quả 4/5 và không được tuyên bố đạt**. Danh sách 22 flow bên trên
+là hướng dẫn theo quyền, không phải quy trình nghiệp vụ đã được cơ quan vận hành
+phê duyệt. Các flow sau là mẫu cho người vận hành, chỉ bước có code/UI hiện hành
+mới được dùng; phần đang thiếu gắn nhãn “CHƯA TRIỂN KHAI”.
+
+| Vai dùng thử / hướng dẫn | Bắt đầu tại màn hình | Đường thực hiện có sẵn | Dừng hoặc xử lý từ chối |
+| --- | --- | --- | --- |
+| Người dùng cá nhân | Đăng nhập, không gian cá nhân | TK-01, TK-02, HS-01, CNH-01: xác minh tài khoản, luyện tập đề hệ thống, xem lớp/kho trong giới hạn gói | Nếu không có gói, không thêm/đổi tên; vẫn xem/thu hồi dữ kiện còn quyền. Không tự có quyền trung tâm |
+| Quản trị viên nền tảng | `/platform` | QT-01/QT-02 tạo trung tâm/gói; QT-03 xử lý yêu cầu phục hồi theo quyết định có tham chiếu ngoài hệ thống | Mỗi operation cần SUCCEEDED; không in credential/token vào log; QT-03 browser recovery thật cần T108 |
+| Chủ sở hữu/quản lý trung tâm | Chọn đúng trung tâm, trang lớp/thành viên | CSH-01, QL-01–03, QL-05: bổ nhiệm, mời/cấp tài khoản, tạo lớp–khóa–môn, ghi danh và phân công, thu hồi | Quản lý không tự cấp OWNER; phải chờ projection xong. QL-04 tham chiếu xác minh FR-056 **CHƯA TRIỂN KHAI** |
+| Chủ nhiệm | Lớp được phân công | CN-01: xem roster lớp và điều phối việc đã được phép | Không tự chấm, xem đáp án hoặc duyệt liên kết phụ huynh; giao đề duyệt theo flow chủ nhiệm cần T108 |
+| Giáo viên bộ môn | Khóa/môn mình được phân công | GV-01–03: xem kho theo license, giao mẫu và chấm/công bố bài mẫu trên đúng môn | Không được dùng nguồn chưa cấp; GUARANTEED/INTERRUPTIBLE FR-057 **CHƯA TRIỂN KHAI**, theo T107 |
+| Học sinh | Lớp và kết quả đúng học sinh | HS-02 đọc/nộp bài đúng lịch/lượt; đọc kết quả sau công bố | Sau `due_at` bị chặn; khóa/revoke nguồn vẫn ưu tiên. HS-03 (COMPLETED) **CHƯA TRIỂN KHAI**, theo T104–T105 |
+| Phụ huynh | Liên kết con trong trung tâm đúng | PH-01/PH-02 gửi yêu cầu và đọc kết quả đã công bố khi được duyệt | Không đọc con khác, kết quả nháp, bài làm hoặc đáp án; tham chiếu xác minh khi APPROVE đang chờ T106 |
+
+### Quyết định vận hành còn phải chốt trước khi chứa dữ liệu học sinh thật
+
+**Không có căn cứ để tự chọn thay đơn vị vận hành.** Bảng dưới là phiếu chuẩn bị,
+không phải lời xác nhận đã đáp ứng pháp lý:
+
+| Quyết định | Trạng thái | Thông tin cần từ đơn vị vận hành |
+| --- | --- | --- |
+| Tổ chức chịu trách nhiệm xử lý dữ liệu và người phê duyệt | **CHƯA CUNG CẤP** | Tên tổ chức, đầu mối hỗ trợ, kênh liên hệ và người duyệt chính sách |
+| Loại hình lớp/hoạt động, cơ sở vận hành | **CHƯA CUNG CẤP** | Phạm vi hoạt động và quy trình xác minh điều kiện hoạt động phù hợp địa phương |
+| Chính sách giữ/xóa hồ sơ và kết quả | **CHƯA CUNG CẤP** | Thời hạn, trường hợp yêu cầu xóa/chỉnh, xử lý khi hết gói hoặc đổi lớp |
+| Xác minh phụ huynh/người đại diện | **CHƯA CUNG CẤP** | Người chịu trách nhiệm xác minh **ngoài hệ thống**, loại tham chiếu tối thiểu, cách lưu an toàn; không tải giấy tờ vào app |
+| Tiếp nhận tranh chấp hoặc yêu cầu hỗ trợ | **CHƯA CUNG CẤP** | Đầu mối, quy trình xác minh người yêu cầu, thời hạn xử lý, lưu audit tối thiểu |
+
+Trước lúc sử dụng dữ liệu thật: owner vận hành phải cung cấp/duyệt những thông tin
+trên, triển khai các tính năng bảo vệ liên quan và chạy kiểm tra an toàn/phạm vi thật.
+Việc miễn buổi đo 5 người dùng **không miễn** AS-013 hay các nhiệm vụ kỹ thuật của #307.

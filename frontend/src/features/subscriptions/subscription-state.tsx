@@ -74,3 +74,15 @@ export function blockedActionReason(code: string | undefined): string | null {
   if (!code) return null;
   return blockedReasonsByCode[code] ?? null;
 }
+
+// Khi giáo viên cuối bị thu hồi lúc gói không còn hiệu lực, không cho người dùng
+// hiểu nhầm là gia hạn tự hồi sinh giáo viên cũ. Chỉ có phân công MỚI sau gia hạn.
+export function replacementTeacherNotice(
+  subscriptionExpired: boolean,
+  activeAssignmentCount: number,
+): string | null {
+  if (!subscriptionExpired || activeAssignmentCount !== 0) return null;
+  return "Môn hiện không còn giáo viên được phân công. Nếu gói không còn hiệu lực,"
+    + " hãy gia hạn gói trước khi phân công giáo viên thay thế. Giáo viên đã thu hồi"
+    + " không tự có lại quyền sau khi gia hạn.";
+}

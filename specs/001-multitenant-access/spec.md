@@ -343,6 +343,19 @@ Mọi quyền chịu giới hạn không gian, gói, đối tượng và quyền
 - **SC-008**: 100% phép thử lưu/cập nhật/chỉnh sửa/thu hồi tài nguyên mẫu giữ/tạo định danh và phiên bản đúng quy tắc, không thay lịch sử, không mở rộng quyền nguồn qua sao chép.
 - **SC-009**: Ít nhất 4/5 người nghiệm thu, gồm người vận hành trung tâm và giáo viên/phụ huynh, hoàn thành đúng tác vụ lần đầu sau hướng dẫn ngắn, nhận biết được không gian và lý do không có quyền. Đây là mục tiêu nghiệm thu đề xuất, không phải số liệu đã đo.
 
+### Quyết định phạm vi nghiệm thu 2026-11-12 — bỏ gate người dùng thật
+
+Chủ repository đã xác nhận **không yêu cầu buổi nghiệm thu với người dùng thật**
+trong đợt hoàn thành parent #2 này. SC-001, SC-002 (giới hạn thời gian thực tế)
+và SC-009 (tỷ lệ 4/5) được giữ nguyên ở trên để truy vết yêu cầu ban đầu,
+nhưng **được miễn áp dụng, không phải đã đạt** trong bản phát hành hiện tại.
+Không ghi số liệu hoặc suy kết quả người dùng từ unit/E2E; flow nghiệp vụ, bảo mật,
+đồng bộ quyền và ma trận acceptance tự động vẫn là các gate bắt buộc.
+T096/#98 được kết thúc theo trạng thái *not planned / waived*, không phải completed.
+Khi cần pilot/nghiệm thu người thật sau này sẽ mở đợt riêng và đo lại trên build thật.
+Việc không yêu cầu chạy người dùng không có nghĩa bỏ trách nhiệm chốt chính sách lưu/xóa
+và căn cứ xử lý dữ liệu học sinh trước khi vận hành thật (AS-013).
+
 ## Assumptions
 
 - **AS-001 — Đăng nhập**: Ban đầu dùng tên đăng nhập hoặc email nếu có cùng mật khẩu; MFA/nhà cung cấp bổ sung do vận hành cấu hình, không là tính năng riêng của bản đầu. Tên đăng nhập phân biệt trong hệ thống danh tính chung.

@@ -1915,5 +1915,20 @@
         310
       ]
     }
+  },
+  "owner_scope_decision_20261112": {
+    "date": "2026-11-12",
+    "direction": "no real-user acceptance for current parent #2",
+    "issue": 98,
+    "task": "T096",
+    "disposition": "WAIVED / NOT PLANNED (never mark success criteria as achieved)",
+    "scenarios": [
+      "SC-001",
+      "SC-002",
+      "SC-009"
+    ],
+    "release_gate": false,
+    "technical_gates": "unchanged",
+    "operational_data_retention_AS_013": "still must be decided before use of real student data"
   }
 }

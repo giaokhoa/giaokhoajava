@@ -11,6 +11,7 @@ import com.giaokhoa.authorization.projection.SourceRevocationCoordinator;
 import com.giaokhoa.infrastructure.tenancy.WorkspaceTransaction;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.ScopedPageCursor;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.teaching.repository.ClassStudentRepository;
 import com.giaokhoa.teaching.repository.CourseRepository;
@@ -59,6 +60,7 @@ public class TeachingRouteSupport {
     private static final JsonMapper JSON = new JsonMapper();
     private static final List<String> CURRENT_STATES = List.of("PENDING", "ACTIVE");
 
+    private final ScopedPageCursor pageTokens = new ScopedPageCursor();
     private final ProtectedActionExecutor executor;
     private final IdempotencyService idempotency;
     private final SourceRevocationCoordinator revocations;
@@ -285,7 +287,50 @@ public class TeachingRouteSupport {
         return idempotency.responseFor(operation);
     }
 
-    /** Dùng trang đã giới hạn và lọc tại DB, giữ nguyên HTTP DTO và cache policy. */
+    /**
+     * Token HTTP ràng buộc actor/workspace/loại danh sách/parent/filter và limit; repository tiếp
+     * tục dùng UUID anchor nội bộ để giữ đúng keyset và revoked-anchor semantics.
+     */
+    private static String cursorBinding(
+            UUID actor,
+            UUID workspace,
+            String query,
+            @Nullable UUID parent,
+            @Nullable Integer limit) {
+        int size = limit == null ? 20 : Math.min(Math.max(limit, 1), 100);
+        return "teaching|" + query + "|" + actor + "|" + workspace + "|" + parent + "|" + size;
+    }
+
+    public @Nullable String pageAnchor(
+            UUID actor,
+            UUID workspace,
+            String query,
+            @Nullable UUID parent,
+            @Nullable Integer limit,
+            @Nullable String cursor) {
+        if (cursor == null) return null;
+        return pageTokens
+                .decode(cursor, cursorBinding(actor, workspace, query, parent, limit))
+                .toString();
+    }
+
+    public <T> ResponseEntity<Page<T>> scopedPage(
+            UUID actor,
+            UUID workspace,
+            String query,
+            @Nullable UUID parent,
+            @Nullable Integer limit,
+            TeachingPageRepository.Page<T> page) {
+        String next =
+                page.nextCursor() == null
+                        ? null
+                        : pageTokens.encode(
+                                UUID.fromString(page.nextCursor()),
+                                cursorBinding(actor, workspace, query, parent, limit));
+        return ok(new Page<>(page.items(), next));
+    }
+
+    /** Trang nội bộ đã giới hạn tại DB, không có unsigned public cursor. */
     public <T> ResponseEntity<Page<T>> page(TeachingPageRepository.Page<T> page) {
         return ok(new Page<>(page.items(), page.nextCursor()));
     }

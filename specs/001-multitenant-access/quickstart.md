@@ -294,3 +294,14 @@ bại phải nêu cặp quyền/dữ kiện cụ thể, không gộp thành "Key
 `TenantMigrationRunner.migrateAllTenants()` hiện kích hoạt `schema_name` nhưng không chuyển dữ kiện cũ; không dùng làm lệnh nâng cấp an toàn cho workspace có dữ liệu. Chỉ cutover sau khi hoàn tất các task dữ kiện/context/notification/revoke trên schema đã kích hoạt. Không reset DEV hoặc sửa baseline đã apply để vượt bước này.
 
 Trước pilot dùng học sinh thật: chốt chính sách giữ/xóa hồ sơ, loại hình lớp và trách nhiệm vận hành; xác minh người đại diện ngoài hệ thống, chỉ lưu tham chiếu tối thiểu khi duyệt quyền xem. Hoàn thành đợt học giữ quyền xem kết quả của chính học sinh trong thời gian hồ sơ còn được lưu hợp lệ; thu hồi bảo mật vẫn chặn. Bài cần bảo đảm hoàn tất dùng nguồn sở hữu/LONG_TERM; nếu hết gói và giáo viên duy nhất nghỉ, phải gia hạn rồi phân công người thay. Các luồng mới này chưa có trong code tại nền đối chiếu; xem [báo cáo hội tụ](../../docs/doi-chieu-spec-code-20261112.md) và task bổ sung.
+
+### Bàn giao hướng dẫn vận hành (T114, không có gate người dùng thật)
+
+Chủ repo đã miễn nghiệm thu người dùng thật SC-001/002/009 cho đợt #2; #98 đóng
+`NOT_PLANNED`, không có kết quả 4/5. [Bản đồ/hướng dẫn theo 22 luồng](../../docs/luong-nghiep-vu-theo-vai-tro.md)
+chia tính năng đã có và các bước còn **CHƯA TRIỂN KHAI**; không dùng tài liệu đó
+làm bằng chứng một luồng đã chạy thành công. Trước khi nhập dữ liệu học sinh thật,
+phải xác minh/ghi lại chủ thể xử lý, loại hình hoạt động, thời hạn giữ/xóa, quy
+trình người đại diện và đầu mối yêu cầu/tranh chấp theo AS-013. Nếu chưa có các
+quyết định này, giữ môi trường test với tài khoản/dữ liệu giả, không tự mặc định
+việc triển khai phần mềm đã đáp ứng mọi điều kiện vận hành.

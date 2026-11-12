@@ -1,3 +1,9 @@
+> **Quyết định của chủ repo 2026-11-12:** miễn yêu cầu nghiệm thu với 5 người dùng
+> thật cho parent #2 đợt này. Issue #98/T096 bị **hủy khỏi release gate**, không
+> tuyên bố SC-001/002/009 đạt hoặc 4/5 hoàn thành. Các mẫu và bản ghi dưới đây
+> giữ nguyên làm tài liệu pilot nếu sau này chủ repo tổ chức lại; các ô chưa có
+> bằng chứng vẫn trống. CI/E2E kỹ thuật không thay thế số liệu người thật.
+
 # Nghiệm thu SC-001/002/009 với người dùng thật theo vai trò (issue #98)
 
 Tài liệu này là **bộ chuẩn bị** cho buổi nghiệm thu với người dùng thật. Tại thời điểm tạo,

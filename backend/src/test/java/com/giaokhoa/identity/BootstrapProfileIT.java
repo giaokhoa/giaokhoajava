@@ -87,7 +87,7 @@ class BootstrapProfileIT extends IntegrationEnvironment {
         String cursor = null;
         do {
             MembershipService.MembershipPage page =
-                    memberships.pageMemberships(workspaceId, cursor, 100);
+                    memberships.pageMemberships(userId, workspaceId, cursor, 100);
             all.addAll(page.items());
             cursor = page.nextCursor();
         } while (cursor != null);
