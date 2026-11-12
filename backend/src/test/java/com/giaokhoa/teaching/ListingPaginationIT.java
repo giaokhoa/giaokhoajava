@@ -118,7 +118,17 @@ class ListingPaginationIT extends IntegrationEnvironment {
                         mock(AuditRecorder.class));
 
         UUID actor = UUID.randomUUID();
-        var initial = service.pageMemberships(actor, workspace, null, 1);
+        UUID ownerMember =
+                Objects.requireNonNull(
+                        jdbc.queryForObject(
+                                "SELECT m.id FROM center_membership m JOIN membership_role r"
+                                        + " ON r.membership_id = m.id WHERE m.workspace_id = ? AND r.role = 'OWNER'",
+                                UUID.class,
+                                workspace));
+        var ownerPage = service.pageMemberships(actor, workspace, null, 1);
+        assertEquals(
+                List.of(ownerMember), ownerPage.items().stream().map(row -> row.id()).toList());
+        var initial = service.pageMemberships(actor, workspace, ownerPage.nextCursor(), 1);
         assertEquals(List.of(previous), initial.items().stream().map(row -> row.id()).toList());
         // Anchor bị thu hồi sau khi lấy cursor nhưng vẫn là mốc để trang kế tiếp đọc đúng.
         jdbc.update(

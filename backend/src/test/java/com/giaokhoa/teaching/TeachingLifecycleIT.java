@@ -271,7 +271,7 @@ class TeachingLifecycleIT extends TeachingFixture {
                 setup.workspace(),
                 completedEnrollmentId,
                 UUID.randomUUID().toString(),
-                "i".repeat(64));
+                "c".repeat(64));
         assertPublishedStudentSource(resultKey, student, false);
         assertEquals(
                 "PUBLISHED",
@@ -308,7 +308,7 @@ class TeachingLifecycleIT extends TeachingFixture {
                 List.of(roster),
                 subjects,
                 UUID.randomUUID().toString(),
-                "g".repeat(64));
+                "a".repeat(64));
         List<CompletionExpected> snapshot = completionSnapshot(workspace, course.id(), student);
         assertEquals(3, snapshot.size());
         enrollments.completeStudentCourse(
@@ -318,7 +318,7 @@ class TeachingLifecycleIT extends TeachingFixture {
                 student,
                 snapshot,
                 UUID.randomUUID().toString(),
-                "h".repeat(64));
+                "b".repeat(64));
         assertEquals(0, activeEnrollments(workspace, course.id(), student));
         assertEquals(
                 3,
@@ -384,8 +384,8 @@ class TeachingLifecycleIT extends TeachingFixture {
                 resourceId,
                 versionId,
                 owner,
-                Instant.now().minusSeconds(300),
-                Instant.now().plusSeconds(3600),
+                java.sql.Timestamp.from(Instant.now().minusSeconds(300)),
+                java.sql.Timestamp.from(Instant.now().plusSeconds(3600)),
                 periodId);
         jdbc.update(
                 "INSERT INTO sample_submission (id, workspace_id, activity_id, student_user_id,"

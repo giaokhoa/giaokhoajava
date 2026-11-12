@@ -103,7 +103,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
             new TransactionTemplate(new DataSourceTransactionManager(migrationDataSource))
                     .executeWithoutResult(status -> {
                         raw.update(
-                                "DELETE FROM public.subscription_period WHERE workspace_id IN ("
+                                "DELETE FROM public.resource WHERE owner_workspace_id IN ("
                                         + placeholders(createdWorkspaces.size())
                                         + ")",
                                 createdWorkspaces.toArray());
@@ -190,18 +190,21 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
 
     @Test
     @DisplayName(
-            "Kích hoạt schema rỗng khi workspace còn kỳ gói cũ phải fail-closed, dữ kiện không mất")
+            "Kích hoạt schema rỗng khi workspace còn nguồn học liệu cũ phải fail-closed, dữ kiện không mất")
     void rejectUnsafeCutoverWithLegacyData() {
         ProbeWorkspace existing = newWorkspace("cutover-legacy");
-        UUID subscriptionId = UUID.randomUUID();
+        UUID resourceId = UUID.randomUUID();
+        UUID subjectId =
+                Objects.requireNonNull(
+                        raw.queryForObject(
+                                "SELECT id FROM public.subject ORDER BY code LIMIT 1", UUID.class));
         raw.update(
-                "INSERT INTO public.subscription_period (id,workspace_id,valid_from,expires_at,"
-                        + " confirmation_ref,confirmed_by,confirmed_at)"
-                        + " VALUES (?,?,now(),now() + interval '1 day',?,?,now())",
-                subscriptionId,
+                "INSERT INTO public.resource (id,owner_workspace_id,created_by_user_id,kind,"
+                        + " subject_id,state) VALUES (?,?,?,'EXAM',?,'ACTIVE')",
+                resourceId,
                 existing.workspaceId(),
-                "legacy-" + subscriptionId,
-                existing.userId());
+                existing.userId(),
+                subjectId);
         String target = provisioner.prepareSchema(existing.workspaceId());
         assertThrows(
                 IllegalStateException.class,
@@ -214,15 +217,15 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
         assertEquals(
                 1L,
                 raw.queryForObject(
-                        "SELECT count(*) FROM public.subscription_period WHERE id = ?",
+                        "SELECT count(*) FROM public.resource WHERE id = ?",
                         Long.class,
-                        subscriptionId));
+                        resourceId));
         assertEquals(
                 0L,
                 raw.queryForObject(
-                        "SELECT count(*) FROM " + target + ".subscription_period WHERE id = ?",
+                        "SELECT count(*) FROM " + target + ".resource WHERE id = ?",
                         Long.class,
-                        subscriptionId));
+                        resourceId));
         // Runner prepare-only đã được kiểm riêng tại runnerProvisionsWorkspaceWithoutSchema.
         // Không chạy lại Flyway trên mọi tenant trong cùng fixture để tránh CI chậm vô ích.
     }
