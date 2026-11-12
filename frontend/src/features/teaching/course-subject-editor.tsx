@@ -461,7 +461,7 @@ export function CourseSubjectEditor({
                   <input
                     id={`rename-course-${course.id}`}
                     value={renameDrafts[course.id] ?? course.name}
-                    disabled={busy}
+                    disabled={busy || subscriptionExpired}
                     onChange={(event) => setRenameDrafts((current) => ({
                       ...current,
                       [course.id]: event.target.value,
@@ -471,7 +471,7 @@ export function CourseSubjectEditor({
                 <button
                   className="action-button"
                   type="button"
-                  disabled={busy}
+                  disabled={busy || subscriptionExpired}
                   onClick={() => void renameCourse(course)}
                 >
                   Đổi tên khóa
