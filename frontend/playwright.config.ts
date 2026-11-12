@@ -5,6 +5,9 @@ import { DEFAULT_FRONTEND_ORIGIN } from "./tests/e2e/support/test-environment";
 const appOrigin = process.env.NATIVE_GATE_APP_ORIGIN;
 const frontendOrigin = process.env.TEST_FRONTEND_ORIGIN ?? appOrigin ?? DEFAULT_FRONTEND_ORIGIN;
 const teachingAndGuardians = /(?:guardian-results|teaching-administration)\.spec\.ts$/;
+// Tách các ca dùng nhiều Keycloak action và mốc đồng hồ thật để không cắt suite core.
+const resourcePermissions = /resource-permissions\.spec\.ts$/;
+const subscriptionExpiry = /subscription-expiry\.spec\.ts$/;
 if (process.env.CI && !appOrigin) {
   throw new Error("CI phải đặt NATIVE_GATE_APP_ORIGIN để chạy E2E thật, không được bỏ qua gate.");
 }
@@ -26,8 +29,10 @@ export default defineConfig({
   workers: 1,
   use: { baseURL: frontendOrigin, trace: "retain-on-failure" },
   projects: [
-    { name: "chromium-core", testIgnore: teachingAndGuardians, use: { ...devices["Desktop Chrome"] } },
+{ name: "chromium-core", testIgnore: [teachingAndGuardians, resourcePermissions, subscriptionExpiry], use: { ...devices["Desktop Chrome"] } },
     { name: "chromium-teaching-guardians", testMatch: teachingAndGuardians, use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium-resources", testMatch: resourcePermissions, use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium-expiry", testMatch: subscriptionExpiry, use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: [
     ...(appOrigin ? [{
