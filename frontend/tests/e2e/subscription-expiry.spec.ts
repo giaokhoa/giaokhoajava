@@ -610,13 +610,16 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
       // dạy học và giao bài, hết hạn ngay trong lúc các phiên vẫn mở.
       let csrf = await dangNhapLai(page, origin, operator);
       const { workspaceId } = await taoCenter(page, origin, csrf, owner.appId);
-      // Center vừa khởi tạo nhưng chưa xác nhận kỳ gói: chủ sở hữu không được mở rộng.
-      // Kiểm bằng phiên owner thật, không suy từ UI hoặc dấu mốc gói chưa có.
+      // Ngoại lệ đã chốt tại contracts/authorization.md: center CHƯA TỪNG có kỳ gói
+      // vẫn tạo lớp được. Đừng nhầm với center có kỳ gói đã hết hạn (403 phía dưới).
       const csrfChuaKichHoat = await dangNhapLai(page, origin, owner);
       const taoTruocKichHoat = await guiMutation(
         page, origin, csrfChuaKichHoat, "POST",
         `/api/workspaces/${workspaceId}/classes`, { name: `chua-kich-hoat-${randomUUID().slice(0, 8)}` });
-      expect(taoTruocKichHoat.status()).toBe(403);
+      expect(taoTruocKichHoat.status()).toBe(202);
+      const chuaKichHoatReceipt = (await taoTruocKichHoat.json()) as MutationTraLoi;
+      await choOperationThanhCong(
+        page, origin, layOperationId(chuaKichHoatReceipt), chuaKichHoatReceipt.statusUrl);
       csrf = await dangNhapLai(page, origin, operator);
       const batDau = Date.now();
       const mocHetHan = Math.floor(batDau / 1000) * 1000 + 240_000;
