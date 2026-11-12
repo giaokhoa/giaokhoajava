@@ -3,11 +3,11 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { PersonalClassesContent } from "@/app/(session)/personal/classes/personal-classes-content";
-import { requestAllPages, requestWorkspaces } from "@/lib/api-client";
+import { requestAllPages, requestWhenReady, requestWorkspaces } from "@/lib/api-client";
 
 vi.mock("@/lib/api-client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api-client")>();
-  return { ...actual, requestAllPages: vi.fn(), requestWorkspaces: vi.fn() };
+  return { ...actual, requestAllPages: vi.fn(), requestWhenReady: vi.fn(), requestWorkspaces: vi.fn() };
 });
 vi.mock("@/features/identity/session-provider", () => ({
   useSession: () => ({
@@ -54,6 +54,12 @@ it("personal hết gói: tạo lớp và thêm học sinh bị khóa, vẫn xem 
     }
     return [];
   });
+  vi.mocked(requestWhenReady).mockImplementation(async (path: string) => ({
+    kind: "data", status: 200,
+    data: path.endsWith("/classes/c1/courses")
+      ? { items: [{ id: "k1", classId: "c1", name: "Khóa cũ", subjects: [], version: 1 }] }
+      : { items: [] },
+  }));
 
   node = document.createElement("div");
   document.body.appendChild(node);
@@ -66,4 +72,7 @@ it("personal hết gói: tạo lớp và thêm học sinh bị khóa, vẫn xem 
   await act(async () => button("Lớp cũ").click());
   expect(button("Thêm học sinh").disabled).toBe(true);
   expect(button("Thu hồi khỏi lớp").disabled).toBe(false);
+  expect(node.querySelector<HTMLInputElement>("#rename-course-k1")?.disabled).toBe(true);
+  expect(button("Đổi tên khóa").disabled).toBe(true);
+  expect(button("Thu hồi khóa").disabled).toBe(false);
 });
