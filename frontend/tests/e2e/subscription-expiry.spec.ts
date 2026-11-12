@@ -610,6 +610,14 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
       // dạy học và giao bài, hết hạn ngay trong lúc các phiên vẫn mở.
       let csrf = await dangNhapLai(page, origin, operator);
       const { workspaceId } = await taoCenter(page, origin, csrf, owner.appId);
+      // Center vừa khởi tạo nhưng chưa xác nhận kỳ gói: chủ sở hữu không được mở rộng.
+      // Kiểm bằng phiên owner thật, không suy từ UI hoặc dấu mốc gói chưa có.
+      const csrfChuaKichHoat = await dangNhapLai(page, origin, owner);
+      const taoTruocKichHoat = await guiMutation(
+        page, origin, csrfChuaKichHoat, "POST",
+        `/api/workspaces/${workspaceId}/classes`, { name: `chua-kich-hoat-${randomUUID().slice(0, 8)}` });
+      expect(taoTruocKichHoat.status()).toBe(403);
+      csrf = await dangNhapLai(page, origin, operator);
       const batDau = Date.now();
       const mocHetHan = Math.floor(batDau / 1000) * 1000 + 240_000;
       await xacNhanGoiCuaSo(
@@ -751,6 +759,13 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
           `/api/workspaces/${workspaceId}/classes`, { name: `lop-sau-han-${randomUUID().slice(0, 8)}` });
         expect(taoLopSauHan.status()).toBe(403);
 
+        // Cùng phiên owner, giao diện trung tâm cũng phải báo chỉ đọc và vô hiệu
+        // hóa nút tạo lớp, không chỉ dựa vào API 403.
+        await page.goto(`${origin}/centers/${workspaceId}/classes`);
+        await expect(page.getByRole("alert").filter({ hasText: /gói của trung tâm đã hết hạn/i }))
+          .toBeVisible();
+        await expect(page.getByRole("button", { name: "Tạo lớp", exact: true })).toBeDisabled();
+
         // Gia hạn: operator xác nhận kỳ mới thì quyền tăng thêm mở lại cho người còn
         // phân công hiệu lực — owner tạo lớp được, giáo viên giao bài mới được.
         const csrfOperator = await dangNhapLai(page, origin, operator);
@@ -790,6 +805,13 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
 
       let csrf = await dangNhapLai(page, origin, owner);
       const personal = await layWorkspaceCaNhan(page, origin);
+      // Personal workspace chưa được xác nhận gói cũng phải chặn tạo lớp,
+      // khác với trường hợp gói đã được kích hoạt rồi mới hết hạn ở dưới.
+      expect(personal.subscription?.effective).toBeFalsy();
+      const taoTruocKichHoat = await guiMutation(
+        page, origin, csrf, "POST", `/api/workspaces/${personal.id}/classes`,
+        { name: `personal-chua-kich-hoat-${randomUUID().slice(0, 8)}` });
+      expect(taoTruocKichHoat.status()).toBe(403);
       const batDau = Date.now();
       const mocHetHan = Math.floor(batDau / 1000) * 1000 + 180_000;
       const csrfOperator = await dangNhapLai(page, origin, operator);

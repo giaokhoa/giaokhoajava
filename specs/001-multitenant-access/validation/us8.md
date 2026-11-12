@@ -15,6 +15,13 @@ Phần kiểm chứng dưới đây mô tả **lịch sử nghiệm thu trên `d
 - **Thay đổi kiểm thử ở PR #288:** tách `subscription-expiry.spec.ts` (hai ca dùng đồng hồ thật) sang project `chromium-expiry`, thêm project này vào cả `.github/workflows/ci.yml` và `verification.yml`. `chromium-core` loại trừ đúng file đó; `chromium-teaching-guardians` giữ nguyên. Kiểm tra bằng `playwright test --list`: 43 core + 13 teaching/guardians + 2 expiry = **58 ca**, không bỏ ca nào. `tsc --noEmit` đạt.
 - **Điều kiện bàn giao:** kiểm tra kết quả CI ba project sau khi đẩy bản sửa, review và xử lý toàn bộ finding *Must fix*. **Chưa đóng gate #95** khi ca cá nhân chưa có kết quả green trên cây mới. Phán quyết 7/7 bên dưới là đánh giá nghiệp vụ có điều kiện từ vòng trước, không thay thế lượt kiểm chứng này.
 
+### Đối chiếu bổ sung 2026-11-12 — sau PR #216, trước nghiệm thu cuối
+
+- CI `43075764316` trên SHA `3153e21`: **9/9 jobs thành công**; báo cáo `chromium-expiry` có **2 ca pass, 0 skipped**; báo cáo IT có **7 ca SubscriptionExpiryIT và 3 ca CompletionAfterExpiryIT pass**, không fail. Đây là kết quả **trước** các assertion bổ sung dưới đây.
+- PR #216 đã merge vào main (`2b34f880`) và mang theo `chromium-resources`. Khi ghép `main` mới vào PR #288, ba xung đột cấu hình đã được giải quyết theo hướng giữ **cả bốn project**: 43 core, 13 teaching/guardians, 6 resources, 2 expiry (64 ca), không vô hiệu hóa test nào.
+- Rà lại T088/#90 thấy hai điểm chưa khóa ở E2E: **trước khi operator kích hoạt** gói center/personal, tạo lớp phải trả 403; và giao diện center sau expiry phải hiển thị read-only, nút `Tạo lớp` không bấm được. Đã bổ sung assertion cùng actor/session thực tế trong `subscription-expiry.spec.ts`. **Chưa coi các assertion mới là pass trước khi CI head mới xanh.**
+- Ghi nhận cho T092/#94: trang personal/classes đang hiển thị cảnh báo hết hạn nhưng nút `Tạo lớp` còn chỉ `disabled={busy}` (không theo `planExpired`), dù backend từ chối; phải kiểm tra/sửa và nghiệm thu riêng ở #94, không tính UI cá nhân đã đạt theo bằng chứng T088.
+
 ## Kết quả theo scenario (spec.md User Story 8)
 
 | # | Kịch bản | Kết quả | Bằng chứng |
