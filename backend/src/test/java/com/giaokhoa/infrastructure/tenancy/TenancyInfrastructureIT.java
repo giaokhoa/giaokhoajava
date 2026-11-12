@@ -103,6 +103,11 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
             new TransactionTemplate(new DataSourceTransactionManager(migrationDataSource))
                     .executeWithoutResult(status -> {
                         raw.update(
+                                "DELETE FROM public.subscription_period WHERE workspace_id IN ("
+                                        + placeholders(createdWorkspaces.size())
+                                        + ")",
+                                createdWorkspaces.toArray());
+                        raw.update(
                                 "DELETE FROM workspace WHERE id IN ("
                                         + placeholders(createdWorkspaces.size())
                                         + ")",
@@ -152,7 +157,7 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
     }
 
     @Test
-    @DisplayName("Runner cấp được schema cho workspace chưa từng cấp (schema_name còn NULL)")
+    @DisplayName("Runner chỉ chuẩn bị schema mà không kích hoạt workspace chưa chuyển dữ kiện")
     void runnerProvisionsWorkspaceWithoutSchema() {
         UUID workspaceId = newWorkspace("runner-retry").workspaceId();
         assertNull(
@@ -170,12 +175,56 @@ class TenancyInfrastructureIT extends IntegrationEnvironment {
                         .findFirst()
                         .orElseThrow();
         assertTrue(own.success());
-        assertEquals(
-                TenantContext.schemaNameFor(workspaceId),
+        assertNull(
                 raw.queryForObject(
                         "SELECT schema_name FROM workspace WHERE id = ?",
                         String.class,
                         workspaceId));
+        assertEquals(
+                27L,
+                raw.queryForObject(
+                        "SELECT count(*) FROM pg_tables WHERE schemaname = ?",
+                        Long.class,
+                        TenantContext.schemaNameFor(workspaceId)));
+    }
+
+    @Test
+    @DisplayName(
+            "Kích hoạt schema rỗng khi workspace còn kỳ gói cũ phải fail-closed, dữ kiện không mất")
+    void rejectUnsafeCutoverWithLegacyData() {
+        ProbeWorkspace existing = newWorkspace("cutover-legacy");
+        UUID subscriptionId = UUID.randomUUID();
+        raw.update(
+                "INSERT INTO public.subscription_period (id,workspace_id,valid_from,expires_at,"
+                        + " confirmation_ref,confirmed_by,confirmed_at)"
+                        + " VALUES (?,?,now(),now() + interval '1 day',?,?,now())",
+                subscriptionId,
+                existing.workspaceId(),
+                "legacy-" + subscriptionId,
+                existing.userId());
+        String target = provisioner.prepareSchema(existing.workspaceId());
+        assertThrows(
+                IllegalStateException.class,
+                () -> provisioner.provisionSchema(existing.workspaceId()));
+        assertNull(
+                raw.queryForObject(
+                        "SELECT schema_name FROM workspace WHERE id = ?",
+                        String.class,
+                        existing.workspaceId()));
+        assertEquals(
+                1L,
+                raw.queryForObject(
+                        "SELECT count(*) FROM public.subscription_period WHERE id = ?",
+                        Long.class,
+                        subscriptionId));
+        assertEquals(
+                0L,
+                raw.queryForObject(
+                        "SELECT count(*) FROM " + target + ".subscription_period WHERE id = ?",
+                        Long.class,
+                        subscriptionId));
+        // Runner prepare-only đã được kiểm riêng tại runnerProvisionsWorkspaceWithoutSchema.
+        // Không chạy lại Flyway trên mọi tenant trong cùng fixture để tránh CI chậm vô ích.
     }
 
     @Test
