@@ -2,6 +2,7 @@ package com.giaokhoa.verification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.giaokhoa.support.IntegrationEnvironment;
 import com.giaokhoa.verification.model.SampleActivity;
@@ -59,8 +60,17 @@ class SamplePrimitivesSchemaIT extends IntegrationEnvironment {
                         dueAt,
                         2,
                         graph.periodId(),
-                        "ASSIGNED");
+                        "ASSIGNED",
+                        SampleActivity.CompletionPolicy.INTERRUPTIBLE);
         entityManager.persist(activity);
+        entityManager.flush();
+        assertEquals(
+                "INTERRUPTIBLE",
+                jdbc.queryForObject(
+                        "SELECT completion_policy FROM sample_activity WHERE id = ?",
+                        String.class,
+                        activity.getId()),
+                "Migration mới phải lưu rõ policy lịch sử mặc định trong PostgreSQL");
         SampleSubmission submission =
                 new SampleSubmission(
                         UUID.randomUUID(),

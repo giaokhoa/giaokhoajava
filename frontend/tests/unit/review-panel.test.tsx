@@ -84,8 +84,10 @@ describe("dựng payload sample action", () => {
       versionId: "v-1",
       dueAt: "2026-11-17T00:00:00.000Z",
       attemptLimit: "1",
+      completionPolicy: "GUARANTEED",
     });
     expect(assign.attemptLimit).toBe(1);
+    expect(assign.completionPolicy).toBe("GUARANTEED");
   });
 });
 

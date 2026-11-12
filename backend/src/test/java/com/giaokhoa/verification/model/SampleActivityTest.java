@@ -24,7 +24,8 @@ class SampleActivityTest {
                         dueAt,
                         1,
                         UUID.randomUUID(),
-                        "ASSIGNED");
+                        "ASSIGNED",
+                        SampleActivity.CompletionPolicy.INTERRUPTIBLE);
 
         assertTrue(activity.acceptsSubmissionAt(dueAt.minusNanos(1)));
         assertFalse(activity.acceptsSubmissionAt(dueAt));

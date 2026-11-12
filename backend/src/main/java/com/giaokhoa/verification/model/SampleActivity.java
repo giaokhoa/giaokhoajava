@@ -2,6 +2,8 @@ package com.giaokhoa.verification.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -14,6 +16,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 @Entity
 @Table(name = "sample_activity")
 public class SampleActivity {
+    public enum CompletionPolicy {
+        GUARANTEED,
+        INTERRUPTIBLE
+    }
 
     @Id
     @Column(name = "id", nullable = false)
@@ -49,6 +55,10 @@ public class SampleActivity {
     @Column(name = "state", nullable = false, length = 16)
     private String state;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "completion_policy", nullable = false, length = 16)
+    private CompletionPolicy completionPolicy;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -74,7 +84,8 @@ public class SampleActivity {
             Instant dueAt,
             int attemptLimit,
             UUID subscriptionPeriodId,
-            String state) {
+            String state,
+            CompletionPolicy completionPolicy) {
         this.id = id;
         this.workspaceId = workspaceId;
         this.courseSubjectId = courseSubjectId;
@@ -86,6 +97,7 @@ public class SampleActivity {
         this.attemptLimit = attemptLimit;
         this.subscriptionPeriodId = subscriptionPeriodId;
         this.state = state;
+        this.completionPolicy = completionPolicy;
     }
 
     public UUID getId() {
@@ -140,6 +152,10 @@ public class SampleActivity {
 
     public String getState() {
         return state;
+    }
+
+    public CompletionPolicy getCompletionPolicy() {
+        return completionPolicy;
     }
 
     public Instant getCreatedAt() {

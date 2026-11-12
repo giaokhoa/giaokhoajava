@@ -186,6 +186,7 @@ class SampleActionServiceTest {
                 mock(ResultPolicyProjector.class),
                 activityProjector,
                 mock(ResourcePolicyProjector.class),
+                mock(CompletionLicenseGuard.class),
                 mock(ResourceLibraryService.class),
                 mock(ResourceShareService.class),
                 mock(CorrectionService.class),
@@ -236,6 +237,7 @@ class SampleActionServiceTest {
                 null,
                 null,
                 null,
+                null,
                 null);
     }
 
@@ -266,7 +268,8 @@ class SampleActionServiceTest {
                 null,
                 null,
                 null,
-                STUDENT);
+                STUDENT,
+                null);
     }
 
     @SuppressWarnings("NullAway")
@@ -282,6 +285,7 @@ class SampleActionServiceTest {
                 OffsetDateTime.now(ZoneOffset.UTC).plusDays(14),
                 null,
                 ACTIVITY,
+                null,
                 null,
                 null,
                 null,

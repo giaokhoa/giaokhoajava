@@ -885,7 +885,8 @@ test("giao hoạt động bằng tài nguyên sai môn bị chặn, đúng môn 
     const hanNop = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     await dangNhapLai(page, origin, nguon.tacGia);
-    // Đối chứng: giao vào môn-khóa đúng môn của tài nguyên thì được phép.
+    // Nguồn thuộc chính workspace và không có provenance grant: cho phép GUARANTEED.
+    // Đây là đường browser thực, không chỉ assert helper hoặc mẫu DTO.
     await chayHanhDong(page, "ASSIGN_ACTIVITY", {
       workspaceId: nguon.workspaceId,
       courseSubjectId: monDung.id,
@@ -893,6 +894,7 @@ test("giao hoạt động bằng tài nguyên sai môn bị chặn, đúng môn 
       versionId: nguon.taiNguyen.versionId,
       dueAt: hanNop,
       attemptLimit: "1",
+      completionPolicy: "GUARANTEED",
     });
     await choHanhDongThanhCong(page);
 

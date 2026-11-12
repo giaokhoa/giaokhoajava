@@ -22,7 +22,7 @@ import {
   sampleActionExpiryBehavior,
 } from "@/features/subscriptions/subscription-state";
 
-type FieldKind = "text" | "number" | "mode";
+type FieldKind = "text" | "number" | "mode" | "completion-policy";
 
 export type SampleActionSpec = {
   action: string;
@@ -65,6 +65,7 @@ export const SAMPLE_ACTION_SPECS: SampleActionSpec[] = [
       text("versionId"),
       text("dueAt"),
       { name: "attemptLimit", kind: "number" },
+      { name: "completionPolicy", kind: "completion-policy" },
     ],
   },
   { action: "SUBMIT_ACTIVITY", fields: [text("activityId"), text("contentStub")] },
@@ -193,7 +194,7 @@ function contentText(data: unknown): string {
 
 function SampleActionForm() {
   const [action, setAction] = useState(SAMPLE_ACTION_SPECS[0].action);
-  const [values, setValues] = useState<Record<string, string>>({ mode: "REVOCABLE" });
+  const [values, setValues] = useState<Record<string, string>>({ mode: "REVOCABLE", completionPolicy: "INTERRUPTIBLE" });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -393,6 +394,16 @@ function SampleActionForm() {
             <option value="REVOCABLE">REVOCABLE</option>
             <option value="LONG_TERM">LONG_TERM</option>
           </select>
+        ) : field.kind === "completion-policy" ? (
+          <select
+            id={`field-${field.name}`}
+            name={field.name}
+            value={values[field.name] ?? "INTERRUPTIBLE"}
+            onChange={(event) => setField(field.name, event.target.value)}
+          >
+            <option value="INTERRUPTIBLE">INTERRUPTIBLE — có thể gián đoạn khi nguồn bị thu hồi</option>
+            <option value="GUARANTEED">GUARANTEED — chỉ nguồn sở hữu hoặc LONG_TERM không hết hạn</option>
+          </select>
         ) : (
           <input
             id={`field-${field.name}`}
@@ -405,6 +416,14 @@ function SampleActionForm() {
       </div>
     ))}
 
+    {action === "ASSIGN_ACTIVITY" ? (
+      <p>
+        INTERRUPTIBLE có thể bị gián đoạn khi nguồn/license bị thu hồi, nhưng không xóa
+        bài đã nộp hoặc kết quả. GUARANTEED yêu cầu mọi thành phần có nguồn sở hữu
+        hoặc LONG_TERM không có thời điểm hết hạn; vẫn chịu các điều kiện danh tính,
+        ghi danh, phân công, hạn nộp và lượt làm.
+      </p>
+    ) : null}
     <button className="action-button" type="submit" disabled={busy}>
       {busy ? "Đang thực hiện…" : "Thực hiện"}
     </button>
