@@ -80,7 +80,7 @@ async function teachingFixture(page: Page, paginated = false) {
   };
 }
 
-test("phân công lại sau thu hồi tạo attempt mới, giữ pending tới khi operation thành công", async ({ page }) => {
+test("phân công lại sau thu hồi tạo attempt mới, giữ pending tới khi operation thành công", { tag: ["@layer-ui", "@flow-QL-03", "@role-center-owner"] }, async ({ page }) => {
   const fixture = await teachingFixture(page);
   await page.getByRole("button", { name: "Review Class", exact: true }).click();
   await page.getByRole("button", { name: "Ghi danh và phân công", exact: true }).click();
@@ -106,7 +106,7 @@ test("phân công lại sau thu hồi tạo attempt mới, giữ pending tới k
   expect(fixture.keys[1]).not.toBe(fixture.keys[0]);
 });
 
-test("quản lý ở trang hai vẫn quản trị và thấy đủ roster vượt 20 học sinh", async ({ page }) => {
+test("quản lý ở trang hai vẫn quản trị và thấy đủ roster vượt 20 học sinh", { tag: ["@layer-ui", "@flow-QL-03", "@role-center-manager"] }, async ({ page }) => {
   const fixture = await teachingFixture(page, true);
   await expect(page.getByRole("button", { name: "Tạo lớp", exact: true })).toBeVisible();
   // React Strict Mode dev có thể mount lại; mỗi lượt vẫn phải đọc cả hai trang.
@@ -115,7 +115,7 @@ test("quản lý ở trang hai vẫn quản trị và thấy đủ roster vượ
   await expect(page.getByRole("listitem").filter({ hasText: "student-20" })).toBeVisible();
 });
 
-test("retry lỗi mạng giữ key, operation đã FAILED kết thúc attempt", async ({ page }) => {
+test("retry lỗi mạng giữ key, operation đã FAILED kết thúc attempt", { tag: ["@layer-ui", "@flow-QL-02", "@role-center-owner"] }, async ({ page }) => {
   await teachingFixture(page);
   const keys: string[] = [];
   await page.route("**/api/workspaces/w/classes", async (route) => {

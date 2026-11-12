@@ -906,7 +906,7 @@ async function lienKetDaDuyet(
     await layDanhSachLienKet(page, origin, setup.workspaceId), setup.hocSinhX.userId);
 }
 
-test("fixture API US4 dựng kết quả thật mà không phụ thuộc workflow US7", async ({ page }) => {
+test("fixture API US4 dựng kết quả thật mà không phụ thuộc workflow US7", { tag: ["@layer-fixture", "@flow-PH-02", "@role-parent"] }, async ({ page }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
@@ -929,7 +929,7 @@ test("fixture API US4 dựng kết quả thật mà không phụ thuộc workflo
   }
 });
 
-test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã công bố của đúng con", async ({
+test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã công bố của đúng con", { tag: ["@layer-e2e", "@flow-PH-01", "@flow-QL-04", "@flow-PH-02", "@role-parent", "@role-center-manager"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -1006,7 +1006,7 @@ test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã c
   }
 });
 
-test("đổi sid hoặc wid: parent không lấy được kết quả của con khác hay ở center khác", async ({
+test("đổi sid hoặc wid: parent không lấy được kết quả của con khác hay ở center khác", { tag: ["@layer-e2e", "@flow-PH-02", "@role-parent"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -1049,7 +1049,7 @@ test("đổi sid hoặc wid: parent không lấy được kết quả của con 
   }
 });
 
-test("chủ nhiệm không có vai trò quản lý thì bị từ chối khi duyệt liên kết", async ({
+test("chủ nhiệm không có vai trò quản lý thì bị từ chối khi duyệt liên kết", { tag: ["@layer-e2e", "@flow-QL-04", "@flow-CN-01", "@role-homeroom"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -1091,7 +1091,7 @@ test("chủ nhiệm không có vai trò quản lý thì bị từ chối khi duy
   }
 });
 
-test("gỡ liên kết: phiên parent cũ mất quyền xem và back navigation không hiện dữ liệu cũ", async ({
+test("gỡ liên kết: phiên parent cũ mất quyền xem và back navigation không hiện dữ liệu cũ", { tag: ["@layer-e2e", "@flow-QL-05", "@flow-PH-02", "@role-center-manager", "@role-parent"] }, async ({
   page,
   browser,
 }) => {

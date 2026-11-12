@@ -1,7 +1,7 @@
 {
   "repository": "giaokhoa/giaokhoa",
   "feature": "001-multitenant-access",
-  "verified_at": "2026-11-08T23:58:43.152933+00:00",
+  "verified_at": "2026-11-12T02:51:16.193329+00:00",
   "parent": {
     "number": 2,
     "url": "https://github.com/giaokhoa/giaokhoa/issues/2",
@@ -11,13 +11,10 @@
   "dependency_edges": 136,
   "parallel_candidates": 40,
   "ready_tasks": [
-    "T054",
-    "T055",
-    "T056",
-    "T057",
-    "T061"
+    "T093",
+    "T099"
   ],
-  "source_sha256": "f1a06fe22b1d1a776d5de55ebc574ab32b47849a424dc1a255561b3c78e42e67",
+  "source_sha256": "89a630d5392bb2ccd55fd4d03ca7dc420957648bad7f7f685797f4da035d17f4",
   "tasks": {
     "T001": {
       "number": 3,
@@ -916,7 +913,7 @@
           "number": 55
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T055": {
       "number": 57,
@@ -931,7 +928,7 @@
           "number": 55
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T056": {
       "number": 58,
@@ -946,7 +943,7 @@
           "number": 55
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T057": {
       "number": 59,
@@ -961,7 +958,7 @@
           "number": 55
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T058": {
       "number": 60,
@@ -976,7 +973,7 @@
           "number": 58
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T059": {
       "number": 61,
@@ -991,7 +988,7 @@
           "number": 59
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T060": {
       "number": 62,
@@ -1006,7 +1003,7 @@
           "number": 60
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T061": {
       "number": 63,
@@ -1021,7 +1018,7 @@
           "number": 55
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T062": {
       "number": 64,
@@ -1064,7 +1061,7 @@
           "number": 63
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T063": {
       "number": 65,
@@ -1079,7 +1076,7 @@
           "number": 64
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T064": {
       "number": 66,
@@ -1094,7 +1091,7 @@
           "number": 64
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T065": {
       "number": 67,
@@ -1113,7 +1110,7 @@
           "number": 66
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T066": {
       "number": 68,
@@ -1128,7 +1125,7 @@
           "number": 67
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T067": {
       "number": 69,
@@ -1143,7 +1140,7 @@
           "number": 68
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T068": {
       "number": 70,
@@ -1158,7 +1155,7 @@
           "number": 69
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T069": {
       "number": 71,
@@ -1173,7 +1170,7 @@
           "number": 70
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T070": {
       "number": 72,
@@ -1188,7 +1185,7 @@
           "number": 70
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T071": {
       "number": 73,
@@ -1207,7 +1204,7 @@
           "number": 72
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T072": {
       "number": 74,
@@ -1222,7 +1219,7 @@
           "number": 73
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T073": {
       "number": 75,
@@ -1237,7 +1234,7 @@
           "number": 72
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T074": {
       "number": 76,
@@ -1256,7 +1253,7 @@
           "number": 75
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T075": {
       "number": 77,
@@ -1271,7 +1268,7 @@
           "number": 76
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T076": {
       "number": 78,
@@ -1286,7 +1283,7 @@
           "number": 76
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T077": {
       "number": 79,
@@ -1305,7 +1302,7 @@
           "number": 78
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T078": {
       "number": 80,
@@ -1320,7 +1317,7 @@
           "number": 79
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T079": {
       "number": 81,
@@ -1335,7 +1332,7 @@
           "number": 80
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T080": {
       "number": 82,
@@ -1350,7 +1347,7 @@
           "number": 81
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T081": {
       "number": 83,
@@ -1365,7 +1362,7 @@
           "number": 82
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T082": {
       "number": 84,
@@ -1380,7 +1377,7 @@
           "number": 83
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T083": {
       "number": 85,
@@ -1395,7 +1392,7 @@
           "number": 84
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T084": {
       "number": 86,
@@ -1410,7 +1407,7 @@
           "number": 85
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T085": {
       "number": 87,
@@ -1425,7 +1422,7 @@
           "number": 78
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T086": {
       "number": 88,
@@ -1444,7 +1441,7 @@
           "number": 87
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T087": {
       "number": 89,
@@ -1459,7 +1456,7 @@
           "number": 88
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T088": {
       "number": 90,
@@ -1474,7 +1471,7 @@
           "number": 88
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T089": {
       "number": 91,
@@ -1493,7 +1490,7 @@
           "number": 90
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T090": {
       "number": 92,
@@ -1508,7 +1505,7 @@
           "number": 91
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T091": {
       "number": 93,
@@ -1523,7 +1520,7 @@
           "number": 92
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T092": {
       "number": 94,
@@ -1538,7 +1535,7 @@
           "number": 90
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T093": {
       "number": 95,
@@ -1617,7 +1614,7 @@
           "number": 98
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T098": {
       "number": 100,
@@ -1632,7 +1629,7 @@
           "number": 99
         }
       ],
-      "state": "OPEN"
+      "state": "CLOSED"
     },
     "T099": {
       "number": 101,
@@ -1652,5 +1649,216 @@
   },
   "ready_filter_url": "https://github.com/giaokhoa/giaokhoa/issues?q=is%3Aissue+is%3Aopen+label%3Atask+label%3A%22feature%3Amultitenant-access%22+-is%3Ablocked",
   "ready_filter_verified": true,
-  "notes": "Snapshot trạng thái issue và native Blocked by tại verified_at; không phải bằng chứng sản phẩm đạt. ready_tasks chỉ gồm task mở không còn blocker native mở. Tiền đề artifact có thể đã sẵn sàng ở PR/SHA dù issue còn mở; xem tasks.md, implementation-prompt.md và parent #2 để chọn phần độc lập. Gate vẫn cần nghiệm thu thật."
+  "notes": "Native DAG và source_sha256 từ snapshot verified_at ban đầu (trước khi #94 đóng); riêng trạng thái T092 và ready_tasks được xác minh lại sau merge PR #302 ngày 12/11/2026. Không phải bằng chứng sản phẩm đạt. ready_tasks chỉ gồm task mở không còn blocker native mở. Tiền đề artifact có thể đã sẵn sàng ở PR/SHA dù issue còn mở; xem tasks.md, implementation-prompt.md và parent #2 để chọn phần độc lập. Gate vẫn cần nghiệm thu thật.",
+  "verification_source": "GitHub GraphQL: parent #2 subIssues + blockedBy; 99 native tasks, 136 edges; state snapshot only, not acceptance.",
+  "code_base_sha": "f3d2e618be74f574c03d8301a04d9a0427bdbc98",
+  "status_refresh": {"checked_on": "2026-11-12", "source": "gh issue view 94/95, gh pr view 302", "changed_issue": 94, "state": "CLOSED", "merge_commit": "6be8371b2f56d44ebe280f4b6df2f8d40a325e64"},
+  "execution_gate": {
+    "task": "T093",
+    "number": 95,
+    "state": "OPEN",
+    "native_ready_but_gate_blocked": [
+      "T099"
+    ],
+    "note": "T092/#94 CLOSED sau PR #302 MERGED ở 6be8371; T093/#95 OPEN cần nghiệm thu lại trên main mới. T099/#101 chưa được triển khai nghiệm thu cuối dù T098/#100 đã CLOSED. Đọc parent và hội tụ trước phân công."
+  },
+  "local_convergence": {
+    "date": "2026-11-12",
+    "phase": 12,
+    "published_to_github": false,
+    "native_dependencies_changed": false,
+    "note": "Backlog cục bộ từ speckit-converge; chưa được giao implementation, chưa có native issue/edge. Đồng bộ GitHub/parent trước khi chọn việc; không cộng vào child_count/dependency_edges.",
+    "task_count": 15,
+    "tasks": {
+      "T100": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F01",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-044",
+          "US8.2"
+        ],
+        "flow_refs": [
+          "HS-02"
+        ]
+      },
+      "T101": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F02",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-038",
+          "US7.11",
+          "US8.4"
+        ],
+        "flow_refs": [
+          "GV-03",
+          "HS-02"
+        ]
+      },
+      "T102": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F03",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-006"
+        ],
+        "flow_refs": []
+      },
+      "T103": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F04",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-033",
+          "US7.2"
+        ],
+        "flow_refs": [
+          "GV-01"
+        ]
+      },
+      "T104": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F05",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-021",
+          "US3.9"
+        ],
+        "flow_refs": [
+          "HS-03",
+          "QL-06"
+        ]
+      },
+      "T105": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F05",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-055",
+          "US3.9"
+        ],
+        "flow_refs": [
+          "HS-03",
+          "QL-06"
+        ]
+      },
+      "T106": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F06",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-056",
+          "NV-02",
+          "US4.6"
+        ],
+        "flow_refs": [
+          "QL-04"
+        ]
+      },
+      "T107": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F07",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-057",
+          "NV-04",
+          "US7.10"
+        ],
+        "flow_refs": [
+          "GV-02"
+        ]
+      },
+      "T108": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F08",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-017",
+          "SC-003"
+        ],
+        "flow_refs": [
+          "CN-01",
+          "GV-03",
+          "HS-02",
+          "QT-03"
+        ]
+      },
+      "T109": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F09",
+        "severity": "HIGH",
+        "source_refs": [
+          "FR-048"
+        ],
+        "flow_refs": []
+      },
+      "T110": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F10",
+        "severity": "MEDIUM",
+        "source_refs": [
+          "FR-048"
+        ],
+        "flow_refs": []
+      },
+      "T111": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F11",
+        "severity": "MEDIUM",
+        "source_refs": [
+          "FR-053"
+        ],
+        "flow_refs": []
+      },
+      "T112": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F12",
+        "severity": "MEDIUM",
+        "source_refs": [],
+        "flow_refs": []
+      },
+      "T113": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F13",
+        "severity": "MEDIUM",
+        "source_refs": [
+          "FR-044",
+          "NV-05",
+          "US8.8"
+        ],
+        "flow_refs": [
+          "GV-03",
+          "QL-03",
+          "QT-02"
+        ]
+      },
+      "T114": {
+        "github_issue": null,
+        "state": "PLANNED",
+        "finding": "F14",
+        "severity": "MEDIUM",
+        "source_refs": [
+          "FR-054",
+          "NV-02",
+          "SC-001"
+        ],
+        "flow_refs": []
+      }
+    }
+  }
 }

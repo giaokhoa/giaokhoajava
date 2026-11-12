@@ -59,6 +59,8 @@ lệnh này trên mọi pull request.
 
 | Tài liệu | Nội dung |
 | --- | --- |
+| [Luồng nghiệp vụ theo vai trò](docs/luong-nghiep-vu-theo-vai-tro.md) | Ai làm việc gì, 22 luồng sử dụng, giới hạn từng vai, khung viết hướng dẫn và chọn E2E theo flow/role |
+| [Đối chiếu spec với code ngày 12/11/2026](docs/doi-chieu-spec-code-20261112.md) | Kết luận các điểm lệch trong docs, quyết định đã chốt, bằng chứng và task hội tụ còn mở |
 | [specs/001-multitenant-access/quickstart.md](specs/001-multitenant-access/quickstart.md) | Chạy DEV/TEST, seed, vận hành (reconcile, emergency console, khôi phục không email, backup DEV/TEST), kịch bản nghiệm thu |
 | [backend/README.md](backend/README.md) | Cổng chất lượng backend, runbook stack TEST, native Keycloak, khôi phục tài khoản không email |
 | [infra/keycloak/README.md](infra/keycloak/README.md) | Bootstrap/reconcile realm, kiểm chứng native, giao thức emergency console |

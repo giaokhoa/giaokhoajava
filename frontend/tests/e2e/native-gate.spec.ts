@@ -32,7 +32,7 @@ const SECRET_MARKERS = [
   "password",
 ];
 
-test("chưa đăng nhập thì bị chuyển tới đăng nhập, không nhận trạng thái operation", async ({
+test("chưa đăng nhập thì bị chuyển tới đăng nhập, không nhận trạng thái operation", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -44,7 +44,7 @@ test("chưa đăng nhập thì bị chuyển tới đăng nhập, không nhận 
   expect(response.headers()["location"]).toContain("/oauth2/authorization/keycloak");
 });
 
-test("đăng nhập thật qua Keycloak: identity chưa có thư mục thì fail-closed, không lộ secret", async ({
+test("đăng nhập thật qua Keycloak: identity chưa có thư mục thì fail-closed, không lộ secret", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();

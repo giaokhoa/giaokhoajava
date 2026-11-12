@@ -1,4 +1,23 @@
-# Ma trận nghiệm thu T094 — 56 acceptance scenarios, T1–T16, FR-001–FR-054
+# Ma trận nghiệm thu T094 — bản gốc và phần bổ sung 12/11/2026
+
+## Phạm vi hiện hành — chưa nghiệm thu toàn bộ
+
+Spec hiện có 57 FR và 61 scenarios: 56 gốc + US3.9/US4.6/US7.10/US7.11/US8.8. Các kết quả bên dưới là lịch sử trên revision đã ghi, không phải phán quyết cho code hiện tại hoặc phần bổ sung. Parent #2 vẫn giữ #95 và #96 OPEN tại snapshot `f3d2e618`. [Báo cáo hội tụ](../../../docs/doi-chieu-spec-code-20261112.md) và [bản đồ luồng theo vai](../../../docs/luong-nghiep-vu-theo-vai-tro.md) chỉ rõ actor, đường chạy và khoảng hở.
+
+| Scenario / luồng | Yêu cầu | Bằng chứng cần có | Hiện trạng |
+| --- | --- | --- | --- |
+| US3.9; QL-06/HS-03 | FR-055 | Một học sinh × một khóa có ít nhất ba môn: complete chuyển đồng thời mọi enrollment ACTIVE, chặn nhận/nộp tất cả môn; 428/409 với tập/version sai không cập nhật phần nào, cạnh tranh thêm ghi danh không để sót; giữ published history của chính mình, không mang quyền sang khóa/lớp khác; khóa/revoke chặn bằng phiên cũ; center/personal | Chưa có code/test; T104/T105 |
+| US4.6; QL-04/PH-01 | FR-056 | Thiếu xác minh không APPROVE; có tham chiếu/người/thời điểm hợp lệ; sai vai vẫn bị chặn; không lộ giấy tờ/tham chiếu qua result DTO | Chưa có code/test; T106 |
+| US7.10; GV-02 | FR-057 | GUARANTEED từ chối mọi thành phần REVOCABLE và LONG_TERM hữu hạn: test `expiresAt` trước/đúng/sau `dueAt` (hạn nộp không bảo đảm chấm/công bố). Chấp nhận nguồn sở hữu/LONG_TERM không hết hạn khi mọi gate khác đủ; không bỏ kiểm license closure | Chưa có code/test; T107 |
+| US7.11; GV-03/HS-02 | FR-038/045/057 | Thu hồi trong lúc làm và sau nộp/trước chấm; deny thao tác cần nguồn, giữ lịch sử và báo lý do | Thiếu gate license completion; T101/T107 |
+| US8.8; GV-03/QT-02/QL-03 | FR-044/046 | Giáo viên cuối nghỉ mất quyền; hết gói không phân công người thay; gia hạn rồi phân công mới, không phục hồi người cũ | Backend có giới hạn gói, thiếu flow/giải thích/E2E; T113 |
+| US8.2/4; HS-02 | FR-044 | Hạn/lượt giữ đúng cả trước/sau expiry; nộp quá hạn bị chặn | Chưa kiểm due_at trên đường nộp; không giữ kết luận đạt cho điều kiện này, T100 |
+| US7.2; GV-01 | FR-034 | Bên nhận mở thông báo của mình và chủ động nhận replacement, không chỉ source thấy response phát hành | Chưa có đường đọc thông báo bên nhận; T103 |
+| Xuyên suốt; QL-02/03/04/05 | plan Storage/R9; FR-006 | Hành vi thật sau kích hoạt schema tenant với dữ kiện chuyển đúng, runtime role, revoke và notification | Plumbing có test nhưng chưa thay bằng chứng cutover nghiệp vụ; T102/T103 |
+
+64 ca Playwright hiện có chỉ là số đăng ký: 56 app E2E, 5 UI, 2 protocol, 1 fixture. Tag flow/role cho phép chọn đúng ca, không làm các ô thiếu bên trên tự đạt. QT-03 operator recovery mới có UI API giả; CN-01 chưa đủ giao/track và phủ định chấm/đáp án; GV-03/HS-02 cần flow độc lập gói với đối chứng sai môn/người học. T108 bổ sung bằng chứng, giữ các assertion riêng của transaction/HTTP/session/browser.
+
+## Ma trận gốc 56 scenarios trên revision lịch sử
 
 - **Revision nghiệm thu:** `main` `59137da4223268efbe17bb07ebbddd7084eac8a0`, tree
   `72006a35a4b4c8536261864916f8c239a22dcb9e`. Tree này **trùng byte-for-byte** với tree của

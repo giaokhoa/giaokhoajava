@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("trang chủ hiển thị liên kết đăng nhập", async ({ page }) => {
+test("trang chủ hiển thị liên kết đăng nhập", { tag: ["@layer-ui", "@flow-TK-01", "@role-user"] }, async ({ page }) => {
   await page.goto("/");
 
   await expect(

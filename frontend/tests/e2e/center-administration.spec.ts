@@ -402,7 +402,7 @@ async function kiemTraMatKhauTam(
   }
 }
 
-test("operator tạo center qua giao diện platform: thao tác hoàn tất trên UI, center có trong danh sách platform", async ({
+test("operator tạo center qua giao diện platform: thao tác hoàn tất trên UI, center có trong danh sách platform", { tag: ["@layer-e2e", "@flow-QT-01", "@role-platform-operator", "@role-center-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -442,7 +442,7 @@ test("operator tạo center qua giao diện platform: thao tác hoàn tất trê
   }
 });
 
-test("operator xác nhận kỳ/gói: subscription 202 rồi poll tới SUCCEEDED, workspace có gói hiệu lực", async ({
+test("operator xác nhận kỳ/gói: subscription 202 rồi poll tới SUCCEEDED, workspace có gói hiệu lực", { tag: ["@layer-e2e", "@flow-QT-02", "@role-platform-operator"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -479,7 +479,7 @@ test("operator xác nhận kỳ/gói: subscription 202 rồi poll tới SUCCEEDE
   }
 });
 
-test("owner bổ nhiệm manager: PUT roles 202 rồi poll, danh sách thành viên ghi MANAGER", async ({
+test("owner bổ nhiệm manager: PUT roles 202 rồi poll, danh sách thành viên ghi MANAGER", { tag: ["@layer-e2e", "@flow-CSH-01", "@role-center-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -518,7 +518,7 @@ test("owner bổ nhiệm manager: PUT roles 202 rồi poll, danh sách thành vi
   }
 });
 
-test("manager mời thành viên: invite 202; cấm mời OWNER; manager không cấp được MANAGER", async ({
+test("manager mời thành viên: invite 202; cấm mời OWNER; manager không cấp được MANAGER", { tag: ["@layer-e2e", "@flow-QL-01", "@role-center-manager"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -563,7 +563,7 @@ test("manager mời thành viên: invite 202; cấm mời OWNER; manager không 
   }
 });
 
-test("manager cấp student: handoff chỉ ở response CREATE; poll/list/retry không lộ mật khẩu tạm", async ({
+test("manager cấp student: handoff chỉ ở response CREATE; poll/list/retry không lộ mật khẩu tạm", { tag: ["@layer-e2e", "@flow-QL-01", "@role-center-manager"] }, async ({
   page,
   browser,
 }) => {
@@ -609,7 +609,7 @@ test("manager cấp student: handoff chỉ ở response CREATE; poll/list/retry 
   }
 });
 
-test("username trùng không chiếm user đã có: cấp lại trả 409, mật khẩu tạm cũ còn dùng được", async ({
+test("username trùng không chiếm user đã có: cấp lại trả 409, mật khẩu tạm cũ còn dùng được", { tag: ["@layer-e2e", "@flow-QL-01", "@role-center-manager"] }, async ({
   page,
   browser,
 }) => {
@@ -638,7 +638,7 @@ test("username trùng không chiếm user đã có: cấp lại trả 409, mật
   }
 });
 
-test("teacher không tạo được lớp center dù đã có gói personal", async ({ page }) => {
+test("teacher không tạo được lớp center dù đã có gói personal", { tag: ["@layer-e2e", "@flow-QL-02", "@role-subject-teacher"] }, async ({ page }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
@@ -671,7 +671,7 @@ test("teacher không tạo được lớp center dù đã có gói personal", as
   }
 });
 
-test("giao diện quản trị: trang members hiển thị thành viên và không lộ mật khẩu tạm; trang platform liệt kê center", async ({
+test("giao diện quản trị: trang members hiển thị thành viên và không lộ mật khẩu tạm; trang platform liệt kê center", { tag: ["@layer-e2e", "@flow-QL-01", "@flow-QT-01", "@role-center-owner", "@role-platform-operator"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);

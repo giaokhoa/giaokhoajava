@@ -639,7 +639,7 @@ async function dungCenterLopKhoa(
   return { ...setup, lopId, tenLop, khoaId, tenKhoa, monKhoa };
 }
 
-test("owner tạo lớp L1 và khóa K ba môn qua giao diện lớp học: thao tác hoàn tất trên UI, danh sách hiện đủ", async ({
+test("owner tạo lớp L1 và khóa K ba môn qua giao diện lớp học: thao tác hoàn tất trên UI, danh sách hiện đủ", { tag: ["@layer-e2e", "@flow-QL-02", "@role-center-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -692,7 +692,7 @@ test("owner tạo lớp L1 và khóa K ba môn qua giao diện lớp học: thao
   }
 });
 
-test("manager tạo lớp L2; ghi danh chọn môn: học sinh chỉ có trong roster môn đã chọn", async ({
+test("manager tạo lớp L2; ghi danh chọn môn: học sinh chỉ có trong roster môn đã chọn", { tag: ["@layer-e2e", "@flow-QL-02", "@flow-QL-03", "@role-center-manager"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -740,7 +740,7 @@ test("manager tạo lớp L2; ghi danh chọn môn: học sinh chỉ có trong r
   }
 });
 
-test("thêm môn vào khóa sau không tự ghi danh/phân công", async ({ page }) => {
+test("thêm môn vào khóa sau không tự ghi danh/phân công", { tag: ["@layer-e2e", "@flow-QL-02", "@flow-QL-03", "@role-center-manager", "@role-subject-teacher"] }, async ({ page }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
@@ -796,7 +796,7 @@ test("thêm môn vào khóa sau không tự ghi danh/phân công", async ({ page
   }
 });
 
-test("nhiều giáo viên cùng môn: cả hai đều thấy roster môn, giáo viên môn khác thì 403", async ({
+test("nhiều giáo viên cùng môn: cả hai đều thấy roster môn, giáo viên môn khác thì 403", { tag: ["@layer-e2e", "@flow-QL-03", "@role-center-manager", "@role-subject-teacher"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -849,7 +849,7 @@ test("nhiều giáo viên cùng môn: cả hai đều thấy roster môn, giáo 
   }
 });
 
-test("chủ nhiệm: thấy roster lớp, không được phân công giáo viên hay tạo lớp", async ({
+test("chủ nhiệm: thấy roster lớp, không được phân công giáo viên hay tạo lớp", { tag: ["@layer-e2e", "@flow-CN-01", "@flow-QL-03", "@flow-QL-02", "@role-homeroom"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -883,7 +883,7 @@ test("chủ nhiệm: thấy roster lớp, không được phân công giáo viê
   }
 });
 
-test("actor chuyển lớp/môn không lộ dữ liệu: giáo viên L1 và học sinh L1 không thấy L2", async ({
+test("actor chuyển lớp/môn không lộ dữ liệu: giáo viên L1 và học sinh L1 không thấy L2", { tag: ["@layer-e2e", "@flow-QL-03", "@flow-HS-02", "@role-subject-teacher", "@role-student"] }, async ({
   page,
   browser,
 }) => {
@@ -957,7 +957,7 @@ test("actor chuyển lớp/môn không lộ dữ liệu: giáo viên L1 và họ
   }
 });
 
-test("ghi danh chéo lớp và chéo workspace bị từ chối 400", async ({ page }) => {
+test("ghi danh chéo lớp và chéo workspace bị từ chối 400", { tag: ["@layer-e2e", "@flow-QL-03", "@role-center-manager"] }, async ({ page }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();
@@ -1010,7 +1010,7 @@ test("ghi danh chéo lớp và chéo workspace bị từ chối 400", async ({ p
   }
 });
 
-test("giao diện quản trị: trang classes hiển thị lớp và khóa", async ({ page }) => {
+test("giao diện quản trị: trang classes hiển thị lớp và khóa", { tag: ["@layer-e2e", "@flow-QL-02", "@role-center-manager"] }, async ({ page }) => {
   test.setTimeout(HAN_DUNG_TEST);
   const origin = gateOrigin();
   const env = new TestEnvironment();

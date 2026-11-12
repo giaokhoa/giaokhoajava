@@ -12,7 +12,7 @@ import { TestEnvironment } from "./support/test-environment";
 // code/PKCE bằng HTTP client của test; Mailpit qua fixture tương đương) và gỡ
 // file khỏi tests/e2e trong cùng một thay đổi.
 
-test("Keycloak thật cấp Authorization Code + PKCE và đổi code lấy token", async ({ page }) => {
+test("Keycloak thật cấp Authorization Code + PKCE và đổi code lấy token", { tag: ["@layer-protocol", "@flow-TK-01", "@role-user"] }, async ({ page }) => {
   const env = new TestEnvironment();
   const user = await env.createUser();
   try {
@@ -22,7 +22,7 @@ test("Keycloak thật cấp Authorization Code + PKCE và đổi code lấy toke
   }
 });
 
-test("Mailpit nhận email xác minh từ realm TEST", async () => {
+test("Mailpit nhận email xác minh từ realm TEST", { tag: ["@layer-protocol", "@flow-TK-01", "@role-user"] }, async () => {
   const env = new TestEnvironment();
   const user = await env.createUser(false);
   let message: Awaited<ReturnType<TestEnvironment["waitForEmail"]>> | undefined;
