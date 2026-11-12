@@ -593,7 +593,7 @@ VALUES ('${resultId}', ${literalSql(workspaceId)}, ${literalSql(submissionId)},
 }
 
 test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
-  test("Center hết hạn khi phiên còn mở: cookie cũ vẫn nộp/chấm/công bố được bài đã giao, tăng thêm bị chặn, gia hạn mở lại", async ({ page }) => {
+  test("Center hết hạn khi phiên còn mở: cookie cũ vẫn nộp/chấm/công bố được bài đã giao, tăng thêm bị chặn, gia hạn mở lại", { tag: ["@layer-e2e", "@flow-QT-02", "@flow-GV-03", "@flow-HS-02", "@flow-PH-02", "@flow-QL-05", "@role-platform-operator", "@role-center-manager", "@role-subject-teacher", "@role-student", "@role-parent"] }, async ({ page }) => {
     test.setTimeout(HAN_DUNG_HET_HAN);
     const origin = gateOrigin();
     void frontendOrigin;
@@ -797,7 +797,7 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
     }
   });
 
-  test("Gói cá nhân hết hạn: chủ lớp giữ phiên cũ vẫn đọc được, tạo mới bị chặn tới khi operator gia hạn", async ({ page }) => {
+  test("Gói cá nhân hết hạn: chủ lớp giữ phiên cũ vẫn đọc được, tạo mới bị chặn tới khi operator gia hạn", { tag: ["@layer-e2e", "@flow-QT-02", "@flow-CNH-01", "@role-platform-operator", "@role-personal-owner"] }, async ({ page }) => {
     test.setTimeout(HAN_DUNG_CA_NHAN);
     const origin = gateOrigin();
     const env = new TestEnvironment();

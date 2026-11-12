@@ -285,6 +285,12 @@ bại phải nêu cặp quyền/dữ kiện cụ thể, không gộp thành "Key
 ## 8. Điều kiện chuyển bước
 
 - Gate native ở [authorization.md](contracts/authorization.md) qua bằng chứng thật trước khi mở rộng các module CRUD.
-- Toàn bộ 56 acceptance scenarios của spec phải có phép thử hoặc biên bản nghiệm thu tương ứng; các mục tiêu con người không được đánh dấu pass bằng unit test.
+- 56 acceptance scenarios gốc và 5 scenarios bổ sung ngày 12/11 (tổng 61) phải có phép thử hoặc biên bản tương ứng; các mục tiêu con người không được đánh dấu pass bằng unit test. Ma trận cũ chỉ ghi bằng chứng cho phạm vi/revision đã chạy, không thay nghiệm thu FR-055–057.
 - Không mở direct console membership edits ngoài giao thức fence/reconcile ở mục 6; cấu hình MFA khi vận hành vẫn độc lập.
 - Không mở public fixture routes, Direct Access Grants, wildcard allow hoặc dùng database DEV trong cấu hình production/test nghiệm thu.
+
+**Readiness hiện hành (12/11/2026)**: Theo GitHub ngày 12/11/2026, #94 CLOSED và PR #302 MERGED (`6be8371` trên `origin/main`); gate #95 vẫn OPEN. Nhánh tài liệu tại `f3d2e618` chưa ghép commit #302. Chỉ chạy bước kiểm chứng được gate hiện hành cho phép; không coi các task nghiệm thu sau gate là đã sẵn sàng vì native blocker riêng lẻ đã đóng.
+
+`TenantMigrationRunner.migrateAllTenants()` hiện kích hoạt `schema_name` nhưng không chuyển dữ kiện cũ; không dùng làm lệnh nâng cấp an toàn cho workspace có dữ liệu. Chỉ cutover sau khi hoàn tất các task dữ kiện/context/notification/revoke trên schema đã kích hoạt. Không reset DEV hoặc sửa baseline đã apply để vượt bước này.
+
+Trước pilot dùng học sinh thật: chốt chính sách giữ/xóa hồ sơ, loại hình lớp và trách nhiệm vận hành; xác minh người đại diện ngoài hệ thống, chỉ lưu tham chiếu tối thiểu khi duyệt quyền xem. Hoàn thành đợt học giữ quyền xem kết quả của chính học sinh trong thời gian hồ sơ còn được lưu hợp lệ; thu hồi bảo mật vẫn chặn. Bài cần bảo đảm hoàn tất dùng nguồn sở hữu/LONG_TERM; nếu hết gói và giáo viên duy nhất nghỉ, phải gia hạn rồi phân công người thay. Các luồng mới này chưa có trong code tại nền đối chiếu; xem [báo cáo hội tụ](../../docs/doi-chieu-spec-code-20261112.md) và task bổ sung.

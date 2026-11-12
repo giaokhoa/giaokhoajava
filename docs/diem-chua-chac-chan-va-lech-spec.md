@@ -1,5 +1,13 @@
 # Sổ điểm chưa chắc chắn và lệch spec – triển khai
 
+## Đối chiếu hiện hành — 12/11/2026
+
+Đã rà lại các mục A1–A14, B1–B110 (B106 đang trùng số ở hai tiêu đề) và C1–C7 với code nền `f3d2e618`, parent #2 và quyết định #261. **Không dùng nội dung lịch sử dưới đây như danh sách defect hiện còn mở.** Kết luận từng nhóm, bằng chứng code và công việc còn lại nằm trong [báo cáo hội tụ](doi-chieu-spec-code-20261112.md); [bản đồ 22 luồng theo vai trò](luong-nghiep-vu-theo-vai-tro.md) nối hoạt động người dùng với spec và E2E.
+
+Đã cập nhật spec/data-model/plan/contracts và làm rõ NV-01/NV-02/NV-04/NV-05 bằng 5 câu trả lời của chủ spec. Các khoảng hở deadline, license của completion, cutover schema, thông báo tới bên nhận, ngoại lệ PDP và E2E theo vai vẫn chưa được coi là đã sửa; truy vết F01–F14/T100–T114. RLS và chuỗi migration trước baseline là lịch sử; copy-on-share theo #261 không được hiểu là chuyển sở hữu nguồn.
+
+Giữ nguyên các mục bên dưới để truy vết phát hiện và quyết định tại thời điểm phát sinh. Việc ghi nhận có bản sửa không thay kết quả kiểm chứng đúng SHA, gate #95 hoặc nghiệm thu người thật.
+
 Mục đích: ghi lại mọi điểm (a) chưa chắc chắn/chưa kiểm chứng được và (b) lệch giữa spec và triển khai đã phát hiện trong quá trình làm pipeline giaokhoa/giaokhoa. Đây là đầu vào cho bên đánh giá rà lại sau khi hoàn thành toàn bộ chuỗi issue, trước khi đóng parent issue. Sổ được bổ sung liên tục mỗi khi phát sinh điểm mới; điểm nào xử lý xong thì ghi rõ đã xử lý ở đâu thay vì xoá.
 
 Bắt đầu lập: 2026-11-08 (theo lệnh của chủ dự án). Nguồn: báo cáo review các issue #16–#42, rà soát lệch chuẩn docs trên main ngày 2026-11-06, rà soát quy trình/chuẩn test ngày 2026-11-07, báo cáo cổng các đợt sửa vệ sinh test và M1.

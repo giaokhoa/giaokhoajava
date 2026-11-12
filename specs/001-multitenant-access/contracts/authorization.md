@@ -1,6 +1,8 @@
 # Hợp đồng quyết định quyền và đồng bộ Keycloak
 
-**Phạm vi**: Làm rõ FR-008, FR-013–FR-024, FR-029–FR-053. Dùng cùng hợp đồng cho quản trị thực tế và các thao tác học liệu mẫu.
+**Phạm vi**: Làm rõ FR-008, FR-013–FR-024, FR-029–FR-053 và các bổ sung FR-055–057. Dùng cùng hợp đồng cho quản trị thực tế và các thao tác học liệu mẫu.
+
+**Đối chiếu 12/11/2026**: Mục 1–9 là giao thức đích; mục 10–13 là ngoại lệ quản trị đang tồn tại, chưa được coi là đã đáp ứng ràng buộc PDP trên mọi route. Mục 14 bổ sung FR-055–057 theo các câu trả lời của chủ spec; code tại `f3d2e618` chưa triển khai các bổ sung đó. Theo dõi phần còn thiếu tại [báo cáo hội tụ](../../../docs/doi-chieu-spec-code-20261112.md), không suy từ trạng thái issue đã đóng.
 
 ## 1. Trách nhiệm
 
@@ -9,7 +11,7 @@
 | Keycloak | Xác thực, directory Organization, native policy graph và quyết định đối tượng–scope | Không tự biết quan hệ lớp/khóa/phụ huynh nếu chưa được provision |
 | Spring PAP/provisioner | Ánh xạ dữ kiện nguồn sang policy/group/resource instances, cập nhật revision và retry | Không tính effective-allow rồi thay PDP bằng kết quả trong app |
 | Spring PEP | Lấy actor từ phiên, resolve đối tượng có phạm vi, kiểm tra freshness, hỏi PDP và thực thi | Không dùng role claim, UI capability hoặc request body để cho phép trực tiếp |
-| PostgreSQL | Dữ kiện nghiệp vụ, lịch sử, FK, RLS theo workspace, revision/khóa | Không chứa bộ luật teacher/parent/license thay cho PDP |
+| PostgreSQL | Dữ kiện nghiệp vụ, lịch sử, FK nội bộ schema, tenant context, revision/khóa | Không chứa bộ luật teacher/parent/license thay cho PDP; không còn RLS sau #261 |
 | Next | Điều hướng workspace, hiển thị capabilities và kết quả | Không quyết định quyền, không giữ bearer token hoặc cache dữ liệu riêng |
 
 Invariant như môn của đề phải khớp môn trong khóa, học sinh phải thuộc lớp, cặp version/resource đúng và trạng thái chuyển hợp lệ được kiểm tra bởi domain services. Kiểm tra invariant chỉ có thể từ chối thao tác không hợp lệ; không cấp quyền thay Keycloak.
@@ -88,6 +90,8 @@ Mỗi cặp resource/scope có một root scope-permission. Root chứa OR các 
 | Dùng tài nguyên sở hữu | Owner cá nhân hoặc assignment tài nguyên center | Đúng context và giới hạn nguồn; scope dùng không bao hàm sửa/share/answer |
 | Dùng tài nguyên licensed | Recipient assignment trong workspace nhận | Grant/source gate và các giới hạn kế thừa còn hiệu lực |
 | Hoàn tất hoạt động sau hết hạn gói | Completion source tạo khi giao bài hợp lệ | Giữ membership/assignment/enrollment/license; không có branch gia hạn/lượt mới/giao lại; không yêu cầu gói hiện còn hạn |
+
+Ngoại lệ center **chưa từng có kỳ gói** ở mục 10–12 không đồng nghĩa một kỳ gói đang hiệu lực. Chỉ route đã liệt kê mới dùng quy tắc đó; các action học thuật/PDP cần kỳ xác nhận vẫn mặc định deny. Center đã có kỳ nhưng không kỳ nào hiệu lực bị chặn mở rộng; personal chưa có kỳ cũng bị chặn. Không bỏ ngoại lệ đã chốt tại parent #2 chỉ để làm test mới xanh.
 
 Native user policies dùng cho chủ cá nhân/người nhận cụ thể; group policies dùng cho nguồn membership/phân công; time policies dùng hiệu lực gói/grant; aggregated policies giữ AND/OR như trên. Để biểu diễn `[start,end)`, AND time-policy `nbf=start` POSITIVE với time-policy `nbf=end` NEGATIVE; không dùng `noa=end` đơn lẻ vì source 26.8.1 cho phép tại đúng end. Kiểm tra trạng thái published/approved tạo hoặc gỡ nhánh tương ứng qua PAP, không tin trạng thái frontend khai.
 
@@ -388,3 +392,13 @@ SQL chỉ cho phép tự gửi hoặc quản trị hiện hành của đúng cen
 - Bên đánh giá rà lại quyết định này cùng mục 10–12 trước khi đóng parent issue; khi nào tầng
   projection có nguồn cho `recovery.request` trên profile target và route này chuyển sang PDP
   thì gỡ mục này và ghi rõ commit gỡ.
+
+## 14. Bổ sung sau làm rõ nghiệp vụ 12/11/2026 — chưa triển khai
+
+- **Hoàn thành đợt học (FR-055)**: COMPLETED đóng các nguồn nhận/nộp bài của ghi danh; giữ một nguồn `read.published` chỉ cho chính học sinh và đúng kết quả của đợt đã hoàn thành, trong thời gian hồ sơ còn được lưu hợp lệ. Không gate quyền lịch sử bằng gói hiện tại hoặc buộc ghi danh còn ACTIVE. Thu hồi membership/truy cập có chủ đích, REVOKED và khóa tài khoản vẫn chặn. Quyền guardian giữ điều kiện riêng, không suy thêm từ nguồn lịch sử của học sinh. Thao tác hoàn thành do quản lý đúng center hoặc owner personal thực hiện trên **một học sinh × một khóa**, chuyển tất cả ghi danh ACTIVE thuộc khóa trong cùng transaction/operation/revision; kiểm toàn tập ID/version, chống ghi danh đồng thời và không để môn còn nguồn nhận/nộp mới. Không báo thành công trước READY, không chạm ghi danh đã REVOKED hay khóa khác.
+- **Xác minh guardian (FR-056)**: APPROVE cần `verificationRef` của xác minh ngoài hệ thống, người/thời điểm do server ghi. Có tham chiếu không thay scope quản trị, role PARENT và học sinh hợp lệ; thiếu tham chiếu không được sinh nguồn guardian. Revoke vẫn được khi gói hết hạn và không đòi tham chiếu mới. Tham chiếu không được trả trong DTO kết quả hoặc qua vai trò phụ huynh.
+- **Hoạt động cần bảo đảm hoàn tất (FR-057)**: Khi giao, GUARANTEED phải kiểm toàn bộ closure nguồn cần dùng; bất kỳ cạnh REVOCABLE nào đều từ chối. Với model mẫu chỉ có hạn nộp `dueAt` mà chưa có hạn chấm/công bố, mọi LONG_TERM có `expiresAt` hữu hạn đều bị từ chối cho GUARANTEED: ngay cả `expiresAt > dueAt` vẫn có thể hết hạn trước khi chấm. Chỉ nguồn sở hữu hoặc LONG_TERM không hết hạn đạt điều kiện thời gian hiện tại; nếu sau này chốt mốc hoàn tất toàn bộ thì mới cho license hữu hạn bao phủ **tất cả** mốc đó, với cửa sổ hiệu lực `[validFrom,expiresAt)` (bằng mốc hết hạn cũng bị chặn). Không dùng nhãn GUARANTEED để vượt revoke quan hệ, hạn hoặc lượt. INTERRUPTIBLE được dùng REVOCABLE nhưng hành động cần license bị chặn ngay khi nguồn bị thu hồi, giữ lịch sử và trả lý do gián đoạn.
+- **Hạn nộp và nguồn completion (FR-044–045)**: Kiểm hạn nộp hiện hành tại lúc ghi; sau deadline không nhận bài. Gói hết hạn không thay hạn/lượt hoặc quyền nguồn. Submit/grade/publish cần quyết định đủ các nguồn học liệu còn áp dụng cho hành động, kể cả thành phần; chỉ partition READY hoặc actor vẫn được phân công không chứng minh license còn hiệu lực. Hiện code thiếu kiểm hạn và thiếu các gate license này; đây là defect phải sửa, không là ngoại lệ được phê duyệt.
+- **Thay giáo viên sau expiry (NV-05)**: Người đã bị gỡ phân công mất quyền ngay. Nếu không còn giáo viên có quyền chấm thì phải gia hạn trước phân công người thay, không mở scope bàn giao tăng quyền riêng trong thời gian hết gói.
+
+Gate bổ sung dùng PostgreSQL/Keycloak thật: hoàn thành rồi đọc lịch sử bằng phiên cũ, nhận/nộp bài mới bị chặn; chuyển lớp không giữ quyền học tập cũ; khóa/revoke chặn lịch sử; thiếu xác minh không duyệt được; GUARANTEED từ chối closure có REVOCABLE hoặc LONG_TERM hết hạn hữu hạn (test hết hạn trước/đúng/sau `dueAt`); INTERRUPTIBLE bị revoke giữa làm và sau nộp/trước chấm; bài quá hạn bị chặn; revoke một license vẫn giữ nguồn độc lập nếu còn hợp lệ. Bằng chứng gốc không được đánh dấu đạt thay các ca này.

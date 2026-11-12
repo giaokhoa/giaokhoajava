@@ -722,7 +722,7 @@ async function chapNhanChiaSe(
   await choHanhDongThanhCong(page);
 }
 
-test("lưu giữ nguyên định danh nguồn và không mở kho soạn cá nhân cho account không có gói", async ({
+test("lưu giữ nguyên định danh nguồn và không mở kho soạn cá nhân cho account không có gói", { tag: ["@layer-e2e", "@flow-GV-01", "@flow-CNH-01", "@role-subject-teacher"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -766,7 +766,7 @@ test("lưu giữ nguyên định danh nguồn và không mở kho soạn cá nh�
   }
 });
 
-test("fork tạo định danh mới giữ truy vết nguồn; người chỉ có quyền dùng không fork được", async ({
+test("fork tạo định danh mới giữ truy vết nguồn; người chỉ có quyền dùng không fork được", { tag: ["@layer-e2e", "@flow-GV-01", "@role-subject-teacher", "@role-center-manager"] }, async ({
   page,
   browser,
 }) => {
@@ -818,7 +818,7 @@ test("fork tạo định danh mới giữ truy vết nguồn; người chỉ có
   }
 });
 
-test("quyền dùng tại workspace nhận không rò sang nơi khác: chia sẻ tiếp và mở ở kho cá nhân đều bị chặn", async ({
+test("quyền dùng tại workspace nhận không rò sang nơi khác: chia sẻ tiếp và mở ở kho cá nhân đều bị chặn", { tag: ["@layer-e2e", "@flow-GV-01", "@role-subject-teacher", "@role-center-manager"] }, async ({
   page,
   browser,
 }) => {
@@ -870,7 +870,7 @@ test("quyền dùng tại workspace nhận không rò sang nơi khác: chia sẻ
   }
 });
 
-test("giao hoạt động bằng tài nguyên sai môn bị chặn, đúng môn được phép", async ({
+test("giao hoạt động bằng tài nguyên sai môn bị chặn, đúng môn được phép", { tag: ["@layer-e2e", "@flow-GV-02", "@role-subject-teacher"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -913,7 +913,7 @@ test("giao hoạt động bằng tài nguyên sai môn bị chặn, đúng môn 
   }
 });
 
-test("đáp án tách khỏi nội dung: quyền dùng không mở được đáp án, author mở được bằng control riêng", async ({
+test("đáp án tách khỏi nội dung: quyền dùng không mở được đáp án, author mở được bằng control riêng", { tag: ["@layer-e2e", "@flow-GV-01", "@role-subject-teacher"] }, async ({
   page,
   browser,
 }) => {
@@ -960,7 +960,7 @@ test("đáp án tách khỏi nội dung: quyền dùng không mở được đá
   }
 });
 
-test("thu hồi chia sẻ: nội dung đã mở không còn truy cập được từ cùng phiên, kể cả qua bản đã lưu", async ({
+test("thu hồi chia sẻ: nội dung đã mở không còn truy cập được từ cùng phiên, kể cả qua bản đã lưu", { tag: ["@layer-e2e", "@flow-GV-01", "@flow-QL-05", "@role-subject-teacher", "@role-center-manager"] }, async ({
   page,
   browser,
 }) => {

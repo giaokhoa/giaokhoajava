@@ -1007,7 +1007,7 @@ async function moTrangThanhVien(page: Page, workspaceId: string): Promise<void> 
   await expect(page.getByText("Thành viên trung tâm")).toBeVisible();
 }
 
-test("US5.1 gỡ phân công giảng dạy: phiên giáo viên cũ bị từ chối từ yêu cầu tiếp theo", async ({
+test("US5.1 gỡ phân công giảng dạy: phiên giáo viên cũ bị từ chối từ yêu cầu tiếp theo", { tag: ["@layer-e2e", "@flow-QL-05", "@flow-QL-03", "@role-center-manager", "@role-subject-teacher"] }, async ({
   page,
   browser,
 }) => {
@@ -1054,7 +1054,7 @@ test("US5.1 gỡ phân công giảng dạy: phiên giáo viên cũ bị từ ch�
   }
 });
 
-test("US5.2 gỡ membership: phiên cũ mất quyền ở A, quyền ở B còn nguyên", async ({
+test("US5.2 gỡ membership: phiên cũ mất quyền ở A, quyền ở B còn nguyên", { tag: ["@layer-e2e", "@flow-QL-05", "@flow-TK-02", "@role-center-manager", "@role-subject-teacher"] }, async ({
   page,
   browser,
 }) => {
@@ -1103,7 +1103,7 @@ test("US5.2 gỡ membership: phiên cũ mất quyền ở A, quyền ở B còn 
   }
 });
 
-test("US5.3 gỡ ghi danh: học sinh mất quyền đọc kết quả của mình, lịch sử còn nguyên", async ({
+test("US5.3 gỡ ghi danh: học sinh mất quyền đọc kết quả của mình, lịch sử còn nguyên", { tag: ["@layer-e2e", "@flow-QL-05", "@flow-HS-02", "@flow-PH-02", "@role-center-manager", "@role-student", "@role-parent"] }, async ({
   page,
   browser,
 }) => {
@@ -1154,7 +1154,7 @@ test("US5.3 gỡ ghi danh: học sinh mất quyền đọc kết quả của mì
   }
 });
 
-test("US5.4 thông tin giả không mở quyền: đổi tenant, header giả, role giả đều bị chặn", async ({
+test("US5.4 thông tin giả không mở quyền: đổi tenant, header giả, role giả đều bị chặn", { tag: ["@layer-e2e", "@flow-TK-02", "@flow-QL-02", "@role-user"] }, async ({
   page,
   browser,
 }) => {
@@ -1212,7 +1212,7 @@ test("US5.4 thông tin giả không mở quyền: đổi tenant, header giả, r
   }
 });
 
-test("US5.5 nguồn độc lập: gỡ phân công giảng dạy, nguồn chủ nhiệm còn nguyên", async ({
+test("US5.5 nguồn độc lập: gỡ phân công giảng dạy, nguồn chủ nhiệm còn nguyên", { tag: ["@layer-e2e", "@flow-QL-05", "@flow-CN-01", "@role-center-manager", "@role-subject-teacher", "@role-homeroom"] }, async ({
   page,
   browser,
 }) => {
@@ -1263,7 +1263,7 @@ test("US5.5 nguồn độc lập: gỡ phân công giảng dạy, nguồn chủ 
   }
 });
 
-test("US5.6 202 không phải thành công: chưa bị từ chối lúc PENDING, UI không báo xong sớm", async ({
+test("US5.6 202 không phải thành công: chưa bị từ chối lúc PENDING, UI không báo xong sớm", { tag: ["@layer-e2e", "@flow-QL-05", "@flow-QL-02", "@role-center-manager"] }, async ({
   page,
   browser,
 }) => {

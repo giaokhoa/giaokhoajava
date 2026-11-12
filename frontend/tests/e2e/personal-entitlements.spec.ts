@@ -700,7 +700,7 @@ COMMIT;
   return { resourceId, versionId };
 }
 
-test("US6.1 chưa có gói cá nhân: tạo lớp và học liệu cá nhân bị từ chối, lịch sử luyện tập hệ thống vẫn còn", async ({
+test("US6.1 chưa có gói cá nhân: tạo lớp và học liệu cá nhân bị từ chối, lịch sử luyện tập hệ thống vẫn còn", { tag: ["@layer-e2e", "@flow-HS-01", "@flow-CNH-01", "@role-learner", "@role-personal-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -741,7 +741,7 @@ test("US6.1 chưa có gói cá nhân: tạo lớp và học liệu cá nhân b�
   }
 });
 
-test("US6.2 operator kích hoạt gói cá nhân: owner tổ chức lớp/khóa/roster/ghi danh và tạo học liệu theo gói", async ({
+test("US6.2 operator kích hoạt gói cá nhân: owner tổ chức lớp/khóa/roster/ghi danh và tạo học liệu theo gói", { tag: ["@layer-e2e", "@flow-QT-02", "@flow-CNH-01", "@role-platform-operator", "@role-personal-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -785,7 +785,7 @@ test("US6.2 operator kích hoạt gói cá nhân: owner tổ chức lớp/khóa/
   }
 });
 
-test("US6.3 teacher không gói cá nhân: làm việc theo phân công ở center, cá nhân vẫn bị từ chối", async ({
+test("US6.3 teacher không gói cá nhân: làm việc theo phân công ở center, cá nhân vẫn bị từ chối", { tag: ["@layer-e2e", "@flow-GV-01", "@flow-CNH-01", "@role-subject-teacher", "@role-personal-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -843,7 +843,7 @@ test("US6.3 teacher không gói cá nhân: làm việc theo phân công ở cent
   }
 });
 
-test("US6.4 có gói cá nhân nhưng không quản lý center: tạo lớp ở center bị từ chối, lớp cá nhân được phép", async ({
+test("US6.4 có gói cá nhân nhưng không quản lý center: tạo lớp ở center bị từ chối, lớp cá nhân được phép", { tag: ["@layer-e2e", "@flow-QL-02", "@flow-CNH-01", "@role-subject-teacher", "@role-personal-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -871,7 +871,7 @@ test("US6.4 có gói cá nhân nhưng không quản lý center: tạo lớp ở 
   }
 });
 
-test("US6.5 rời center: quyền center chấm dứt, gói và lớp cá nhân còn hiệu lực", async ({
+test("US6.5 rời center: quyền center chấm dứt, gói và lớp cá nhân còn hiệu lực", { tag: ["@layer-e2e", "@flow-QL-05", "@flow-CNH-01", "@role-subject-teacher", "@role-personal-owner"] }, async ({
   page,
   browser,
 }) => {
@@ -929,7 +929,7 @@ test("US6.5 rời center: quyền center chấm dứt, gói và lớp cá nhân 
   }
 });
 
-test("ma trận ba tài khoản: chỉ personal, chỉ center, có cả hai — quyền không rò rỉ giữa hai không gian", async ({
+test("ma trận ba tài khoản: chỉ personal, chỉ center, có cả hai — quyền không rò rỉ giữa hai không gian", { tag: ["@layer-e2e", "@flow-TK-02", "@flow-CNH-01", "@role-subject-teacher", "@role-personal-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_MA_TRAN);
@@ -995,7 +995,7 @@ test("ma trận ba tài khoản: chỉ personal, chỉ center, có cả hai — 
   }
 });
 
-test("giao diện cá nhân: trang lớp cá nhân hiện lớp theo gói; trang cá nhân hiện trạng thái gói và không hiện editor học liệu", async ({
+test("giao diện cá nhân: trang lớp cá nhân hiện lớp theo gói; trang cá nhân hiện trạng thái gói và không hiện editor học liệu", { tag: ["@layer-e2e", "@flow-CNH-01", "@role-personal-owner"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);

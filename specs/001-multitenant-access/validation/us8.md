@@ -1,5 +1,7 @@
 # Nghiệm thu US8 — Hết hạn gói và bảo lưu dữ liệu (T093, issue #95)
 
+> **Trạng thái hiện hành 12/11/2026 tại `f3d2e618`: gate #95 còn OPEN**; #94 đã CLOSED và PR #302 đã MERGED tại `6be8371` trên `origin/main`. Branch tài liệu vẫn ở `f3d2e618`, chưa ghép thay đổi này. PR #288 đã merge, nhưng phán quyết có điều kiện bên dưới là lịch sử, không phải kết luận cuối của revision hiện tại. Đợt đối chiếu mới phát hiện đường nộp chưa ép `due_at` và completion chưa xét license học liệu; T100/T101 cần kiểm chứng trước chốt phạm vi liên quan. US8.8 bổ sung quy tắc gia hạn trước thay giáo viên, còn T113. Xem [ma trận hiện hành](acceptance-matrix.md) và [báo cáo hội tụ](../../../docs/doi-chieu-spec-code-20261112.md).
+
 - **Main dùng để nghiệm thu:** `da8ba0719fa99b8f878c5a440c1a8845c8fe7a83` (PR #282 lõi US8 + PR #284 guard và frontend + PR #286 sửa OIDC đã land vào main)
 - **Stack:** TEST native làn 1 (PostgreSQL 18.6 `127.0.0.1:15432`, Keycloak 26.8.1 `127.0.0.1:18081`, realm `giaokhoa-it`), JDK 25, đồng hồ thật, không mock thời gian trong PDP.
 - **Phạm vi:** US8.1–US8.7 theo `spec.md` User Story 8 + checkpoint của issue #95; FR-042–FR-047; SC-007.
@@ -21,7 +23,7 @@ Phần kiểm chứng dưới đây mô tả **lịch sử nghiệm thu trên `d
 - PR #216 đã merge vào main (`2b34f880`) và mang theo `chromium-resources`. Khi ghép `main` mới vào PR #288, ba xung đột cấu hình đã được giải quyết theo hướng giữ **cả bốn project**: 43 core, 13 teaching/guardians, 6 resources, 2 expiry (64 ca), không vô hiệu hóa test nào.
 - Rà lại T088/#90: **personal chưa có kỳ gói** phải bị từ chối tạo lớp (403), còn **center chưa từng có kỳ gói** được phép tạo lớp (202 và operation SUCCEEDED) theo ngoại lệ có chủ đích tại `contracts/authorization.md` mục 10 và `TeachingServiceIT.subscriptionPolicyMatchesRealPostgresLifecycle`. Sau khi center **đã xác nhận rồi hết hạn**, thao tác mở rộng phải bị 403 và UI center phải báo read-only, nút `Tạo lớp` không bấm được. Đã bổ sung các assertion cùng actor/session thật trong `subscription-expiry.spec.ts`; chưa coi assertion mới là pass trước khi CI head mới xanh.
 - CI ở head `d0465fc`, run `43134096141` xác nhận chính ngoại lệ: center chưa có kỳ gói trả **202**, trong khi assertion mới lầm yêu cầu 403; ca personal chưa kích hoạt pass. Đây là **test sai với quyết định đã chốt**, không phải defect cần đổi backend. Sửa test theo hợp đồng để khóa hai trường hợp khác nhau, không nới quy tắc sau khi hết hạn.
-- Ghi nhận cho T092/#94: trang personal/classes đang hiển thị cảnh báo hết hạn nhưng nút `Tạo lớp` còn chỉ `disabled={busy}` (không theo `planExpired`), dù backend từ chối; phải kiểm tra/sửa và nghiệm thu riêng ở #94, không tính UI cá nhân đã đạt theo bằng chứng T088.
+- Ghi nhận lịch sử trước khi PR #302 merge cho T092/#94: trang personal/classes từng chỉ có `disabled={busy}`, không theo `planExpired`. PR #302 (`6be8371`) đã sửa UI và #94 đã CLOSED; gate #95 vẫn phải kiểm chứng lại trên revision tích hợp, không dùng bằng chứng T088 cũ để kết luận.
 
 ## Kết quả theo scenario (spec.md User Story 8)
 

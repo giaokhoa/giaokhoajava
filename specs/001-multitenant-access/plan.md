@@ -4,7 +4,7 @@
 
 **Input**: `specs/001-multitenant-access/spec.md`; yêu cầu bổ sung: backend Spring Boot, frontend Next.js.
 
-Feature identifier từ công cụ là `001-multitenant-access`; nhánh Git thực tế vẫn là `main`. Bước lập kế hoạch không tạo/chuyển branch, không viết code sản phẩm hoặc tạo GitHub Issue.
+Feature identifier từ công cụ là `001-multitenant-access`. Bản thiết kế gốc ngày 05/11 được đối chiếu lại với `origin/main` tại `f3d2e618be74f574c03d8301a04d9a0427bdbc98` ngày 12/11/2026; kết quả hiện hành ở [báo cáo hội tụ](../../docs/doi-chieu-spec-code-20261112.md). Các bảng ghi kiểm tra ngày lập kế hoạch là lịch sử thiết kế, không là chứng nhận nghiệm thu code hiện tại.
 
 ## Summary
 
@@ -22,7 +22,7 @@ Thiết kế ưu tiên chứng minh native Keycloak và thu hồi quyền trư�
 
 **Storage**: PostgreSQL 18.6 app-db, tách keycloak-db. Mỗi workspace một schema riêng khi đã kích hoạt (workspace keys/composite FKs trong từng schema); mặt phẳng public giữ dữ kiện hệ thống và dữ kiện của workspace chưa kích hoạt, được lọc bằng `workspace_id` ở truy vấn ứng dụng; không dùng RLS (xem Sổ B103). Canonical học liệu nguồn qua repository chuyên biệt sau quyết định quyền. Spring Session JDBC lưu phiên, Flyway quản lý schema theo hai dòng (hệ thống + tenant), Hibernate không validate toàn cục.
 
-**Testing**: JUnit theo Spring Boot BOM; unit tests cho invariants/graph mapping/state transitions; integration tests PostgreSQL và Keycloak thật đúng baseline; Playwright qua Authorization Code thật; test email qua Mailpit. Testcontainers khi Docker có sẵn, hoặc services/realm/database test riêng. Core acceptance không mock PDP, không dùng dev data làm bãi test.
+**Testing**: JUnit theo Spring Boot BOM. Unit `*Test` chạy Surefire, không Spring context; integration `*IT` chạy Failsafe qua `integration`/`it-pure`, Spring MOCK khi dùng context; backend E2E `*E2EIT` kèm `@Tag("e2e-backend")` chạy server RANDOM_PORT và HTTP thật bằng `RestTestClient.bindToServer()`. Cookie phiên JDBC và CSRF lấy theo hợp đồng thật. Playwright dùng Authorization Code thật, email qua Mailpit. PostgreSQL/Keycloak và runtime role thật trên stack TEST riêng; chỉ một lượt integration/native/browser nặng tại một thời điểm trên máy dùng chung. Lệnh bàn giao theo `AGENTS.md`/`backend/README.md`, không thay acceptance bằng compile hoặc kiểm chuỗi SQL.
 
 **Target Platform**: Web tiếng Việt trên browser hiện đại; backend/Next chạy Linux; HTTP local phục vụ dev, HTTPS cho production. Cùng origin ứng dụng, Keycloak riêng tại `auth.giaokhoa.com`.
 
@@ -73,7 +73,7 @@ specs/001-multitenant-access/
 
 ### Source Code (repository root)
 
-Cấu trúc dự kiến để triển khai, chưa phải các thư mục/code đã tồn tại:
+Cấu trúc theo chín domain nghiệp vụ đã triển khai; module đủ lớn có `web`, `service`, `repository`, `model`, `dto`, hoặc package chức năng như `authorization`. `infrastructure` chứa plumbing persistence/tenant, không là domain nghiệp vụ thứ mười. Đường dẫn cũ trong task được tra theo bảng ánh xạ ở báo cáo hội tụ; không tạo class mới chỉ để khớp tên lịch sử.
 
 ```text
 backend/
@@ -91,9 +91,12 @@ backend/
     │   │   ├── resources/
     │   │   ├── authorization/
     │   │   ├── verification/
+    │   │   ├── infrastructure/
     │   │   └── shared/
     │   └── resources/
-    │       └── db/migration/
+    │       └── db/
+    │           ├── migration/
+    │           └── migration-tenant/
     └── test/
         ├── java/com/giaokhoa/
         └── resources/
@@ -117,7 +120,7 @@ infra/
 .devcontainer/
 ```
 
-**Structure Decision**: Một Maven application và một Next application là đủ. Package theo nghiệp vụ; `authorization` chứa PEP/PAP/projection/revision và Keycloak adapters, không chứa một PDP thứ hai. `verification` dùng cùng services/quyền và chỉ bật fixture/review trong môi trường thích hợp. `infra` là cấu hình phụ trợ dự kiến bổ sung cho issuer/gateway/mail/test, không nhân đôi domain services hoặc thay hạ tầng hiện có trong bước này.
+**Structure Decision**: Một Maven application và một Next application là đủ. Package theo nghiệp vụ; `authorization` chứa PEP/PAP/projection/revision và Keycloak adapters. `verification` dùng cùng services/quyền; fixture chỉ đăng ký ở test/review. `/review` còn thiếu gate môi trường theo hợp đồng và được giữ là khoảng hở, không coi phiên đăng nhập là thay thế profile review. `infra` giữ cấu hình issuer/gateway/mail/test.
 
 ## Thiết kế tích hợp
 
@@ -146,7 +149,7 @@ flowchart LR
 
 [research.md](research.md) ghi 12 quyết định, rationale và alternatives: baseline; BFF; native graph; Organizations/realm groups; fresh UMA; revision/fence; console boundary; gói/share; dữ liệu; web security; runtime gate; email verification/no-email accounts.
 
-Không có unknown nghiệp vụ cần mở lại brainstorm trong bước này. Những lựa chọn cần thử nghiệm runtime đã có phương án cụ thể và tiêu chí dừng; không được diễn đạt thành kết quả test đã pass.
+Các lựa chọn gốc có phương án kiểm chứng runtime và tiêu chí dừng; không được diễn đạt thành kết quả test đã pass. Đợt làm rõ ngày 12/11 bổ sung FR-055–057 từ NV-01/NV-02/NV-04 và giới hạn NV-05 vào FR-044. NV-03/NV-06 được giới hạn theo sản phẩm trung tâm và dữ liệu mẫu; NV-07 còn là tiền đề vận hành phải chốt trước dùng dữ liệu thật.
 
 ## Phase 1 — Dữ liệu, hợp đồng và kiểm chứng
 
@@ -179,4 +182,15 @@ Không có unknown nghiệp vụ cần mở lại brainstorm trong bước này.
 
 ## Kiểm tra sau thiết kế
 
-Đã giữ phạm vi, bộ quyền cố định, lựa chọn Spring Boot/Next.js và yêu cầu Keycloak PDP. Không có custom role editor, MFA bắt buộc, payment automation, trình soạn hoặc sổ điểm hoàn chỉnh. Runtime gates chưa được chạy vì repository mới có tài liệu thiết kế. Có thể chuyển sang tạo `tasks.md` theo các dependency trên.
+Đã giữ bộ quyền cố định và lựa chọn Spring Boot/Next.js/Keycloak. Không thêm custom role editor, MFA bắt buộc, payment automation, trình soạn hoặc sổ điểm hoàn chỉnh. Code và nhiều biên bản nghiệm thu đã có; gate #95 và nghiệm thu xuyên suốt vẫn chưa hoàn tất theo parent #2 tại thời điểm đối chiếu. Không phát biểu repository chỉ có thiết kế hoặc tạo lại các task đã có.
+
+## Hội tụ sau đối chiếu 12/11/2026
+
+- **Vai trò và hướng dẫn sử dụng**: [Bản đồ luồng](../../docs/luong-nghiep-vu-theo-vai-tro.md) nối vai trò → bước nghiệp vụ → kết quả/phủ định → FR/scenario → test. E2E dùng tag chuẩn Playwright `@flow-*`, `@role-*`, `@layer-*`; giữ project hiện có để không chạy trùng theo số vai. Phân biệt actor thực hiện hành vi được khẳng định với actor chỉ dựng fixture. Hướng dẫn người dùng chỉ mô tả UI đã có, không đưa policy/SQL/fixture vào thao tác sản phẩm.
+- **Cách ly tenant**: Giữ quyết định #261 về JPA và hai dòng Flyway, không đưa RLS trở lại để khớp task cũ. Việc chuẩn bị schema chưa kích hoạt không hoàn thành mục tiêu mỗi workspace dùng schema riêng. Chuyển dữ kiện, đọc directory/period ở đúng context, fan-out revoke/correction và kiểm chứng nghiệp vụ trên tenant đã kích hoạt còn là đầu vào cutover. Runtime role dùng chung có grants trên các schema đã cấp; ranh giới namespace không thay authorization hoặc tự thành ACL riêng cho từng người dùng.
+- **Bản nhận học liệu**: Nguồn hệ thống giữ tham chiếu; tenant → tenant copy-on-share theo #261. Resource/version cục bộ giữ provenance và gate grant, không tự cấp nhánh owner. `ResourceCopies`, `ResourceLibraryService`, `ResourcePolicyProjector` cùng sở hữu hành vi; spec/data-model không còn yêu cầu mọi lượt lưu đều giữ cùng ID cục bộ.
+- **Hoàn thành đợt học**: Bổ sung COMPLETED và nguồn `read.published` riêng cho kết quả của chính học sinh; không tái dùng group ghi danh ACTIVE để mở nộp/giao bài. API/UI và migration mới thuộc task hội tụ; khóa tài khoản và thu hồi có chủ đích vẫn ưu tiên chặn.
+- **Liên kết phụ huynh**: APPROVE cần `verificationRef`; người/thời điểm duyệt do server lưu. Không thêm module tải giấy tờ hay xác minh pháp lý; vận hành xác minh ngoài hệ thống cho cả center/personal có dữ liệu trẻ em, trong khi route guardian vẫn chỉ center.
+- **Bài cũ và license**: Nộp phải giữ hạn/lượt; submit/grade/publish phải kiểm tra nguồn học liệu còn hiệu lực, gồm toàn bộ thành phần cần dùng. Không gate các hành động hoàn tất bằng gói hiện tại. `completionPolicy` tách GUARANTEED khỏi INTERRUPTIBLE; nguồn REVOCABLE không được dùng cho GUARANTEED; LONG_TERM hữu hạn cũng chưa đủ bảo đảm khi mới có `dueAt` mà chưa có hạn chấm/công bố. Thay giáo viên sau expiry cần gia hạn rồi cấp phân công mới, không có đường bàn giao vượt gói.
+- **Ngoại lệ SQL**: Mục 10–13 của authorization contract ghi phạm vi thực tế; đây còn là quyết định cần kết luận trước đóng parent, không tự biến chúng thành bằng chứng mọi route đã dùng PDP. Không lấy fixture seed JDBC làm lý do duy nhất duy trì ngoại lệ khi viết kiểm chứng mới.
+- **Nghiệm thu**: 56 scenarios gốc giữ bằng chứng lịch sử; 5 scenarios bổ sung đưa tổng hiện hành lên 61. Cần kiểm chứng lại các nhánh bị phát hiện thiếu (deadline/license/cutover/notification) và các yêu cầu mới; CI xanh ở revision cũ không thay những bằng chứng này. SC-001/002/009 cần người thật, không lấy kết quả tự động làm số liệu.
