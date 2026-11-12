@@ -47,9 +47,9 @@ describe("parsePersonalWorkspace", () => {
 });
 
 describe("canManagePersonalClasses", () => {
-  it("chỉ cho quản lý lớp cá nhân khi có workspace PERSONAL và gói còn hiệu lực", () => {
+  it("chủ personal vẫn quản lý/thu hồi lớp khi gói hết hạn; tạo mới bị chặn riêng", () => {
     expect(canManagePersonalClasses(parsePersonalWorkspace([personalCoGoi]))).toBe(true);
-    expect(canManagePersonalClasses(parsePersonalWorkspace([personalHetGoi]))).toBe(false);
+    expect(canManagePersonalClasses(parsePersonalWorkspace([personalHetGoi]))).toBe(true);
     expect(canManagePersonalClasses(parsePersonalWorkspace([center]))).toBe(false);
     expect(canManagePersonalClasses(null)).toBe(false);
   });
