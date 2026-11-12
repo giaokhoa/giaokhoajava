@@ -1,3 +1,4 @@
+import { parseRecipientCorrectionNotices } from "@/features/resources/correction-notice";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -154,5 +155,24 @@ describe("thông báo đính chính", () => {
     expect(html).toContain("Sai đáp án câu 1");
     expect(html).toContain("Chưa nhận cập nhật");
     expect(html).toContain("v-2");
+  });
+});
+
+describe("inbox thông báo đính chính", () => {
+  it("chỉ giữ metadata đã cho phép, không suy quyền replacement từ receipt", () => {
+    const notices = parseRecipientCorrectionNotices({ items: [
+      { id: "n-1", resourceId: "r-1", affectedVersionId: "v-1",
+        replacementVersionId: "v-2", reason: "Sai nội dung",
+        createdAt: "2026-11-12T00:00:00Z", acknowledgedAt: null, content: "SECRET" },
+      { id: "n-2", resourceId: "r-2", affectedVersionId: "v-3",
+        replacementVersionId: "v-4", reason: "Đã sửa", acknowledgedAt: "2026-11-12T00:00:00Z" },
+      { id: "invalid", resourceId: "r-3", replacementVersionId: "v-5" },
+    ] });
+    expect(notices).toHaveLength(2);
+    expect(notices[0]).toEqual({ id: "n-1", resourceId: "r-1",
+      affectedVersionId: "v-1", replacementVersionId: "v-2", reason: "Sai nội dung",
+      createdAt: "2026-11-12T00:00:00Z", acknowledgedAt: null });
+    expect(notices[0]).not.toHaveProperty("content");
+    expect(notices[1].acknowledgedAt).toBe("2026-11-12T00:00:00Z");
   });
 });

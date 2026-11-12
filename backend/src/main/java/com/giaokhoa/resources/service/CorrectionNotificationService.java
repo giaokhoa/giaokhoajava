@@ -1,8 +1,11 @@
 package com.giaokhoa.resources.service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -41,6 +44,46 @@ public class CorrectionNotificationService {
      */
     public CorrectionNotificationService(DataSource dataSource) {
         this.jdbc = new JdbcTemplate(dataSource);
+    }
+
+    /**
+     * Notice/receipt của đúng recipient, không chứa quyền đọc nội dung hoặc giấy phép replacement.
+     */
+    public record RecipientNotice(
+            UUID id,
+            UUID resourceId,
+            UUID affectedVersionId,
+            UUID replacementVersionId,
+            String reason,
+            OffsetDateTime createdAt,
+            @Nullable OffsetDateTime acknowledgedAt) {}
+
+    /** Dữ kiện ứng viên nội bộ: controller PHẢI PDP-filter trước khi trả bất kỳ phần tử nào. */
+    public List<RecipientNotice> receivedNotices(UUID recipientWorkspaceId) {
+        return jdbc.query(
+                "SELECT n.id, n.resource_id, n.affected_version_id, n.replacement_version_id,"
+                        + " n.reason, n.created_at, receipt.acknowledged_at"
+                        + " FROM notification_receipt receipt"
+                        + " JOIN correction_notice n ON n.id = receipt.notice_id"
+                        + " WHERE receipt.recipient_workspace_id = ?"
+                        + " ORDER BY receipt.created_at DESC, n.id DESC",
+                (rs, _row) ->
+                        new RecipientNotice(
+                                Objects.requireNonNull(rs.getObject("id", UUID.class), "notice_id"),
+                                Objects.requireNonNull(
+                                        rs.getObject("resource_id", UUID.class), "resource_id"),
+                                Objects.requireNonNull(
+                                        rs.getObject("affected_version_id", UUID.class),
+                                        "affected_version_id"),
+                                Objects.requireNonNull(
+                                        rs.getObject("replacement_version_id", UUID.class),
+                                        "replacement_version_id"),
+                                Objects.requireNonNull(rs.getString("reason"), "reason"),
+                                Objects.requireNonNull(
+                                        rs.getObject("created_at", OffsetDateTime.class),
+                                        "created_at"),
+                                rs.getObject("acknowledged_at", OffsetDateTime.class)),
+                recipientWorkspaceId);
     }
 
     /**

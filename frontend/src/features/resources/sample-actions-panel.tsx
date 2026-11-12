@@ -14,6 +14,7 @@ import {
 } from "@/lib/operation-status";
 import {
   CorrectionNoticeView,
+  CorrectionNoticeInbox,
   parseCorrectionNotice,
   type CorrectionNotice,
 } from "./correction-notice";
@@ -200,6 +201,7 @@ function SampleActionForm() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<CorrectionNotice | null>(null);
   const [receivedUpdates, setReceivedUpdates] = useState<ReadonlySet<string>>(new Set());
+  const [correctionInboxRefresh, setCorrectionInboxRefresh] = useState(0);
   const [content, setContent] = useState<ContentState | null>(null);
   const [contentBusy, setContentBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -295,6 +297,7 @@ function SampleActionForm() {
     const replacement = payload.replacementVersionId;
     if (typeof replacement === "string" && replacement) {
       setReceivedUpdates((current) => new Set(current).add(replacement));
+      setCorrectionInboxRefresh((current) => current + 1);
     }
   }
 
@@ -469,6 +472,12 @@ function SampleActionForm() {
       onReceiveUpdate={receiveUpdate}
     />
   ) : null}
+
+  <CorrectionNoticeInbox
+    workspaceId={workspaceId}
+    refreshTick={correctionInboxRefresh}
+    onReceiveUpdate={receiveUpdate}
+  />
 
   <section className="section" aria-labelledby="sample-content-title">
     <h2 id="sample-content-title">Nội dung và đáp án mẫu</h2>
