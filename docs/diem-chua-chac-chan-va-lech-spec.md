@@ -242,3 +242,5 @@ Bắt đầu lập: 2026-11-08 (theo lệnh của chủ dự án). Nguồn: báo
 
 ---
 *Sổ này do Nô tài duy trì. Mỗi điểm mới phát hiện trong review/cổng các issue tiếp theo (#44 → #101) phải được bổ sung vào đây trước khi issue đó đóng.*
+
+**B102 cập nhật theo PR #323 (chưa merge, 2026-11-12):** lịch sử B102 ở trên mô tả trạng thái cũ. T102 sửa `migrateAllTenants` sang prepare-only, `provisionSchema` khóa và cấm publish nếu còn dữ liệu legacy; không tự di trú dữ liệu. Không được chạy cutover production hoặc coi T102 đã hoàn tất khi thiếu bản copy/verify hai schema cùng native acceptance.

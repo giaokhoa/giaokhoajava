@@ -200,7 +200,14 @@ class ResultSourceMutationIT extends GuardianFixture {
                                 center.parentId()));
         await(
                 links.decideLink(
-                        center.managerId(), workspaceId, linkId, "APPROVE", 0, key(), hash()));
+                        center.managerId(),
+                        workspaceId,
+                        linkId,
+                        "APPROVE",
+                        0,
+                        "offline-guardian-evidence-" + UUID.randomUUID(),
+                        key(),
+                        hash()));
         UUID resultId = seedPublishedResult(center, courseSubjectId, subject.id());
         await(
                 resultProjector.recordResultChange(

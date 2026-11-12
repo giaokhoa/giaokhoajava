@@ -131,7 +131,7 @@ echo "PASS: realm/client/authz defaults and email optional"
 service_user="$(admin_get "/clients/$PROV_ID/service-account-user" | jq -er '.id')"
 admin_get "/users/$service_user/role-mappings/clients/$RM_ID" > "$TMP/roles.json"
 jq -e '[.[].name] as $roles | (["manage-users","view-users","query-users","query-groups","view-clients","manage-organizations","view-organizations","query-organizations","manage-authorization","view-authorization"] - $roles | length == 0) and ($roles | index("realm-admin") | not) and ($roles | index("manage-clients") | not)' "$TMP/roles.json" >/dev/null || fail "Provisioner realm-management role mapping differs"
-assert_admin "/users/$service_user/role-mappings/clients/$API_ID" 'any(.[]; .name == "uma_protection")'
+assert_admin "/users/$service_user/role-mappings/clients/$API_ID" 'all(.[]; .name != "uma_protection")'
 assert_admin "/users/$service_user/role-mappings/clients/$RM_ID/composite" 'all(.[]; .name != "realm-admin" and .name != "manage-clients" and .name != "manage-realm")'
 echo "PASS: provisioner direct and effective grants exclude elevated roles"
 

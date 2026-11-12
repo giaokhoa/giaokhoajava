@@ -91,3 +91,12 @@ riêng service `backend` trong Dokploy.
   khoản bootstrap cho việc quản trị.
 - Dữ liệu nằm ở hai volume `giaokhoa-prod_prod_app_data` và
   `giaokhoa-prod_prod_keycloak_data`; không chạy `down -v` trên stack này.
+
+### Panel kiểm chứng `/review` (T111)
+
+Ở `NODE_ENV=production`, Next.js chỉ phục vụ `/review` nếu server được cấu hình
+`GIAOKHOA_REVIEW_PANEL_ENABLED=true` **trong môi trường kiểm chứng riêng**. Mặc định
+trả 404, ngay cả khi người dùng đã có session; flag này không phải `NEXT_PUBLIC_*`
+và không được bật cho Dokploy production. Playwright native TEST tự bật flag cho
+Next server riêng của nó. Những route backend mẫu vẫn phải giữ profile/PEP riêng;
+UI gate không thay kiểm tra quyền phía server.

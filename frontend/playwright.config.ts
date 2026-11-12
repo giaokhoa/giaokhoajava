@@ -44,6 +44,8 @@ export default defineConfig({
     }] : []),
     {
       command: appOrigin ? "npm run build && npm run start" : "npm run dev",
+      // Panel test chỉ bật trong runner native; production deploy không tự bật.
+      env: appOrigin ? { GIAOKHOA_REVIEW_PANEL_ENABLED: "true" } : {},
       url: appOrigin ? "http://127.0.0.1:3001" : frontendOrigin,
       reuseExistingServer: !appOrigin && !process.env.CI,
       timeout: 120_000,

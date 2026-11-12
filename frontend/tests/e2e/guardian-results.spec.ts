@@ -770,7 +770,8 @@ async function duyetLienKet(
 ): Promise<void> {
   const quyetDinh = await guiMutation(page, origin, csrfManager, "POST",
     `/api/workspaces/${workspaceId}/guardian-links/${lienKet.id}/decision`,
-    { decision: "APPROVE", expectedVersion: lienKet.version });
+    { decision: "APPROVE", expectedVersion: lienKet.version,
+      verificationRef: "e2e-offline-guardian-verification" });
   expect(quyetDinh.status()).toBe(202);
   const traLoi = (await quyetDinh.json()) as MutationTraLoi;
   await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);
@@ -967,6 +968,7 @@ test("parent gửi request, manager duyệt, parent chỉ xem kết quả đã c
     expect(lienKetChoDuyet.state).toBe("REQUESTED");
     await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/guardian-links`);
     const hangLienKet = page.locator("li", { hasText: setup.hocSinhX.userId });
+    await hangLienKet.getByLabel("Tham chiếu xác minh người đại diện").fill("guardian-offline-case-001");
     await hangLienKet.getByRole("button", { name: "Duyệt liên kết" }).click();
     await expect(page.getByText("Thao tác đã hoàn tất.")).toBeVisible({ timeout: 60_000 });
     const lienKetSauDuyet = timLienKet(
@@ -1074,7 +1076,8 @@ test("chủ nhiệm không có vai trò quản lý thì bị từ chối khi duy
     const csrfChuNhiem = await dangNhapLai(page, origin, setup.chuNhiem);
     const quyetDinh = await guiMutation(page, origin, csrfChuNhiem, "POST",
       `/api/workspaces/${setup.workspaceId}/guardian-links/${lienKet.id}/decision`,
-      { decision: "APPROVE", expectedVersion: lienKet.version });
+      { decision: "APPROVE", expectedVersion: lienKet.version,
+      verificationRef: "e2e-offline-guardian-verification" });
     expect(quyetDinh.status()).toBe(403);
 
     await dangNhapLai(page, origin, setup.manager);

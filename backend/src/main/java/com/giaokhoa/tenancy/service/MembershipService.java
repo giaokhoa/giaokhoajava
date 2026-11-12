@@ -9,6 +9,7 @@ import com.giaokhoa.shared.audit.AuditEvent;
 import com.giaokhoa.shared.audit.AuditRecorder;
 import com.giaokhoa.shared.http.ErrorCodes;
 import com.giaokhoa.shared.http.HttpProblemException;
+import com.giaokhoa.shared.http.ScopedPageCursor;
 import com.giaokhoa.subscriptions.SubscriptionPolicy;
 import com.giaokhoa.tenancy.MembershipPolicyProjector;
 import com.giaokhoa.tenancy.model.CenterMembership;
@@ -63,6 +64,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class MembershipService {
+    private final ScopedPageCursor pageCursor = new ScopedPageCursor();
     private final CenterMembershipRepository memberships;
     private final UserAccountRepository accounts;
     private final WorkspaceRepository workspaces;
@@ -159,7 +161,7 @@ public class MembershipService {
         return new StudentIssueResult(operation, issued);
     }
 
-    /** Một trang membership từ DB; cursor vẫn là UUID, kể cả khi hàng mốc đã REVOKED. */
+    /** Một trang membership từ DB; cursor ký HMAC, anchor vẫn hợp lệ khi hàng đã REVOKED. */
     public record MembershipPage(List<MembershipView> items, @Nullable String nextCursor) {
         public MembershipPage {
             items = List.copyOf(items);
@@ -171,22 +173,21 @@ public class MembershipService {
      * còn lại khi membership cuối trang trước vừa bị thu hồi.
      */
     @Transactional(readOnly = true)
-    public MembershipPage pageMemberships(UUID workspaceId, @Nullable String cursor, int pageSize) {
+    public MembershipPage pageMemberships(
+            UUID actorUserId, UUID workspaceId, @Nullable String cursor, int pageSize) {
+        Objects.requireNonNull(actorUserId, "actorUserId");
         Objects.requireNonNull(workspaceId, "workspaceId");
+        String binding = "memberships|" + actorUserId + "|" + workspaceId + "|" + pageSize;
         UUID cursorId = null;
         Instant joinedAt = null;
         if (cursor != null) {
-            try {
-                cursorId = UUID.fromString(cursor);
-                if (!cursorId.toString().equals(cursor)) {
-                    return new MembershipPage(List.of(), null);
-                }
-            } catch (IllegalArgumentException ex) {
-                return new MembershipPage(List.of(), null);
-            }
+            cursorId = pageCursor.decode(cursor, binding);
             Optional<CenterMembership> anchor = memberships.findById(cursorId);
             if (anchor.isEmpty() || !workspaceId.equals(anchor.get().getWorkspaceId())) {
-                return new MembershipPage(List.of(), null);
+                throw new HttpProblemException(
+                        HttpStatus.BAD_REQUEST,
+                        ErrorCodes.INVALID_CURSOR,
+                        "Cursor danh sách không hợp lệ.");
             }
             joinedAt = anchor.get().getJoinedAt();
         }
@@ -227,7 +228,10 @@ public class MembershipService {
                                         membership.getVersion()))
                         .toList();
         return new MembershipPage(
-                items, hasMore && !items.isEmpty() ? items.getLast().id().toString() : null);
+                items,
+                hasMore && !items.isEmpty()
+                        ? pageCursor.encode(items.getLast().id(), binding)
+                        : null);
     }
 
     /** Quyền nguồn của actor trong center; dữ kiện được đọc dưới lock/fence của route. */

@@ -510,7 +510,14 @@ abstract class GuardianFixture extends IntegrationEnvironment {
         return mutate(
                 session,
                 post(linksPath(workspaceId) + "/" + linkId + "/decision"),
-                "{\"decision\":\"" + decision + "\",\"expectedVersion\":" + version + "}");
+                "{\"decision\":\""
+                        + decision
+                        + "\",\"expectedVersion\":"
+                        + version
+                        + ("APPROVE".equals(decision)
+                                ? ",\"verificationRef\":\"fixture-verified-offline\""
+                                : "")
+                        + "}");
     }
 
     protected void decideSucceeded(

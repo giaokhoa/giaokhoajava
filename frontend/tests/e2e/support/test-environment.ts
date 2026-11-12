@@ -161,6 +161,16 @@ export class TestEnvironment {
     }
   }
 
+  /** Fixture ngoài ứng dụng: operator xác minh và bàn giao credential qua kênh riêng. */
+  async resetTestUserPassword(user: TestUser, newPassword: string): Promise<void> {
+    if (!this.createdUsers.has(user.id)) {
+      throw new Error("Không đổi credential của tài khoản không thuộc fixture TEST");
+    }
+    await this.admin("PUT", `/users/${encodeURIComponent(user.id)}/reset-password`, {
+      type: "password", value: newPassword, temporary: false,
+    });
+  }
+
   async setEmailVerified(user: TestUser, verified: boolean): Promise<void> {
     if (!this.createdUsers.has(user.id)) throw new Error("Chỉ sửa tài khoản do test tạo");
     await this.admin("PUT", `/users/${encodeURIComponent(user.id)}`, { emailVerified: verified });

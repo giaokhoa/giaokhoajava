@@ -77,9 +77,23 @@ public class AssignmentController {
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.page(
+                    return support.scopedPage(
+                            actor,
+                            workspaceId,
+                            "teacher-assignments",
+                            courseSubjectId,
+                            limit,
                             assignments.pageTeachingAssignments(
-                                    workspaceId, courseSubjectId, cursor, limit));
+                                    workspaceId,
+                                    courseSubjectId,
+                                    support.pageAnchor(
+                                            actor,
+                                            workspaceId,
+                                            "teacher-assignments",
+                                            courseSubjectId,
+                                            limit,
+                                            cursor),
+                                    limit));
                 });
     }
 
@@ -168,9 +182,23 @@ public class AssignmentController {
                         }
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.page(
+                    return support.scopedPage(
+                            actor,
+                            workspaceId,
+                            "homeroom-assignments",
+                            classId,
+                            limit,
                             assignments.pageHomeroomAssignments(
-                                    workspaceId, classId, cursor, limit));
+                                    workspaceId,
+                                    classId,
+                                    support.pageAnchor(
+                                            actor,
+                                            workspaceId,
+                                            "homeroom-assignments",
+                                            classId,
+                                            limit,
+                                            cursor),
+                                    limit));
                 });
     }
 

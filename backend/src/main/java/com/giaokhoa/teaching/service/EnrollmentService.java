@@ -21,9 +21,12 @@ import com.giaokhoa.teaching.repository.TeachingPageRepository;
 import com.giaokhoa.teaching.repository.TeachingPageRepository.Page;
 import com.giaokhoa.teaching.repository.TeachingScopePreconditions;
 import com.giaokhoa.teaching.repository.TeachingScopePreconditions.WorkspaceInfo;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -109,6 +112,87 @@ public class EnrollmentService {
             UUID studentUserId,
             String state,
             long version) {}
+
+    /** Mỗi hàng gửi kèm version như một snapshot của toàn bộ học sinh × khóa. */
+    public record CompletionExpected(UUID id, @Nullable Long expectedVersion) {}
+
+    /**
+     * QL-06/HS-03: một operation trên TOÀN BỘ ACTIVE của học sinh trong khóa. Tất cả enrollment
+     * writers khóa cùng workspace, nên không lọt thêm ghi danh đồng thời. PRECONDITION_REQUIRED nếu
+     * thiếu snapshot, CONFLICT nếu thiếu/stale một dòng: không cập nhật một phần, không dùng trạng
+     * thái COMPLETED để cấp tiếp quyền học tập.
+     */
+    @Transactional
+    public AuthorizationOperation completeStudentCourse(
+            UUID initiatorUserId,
+            UUID workspaceId,
+            UUID courseId,
+            UUID studentUserId,
+            List<CompletionExpected> expected,
+            String idempotencyKey,
+            String payloadHash) {
+        Objects.requireNonNull(initiatorUserId, "initiatorUserId");
+        Objects.requireNonNull(workspaceId, "workspaceId");
+        Objects.requireNonNull(courseId, "courseId");
+        Objects.requireNonNull(studentUserId, "studentUserId");
+        idempotency.requireKey(idempotencyKey);
+        workspaceTransaction.applyContext(workspaceId);
+        lockWorkspace(workspaceId);
+        Optional<AuthorizationOperation> existing =
+                idempotency.findExisting(initiatorUserId, idempotencyKey, payloadHash);
+        if (existing.isPresent()) return existing.get();
+        preconditions.requireTeachingWorkspace(workspaceId);
+        courses.findByWorkspaceIdAndId(workspaceId, courseId)
+                .orElseThrow(EnrollmentService::enrollmentTargetNotFound);
+        if (expected == null || expected.isEmpty()) throw completionPrecondition();
+        Map<UUID, Long> versions = new HashMap<>();
+        for (CompletionExpected entry : expected) {
+            if (entry == null || entry.id() == null || entry.expectedVersion() == null) {
+                throw completionPrecondition();
+            }
+            if (versions.putIfAbsent(entry.id(), entry.expectedVersion()) != null) {
+                throw completionChanged();
+            }
+        }
+        List<Enrollment> current =
+                enrollments.findCurrentStudentCourseEnrollments(
+                        workspaceId, courseId, studentUserId);
+        if (current.isEmpty() || current.size() != versions.size()) {
+            throw completionChanged();
+        }
+        for (Enrollment row : current) {
+            if (!ACTIVE.equals(row.getState())
+                    || !Objects.equals(row.getVersion(), versions.get(row.getId()))) {
+                throw completionChanged();
+            }
+        }
+        Instant completedAt = Instant.now();
+        for (Enrollment row : current) row.complete(completedAt);
+        enrollments.flush();
+        List<String> targets =
+                current.stream()
+                        .map(row ->
+                                NativePolicyTemplates.courseSubjectKey(
+                                        workspaceId, row.getCourseSubjectId()))
+                        .distinct()
+                        .toList();
+        return revocations.recordTeachingRevocation(
+                initiatorUserId, workspaceId, idempotencyKey, payloadHash, targets);
+    }
+
+    private static HttpProblemException completionPrecondition() {
+        return new HttpProblemException(
+                HttpStatus.PRECONDITION_REQUIRED,
+                "COURSE_COMPLETION_PRECONDITION_REQUIRED",
+                "Cần đủ ID và expectedVersion của mọi ghi danh hiện hành trong khóa.");
+    }
+
+    private static HttpProblemException completionChanged() {
+        return new HttpProblemException(
+                HttpStatus.CONFLICT,
+                "COURSE_COMPLETION_SNAPSHOT_CHANGED",
+                "Tập ghi danh của học sinh trong khóa đã thay đổi, cần tải lại trước khi hoàn thành.");
+    }
 
     /**
      * Ghi danh theo lô: tích Descartes của các dòng roster đã chọn với các môn–khóa đã chọn, mọi
@@ -205,6 +289,20 @@ public class EnrollmentService {
                     "Mọi học sinh và môn–khóa trong một lô ghi danh phải cùng một lớp.");
         }
         preconditions.requireSubscriptionCurrent(workspaceId);
+        // COMPLETED kể cả sau revoke vẫn là lịch sử học tập đã đóng, không thể ghi danh
+        // lại vào cùng khóa và hồi sinh nguồn submit chỉ bằng một lô mới.
+        for (ClassStudent entry : roster) {
+            for (CourseSubject subject : subjects) {
+                if (enrollments.countCompletedStudentCourseEnrollments(
+                                workspaceId, subject.getCourseId(), entry.getStudentUserId())
+                        > 0) {
+                    throw new HttpProblemException(
+                            HttpStatus.CONFLICT,
+                            "COURSE_ALREADY_COMPLETED",
+                            "Học sinh đã hoàn thành khóa; không thể ghi danh lại vào cùng khóa.");
+                }
+            }
+        }
         for (ClassStudent entry : roster) {
             for (CourseSubject subject : subjects) {
                 if (enrollments

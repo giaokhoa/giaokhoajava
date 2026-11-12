@@ -1,3 +1,9 @@
+> **Quyết định của chủ repo 2026-11-12:** miễn yêu cầu nghiệm thu với 5 người dùng
+> thật cho parent #2 đợt này. Issue #98/T096 bị **hủy khỏi release gate**, không
+> tuyên bố SC-001/002/009 đạt hoặc 4/5 hoàn thành. Các mẫu và bản ghi dưới đây
+> giữ nguyên làm tài liệu pilot nếu sau này chủ repo tổ chức lại; các ô chưa có
+> bằng chứng vẫn trống. CI/E2E kỹ thuật không thay thế số liệu người thật.
+
 # Nghiệm thu SC-001/002/009 với người dùng thật theo vai trò (issue #98)
 
 Tài liệu này là **bộ chuẩn bị** cho buổi nghiệm thu với người dùng thật. Tại thời điểm tạo,
@@ -7,13 +13,14 @@ test hoặc tự đánh giá thay cho người dùng thật.
 
 ## 0. Trạng thái và điều kiện kết luận
 
-- Trạng thái: **CHUẨN BỊ — sẵn sàng chạy**, chưa có số liệu.
+- Trạng thái: **MẪU LƯU TRỮ — KHÔNG CÒN LÀ RELEASE GATE** (#98 `NOT_PLANNED`), chưa có buổi chạy hay số liệu; chỉ tái sử dụng cho pilot tự nguyện sau này.
 - Nguồn yêu cầu: `spec.md` mục Success Criteria — SC-001, SC-002, SC-009; AS-010 ghi rõ đây
   là chỉ tiêu nghiệm thu đề xuất về tính sử dụng được, **không phải số liệu đã đo**.
-- Issue #98 chỉ được kết luận khi: buổi chạy thật hoàn tất theo đúng §1–§2, số liệu điền vào
-  §7–§8, và §9 được người điều phối điền căn cứ trên các số liệu đó.
+- **Không mở lại/đổi kết luận #98** dựa vào mẫu này. Nếu chủ repo tự nguyện tổ chức pilot
+  trong đợt riêng, chỉ buổi chạy thật đúng §1–§2 mới cho phép điền §7–§9 và đánh giá
+  SC-001/002/009; không suy từ CI, thử nội bộ hoặc con số giả.
 
-## 1. Điều kiện môi trường để buổi chạy được tính
+## 1. Điều kiện tham khảo cho pilot tự nguyện về sau (chưa tổ chức)
 
 Buổi chạy được tính là buổi nghiệm thu chính thức khi đủ mọi điều kiện sau:
 

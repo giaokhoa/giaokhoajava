@@ -115,6 +115,7 @@ public class SampleActionService {
     private final ResultPolicyProjector resultProjector;
     private final ActivityPolicyProjector activityProjector;
     private final ResourcePolicyProjector resourceProjector;
+    private final CompletionLicenseGuard completionLicense;
     private final ResourceLibraryService library;
     private final ResourceShareService shareService;
     private final CorrectionService correctionService;
@@ -140,6 +141,7 @@ public class SampleActionService {
             ResultPolicyProjector resultProjector,
             ActivityPolicyProjector activityProjector,
             ResourcePolicyProjector resourceProjector,
+            CompletionLicenseGuard completionLicense,
             ResourceLibraryService library,
             ResourceShareService shareService,
             CorrectionService correctionService,
@@ -163,6 +165,7 @@ public class SampleActionService {
         this.resultProjector = resultProjector;
         this.activityProjector = activityProjector;
         this.resourceProjector = resourceProjector;
+        this.completionLicense = completionLicense;
         this.library = library;
         this.shareService = shareService;
         this.correctionService = correctionService;
@@ -425,6 +428,19 @@ public class SampleActionService {
                                 id, OPERATION_SUCCEEDED, true, "RESOURCE", id, null));
     }
 
+    private static SampleActivity.CompletionPolicy parseCompletionPolicy(String raw) {
+        if (raw == null) return SampleActivity.CompletionPolicy.INTERRUPTIBLE;
+        try {
+            return SampleActivity.CompletionPolicy.valueOf(raw);
+        } catch (IllegalArgumentException exception) {
+            throw new HttpProblemException(
+                    HttpStatus.BAD_REQUEST,
+                    "COMPLETION_POLICY_INVALID",
+                    "completionPolicy chỉ là GUARANTEED hoặc INTERRUPTIBLE.",
+                    exception);
+        }
+    }
+
     // ---------- ASSIGN_ACTIVITY / SUBMIT_ACTIVITY ----------
 
     private SampleActionResult assignActivity(
@@ -442,12 +458,27 @@ public class SampleActionService {
                 || request.attemptLimit() < 1) {
             throw invalid();
         }
+        SampleActivity.CompletionPolicy completionPolicy =
+                parseCompletionPolicy(request.completionPolicy());
         UUID actorUserId = executor.actorUserId(authentication);
         String targetKey =
                 NativePolicyTemplates.courseSubjectKey(workspaceId, request.courseSubjectId());
         ensureTeachingProjection(actorUserId, workspaceId, idempotencyKey + "#assign", targetKey);
         List<String> versionTargetKeys =
                 versionUseTargetKeys(workspaceId, request.resourceId(), request.versionId());
+        if (completionPolicy == SampleActivity.CompletionPolicy.GUARANTEED) {
+            // LONG_TERM có expiresAt hữu hạn không đủ: chưa có hạn chấm/công bố.
+            workspaces.inWorkspace(
+                    workspaceId,
+                    () -> {
+                        completionLicense.requireDurableSources(
+                                workspaceId,
+                                request.resourceId(),
+                                request.versionId(),
+                                Instant.now());
+                        return true;
+                    });
+        }
         ensureResourceProjection(
                 actorUserId, workspaceId, idempotencyKey + "#assign-use", versionTargetKeys);
         List<ProtectedActionExecutor.Target> targets = new ArrayList<>();
@@ -485,7 +516,8 @@ public class SampleActionService {
                                                                             workspaceId,
                                                                             actorUserId,
                                                                             request,
-                                                                            activityId));
+                                                                            activityId,
+                                                                            completionPolicy));
                                                 }),
                                         "activity"));
         // Hoạt động ASSIGNED vừa ghi là một nguồn của bundle của chính version được giao
@@ -543,7 +575,11 @@ public class SampleActionService {
     }
 
     private SampleActionResult insertActivity(
-            UUID workspaceId, UUID actorUserId, SampleActionRequest request, UUID activityId) {
+            UUID workspaceId,
+            UUID actorUserId,
+            SampleActionRequest request,
+            UUID activityId,
+            SampleActivity.CompletionPolicy completionPolicy) {
         CourseSubjectStateView subject =
                 courseSubjects
                         .findStateView(workspaceId, request.courseSubjectId())
@@ -595,7 +631,8 @@ public class SampleActionService {
                         request.dueAt().toInstant(),
                         request.attemptLimit(),
                         currentPeriods.getFirst(),
-                        "ASSIGNED"));
+                        "ASSIGNED",
+                        completionPolicy));
         return new SampleActionResult(
                 activityId, OPERATION_SUCCEEDED, true, "ACTIVITY", activityId, null);
     }
@@ -669,6 +706,16 @@ public class SampleActionService {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "ACTIVITY_NOT_OPEN", "Hoạt động không còn nhận bài nộp.");
         }
+        Instant submittedAt = Instant.now();
+        if (!activity.acceptsSubmissionAt(submittedAt)) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT,
+                    "SUBMISSION_DEADLINE_PASSED",
+                    "Đã hết hạn nộp của hoạt động.");
+        }
+        // Đọc lại từng grant/provenance dưới workspace fence (không hỏi kỳ gói hiện tại).
+        completionLicense.requireCurrentSources(
+                workspaceId, activity.getResourceId(), activity.getVersionId(), submittedAt);
         // Tiền kiểm tra đúng điều kiện của trigger validate_sample_submission: actor phải còn
         // ghi danh hiện hành vào môn–khóa của hoạt động, nếu không lỗi là 403 thay vì 409 của DB.
         long enrolled =
@@ -700,7 +747,7 @@ public class SampleActionService {
                         request.activityId(),
                         actorUserId,
                         attemptNo,
-                        Instant.now(),
+                        submittedAt,
                         request.contentStub(),
                         "SUBMITTED"));
         return new SampleActionResult(
@@ -801,6 +848,7 @@ public class SampleActionService {
     private SampleActionResult applyGrade(
             UUID workspaceId, UUID actorUserId, SampleActionRequest request) {
         SampleResult result = resultForUpdate(workspaceId, request.resultId());
+        requireResultResources(workspaceId, result);
         if (!"DRAFT".equals(result.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
@@ -818,6 +866,7 @@ public class SampleActionService {
 
     private SampleActionResult applyPublish(UUID workspaceId, SampleActionRequest request) {
         SampleResult result = resultForUpdate(workspaceId, request.resultId());
+        requireResultResources(workspaceId, result);
         if (!"DRAFT".equals(result.getState())) {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "RESULT_NOT_DRAFT", "Kết quả đã công bố không sửa được.");
@@ -831,6 +880,17 @@ public class SampleActionService {
                 RESULT_TARGET,
                 request.resultId(),
                 null);
+    }
+
+    /** Dò ngược kết quả -> bài nộp -> bài giao; thiếu một mắt xích phải fail-closed. */
+    private void requireResultResources(UUID workspaceId, SampleResult result) {
+        SampleSubmission submission =
+                submissions
+                        .findByWorkspaceIdAndId(workspaceId, result.getSubmissionId())
+                        .orElseThrow(() -> notFound());
+        SampleActivity activity = activityRow(workspaceId, submission.getActivityId());
+        completionLicense.requireCurrentSources(
+                workspaceId, activity.getResourceId(), activity.getVersionId(), Instant.now());
     }
 
     private SampleResult resultForUpdate(UUID workspaceId, UUID resultId) {

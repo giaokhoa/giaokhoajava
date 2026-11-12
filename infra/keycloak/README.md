@@ -53,9 +53,10 @@ baseline):
   `/gk/platform`, `/gk/platform/operators`, `/gk/workspaces` tồn tại (đây là group
   cố định của hệ thống, không phải Organization group).
 - Gán cho service account của `giaokhoa-provisioner` đúng các role realm-management
-  cần cho directory + Protection API của resource-server (manage/view/query users,
+  cần cho directory + authorization Admin API (manage/view/query users,
   query-groups, view-clients, manage/view/query organizations, manage/view
-  authorization, `uma_protection`) — không cấp `realm-admin`.
+  authorization) — không cấp `realm-admin` hoặc `uma_protection`.
+  Bootstrap thu hồi grant UMA cũ nếu realm đã từng được bootstrap trước thay đổi này.
 
 Script **không** chạm vào directory (user/organization/membership) và policy graph đã
 có: chạy lại bootstrap không reset dữ kiện và không thay thế reconcile của ứng dụng

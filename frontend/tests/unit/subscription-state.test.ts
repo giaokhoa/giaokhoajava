@@ -3,6 +3,7 @@ import {
   blockedActionReason,
   isExpansionBlocked,
   readOnlyNotice,
+  replacementTeacherNotice,
   sampleActionExpiryBehavior,
   subscriptionPhase,
 } from "@/features/subscriptions/subscription-state";
@@ -113,5 +114,15 @@ describe("blockedActionReason", () => {
   it("mã lạ hoặc thiếu mã thì trả null để nơi gọi giữ thông điệp gốc", () => {
     expect(blockedActionReason("PERMISSION_DENIED")).toBeNull();
     expect(blockedActionReason(undefined)).toBeNull();
+  });
+});
+
+describe("last teacher replacement after package lapse", () => {
+  it("explains renew-first without resurrecting revoked teacher", () => {
+    const notice = replacementTeacherNotice(true, 0);
+    expect(notice).toContain("gia hạn gói trước");
+    expect(notice).toContain("không tự có lại quyền");
+    expect(replacementTeacherNotice(true, 1)).toBeNull();
+    expect(replacementTeacherNotice(false, 0)).toBeNull();
   });
 });

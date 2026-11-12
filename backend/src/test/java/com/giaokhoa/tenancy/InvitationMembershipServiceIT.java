@@ -437,7 +437,7 @@ class InvitationMembershipServiceIT extends IntegrationEnvironment {
         String cursor = null;
         do {
             MembershipService.MembershipPage page =
-                    memberships.pageMemberships(workspaceId, cursor, 100);
+                    memberships.pageMemberships(userId, workspaceId, cursor, 100);
             for (MembershipService.MembershipView view : page.items()) {
                 if (view.userId().equals(userId)) {
                     return view.state();

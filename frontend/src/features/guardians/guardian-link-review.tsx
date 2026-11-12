@@ -91,8 +91,12 @@ export function guardianRequestBody(
 export function guardianDecisionBody(
   link: GuardianLink,
   decision: GuardianDecision,
-): { decision: GuardianDecision; expectedVersion: number } {
-  return { decision, expectedVersion: link.version };
+  verificationRef = "",
+): { decision: GuardianDecision; expectedVersion: number; verificationRef?: string } | null {
+  if (decision !== "APPROVE") return { decision, expectedVersion: link.version };
+  const reference = verificationRef.trim();
+  if (!reference || reference.length > 160) return null;
+  return { decision, expectedVersion: link.version, verificationRef: reference };
 }
 
 // Ẩn chức năng theo vai trò của chính actor trong center này, suy từ danh sách thành
@@ -127,6 +131,8 @@ function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
   const [loadedMemberships, setLoadedMemberships] = useState<{ key: string; items: Membership[] } | null>(null);
   const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
   const [studentUserId, setStudentUserId] = useState("");
+  // Context-bound drafts: never reuse a verification reference across another actor/center.
+  const [verificationRefs, setVerificationRefs] = useState<Record<string, string>>({});
   const [tracked, setTracked] = useState<{ key: string; operation: TrackedOperation; signature: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -302,7 +308,15 @@ function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
   }
 
   async function decideLink(link: GuardianLink, decision: GuardianDecision) {
-    const body = guardianDecisionBody(link, decision);
+    const body = guardianDecisionBody(
+      link,
+      decision,
+      verificationRefs[`${contextKey}|${link.id}`] ?? "",
+    );
+    if (body === null) {
+      setActionError("Duyệt liên kết cần mã tham chiếu xác minh người đại diện (tối đa 160 ký tự).");
+      return;
+    }
     await runMutation(
       `decision:${link.id}`,
       JSON.stringify([userId, workspaceId, "decision", link.id, body]),
@@ -405,10 +419,25 @@ function GuardianLinksInner({ workspaceId }: { workspaceId: string }) {
                     ) : null}
                     {canManage && link.state === "REQUESTED" ? (
                       <div className="section">
+                        <label htmlFor={`guardian-proof-${link.id}`}>
+                          Tham chiếu xác minh người đại diện (ngoài hệ thống, không tải giấy tờ)
+                        </label>
+                        <input
+                          id={`guardian-proof-${link.id}`}
+                          type="text"
+                          maxLength={160}
+                          value={verificationRefs[`${contextKey}|${link.id}`] ?? ""}
+                          onChange={(event) => setVerificationRefs((previous) => ({
+                            ...previous,
+                            [`${contextKey}|${link.id}`]: event.target.value,
+                          }))}
+                          autoComplete="off"
+                        />
                         <button
                           className="action-button"
                           type="button"
-                          disabled={pendingAction !== null}
+                          disabled={pendingAction !== null
+                            || !(verificationRefs[`${contextKey}|${link.id}`] ?? "").trim()}
                           onClick={() => void decideLink(link, "APPROVE")}
                         >
                           Duyệt liên kết

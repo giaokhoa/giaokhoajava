@@ -17,6 +17,7 @@ import com.giaokhoa.authorization.repository.AuthzPartitionRepository;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.verification.ActivityPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +38,12 @@ class SourceRevocationCoordinatorTest {
         Fixture fixture = new Fixture();
         String subjectKey = NativePolicyTemplates.courseSubjectKey(WORKSPACE, SUBJECT);
         String resultKey = NativePolicyTemplates.resultKey(WORKSPACE, RESULT);
+        String activityKey = NativePolicyTemplates.activityKey(WORKSPACE, RESULT);
+        AuthorizationOperationService.DesiredProjection activityProjection =
+                new AuthorizationOperationService.DesiredProjection(
+                        activityKey, "submit", List.of("actor:student"), List.of());
+        when(fixture.activities.allBundleProjections(WORKSPACE))
+                .thenReturn(List.of(activityProjection));
         when(fixture.teaching.bundleDescriptors(subjectKey))
                 .thenReturn(List.of("teaching|scope=read"));
         AuthorizationOperationService.DesiredProjection resultProjection =
@@ -57,6 +64,7 @@ class SourceRevocationCoordinatorTest {
                                 TeachingPolicyProjector.bundleScope(),
                                 List.of("teaching|scope=read"),
                                 List.of()),
+                        activityProjection,
                         resultProjection),
                 changes.getFirst().projections());
     }
@@ -67,6 +75,12 @@ class SourceRevocationCoordinatorTest {
         String workspaceKey = NativePolicyTemplates.workspaceKey(WORKSPACE);
         String subjectKey = NativePolicyTemplates.courseSubjectKey(WORKSPACE, SUBJECT);
         String resultKey = NativePolicyTemplates.resultKey(WORKSPACE, RESULT);
+        String activityKey = NativePolicyTemplates.activityKey(WORKSPACE, RESULT);
+        AuthorizationOperationService.DesiredProjection activityProjection =
+                new AuthorizationOperationService.DesiredProjection(
+                        activityKey, "submit", List.of("actor:student"), List.of());
+        when(fixture.activities.allBundleProjections(WORKSPACE))
+                .thenReturn(List.of(activityProjection));
         when(fixture.center.bundleDescriptors(WORKSPACE)).thenReturn(List.of("center|scope=enter"));
         AuthorizationOperationService.DesiredProjection teachingProjection =
                 new AuthorizationOperationService.DesiredProjection(
@@ -88,6 +102,7 @@ class SourceRevocationCoordinatorTest {
                         new AuthorizationOperationService.DesiredProjection(
                                 workspaceKey, "enter", List.of("center|scope=enter"), List.of()),
                         teachingProjection,
+                        activityProjection,
                         resultProjection),
                 changes.getFirst().projections());
     }
@@ -106,6 +121,7 @@ class SourceRevocationCoordinatorTest {
                         mock(CenterPolicyProjector.class),
                         mock(TeachingPolicyProjector.class),
                         mock(com.giaokhoa.teaching.PersonalTeachingPolicyProjector.class),
+                        mock(ActivityPolicyProjector.class),
                         mock(ResultPolicyProjector.class),
                         mock(com.giaokhoa.resources.ResourcePolicyProjector.class));
 
@@ -127,6 +143,7 @@ class SourceRevocationCoordinatorTest {
         final AuthorizationOperationService operations = mock(AuthorizationOperationService.class);
         final CenterPolicyProjector center = mock(CenterPolicyProjector.class);
         final TeachingPolicyProjector teaching = mock(TeachingPolicyProjector.class);
+        final ActivityPolicyProjector activities = mock(ActivityPolicyProjector.class);
         final ResultPolicyProjector results = mock(ResultPolicyProjector.class);
         final SourceRevocationCoordinator coordinator =
                 new SourceRevocationCoordinator(
@@ -135,6 +152,7 @@ class SourceRevocationCoordinatorTest {
                         center,
                         teaching,
                         mock(com.giaokhoa.teaching.PersonalTeachingPolicyProjector.class),
+                        activities,
                         results,
                         mock(com.giaokhoa.resources.ResourcePolicyProjector.class));
 

@@ -11,6 +11,7 @@ import com.giaokhoa.teaching.PersonalTeachingPolicyProjector;
 import com.giaokhoa.teaching.TeachingPolicyProjector;
 import com.giaokhoa.tenancy.CenterPolicyProjector;
 import com.giaokhoa.tenancy.model.Workspace;
+import com.giaokhoa.verification.ActivityPolicyProjector;
 import com.giaokhoa.verification.ResultPolicyProjector;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,11 +28,11 @@ import org.springframework.stereotype.Component;
  * cùng workspace đổi nguồn theo. Ví dụ: gỡ ghi danh chỉ ghi bundle môn–khóa, trong khi bundle kết
  * quả mất nguồn học sinh của {@code read.published}.
  *
- * <p>Vì vậy mọi đường ghi ở đây luôn ghi kèm bundle kết quả của toàn bộ workspace. Nguồn của kết
- * quả là phân công giảng dạy, ghi danh, liên kết phụ huynh đã duyệt và membership/role tiền đề của
- * chúng. Đó là đúng các nguồn mà một lần thu hồi role, membership, lớp, phân công, ghi danh hay phụ
- * huynh có thể đổi. Bundle nào không đổi thì hash khớp nguyên, nên chỉ là ghi lại chứ không đổi
- * graph.
+ * <p>Vì vậy mọi đường ghi ở đây luôn ghi kèm bundle hoạt động và kết quả của toàn bộ workspace.
+ * Nguồn của kết quả là phân công giảng dạy, ghi danh, liên kết phụ huynh đã duyệt và
+ * membership/role tiền đề của chúng. Đó là đúng các nguồn mà một lần thu hồi role, membership, lớp,
+ * phân công, ghi danh hay phụ huynh có thể đổi. Bundle nào không đổi thì hash khớp nguyên, nên chỉ
+ * là ghi lại chứ không đổi graph.
  *
  * <p>Cùng lý do đó, bundle resource version của toàn bộ workspace cũng được ghi kèm. Nguồn của nó
  * có nhánh tác giả và phân công tường minh với tiền đề là membership hiện hành. Nhánh học sinh của
@@ -66,6 +67,7 @@ public class SourceRevocationCoordinator {
     private final CenterPolicyProjector centerProjector;
     private final TeachingPolicyProjector teachingProjector;
     private final PersonalTeachingPolicyProjector personalTeachingProjector;
+    private final ActivityPolicyProjector activityProjector;
     private final ResultPolicyProjector resultProjector;
     private final ResourcePolicyProjector resourceProjector;
 
@@ -75,6 +77,7 @@ public class SourceRevocationCoordinator {
             CenterPolicyProjector centerProjector,
             TeachingPolicyProjector teachingProjector,
             PersonalTeachingPolicyProjector personalTeachingProjector,
+            ActivityPolicyProjector activityProjector,
             ResultPolicyProjector resultProjector,
             ResourcePolicyProjector resourceProjector) {
         this.partitions = partitions;
@@ -82,6 +85,7 @@ public class SourceRevocationCoordinator {
         this.centerProjector = centerProjector;
         this.teachingProjector = teachingProjector;
         this.personalTeachingProjector = personalTeachingProjector;
+        this.activityProjector = activityProjector;
         this.resultProjector = resultProjector;
         this.resourceProjector = resourceProjector;
     }
@@ -115,6 +119,8 @@ public class SourceRevocationCoordinator {
                                     : teachingProjector.bundleDescriptors(targetKey),
                             List.of()));
         }
+        // Phân công/ghi danh cũng là nguồn của bundle activity (submit/quản lý).
+        projections.addAll(activityProjector.allBundleProjections(workspaceId));
         projections.addAll(resultProjector.allBundleProjections(workspaceId));
         projections.addAll(resourceProjector.allBundleProjections(workspaceId));
         return operations.applyDesiredState(
@@ -146,6 +152,8 @@ public class SourceRevocationCoordinator {
                         centerProjector.bundleDescriptors(workspaceId),
                         List.of()));
         projections.addAll(teachingProjector.allBundleProjections(workspaceId));
+        // Phân công/ghi danh cũng là nguồn của bundle activity (submit/quản lý).
+        projections.addAll(activityProjector.allBundleProjections(workspaceId));
         projections.addAll(resultProjector.allBundleProjections(workspaceId));
         projections.addAll(resourceProjector.allBundleProjections(workspaceId));
         return operations.applyDesiredState(

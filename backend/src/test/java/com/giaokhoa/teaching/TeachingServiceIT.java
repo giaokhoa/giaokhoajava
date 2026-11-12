@@ -113,7 +113,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
                 "INSERT INTO membership_role(membership_id, role) VALUES (?, 'TEACHER')",
                 firstMembership);
 
-        var page = memberships.pageMemberships(workspace, null, 2);
+        var page = memberships.pageMemberships(firstUser, workspace, null, 2);
         assertEquals(2, page.items().size());
         assertEquals(firstMembership, page.items().getLast().id());
         assertEquals(
@@ -124,7 +124,7 @@ class TeachingServiceIT extends IntegrationEnvironment {
                 "UPDATE center_membership SET state = 'REVOKED', revoked_at = now()"
                         + " WHERE id = ?",
                 firstMembership);
-        var remaining = memberships.pageMemberships(workspace, page.nextCursor(), 2);
+        var remaining = memberships.pageMemberships(firstUser, workspace, page.nextCursor(), 2);
         assertEquals(1, remaining.items().size());
         assertEquals(secondMembership, remaining.items().getFirst().id());
     }

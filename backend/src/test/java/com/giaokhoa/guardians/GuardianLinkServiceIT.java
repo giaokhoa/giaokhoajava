@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -121,12 +122,21 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 requested.id(),
                                 "APPROVE",
                                 requested.version(),
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash())
                         .getId());
         LinkSnapshot approved = linkSnapshot(center.workspaceId(), center.studentX());
         assertEquals("APPROVED", approved.state());
         assertEquals(1, approved.version());
+        String persistedProof =
+                jdbc.queryForObject(
+                        "SELECT verification_ref FROM guardian_link WHERE id = ?",
+                        String.class,
+                        approved.id());
+        assertTrue(
+                persistedProof != null && persistedProof.startsWith("offline-guardian-evidence-"),
+                "Chỉ lưu tham chiếu xác minh ngoài hệ thống; không lưu tài liệu cá nhân");
         assertEquals(
                 center.managerId(),
                 jdbc.queryForObject(
@@ -238,6 +248,29 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 center.parentId(), center.workspaceId(), center.studentX(), key(), hash());
         LinkSnapshot requested = linkSnapshot(center.workspaceId(), center.studentX());
 
+        HttpProblemException noVerification =
+                problemOf(() ->
+                        links.decideLink(
+                                center.managerId(),
+                                center.workspaceId(),
+                                requested.id(),
+                                "APPROVE",
+                                requested.version(),
+                                null,
+                                key(),
+                                hash()));
+        assertEquals(HttpStatus.BAD_REQUEST, noVerification.getStatus());
+        assertEquals("GUARDIAN_VERIFICATION_REQUIRED", noVerification.getCode());
+        assertEquals(
+                "REQUESTED",
+                linkSnapshot(center.workspaceId(), center.studentX()).state(),
+                "Thiếu tham chiếu không được mở quyền guardian hoặc thay state");
+        assertNull(
+                jdbc.queryForObject(
+                        "SELECT verification_ref FROM guardian_link WHERE id = ?",
+                        String.class,
+                        requested.id()));
+
         HttpProblemException invalid =
                 problemOf(() ->
                         links.decideLink(
@@ -246,6 +279,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 requested.id(),
                                 "MAYBE",
                                 requested.version(),
+                                null,
                                 key(),
                                 hash()));
         assertEquals(HttpStatus.BAD_REQUEST, invalid.getStatus());
@@ -259,6 +293,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 requested.id(),
                                 "APPROVE",
                                 requested.version() + 100,
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash()));
         assertEquals(HttpStatus.CONFLICT, stale.getStatus());
@@ -285,6 +320,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                 requested.id(),
                 "REJECT",
                 requested.version(),
+                null,
                 key(),
                 hash());
         LinkSnapshot rejected = linkSnapshot(center.workspaceId(), center.studentX());
@@ -297,6 +333,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 rejected.id(),
                                 "APPROVE",
                                 rejected.version(),
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash()));
         assertEquals(HttpStatus.CONFLICT, decideAgain.getStatus());
@@ -319,6 +356,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 UUID.randomUUID(),
                                 "APPROVE",
                                 1L,
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash()));
         assertEquals(HttpStatus.NOT_FOUND, unknown.getStatus());
@@ -348,6 +386,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 requested.id(),
                                 "APPROVE",
                                 requested.version(),
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash()));
         assertEquals(HttpStatus.FORBIDDEN, decide.getStatus());
@@ -386,6 +425,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 requested.id(),
                                 "APPROVE",
                                 requested.version(),
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash())
                         .getId());
@@ -430,6 +470,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 requested.id(),
                                 "APPROVE",
                                 requested.version(),
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash())
                         .getId());
@@ -479,6 +520,7 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                 requested.id(),
                                 "APPROVE",
                                 requested.version(),
+                                "offline-guardian-evidence-" + UUID.randomUUID(),
                                 key(),
                                 hash()));
         assertEquals(HttpStatus.CONFLICT, approve.getStatus());
@@ -684,6 +726,8 @@ class GuardianLinkServiceIT extends GuardianFixture {
                                                             created.id(),
                                                             "APPROVE",
                                                             created.version(),
+                                                            "offline-guardian-evidence-"
+                                                                    + UUID.randomUUID(),
                                                             key(),
                                                             hash())));
                     assertEquals(

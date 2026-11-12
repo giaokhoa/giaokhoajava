@@ -62,7 +62,11 @@ describe("body thao tác liên kết", () => {
 
   it("quyết định duyệt mang expectedVersion của bản đọc hiện tại", () => {
     expect(guardianDecisionBody(lienKetDung, "APPROVE"))
-      .toEqual({ decision: "APPROVE", expectedVersion: 2 });
+      .toBeNull();
+    expect(guardianDecisionBody(lienKetDung, "APPROVE", "  proof-outside-123  "))
+      .toEqual({ decision: "APPROVE", expectedVersion: 2, verificationRef: "proof-outside-123" });
+    expect(guardianDecisionBody(lienKetDung, "APPROVE", " ".repeat(160)))
+      .toBeNull();
     expect(guardianDecisionBody({ ...lienKetDung, version: 5 }, "REJECT"))
       .toEqual({ decision: "REJECT", expectedVersion: 5 });
   });

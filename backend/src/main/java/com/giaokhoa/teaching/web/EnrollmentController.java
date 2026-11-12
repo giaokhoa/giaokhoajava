@@ -52,6 +52,58 @@ public class EnrollmentController {
         }
     }
 
+    /** Chốt cả khóa cho một học sinh, không dựa vào dữ liệu caller khai về actor. */
+    public record CompletionRequest(List<EnrollmentService.CompletionExpected> enrollments) {
+        public CompletionRequest {
+            // Bad row phải trả 428 có mã nghiệp vụ, không để List.copyOf ném NPE/500.
+            if (enrollments != null && enrollments.stream().anyMatch(java.util.Objects::isNull)) {
+                throw new HttpProblemException(
+                        HttpStatus.PRECONDITION_REQUIRED,
+                        "COURSE_COMPLETION_PRECONDITION_REQUIRED",
+                        "Mỗi ghi danh cần id và expectedVersion.");
+            }
+            enrollments = enrollments == null ? List.of() : List.copyOf(enrollments);
+        }
+    }
+
+    @PostMapping("/courses/{courseId}/students/{studentUserId}/complete")
+    public ResponseEntity<IdempotencyService.OperationReceipt> completeStudentCourse(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID courseId,
+            @PathVariable UUID studentUserId,
+            @RequestBody(required = false) @Nullable CompletionRequest body,
+            @RequestHeader(HttpConstants.IDEMPOTENCY_KEY_HEADER) String key,
+            Authentication authentication,
+            HttpServletRequest servletRequest) {
+        List<EnrollmentService.CompletionExpected> expected =
+                body == null ? List.of() : body.enrollments();
+        String path =
+                HttpConstants.WORKSPACE_API_PREFIX
+                        + workspaceId
+                        + "/courses/"
+                        + courseId
+                        + "/students/"
+                        + studentUserId
+                        + "/complete";
+        String hash = support.payloadHash("POST", path, body);
+        return support.withEligibleActor(
+                authentication,
+                servletRequest,
+                workspaceId,
+                actor -> {
+                    support.requireAdmin(actor, workspaceId);
+                    return support.receipt(
+                            enrollments.completeStudentCourse(
+                                    actor,
+                                    workspaceId,
+                                    courseId,
+                                    studentUserId,
+                                    expected,
+                                    key,
+                                    hash));
+                });
+    }
+
     @GetMapping("/course-subjects/{courseSubjectId}/enrollments")
     public ResponseEntity<TeachingRouteSupport.Page<EnrollmentService.EnrollmentView>>
             listEnrollments(
@@ -75,9 +127,23 @@ public class EnrollmentController {
                     if (!support.canReadCourseSubjectRoster(actor, workspaceId, courseSubjectId)) {
                         throw TeachingRouteSupport.denied();
                     }
-                    return support.page(
+                    return support.scopedPage(
+                            actor,
+                            workspaceId,
+                            "enrollments",
+                            courseSubjectId,
+                            limit,
                             enrollments.pageEnrollments(
-                                    workspaceId, courseSubjectId, cursor, limit));
+                                    workspaceId,
+                                    courseSubjectId,
+                                    support.pageAnchor(
+                                            actor,
+                                            workspaceId,
+                                            "enrollments",
+                                            courseSubjectId,
+                                            limit,
+                                            cursor),
+                                    limit));
                 });
     }
 

@@ -1,6 +1,9 @@
 package com.giaokhoa.infrastructure.tenancy;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
@@ -10,10 +13,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Cấp schema riêng cho một workspace: tạo schema, chạy dòng migration tenant ({@code
@@ -29,6 +34,13 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class TenantSchemaProvisioner {
     private static final Logger LOG = LoggerFactory.getLogger(TenantSchemaProvisioner.class);
     private static final String TENANT_LOCATIONS = "classpath:db/migration-tenant";
+    private static final Pattern SQL_IDENTIFIER = Pattern.compile("[a-z][a-z0-9_]*");
+    private static final List<String> SCOPED_COLUMNS =
+            List.of(
+                    "workspace_id",
+                    "owner_workspace_id",
+                    "recipient_workspace_id",
+                    "personal_workspace_id");
 
     private final DataSource migrationDataSource;
     private final JdbcTemplate migrationJdbc;
@@ -89,20 +101,84 @@ public class TenantSchemaProvisioner {
 
     /**
      * Kích hoạt schema riêng của workspace: chuẩn bị như {@link #prepareSchema} rồi ghi tên schema
-     * vào registry {@code workspace.schema_name}. Chỉ gọi khi dữ kiện tenant của workspace được ghi
-     * vào schema riêng từ thời điểm này (workspace mới chưa có dữ kiện, hoặc dữ kiện đã được chuyển
-     * vào schema riêng); trả về tên schema.
+     * vào registry {@code workspace.schema_name} CHỈ khi chưa có dữ liệu tenant ở schema hệ thống.
+     * Workspace legacy có dữ liệu phải đi qua quy trình copy/check riêng; một lần chạy runner không
+     * được bí mật chuyển search_path sang schema rỗng. Kiểm và publish khóa workspace cùng tx.
      */
     public String provisionSchema(UUID workspaceId) {
         String schema = prepareSchema(workspaceId);
-        int updated =
-                migrationJdbc.update(
-                        "UPDATE workspace SET schema_name = ? WHERE id = ?", schema, workspaceId);
-        if (updated == 0) {
-            throw new IllegalStateException(
-                    "Không ghi được schema_name: workspace không tồn tại: " + workspaceId);
-        }
+        // Chỉ cấp cho workspace hoàn toàn rỗng, hoặc workspace đã cutover trước đó.
+        // Chuyển dữ kiện legacy phải là bước migration riêng đã kiểm chứng; không publish
+        // registry làm mọi request đổi schema khi dữ kiện còn trong public.
+        TransactionTemplate transaction =
+                new TransactionTemplate(new DataSourceTransactionManager(migrationDataSource));
+        transaction.executeWithoutResult(_ -> {
+            List<Map<String, Object>> rows =
+                    migrationJdbc.queryForList(
+                            "SELECT schema_name FROM public.workspace WHERE id = ? FOR UPDATE",
+                            workspaceId);
+            if (rows.isEmpty()) {
+                throw new IllegalStateException("Workspace không tồn tại: " + workspaceId);
+            }
+            Object current = rows.getFirst().get("schema_name");
+            if (current != null) {
+                if (!schema.equals(current)) {
+                    throw new IllegalStateException("Workspace đã gắn schema khác: " + workspaceId);
+                }
+                return;
+            }
+            requireLegacyWorkspaceEmpty(workspaceId, schema);
+            migrationJdbc.update(
+                    "UPDATE public.workspace SET schema_name = ? WHERE id = ?",
+                    schema,
+                    workspaceId);
+        });
         return schema;
+    }
+
+    /**
+     * Soát mọi bảng business có cột scope theo tenant baseline, kể cả bảng mới của Flyway. Không
+     * chỉ xét class/membership: receipt, share grant và practice history riêng cũng là dữ liệu
+     * không được biến mất khỏi ứng dụng khi đổi search_path.
+     */
+    private void requireLegacyWorkspaceEmpty(UUID workspaceId, String schema) {
+        List<Map<String, Object>> columns =
+                migrationJdbc.queryForList(
+                        "SELECT c.table_name, c.column_name FROM information_schema.columns c"
+                                + " WHERE c.table_schema = 'public' AND c.column_name IN"
+                                + " ('workspace_id','owner_workspace_id','recipient_workspace_id',"
+                                + " 'personal_workspace_id')"
+                                + " AND EXISTS (SELECT 1 FROM information_schema.tables t"
+                                + " WHERE t.table_schema = ? AND t.table_name = c.table_name)"
+                                + " ORDER BY c.table_name, c.column_name",
+                        schema);
+        if (columns.isEmpty()) {
+            throw new IllegalStateException("Tenant schema chưa có bảng nguồn để kiểm: " + schema);
+        }
+        for (Map<String, Object> column : columns) {
+            String table = String.valueOf(column.get("table_name"));
+            String field = String.valueOf(column.get("column_name"));
+            if (!SQL_IDENTIFIER.matcher(table).matches() || !SCOPED_COLUMNS.contains(field)) {
+                throw new IllegalStateException("Cột scope tenant không hợp lệ: " + table);
+            }
+            Boolean present =
+                    migrationJdbc.queryForObject(
+                            "SELECT EXISTS(SELECT 1 FROM public."
+                                    + table
+                                    + " WHERE "
+                                    + field
+                                    + " = ? LIMIT 1)",
+                            Boolean.class,
+                            workspaceId);
+            if (Boolean.TRUE.equals(present)) {
+                throw new IllegalStateException(
+                        "Không kích hoạt schema rỗng: workspace còn dữ liệu cũ tại public."
+                                + table
+                                + " ("
+                                + workspaceId
+                                + ")");
+            }
+        }
     }
 
     private void migrateAndGrant(String schema) {

@@ -291,6 +291,26 @@ bại phải nêu cặp quyền/dữ kiện cụ thể, không gộp thành "Key
 
 **Readiness hiện hành (12/11/2026)**: Theo GitHub ngày 12/11/2026, #94 CLOSED và PR #302 MERGED (`6be8371` trên `origin/main`); gate #95 vẫn OPEN. Nhánh tài liệu tại `f3d2e618` chưa ghép commit #302. Chỉ chạy bước kiểm chứng được gate hiện hành cho phép; không coi các task nghiệm thu sau gate là đã sẵn sàng vì native blocker riêng lẻ đã đóng.
 
-`TenantMigrationRunner.migrateAllTenants()` hiện kích hoạt `schema_name` nhưng không chuyển dữ kiện cũ; không dùng làm lệnh nâng cấp an toàn cho workspace có dữ liệu. Chỉ cutover sau khi hoàn tất các task dữ kiện/context/notification/revoke trên schema đã kích hoạt. Không reset DEV hoặc sửa baseline đã apply để vượt bước này.
+`TenantMigrationRunner.migrateAllTenants()` trên PR #323 HEAD Phase 12 hiện **chỉ prepare/migrate**, KHÔNG kích hoạt `schema_name`: migration runner không được quyền làm cutover. `TenantSchemaProvisioner.provisionSchema()` từ chối kích hoạt workspace còn dữ kiện ở schema hệ thống (kiểm các bảng theo scope dưới khóa row workspace). Workspace legacy tiếp tục hoạt động trên `public`; trước cutover phải có bước copy/verify toàn bộ dữ liệu và permission, **chưa được triển khai** và chưa đủ native gate của T102. Không coi việc chuẩn bị schema là dữ liệu đã được chuyển. Không reset DEV hoặc sửa baseline đã apply để vượt bước này.
 
 Trước pilot dùng học sinh thật: chốt chính sách giữ/xóa hồ sơ, loại hình lớp và trách nhiệm vận hành; xác minh người đại diện ngoài hệ thống, chỉ lưu tham chiếu tối thiểu khi duyệt quyền xem. Hoàn thành đợt học giữ quyền xem kết quả của chính học sinh trong thời gian hồ sơ còn được lưu hợp lệ; thu hồi bảo mật vẫn chặn. Bài cần bảo đảm hoàn tất dùng nguồn sở hữu/LONG_TERM; nếu hết gói và giáo viên duy nhất nghỉ, phải gia hạn rồi phân công người thay. Các luồng mới này chưa có trong code tại nền đối chiếu; xem [báo cáo hội tụ](../../docs/doi-chieu-spec-code-20261112.md) và task bổ sung.
+
+### Bàn giao hướng dẫn vận hành (T114, không có gate người dùng thật)
+
+Chủ repo đã miễn nghiệm thu người dùng thật SC-001/002/009 cho đợt #2; #98 đóng
+`NOT_PLANNED`, không có kết quả 4/5. [Bản đồ/hướng dẫn theo 22 luồng](../../docs/luong-nghiep-vu-theo-vai-tro.md)
+chia tính năng đã có và các bước còn **CHƯA TRIỂN KHAI**; không dùng tài liệu đó
+làm bằng chứng một luồng đã chạy thành công. Trước khi nhập dữ liệu học sinh thật,
+phải xác minh/ghi lại chủ thể xử lý, loại hình hoạt động, thời hạn giữ/xóa, quy
+trình người đại diện và đầu mối yêu cầu/tranh chấp theo AS-013. Nếu chưa có các
+quyết định này, giữ môi trường test với tài khoản/dữ liệu giả, không tự mặc định
+việc triển khai phần mềm đã đáp ứng mọi điều kiện vận hành.
+
+**Phiếu go/no-go dữ liệu học sinh thật (AS-013, chỉ do đơn vị vận hành xác nhận):**
+trước khi sử dụng, ghi vào hồ sơ vận hành *ngoài repo* người chịu trách nhiệm xử lý,
+loại hình lớp/điều kiện tổ chức, căn cứ xử lý dữ liệu, nơi và thời hạn lưu/xóa dữ liệu,
+người xác minh người đại diện và nơi giữ bằng chứng ngoài hệ thống, kênh/đầu mối xử lý
+yêu cầu hoặc tranh chấp. Chưa đủ bất kỳ mục nào → **NO-GO cho dữ liệu học sinh thật**;
+chỉ sử dụng tài khoản/dữ kiện TEST, không gắn giấy tờ hoặc bí mật người học vào issue/log.
+Mục này cũng áp dụng khi workspace là PERSONAL có trẻ em, không suy quyền PH-01/02 vào
+workspace cá nhân. Đối chiếu [phiếu quyết định T114](../../docs/luong-nghiep-vu-theo-vai-tro.md#quyết-định-vận-hành-còn-phải-chốt-trước-khi-chứa-dữ-liệu-học-sinh-thật).

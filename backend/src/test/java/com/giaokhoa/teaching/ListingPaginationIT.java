@@ -1,9 +1,9 @@
 package com.giaokhoa.teaching;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import com.giaokhoa.authorization.operation.IdempotencyService;
@@ -103,9 +103,6 @@ class ListingPaginationIT extends IntegrationEnvironment {
         UUID previous = member(workspace, 10, "STUDENT");
         UUID first = member(workspace, 11, "MANAGER", "TEACHER");
         UUID second = member(workspace, 12, "STUDENT");
-        jdbc.update(
-                "UPDATE center_membership SET state = 'REVOKED', revoked_at = now() WHERE id = ?",
-                previous);
         UUID foreignWorkspace = center();
         UUID foreignCursor = member(foreignWorkspace, 13, "STUDENT");
         MembershipService service =
@@ -120,21 +117,58 @@ class ListingPaginationIT extends IntegrationEnvironment {
                         mock(ResourceMutationCoordinator.class),
                         mock(AuditRecorder.class));
 
-        var page = service.pageMemberships(workspace, previous.toString(), 1);
+        UUID actor = UUID.randomUUID();
+        UUID ownerMember =
+                Objects.requireNonNull(
+                        jdbc.queryForObject(
+                                "SELECT m.id FROM center_membership m JOIN membership_role r"
+                                        + " ON r.membership_id = m.id WHERE m.workspace_id = ? AND r.role = 'OWNER'",
+                                UUID.class,
+                                workspace));
+        var ownerPage = service.pageMemberships(actor, workspace, null, 1);
+        assertEquals(
+                List.of(ownerMember), ownerPage.items().stream().map(row -> row.id()).toList());
+        var initial = service.pageMemberships(actor, workspace, ownerPage.nextCursor(), 1);
+        assertEquals(List.of(previous), initial.items().stream().map(row -> row.id()).toList());
+        // Anchor bị thu hồi sau khi lấy cursor nhưng vẫn là mốc để trang kế tiếp đọc đúng.
+        jdbc.update(
+                "UPDATE center_membership SET state = 'REVOKED', revoked_at = now() WHERE id = ?",
+                previous);
+        var page = service.pageMemberships(actor, workspace, initial.nextCursor(), 1);
         assertEquals(List.of(first), page.items().stream().map(row -> row.id()).toList());
         assertEquals(
                 Set.of(MembershipRole.Role.MANAGER, MembershipRole.Role.TEACHER),
                 Set.copyOf(page.items().getFirst().roles()));
-        assertEquals(first.toString(), page.nextCursor());
-        var last = service.pageMemberships(workspace, page.nextCursor(), 1);
+        assertNotNull(page.nextCursor());
+        var last = service.pageMemberships(actor, workspace, page.nextCursor(), 1);
         assertEquals(List.of(second), last.items().stream().map(row -> row.id()).toList());
         assertNull(last.nextCursor());
         for (String cursor :
                 List.of("bad", foreignCursor.toString(), UUID.randomUUID().toString())) {
-            var empty = service.pageMemberships(workspace, cursor, 1);
-            assertTrue(empty.items().isEmpty());
-            assertNull(empty.nextCursor());
+            var invalid = cursor;
+            assertEquals(
+                    "INVALID_CURSOR",
+                    assertThrows(
+                                    HttpProblemException.class,
+                                    () -> service.pageMemberships(actor, workspace, invalid, 1))
+                            .getCode());
         }
+        assertEquals(
+                "INVALID_CURSOR",
+                assertThrows(
+                                HttpProblemException.class,
+                                () ->
+                                        service.pageMemberships(
+                                                UUID.randomUUID(), workspace, page.nextCursor(), 1))
+                        .getCode());
+        assertEquals(
+                "INVALID_CURSOR",
+                assertThrows(
+                                HttpProblemException.class,
+                                () ->
+                                        service.pageMemberships(
+                                                actor, foreignWorkspace, page.nextCursor(), 1))
+                        .getCode());
     }
 
     @DisplayName("Trang lớp lọc theo giáo viên và workspace trước khi chọn trang")

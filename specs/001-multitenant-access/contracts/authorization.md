@@ -21,7 +21,7 @@ Invariant như môn của đề phải khớp môn trong khóa, học sinh phả
 - Realm `giaokhoa`; mỗi center có một Organization. Thành viên dùng tài khoản độc lập, không tự xóa account khi xóa membership.
 - `giaokhoa-web`: confidential OIDC client cho Spring BFF; Authorization Code, PKCE, exact redirect URI, post-logout URI và back-channel URI. Không dùng Direct Access Grants cho web hoặc kiểm thử E2E.
 - `giaokhoa-api`: resource-server client, bật Authorization Services, Enforcing, tắt default wildcard allow. Resources do resource server quản lý; business center không được đưa vào user owner của resource Keycloak.
-- `giaokhoa-provisioner`: service account riêng dùng Admin/Protection API với quyền tối thiểu cần thiết để quản lý directory/projections. Không cấp credential này cho frontend hoặc người dùng trung tâm.
+- `giaokhoa-provisioner`: service account riêng dùng Admin API với quyền tối thiểu cần thiết để quản lý directory/projections. Không cấp credential này cho frontend hoặc người dùng trung tâm.
 - Không phát group claim vào access token dùng quyết định. Không cấu hình native group policy dựa trên claim tùy ý. Group policies lấy nhóm realm hiện hành; role claims tổng hợp không được dùng làm tenant authority.
 - Baseline group chỉ biểu thị eligibility đã xác minh hoặc account được backend cấp, không là role học sinh/giáo viên toàn hệ thống. Mặc định không thuộc baseline thì không có nghiệp vụ; profile/xác minh/khôi phục vẫn dùng được.
 - Realm giữ verifyEmail nhưng email optional trong User Profile; không email-as-username, không default VERIFY_EMAIL/UPDATE_PROFILE cho mọi account. Backend tạo học sinh không email với temporary password và UPDATE_PASSWORD, ghi origin CENTER_ISSUED trong dữ liệu do server kiểm soát. Unknown/self-register cần email verified; mời account có sẵn không đổi origin. Chi tiết và pitfall default required actions ở R12 của research.
@@ -402,3 +402,38 @@ SQL chỉ cho phép tự gửi hoặc quản trị hiện hành của đúng cen
 - **Thay giáo viên sau expiry (NV-05)**: Người đã bị gỡ phân công mất quyền ngay. Nếu không còn giáo viên có quyền chấm thì phải gia hạn trước phân công người thay, không mở scope bàn giao tăng quyền riêng trong thời gian hết gói.
 
 Gate bổ sung dùng PostgreSQL/Keycloak thật: hoàn thành rồi đọc lịch sử bằng phiên cũ, nhận/nộp bài mới bị chặn; chuyển lớp không giữ quyền học tập cũ; khóa/revoke chặn lịch sử; thiếu xác minh không duyệt được; GUARANTEED từ chối closure có REVOCABLE hoặc LONG_TERM hết hạn hữu hạn (test hết hạn trước/đúng/sau `dueAt`); INTERRUPTIBLE bị revoke giữa làm và sau nộp/trước chấm; bài quá hạn bị chặn; revoke một license vẫn giữ nguồn độc lập nếu còn hợp lệ. Bằng chứng gốc không được đánh dấu đạt thay các ca này.
+
+## 15. T109/F09 — Phán quyết về các ngoại lệ SQL tại gate hội tụ (PR #323, chưa nghiệm thu native)
+
+Bảng quyết định dưới đây chốt **biên của ngoại lệ cũ**, không mở thêm phép grant trên
+ứng dụng. Đây là đánh giá hiện trạng để nghiệm thu qua native test mutation thật; không đổi
+PDP thành SQL hoặc ngược lại chỉ nhằm làm một fixture seed thiếu projection trở nên xanh.
+
+| Đường HTTP/caller | Quyết quyền hiện tại | Phải giữ trước commit | Quyết định T109 |
+| --- | --- | --- | --- |
+| `MembershipController` list/invite/students/roles/revoke | SQL membership ACTIVE/role từ `MembershipService`; chỉ thêm role/mời/cấp mới qua gate subscription | `executeForActor` profile target `workspace.list`, ACCOUNT/eligibility fence; khóa workspace, cùng operation desired revision, không dùng session roles | **Giữ ngoại lệ §10 có phạm vi**, không tự mở cho endpoint mới |
+| `ClassController`, `CourseController`, `EnrollmentController`, `AssignmentController` gồm `completeStudentCourse` | `TeachingRouteSupport` SQL owner/manager hoặc đúng assignment/homeroom hiện hành, precondition theo operation | `executeForActor` profile eligibility/fence và workspace lock; subscription chỉ chặn tăng thêm; revoke/completion không dựa vào kỳ mới | **Giữ ngoại lệ §11**, sample-action và published-result vẫn dùng PDP trên từng target |
+| `GuardianLinkController` create/decision/revoke/list | role SQL PARENT hoặc OWNER/MANAGER thật; approve đòi gói current và verificationRef; revoke không cổng gói | `executeForActor` ACCOUNT fence, lock workspace; các kiểm tiền đề khác ngay khi mutate | **Giữ ngoại lệ §12**, `StudentResultController` không thuộc ngoại lệ (PDP published) |
+| `RecoveryController.submit` (`POST /me/recovery-requests`) | SQL self-request hoặc CENTER hiện hành của target, mọi target không hợp lệ chung 404 | Cho cả account chưa eligible gửi yêu cầu cứu tài khoản, không suy platform permission từ requester | **Giữ ngoại lệ §13 hẹp**; hai route operator `/platform/recovery-requests` còn PDP `account.recover`/ACCOUNT fence |
+
+**Caveat tường minh để không sửa sai hợp đồng:** CENTER **chưa từng có kỳ gói** được
+phép tạo/mời/cấp theo quyết định §10, nhưng CENTER đã từng có kỳ nay **hết hạn** bị chặn
+mở rộng 403; PERSONAL **chưa có gói** bị chặn tạo/mở rộng. Hai trạng thái CENTER này
+khác nhau dù PDP projection chưa nguồn kỳ và sẽ DENY cả hai nếu đưa thẳng route vào PDP.
+Quyền thu hồi (xóa phân công/ghi danh/membership) không bị chặn vì gói hết hạn.
+
+**Không nới ngoại lệ:** bảo lưu kết quả đã công bố sau `COMPLETED` chỉ qua PDP result;
+submit/grade/publish của bài cũ vẫn qua PDP activity/result và gate license closure
+hiện hành (FR-044/045); các version/content và correction-notice inbox cũng qua PDP
++ authorization fence. Không được dùng API SQL route để cấp version.use/answer.read,
+không đưa `recovery.submit` của người chưa verified qua `workspace.list` gate và làm mất
+khả năng gửi cứu hộ. Thao tác có 202 chỉ tính thành công khi projection operation
+`SUCCEEDED`/fence đồng bộ; `PENDING` không là quyền đã được cấp.
+
+**Gate chưa đạt:** phải chạy test đúng đường mutation tạo nguồn thật (không chỉ seed SQL
+mà không apply projection) và old-cookie sau revoke/expiry, positive/negative control
+của CENTER never-period, CENTER expired, PERSONAL no-period, actor đổi role, guardian
+approve thiếu verificationRef, recovery từ account chưa verified và operator sai quyền.
+Kiểm cụ thể source checks cùng desired revision và native PDP bằng PostgreSQL/Keycloak
+trên HEAD cuối. Đến lúc đó #317/T109 và parent #2 **vẫn OPEN**; bảng này là quyết định
+contract, không phải bằng chứng runtime PASS.

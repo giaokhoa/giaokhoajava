@@ -10,10 +10,11 @@ import org.springframework.stereotype.Component;
 
 /**
  * Áp dòng migration tenant cho mọi workspace (fan-out khi phát hành và đường xử lý lại). Workspace
- * đã cấp schema được áp migration còn thiếu; workspace chưa có schema — gồm cả workspace cấp lỗi ở
- * lần tạo nên {@code schema_name} vẫn NULL — được cấp mới qua {@link TenantSchemaProvisioner}, nên
- * không workspace nào kẹt vĩnh viễn ở schema hệ thống sau một lần cấp lỗi. Tiến độ được trả theo
- * từng workspace: một workspace lỗi bị cách ly trong kết quả, không chặn các workspace còn lại.
+ * đã cấp schema được áp migration còn thiếu; workspace chưa kích hoạt chỉ được CHUẨN BỊ, KHÔNG
+ * publish registry. Lúc chưa chuyển dữ kiện, việc publish sẽ khiến request đi sang schema rỗng và
+ * nhìn như mất dữ liệu. Cutover được làm ở bước riêng, có kiểm chứng và khóa workspace. Tiến độ
+ * được trả theo từng workspace: một workspace lỗi bị cách ly trong kết quả, không chặn các
+ * workspace còn lại.
  */
 @Component
 public class TenantMigrationRunner {
@@ -37,7 +38,7 @@ public class TenantMigrationRunner {
                 .map(workspaceId -> {
                     String schema = TenantContext.schemaNameFor(workspaceId);
                     try {
-                        provisioner.provisionSchema(workspaceId);
+                        provisioner.prepareSchema(workspaceId);
                         return new Result(workspaceId, schema, true, null);
                     } catch (FlywayException | DataAccessException | IllegalStateException e) {
                         // Cách ly đúng các lỗi vận hành đã biết của đường cấp schema; lỗi lập

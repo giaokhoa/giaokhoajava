@@ -603,6 +603,7 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
       const operator = await taoNguoiDung(page, origin, env, NHOM_OPERATOR, daTao);
       const owner = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
       const teacher = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
+      const teacherReplacement = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
       const student = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
       const parent = await taoNguoiDung(page, origin, env, NHOM_ELIGIBLE, daTao);
 
@@ -630,6 +631,8 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
       csrf = await dangNhapLai(page, origin, owner);
       await moiVaChapNhan(page, origin, csrf, workspaceId, teacher, ["TEACHER"]);
       csrf = await dangNhapLai(page, origin, owner);
+      await moiVaChapNhan(page, origin, csrf, workspaceId, teacherReplacement, ["TEACHER"]);
+      csrf = await dangNhapLai(page, origin, owner);
       await moiVaChapNhan(page, origin, csrf, workspaceId, student, ["STUDENT"]);
       csrf = await dangNhapLai(page, origin, owner);
       await moiVaChapNhan(page, origin, csrf, workspaceId, parent, ["PARENT"]);
@@ -645,6 +648,14 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
       const dongRoster = timDongRoster(roster, student.appId, student.username);
       await ghiDanh(page, origin, csrf, workspaceId, [dongRoster.id], [courseSubjectId]);
       await phanCongGiaoVien(page, origin, csrf, workspaceId, courseSubjectId, [teacher.appId]);
+      const teacherAssignmentsBefore = await guiGet(
+        page, origin, `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/teachers`);
+      expect(teacherAssignmentsBefore.status()).toBe(200);
+      const assignmentItems = (await teacherAssignmentsBefore.json()) as TrangDanhSach<{
+        id: string; teacherUserId: string;
+      }>;
+      const oldAssignment = assignmentItems.items.find((item) => item.teacherUserId === teacher.appId);
+      expect(oldAssignment).toBeTruthy();
       seedLienKetPhuHuynh(workspaceId, parent.appId, student.appId, owner.appId);
       const taiNguyen = seedTaiNguyen(workspaceId, teacher.appId, monKhoa[0].subjectId);
 
@@ -762,6 +773,24 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
           `/api/workspaces/${workspaceId}/classes`, { name: `lop-sau-han-${randomUUID().slice(0, 8)}` });
         expect(taoLopSauHan.status()).toBe(403);
 
+        // US8.8: giáo viên CUỐI nghỉ khi gói đã hết hạn. Thu hồi luôn được thực hiện,
+        // dù trung tâm chưa thể thêm giáo viên thay thế khi kỳ gói chưa được gia hạn.
+        const revokeOld = await guiMutation(
+          page, origin, csrf, "DELETE",
+          `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/teachers/${oldAssignment!.id}`);
+        expect(revokeOld.status()).toBe(202);
+        const revokeReceipt = (await revokeOld.json()) as MutationTraLoi;
+        await choOperationThanhCong(page, origin, layOperationId(revokeReceipt), revokeReceipt.statusUrl);
+        const beforeRenew = await guiMutation(
+          page, origin, csrf, "POST",
+          `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/teachers`,
+          { teacherUserIds: [teacherReplacement.appId] });
+        expect(beforeRenew.status()).toBe(403);
+        const oldCookieDenied = await guiGet(
+          boiCanhTeacher.page, origin,
+          `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/enrollments`);
+        expect(oldCookieDenied.status()).toBe(403);
+
         // Cùng phiên owner, giao diện trung tâm cũng phải báo chỉ đọc và vô hiệu
         // hóa nút tạo lớp, không chỉ dựa vào API 403.
         await page.goto(`${origin}/centers/${workspaceId}/classes`);
@@ -777,16 +806,31 @@ test.describe("US8 hết hạn gói ở biên trình duyệt", () => {
           new Date(), new Date(Date.now() + 90 * 24 * 60 * 60 * 1000));
         csrf = await dangNhapLai(page, origin, owner);
         await taoLop(page, origin, csrf, workspaceId);
-        const giaoSauGiaHan = await guiSampleAction(
-          boiCanhTeacher.page, origin, boiCanhTeacher.csrf, workspaceId, {
-            action: "ASSIGN_ACTIVITY",
-            courseSubjectId,
-            resourceId: taiNguyen.resourceId,
-            versionId: taiNguyen.versionId,
-            dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-            attemptLimit: 1,
-          });
-        expect(giaoSauGiaHan.status()).toBe(201);
+        // Gia hạn KHÔNG hồi sinh phân công đã thu hồi; người mới phải được cấp rõ ràng.
+        const afterRenewOld = await guiGet(
+          boiCanhTeacher.page, origin,
+          `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/enrollments`);
+        expect(afterRenewOld.status()).toBe(403);
+        await phanCongGiaoVien(
+          page, origin, csrf, workspaceId, courseSubjectId, [teacherReplacement.appId]);
+        const teachersAfter = await guiGet(
+          page, origin, `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/teachers`);
+        expect(teachersAfter.status()).toBe(200);
+        const currentTeachers = (await teachersAfter.json()) as TrangDanhSach<{
+          id: string; teacherUserId: string;
+        }>;
+        expect(currentTeachers.items.map((item) => item.teacherUserId))
+          .toEqual([teacherReplacement.appId]);
+        const csrfReplacement = await dangNhapLai(page, origin, teacherReplacement);
+        const replacementRoster = await guiGet(
+          page, origin, `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/enrollments`);
+        expect(replacementRoster.status()).toBe(200);
+        // Quyền teacher cũ vẫn mất bằng chính cookie trước cutoff, không login lại.
+        const afterReplacementOld = await guiGet(
+          boiCanhTeacher.page, origin,
+          `/api/workspaces/${workspaceId}/course-subjects/${courseSubjectId}/enrollments`);
+        expect(afterReplacementOld.status()).toBe(403);
+        void csrfReplacement;
       } finally {
         await boiCanhStudent.page.context().close();
         await boiCanhTeacher.page.context().close();

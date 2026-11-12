@@ -781,7 +781,8 @@ async function duyetLienKet(
 ): Promise<void> {
   const quyetDinh = await guiMutation(page, origin, csrfManager, "POST",
     `/api/workspaces/${workspaceId}/guardian-links/${lienKet.id}/decision`,
-    { decision: "APPROVE", expectedVersion: lienKet.version });
+    { decision: "APPROVE", expectedVersion: lienKet.version,
+      verificationRef: "e2e-offline-guardian-verification" });
   expect(quyetDinh.status()).toBe(202);
   const traLoi = (await quyetDinh.json()) as MutationTraLoi;
   await choOperationThanhCong(page, origin, layOperationId(traLoi), traLoi.statusUrl);

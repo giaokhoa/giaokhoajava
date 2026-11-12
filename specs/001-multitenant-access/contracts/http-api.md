@@ -40,7 +40,7 @@ Lỗi thống nhất dạng `application/problem+json`: `type`, `title`, `status
 | `TeacherAssignment` | `teacherUserIds[]`; courseSubject lấy từ route |
 | `HomeroomAssignment` | `teacherUserId`; class lấy từ route |
 | `GuardianRequest` | `studentUserId`; requester là actor hiện hành; field lạ (ví dụ `parentUserId` của người khác) bị bỏ qua, không tạo link cho phụ huynh khác |
-| `GuardianDecision` | `decision:APPROVE/REJECT`, `expectedVersion`; approver do server ghi. **Bổ sung FR-056 chưa triển khai**: `verificationRef` bắt buộc, không rỗng khi APPROVE; không bắt buộc khi REJECT |
+| `GuardianDecision` | `decision:APPROVE/REJECT`, `expectedVersion`; approver do server ghi. **Theo FR-056**: `verificationRef` (1–160 ký tự) bắt buộc khi APPROVE, chỉ giữ tham chiếu xác minh ngoài hệ thống; không trả trong GuardianLinkView; không bắt buộc khi REJECT |
 | `GuardianLinkView` | `id`, `workspaceId`, `parentUserId`, `studentUserId`, `state`, `version`; danh sách trả dạng `{items}`, không `totalCount` |
 | `PublishedResultView` | `id`, `student:{id,displayName}`, `className`, `courseName`, `subjectName`, `score?`, `comment?`, `publishedAt`; không chứa submission/body/answer/draft fields |
 | `CapabilitiesRequest` | `targets:[{type,id,versionId?,scopes[]}]`; chỉ đối tượng trong route workspace và actor hiện hành |
@@ -173,11 +173,14 @@ Luồng parent bản đầu bắt đầu sau khi trung tâm mời/cấp vai trò
 | `OPEN_ATTEMPT` | `activityId`, `studentUserId` | activity `attempt.open`, gói active |
 | `REASSIGN_ACTIVITY` | `activityId`, `dueAt` | activity `reassign` + target/source permissions, gói active |
 
+`ASSIGN_ACTIVITY` nhận thêm `completionPolicy: "INTERRUPTIBLE" | "GUARANTEED"` (thiếu trường dùng `INTERRUPTIBLE` cho tương thích dữ liệu mẫu cũ). GUARANTEED trả 409 `COMPLETION_POLICY_SOURCE_NOT_DURABLE` nếu nguồn hoặc **bất kỳ thành phần closure** không thuộc workspace sở hữu với provenance hợp lệ hoặc không có license LONG_TERM ACCEPTED cho `use` không có `expiresAt`; kể cả grant hết hạn sau `dueAt` cũng không đủ do chưa có hạn chấm/công bố. Chuỗi lạ trả 400 `COMPLETION_POLICY_INVALID`. Dùng PDP chuẩn cho `use` trên root/closure và `activity.assign` vẫn bắt buộc; `GUARANTEED` không bao giờ bypass session, membership, enrollment hay hạn/lượt.
+
+
 Không có action tự đặt actor, tự gán role hoặc duyệt học liệu nhiều bước. Fixture có trạng thái APPROVED để kiểm chứng chủ nhiệm. API kiểm chứng không chứa engine quyết định riêng, không dùng sample flag để bỏ gate.
 
 **Bổ sung FR-055, chưa có route trong code**: `POST /api/workspaces/{wid}/courses/{kid}/students/{sid}/complete` hoàn thành **đợt của một học sinh tại một khóa**, không phải từng enrollment. Body `{expectedEnrollments:[{id,version}]}` là danh sách đầy đủ ID/row version của mọi ghi danh ACTIVE của học sinh tại các môn trong khóa, lấy từ roster được phép đọc; bắt buộc `Idempotency-Key`. Đây là ngoại lệ precondition theo tập thay vì `If-Match` của một row. Backend so sánh tập và version trong cùng transaction với khóa bảo vệ khỏi ghi danh mới đồng thời; thiếu danh sách/key trả 428, lệch tập/version trả 409 (không thay đổi phần nào), sai khóa/học sinh/workspace trả 404. Mọi enrollment ACTIVE phù hợp cùng chuyển COMPLETED trong một mutation/operation/revision, không đụng ghi danh REVOKED hoặc khóa khác; `OperationReceipt` chỉ hoàn tất sau SUCCEEDED. GET kết quả hiện có giữ DTO published-only và thêm nguồn lịch sử của chính học sinh theo authorization contract mục 14. Scope completion riêng phải được review trước triển khai, không tái dùng quyền thu hồi để tăng quyền. Schema/service/UI/test ở T104/T105.
 
-**Bổ sung FR-056, chưa triển khai**: APPROVE thiếu `verificationRef` hợp lệ trả 400 và không đổi link/audit nguồn quyền; người/thời điểm xác nhận lấy từ server. Tham chiếu không chứa giấy tờ nhạy cảm và chỉ phục vụ người có thẩm quyền duyệt.
+**Theo FR-056 (PR #323, phải kiểm native trước merge)**: APPROVE thiếu `verificationRef` hợp lệ trả 400 `GUARDIAN_VERIFICATION_REQUIRED` và không đổi link/audit nguồn quyền; người/thời điểm xác nhận lấy từ server. Tham chiếu không chứa giấy tờ nhạy cảm và chỉ phục vụ người có thẩm quyền duyệt.
 
 Thông báo đính chính cho bên nhận (FR-034) hiện mới có receipt lưu trong DB và payload `CORRECT_SOURCE` cho người phát hành. Chưa có đường đọc notification của workspace nhận trong HTTP/UI; cần contract đọc metadata sau authorization và UI nhận cập nhật. Không coi việc tồn tại receipt là đã thông báo được cho người nhận.
 
@@ -198,3 +201,24 @@ Thông báo đính chính cho bên nhận (FR-034) hiện mới có receipt lưu
 | `/review` | Chạy các action mẫu khi profile review bật | Verification APIs, cùng PDP |
 
 UI luôn cho biết workspace và trạng thái PENDING/FAILED/SUCCEEDED. Ẩn nút không thay kiểm tra backend. Không hiển thị khái niệm policy graph/native group/revision cho người dùng; lỗi nghiệp vụ giải thích ngắn như chưa có phân công, gói hết hạn, hoặc đang cập nhật quyền.
+
+### Hoàn thành một học sinh × một khóa (FR-055, QL-06/HS-03)
+
+`POST /api/workspaces/{workspaceId}/courses/{courseId}/students/{studentUserId}/complete`
+
+- Chỉ OWNER/MANAGER của CENTER hoặc owner của PERSONAL được thao tác; xác thực/eligibility/session và khóa workspace như mutation giảng dạy. `Idempotency-Key` bắt buộc; trả **202** operation receipt, chỉ **SUCCEEDED** mới coi hoàn tất nguồn quyền.
+- Body bắt buộc là snapshot **đầy đủ**, do UI tải lại từ mọi môn–khóa trước khi gửi:
+  ```json
+  {"enrollments":[{"id":"00000000-0000-0000-0000-000000000001","expectedVersion":0}]}
+  ```
+  Từng `id` là một enrollment thuộc đúng học sinh, đúng khóa, đúng workspace, trạng thái ACTIVE; số phần tử có thể nhiều môn và tất cả phải khớp tập hiện tại, không được chỉ gửi phần của một môn. Nếu `enrollments` trống/không có `expectedVersion`: **428** `COURSE_COMPLETION_PRECONDITION_REQUIRED`; thiếu ID, dư ID, trùng ID hoặc version cũ/PENDING/COMPLETED: **409** `COURSE_COMPLETION_SNAPSHOT_CHANGED`. Không ghi một phần.
+- Thành công cập nhật **đồng bộ trong một transaction**, tất cả ACTIVE → `COMPLETED` có chung `completed_at`, không đặt `revoked_at`, ghi lại bundle teaching/activity/result/resource cùng revision; không đòi gói thuê bao còn hạn để hoàn tất. `COMPLETED` không tham gia group học tập ACTIVE, không được submit mới, không ghi danh lại cùng khóa bằng gia hạn gói; vẫn cho **chính học sinh** đọc `result.read.published` đã công bố trên đúng môn cũ, với điều kiện membership/eligibility hợp lệ. Thu hồi truy cập chủ đích (chuyển COMPLETED → REVOKED) chặn đọc dù dữ liệu còn lưu; không lan sang lớp/khóa khác.
+- Trong DB, `completed_at` không được sửa và COMPLETED không thể bị hồi sinh qua UPDATE, ngay cả khi bỏ qua service; migration mới `V006` system / `V004` tenant không sửa baseline đã áp dụng.
+
+### Thông báo đính chính bên nhận (FR-034 / T103 — chưa đủ nghiệm thu fan-out tenant)
+
+`GET /api/workspaces/{workspaceId}/correction-notices?limit=20&cursor=...`
+
+- Trả `{items:[{id,resourceId,affectedVersionId,replacementVersionId,reason,createdAt,acknowledgedAt}],nextCursor?}`; chỉ receipt đúng `recipientWorkspaceId` và với actor đang được PDP cấp **`workspace.enter` + (`resource.content.read` hoặc `resource.use`)** trên chính phiên bản bị ảnh hưởng. Kết quả được **đọc lại bên trong authorization fence**, không trả số lượng notice bị lọc; cursor HMAC ràng buộc actor/workspace/page size, không dùng chéo actor hay workspace. Trang kết quả và frontend không cache public (`private, no-store`).
+- Thông báo chỉ là **metadata**, không cấp quyền mở bản mới. Nhấn *Nhận cập nhật* ở UI chỉ chọn action `RECEIVE_UPDATE` với version thay thế, người nhận còn phải chỉ định `libraryItemId` đã lưu; backend kiểm `library.save`/closure và chỉ ghi receipt `acknowledgedAt` khi cập nhật thực sự thành công. Version/bài đã giao trước đó không tự thay đổi.
+- **Chưa đủ gate #311/T103**: cần native E2E hai workspace nhận + một nơi không nhận, và đối chiếu fan-out/receipt tại **cả schema đã kích hoạt** sau #310/T102. Việc có GET và unit test không chứng minh fan-out đa schema.

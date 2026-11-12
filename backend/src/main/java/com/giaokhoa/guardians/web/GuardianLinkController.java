@@ -79,7 +79,9 @@ public class GuardianLinkController {
 
     /** Body quyết định liên kết: APPROVE hoặc REJECT kèm row version đã đọc. */
     public record GuardianDecision(
-            @NotNull @Nullable String decision, @NotNull @Nullable Long expectedVersion) {}
+            @NotNull @Nullable String decision,
+            @NotNull @Nullable Long expectedVersion,
+            @Nullable String verificationRef) {}
 
     /** Trang danh sách liên kết: chỉ items, không totalCount. */
     public record GuardianLinkPage(List<GuardianLinkView> items) {
@@ -196,6 +198,7 @@ public class GuardianLinkController {
                                     linkId,
                                     decision,
                                     expectedVersion,
+                                    body.verificationRef(),
                                     idempotencyKey,
                                     idempotency.payloadHash(
                                             "POST",
