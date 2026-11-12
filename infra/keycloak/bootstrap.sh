@@ -208,7 +208,7 @@ for path in /gk /gk/identity /gk/identity/eligible /gk/platform \
   ensure_group "$path"
 done
 
-# Chỉ quản lý directory + realm group, cộng Protection API của resource-server.
+# Chỉ quản lý directory + realm group + authorization qua Admin API; không gọi UMA Protection API.
 # Không realm-admin, không manage-clients chung chung và không service account trên web client.
 service_user="$(admin_get "/clients/$PROV_ID/service-account-user" | jq -er '.id')"
 RM_ID="$(client_id realm-management)"
@@ -218,8 +218,12 @@ for role in manage-users view-users query-users query-groups view-clients \
   admin_get "/clients/$RM_ID/roles/$role" | jq -s '.[0:1]' > "$TMP/role.json"
   admin_send POST "/users/$service_user/role-mappings/clients/$RM_ID" "$TMP/role.json"
 done
-admin_get "/clients/$API_ID/roles/uma_protection" | jq -s '.[0:1]' > "$TMP/role.json"
-admin_send POST "/users/$service_user/role-mappings/clients/$API_ID" "$TMP/role.json"
+# Thu hồi grant cũ khi nâng cấp realm đã bootstrap; không chỉ ngừng cấp cho realm mới.
+if admin_get "/users/$service_user/role-mappings/clients/$API_ID" \
+    | jq -e 'any(.[]; .name == "uma_protection")' >/dev/null; then
+  admin_get "/clients/$API_ID/roles/uma_protection" | jq -s '.[0:1]' > "$TMP/role.json"
+  admin_send DELETE "/users/$service_user/role-mappings/clients/$API_ID" "$TMP/role.json"
+fi
 
 if [[ "$PENDING_BOOTSTRAP" == true ]]; then
   admin_get '' | jq '.enabled = true | del(.attributes["gk.bootstrap.pending"])' \

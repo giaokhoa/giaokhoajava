@@ -104,11 +104,26 @@ class CompletionAfterExpiryIT extends KeycloakSessionFixture {
                                 "period");
 
                 UUID activityId;
+                UUID pastDueActivityId;
                 try (var teacherSession = openSession(teacher)) {
                     JsonNode assigned =
                             sampleActionExpectCreated(
                                     teacherSession, center, assignJson(chain, stub));
                     activityId = UUID.fromString(assigned.get("targetId").stringValue());
+                    // Deadline đã qua sau cutoff gói; học sinh giữ phiên cũ vẫn không được nộp.
+                    pastDueActivityId =
+                            UUID.fromString(
+                                    sampleActionExpectCreated(
+                                                    teacherSession,
+                                                    center,
+                                                    assignJson(
+                                                            chain,
+                                                            stub,
+                                                            OffsetDateTime.ofInstant(
+                                                                    until.minusSeconds(30),
+                                                                    ZoneOffset.UTC)))
+                                            .get("targetId")
+                                            .stringValue());
                 }
                 assertEquals(
                         periodId,
@@ -123,6 +138,21 @@ class CompletionAfterExpiryIT extends KeycloakSessionFixture {
                 UUID resultId;
                 try (var studentSession = openSession(student);
                         var teacherSession = openSession(teacher)) {
+                    MockHttpServletResponse late =
+                            sampleAction(
+                                    studentSession,
+                                    center,
+                                    "{\"action\":\"SUBMIT_ACTIVITY\",\"activityId\":\""
+                                            + pastDueActivityId
+                                            + "\",\"contentStub\":\"Quá hạn bài nộp\"}");
+                    assertEquals(409, late.getStatus(), late.getContentAsString());
+                    assertTrue(late.getContentAsString().contains("SUBMISSION_DEADLINE_PASSED"));
+                    assertEquals(
+                            0,
+                            jdbc.queryForObject(
+                                    "SELECT count(*) FROM sample_submission WHERE activity_id = ?",
+                                    Integer.class,
+                                    pastDueActivityId));
                     JsonNode submitted =
                             sampleActionExpectCreated(
                                     studentSession,
@@ -411,6 +441,10 @@ class CompletionAfterExpiryIT extends KeycloakSessionFixture {
     }
 
     private static String assignJson(TeachingChain chain, ResourceStub stub) {
+        return assignJson(chain, stub, OffsetDateTime.now(ZoneOffset.UTC).plusDays(7));
+    }
+
+    private static String assignJson(TeachingChain chain, ResourceStub stub, OffsetDateTime dueAt) {
         return "{\"action\":\"ASSIGN_ACTIVITY\",\"courseSubjectId\":\""
                 + chain.courseSubjectId()
                 + "\",\"resourceId\":\""
@@ -418,7 +452,7 @@ class CompletionAfterExpiryIT extends KeycloakSessionFixture {
                 + "\",\"versionId\":\""
                 + stub.versionId()
                 + "\",\"dueAt\":\""
-                + OffsetDateTime.now(ZoneOffset.UTC).plusDays(7)
+                + dueAt
                 + "\",\"attemptLimit\":1}";
     }
 

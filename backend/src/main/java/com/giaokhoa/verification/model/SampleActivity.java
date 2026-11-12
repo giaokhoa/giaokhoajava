@@ -120,6 +120,11 @@ public class SampleActivity {
         return dueAt;
     }
 
+    /** Hạn nộp là mốc đóng độc quyền: đúng tại dueAt cũng đã hết hạn. */
+    public boolean acceptsSubmissionAt(Instant submittedAt) {
+        return submittedAt.isBefore(dueAt);
+    }
+
     /** Đổi hạn nộp của hoạt động (gia hạn hoặc giao lại); các trường còn lại giữ nguyên. */
     public void changeDueAt(Instant dueAt) {
         this.dueAt = Objects.requireNonNull(dueAt, "dueAt");

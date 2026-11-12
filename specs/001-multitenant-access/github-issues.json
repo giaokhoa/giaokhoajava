@@ -1649,10 +1649,16 @@
   },
   "ready_filter_url": "https://github.com/giaokhoa/giaokhoa/issues?q=is%3Aissue+is%3Aopen+label%3Atask+label%3A%22feature%3Amultitenant-access%22+-is%3Ablocked",
   "ready_filter_verified": true,
-  "notes": "Native DAG và source_sha256 từ snapshot verified_at ban đầu (trước khi #94 đóng); riêng trạng thái T092 và ready_tasks được xác minh lại sau merge PR #302 ngày 12/11/2026. Không phải bằng chứng sản phẩm đạt. ready_tasks chỉ gồm task mở không còn blocker native mở. Tiền đề artifact có thể đã sẵn sàng ở PR/SHA dù issue còn mở; xem tasks.md, implementation-prompt.md và parent #2 để chọn phần độc lập. Gate vẫn cần nghiệm thu thật.",
+  "notes": "Native DAG và source_sha256 từ snapshot verified_at ban đầu (trước khi #94 đóng); riêng trạng thái T092 và ready_tasks được xác minh lại sau merge PR #302 ngày 12/11/2026. Không phải bằng chứng sản phẩm đạt. ready_tasks chỉ gồm task mở không còn blocker native mở. Tiền đề artifact có thể đã sẵn sàng ở PR/SHA dù issue còn mở; xem tasks.md, implementation-prompt.md và parent #2 để chọn phần độc lập. Gate vẫn cần nghiệm thu thật.\nNgày 12/11/2026 đã thêm #307 làm subissue thứ 100 của #2 và #308–#322 là con của #307. Trạng thái native/GH edge hiện hành đọc từ phase12_publication; 99 task/136 edge ở phần snapshot là lịch sử.",
   "verification_source": "GitHub GraphQL: parent #2 subIssues + blockedBy; 99 native tasks, 136 edges; state snapshot only, not acceptance.",
   "code_base_sha": "f3d2e618be74f574c03d8301a04d9a0427bdbc98",
-  "status_refresh": {"checked_on": "2026-11-12", "source": "gh issue view 94/95, gh pr view 302", "changed_issue": 94, "state": "CLOSED", "merge_commit": "6be8371b2f56d44ebe280f4b6df2f8d40a325e64"},
+  "status_refresh": {
+    "checked_on": "2026-11-12",
+    "source": "gh issue view 94/95, gh pr view 302",
+    "changed_issue": 94,
+    "state": "CLOSED",
+    "merge_commit": "6be8371b2f56d44ebe280f4b6df2f8d40a325e64"
+  },
   "execution_gate": {
     "task": "T093",
     "number": 95,
@@ -1665,14 +1671,14 @@
   "local_convergence": {
     "date": "2026-11-12",
     "phase": 12,
-    "published_to_github": false,
-    "native_dependencies_changed": false,
-    "note": "Backlog cục bộ từ speckit-converge; chưa được giao implementation, chưa có native issue/edge. Đồng bộ GitHub/parent trước khi chọn việc; không cộng vào child_count/dependency_edges.",
+    "published_to_github": true,
+    "native_dependencies_changed": true,
+    "note": "Đã tạo 15 issue #308–#322 dưới nhóm #307 (sub-issue trực tiếp của parent #2). Chỉ MỘT branch/PR chung cho code; mỗi issue cần nghiệm thu riêng trước khi đóng. Snapshot 99 T001–T099/136 edge giữ nguyên lịch sử, không được hiểu là DAG mới.",
     "task_count": 15,
     "tasks": {
       "T100": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 308,
+        "state": "OPEN",
         "finding": "F01",
         "severity": "HIGH",
         "source_refs": [
@@ -1684,8 +1690,8 @@
         ]
       },
       "T101": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 309,
+        "state": "OPEN",
         "finding": "F02",
         "severity": "HIGH",
         "source_refs": [
@@ -1699,8 +1705,8 @@
         ]
       },
       "T102": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 310,
+        "state": "OPEN",
         "finding": "F03",
         "severity": "HIGH",
         "source_refs": [
@@ -1709,8 +1715,8 @@
         "flow_refs": []
       },
       "T103": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 311,
+        "state": "OPEN",
         "finding": "F04",
         "severity": "HIGH",
         "source_refs": [
@@ -1722,8 +1728,8 @@
         ]
       },
       "T104": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 312,
+        "state": "OPEN",
         "finding": "F05",
         "severity": "HIGH",
         "source_refs": [
@@ -1736,8 +1742,8 @@
         ]
       },
       "T105": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 313,
+        "state": "OPEN",
         "finding": "F05",
         "severity": "HIGH",
         "source_refs": [
@@ -1750,8 +1756,8 @@
         ]
       },
       "T106": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 314,
+        "state": "OPEN",
         "finding": "F06",
         "severity": "HIGH",
         "source_refs": [
@@ -1764,8 +1770,8 @@
         ]
       },
       "T107": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 315,
+        "state": "OPEN",
         "finding": "F07",
         "severity": "HIGH",
         "source_refs": [
@@ -1778,8 +1784,8 @@
         ]
       },
       "T108": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 316,
+        "state": "OPEN",
         "finding": "F08",
         "severity": "HIGH",
         "source_refs": [
@@ -1794,8 +1800,8 @@
         ]
       },
       "T109": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 317,
+        "state": "OPEN",
         "finding": "F09",
         "severity": "HIGH",
         "source_refs": [
@@ -1804,8 +1810,8 @@
         "flow_refs": []
       },
       "T110": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 318,
+        "state": "OPEN",
         "finding": "F10",
         "severity": "MEDIUM",
         "source_refs": [
@@ -1814,8 +1820,8 @@
         "flow_refs": []
       },
       "T111": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 319,
+        "state": "OPEN",
         "finding": "F11",
         "severity": "MEDIUM",
         "source_refs": [
@@ -1824,16 +1830,16 @@
         "flow_refs": []
       },
       "T112": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 320,
+        "state": "OPEN",
         "finding": "F12",
         "severity": "MEDIUM",
         "source_refs": [],
         "flow_refs": []
       },
       "T113": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 321,
+        "state": "OPEN",
         "finding": "F13",
         "severity": "MEDIUM",
         "source_refs": [
@@ -1848,8 +1854,8 @@
         ]
       },
       "T114": {
-        "github_issue": null,
-        "state": "PLANNED",
+        "github_issue": 322,
+        "state": "OPEN",
         "finding": "F14",
         "severity": "MEDIUM",
         "source_refs": [
@@ -1859,6 +1865,55 @@
         ],
         "flow_refs": []
       }
+    },
+    "group_issue": 307,
+    "implementation_branch": "feat/phase12-convergence-100-114"
+  },
+  "phase12_publication": {
+    "date": "2026-11-12",
+    "original_native_task_count": 99,
+    "original_native_dependency_edges": 136,
+    "group_issue": 307,
+    "group_parent": 2,
+    "group_child_count": 15,
+    "phase12_issue_numbers": {
+      "T100": 308,
+      "T101": 309,
+      "T102": 310,
+      "T103": 311,
+      "T104": 312,
+      "T105": 313,
+      "T106": 314,
+      "T107": 315,
+      "T108": 316,
+      "T109": 317,
+      "T110": 318,
+      "T111": 319,
+      "T112": 320,
+      "T113": 321,
+      "T114": 322
+    },
+    "workflow": "one integration branch and one PR, no mass close by CI only",
+    "gate_blockers": {
+      "95": [
+        308,
+        309,
+        321
+      ],
+      "96": [
+        95,
+        307
+      ],
+      "101": [
+        100,
+        98
+      ],
+      "313": [
+        312
+      ],
+      "311": [
+        310
+      ]
     }
   }
 }

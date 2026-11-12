@@ -669,6 +669,13 @@ public class SampleActionService {
             throw new HttpProblemException(
                     HttpStatus.CONFLICT, "ACTIVITY_NOT_OPEN", "Hoạt động không còn nhận bài nộp.");
         }
+        Instant submittedAt = Instant.now();
+        if (!activity.acceptsSubmissionAt(submittedAt)) {
+            throw new HttpProblemException(
+                    HttpStatus.CONFLICT,
+                    "SUBMISSION_DEADLINE_PASSED",
+                    "Đã hết hạn nộp của hoạt động.");
+        }
         // Tiền kiểm tra đúng điều kiện của trigger validate_sample_submission: actor phải còn
         // ghi danh hiện hành vào môn–khóa của hoạt động, nếu không lỗi là 403 thay vì 409 của DB.
         long enrolled =
@@ -700,7 +707,7 @@ public class SampleActionService {
                         request.activityId(),
                         actorUserId,
                         attemptNo,
-                        Instant.now(),
+                        submittedAt,
                         request.contentStub(),
                         "SUBMITTED"));
         return new SampleActionResult(
