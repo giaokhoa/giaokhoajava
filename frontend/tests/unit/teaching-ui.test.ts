@@ -21,6 +21,7 @@ import {
 } from "@/features/teaching/course-subject-editor";
 import {
   enrollmentBatchBody,
+  courseCompletionBody,
   parseEnrollments,
 } from "@/features/teaching/enrollment-editor";
 
@@ -158,6 +159,27 @@ describe("ghi danh theo lô", () => {
     expect(enrollmentBatchBody([], ["cs-1"])).toBeNull();
     expect(enrollmentBatchBody(["r-1"], [])).toBeNull();
     expect(enrollmentBatchBody(["r-1", "r-1"], ["cs-1"])).toBeNull();
+  });
+});
+
+describe("hoàn thành khóa đa môn theo snapshot", () => {
+  it("giữ đầy đủ mọi môn của đúng học sinh, sắp ID ổn định và gửi version", () => {
+    const sample = (id: string, studentUserId: string, version: number, state = "ACTIVE") => ({
+      id, studentUserId, version, state, classStudentId: "r-1", courseSubjectId: `cs-${id}`,
+    });
+    expect(courseCompletionBody([
+      sample("e-3", "s-1", 5), sample("e-1", "s-1", 0),
+      sample("e-2", "s-1", 2), sample("e-other", "s-2", 0),
+    ], "s-1")).toEqual({ enrollments: [
+      { id: "e-1", expectedVersion: 0 },
+      { id: "e-2", expectedVersion: 2 },
+      { id: "e-3", expectedVersion: 5 },
+    ] });
+    expect(courseCompletionBody([], "s-1")).toBeNull();
+    expect(courseCompletionBody([sample("e-1", "s-1", 0), sample("e-1", "s-1", 0)], "s-1"))
+      .toBeNull();
+    expect(courseCompletionBody([sample("e-1", "s-1", 0, "PENDING")], "s-1")).toBeNull();
+    expect(courseCompletionBody([sample("e-1", "s-1", -1)], "s-1")).toBeNull();
   });
 });
 

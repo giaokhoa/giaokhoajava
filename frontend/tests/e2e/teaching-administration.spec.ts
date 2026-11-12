@@ -692,7 +692,7 @@ test("owner tạo lớp L1 và khóa K ba môn qua giao diện lớp học: thao
   }
 });
 
-test("manager tạo lớp L2; ghi danh chọn môn: học sinh chỉ có trong roster môn đã chọn", { tag: ["@layer-e2e", "@flow-QL-02", "@flow-QL-03", "@role-center-manager"] }, async ({
+test("manager ghi danh đủ ba môn rồi hoàn thành nguyên khóa qua UI, không hồi quyền học tập", { tag: ["@layer-e2e", "@flow-QL-03", "@flow-QL-06", "@flow-HS-03", "@role-center-manager"] }, async ({
   page,
 }) => {
   test.setTimeout(HAN_DUNG_TEST);
@@ -735,6 +735,26 @@ test("manager tạo lớp L2; ghi danh chọn môn: học sinh chỉ có trong r
       const danhSach = await layDanhSachGhiDanh(page, origin, setup.workspaceId, mon.id);
       expect(danhSach.some((item) => item.classStudentId === dongRoster.id)).toBe(true);
     }
+
+    // QL-06: quản lý dùng nút trên frontend thật, frontend tải snapshot cả ba môn.
+    await page.goto(`${frontendOrigin}/centers/${setup.workspaceId}/classes`);
+    await page.getByRole("button", { name: setup.tenLop, exact: true }).click();
+    await expect(page.getByRole("heading", { name: `Khóa: ${setup.tenKhoa}`, exact: true }))
+      .toBeVisible();
+    await page.getByRole("button", { name: "Ghi danh và phân công", exact: true }).first().click();
+    const completion = page.getByRole("button", { name: new RegExp(`Hoàn thành khóa cho ${username}`) });
+    await expect(completion).toBeVisible();
+    await completion.click();
+    await expect(page.getByText("Thao tác đã hoàn tất.")).toBeVisible({ timeout: 60_000 });
+    // Từ cùng phiên manager: ba ghi danh không còn là nguồn nộp/roster hiện hành.
+    for (const mon of [mon1, mon2, mon3]) {
+      expect(await layDanhSachGhiDanh(page, origin, setup.workspaceId, mon.id)).toHaveLength(0);
+    }
+    // Không coi COMPLETED là REVOKED: backend từ chối tái ghi danh vào chính khóa đó.
+    const tryReenroll = await guiMutation(page, origin, setup.csrfManager, "POST",
+      `/api/workspaces/${setup.workspaceId}/enrollments`,
+      { classStudentIds: [dongRoster.id], courseSubjectIds: [mon1.id] });
+    expect(tryReenroll.status()).toBe(409);
   } finally {
     await xoaNguoiDung(env, daTao);
   }

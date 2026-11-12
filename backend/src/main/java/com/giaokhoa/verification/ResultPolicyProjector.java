@@ -415,7 +415,10 @@ public class ResultPolicyProjector {
             UUID workspaceId, UUID studentUserId, UUID courseSubjectId, boolean center) {
         List<UUID> enrolled =
                 enrollments.findEnrolledStudentIds(workspaceId, courseSubjectId, studentUserId);
-        if (enrolled.isEmpty()) {
+        if (enrolled.isEmpty()
+                && enrollments
+                        .findCompletedStudentIds(workspaceId, courseSubjectId, studentUserId)
+                        .isEmpty()) {
             return Optional.empty();
         }
         if (center

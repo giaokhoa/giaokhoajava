@@ -73,6 +73,9 @@ public class Enrollment {
     @Column(name = "revoked_at")
     private @Nullable Instant revokedAt;
 
+    @Column(name = "completed_at")
+    private @Nullable Instant completedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -93,6 +96,15 @@ public class Enrollment {
         this.classStudentId = classStudentId;
         this.courseSubjectId = courseSubjectId;
         this.state = "ACTIVE";
+    }
+
+    /** Đóng quyền học tập của đúng môn–khóa nhưng giữ nguồn đọc published history. */
+    public void complete(Instant at) {
+        if (!"ACTIVE".equals(state)) {
+            throw new IllegalStateException("Only ACTIVE enrollment can be completed");
+        }
+        this.state = "COMPLETED";
+        this.completedAt = at;
     }
 
     public void revoke() {
@@ -130,6 +142,10 @@ public class Enrollment {
 
     public @Nullable Instant getRevokedAt() {
         return revokedAt;
+    }
+
+    public @Nullable Instant getCompletedAt() {
+        return completedAt;
     }
 
     public Instant getCreatedAt() {

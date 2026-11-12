@@ -595,6 +595,7 @@ export function CourseSubjectEditor({
                       <EnrollmentEditor
                         workspaceId={workspaceId}
                         classId={classId}
+                        courseId={course.id}
                         courseSubjects={course.subjects}
                         focusCourseSubjectId={entry.id}
                         roster={roster}

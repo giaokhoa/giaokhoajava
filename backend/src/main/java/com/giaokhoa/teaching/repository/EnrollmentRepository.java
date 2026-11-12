@@ -37,8 +37,32 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
     /** Tên tham số môn–khóa dùng chung cho mọi @Param của repository này. */
     String COURSE_SUBJECT_ID = "courseSubjectId";
 
+    String STUDENT_USER_ID = "studentUserId";
+
     Optional<Enrollment> findByWorkspaceIdAndClassStudentIdAndCourseSubjectIdAndStateIn(
             UUID workspaceId, UUID classStudentId, UUID courseSubjectId, Collection<String> states);
+
+    /** Snapshot nguyên tử mọi môn của một học sinh × khóa, dưới workspace mutation lock. */
+    @Query(
+            "SELECT e FROM Enrollment e JOIN e.classStudent roster JOIN e.courseSubject subject"
+                    + " WHERE e.workspaceId = :workspaceId AND roster.studentUserId = :studentUserId"
+                    + " AND subject.courseId = :courseId AND e.state IN ('PENDING','ACTIVE')"
+                    + " ORDER BY e.id")
+    List<Enrollment> findCurrentStudentCourseEnrollments(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("courseId") UUID courseId,
+            @Param(STUDENT_USER_ID) UUID studentUserId);
+
+    /** Chốt chống tái ghi danh vào một khóa đã COMPLETED của học sinh. */
+    @Query(
+            "SELECT COUNT(e) FROM Enrollment e JOIN e.classStudent roster"
+                    + " JOIN e.courseSubject subject"
+                    + " WHERE e.workspaceId = :workspaceId AND roster.studentUserId = :studentUserId"
+                    + " AND subject.courseId = :courseId AND e.completedAt IS NOT NULL")
+    long countCompletedStudentCourseEnrollments(
+            @Param("workspaceId") UUID workspaceId,
+            @Param("courseId") UUID courseId,
+            @Param(STUDENT_USER_ID) UUID studentUserId);
 
     /** Bản khóa của một ghi danh cho đường mutation: giữ hàng tới hết transaction. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -106,7 +130,7 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
                     + " AND cs.studentUserId = :studentUserId AND e.state IN :states")
     List<UUID> findCourseSubjectIdsByStudentUserId(
             @Param("workspaceId") UUID workspaceId,
-            @Param("studentUserId") UUID studentUserId,
+            @Param(STUDENT_USER_ID) UUID studentUserId,
             @Param("states") Collection<String> states);
 
     /** Mọi học sinh từng có ghi danh trong workspace, bất kể trạng thái (đồng bộ group). */
@@ -154,7 +178,7 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, UUID> {
                     + " WHERE cs.workspaceId = :workspaceId AND cs.studentUserId = :studentUserId)")
     int revokeCurrentByStudentUserId(
             @Param("workspaceId") UUID workspaceId,
-            @Param("studentUserId") UUID studentUserId,
+            @Param(STUDENT_USER_ID) UUID studentUserId,
             @Param("states") Collection<String> states);
 
     /** Thu hồi mọi ghi danh hiện hành thuộc các môn–khóa của một lớp. */

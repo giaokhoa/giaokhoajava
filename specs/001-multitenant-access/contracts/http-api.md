@@ -201,3 +201,16 @@ Thông báo đính chính cho bên nhận (FR-034) hiện mới có receipt lưu
 | `/review` | Chạy các action mẫu khi profile review bật | Verification APIs, cùng PDP |
 
 UI luôn cho biết workspace và trạng thái PENDING/FAILED/SUCCEEDED. Ẩn nút không thay kiểm tra backend. Không hiển thị khái niệm policy graph/native group/revision cho người dùng; lỗi nghiệp vụ giải thích ngắn như chưa có phân công, gói hết hạn, hoặc đang cập nhật quyền.
+
+### Hoàn thành một học sinh × một khóa (FR-055, QL-06/HS-03)
+
+`POST /api/workspaces/{workspaceId}/courses/{courseId}/students/{studentUserId}/complete`
+
+- Chỉ OWNER/MANAGER của CENTER hoặc owner của PERSONAL được thao tác; xác thực/eligibility/session và khóa workspace như mutation giảng dạy. `Idempotency-Key` bắt buộc; trả **202** operation receipt, chỉ **SUCCEEDED** mới coi hoàn tất nguồn quyền.
+- Body bắt buộc là snapshot **đầy đủ**, do UI tải lại từ mọi môn–khóa trước khi gửi:
+  ```json
+  {"enrollments":[{"id":"00000000-0000-0000-0000-000000000001","expectedVersion":0}]}
+  ```
+  Từng `id` là một enrollment thuộc đúng học sinh, đúng khóa, đúng workspace, trạng thái ACTIVE; số phần tử có thể nhiều môn và tất cả phải khớp tập hiện tại, không được chỉ gửi phần của một môn. Nếu `enrollments` trống/không có `expectedVersion`: **428** `COURSE_COMPLETION_PRECONDITION_REQUIRED`; thiếu ID, dư ID, trùng ID hoặc version cũ/PENDING/COMPLETED: **409** `COURSE_COMPLETION_SNAPSHOT_CHANGED`. Không ghi một phần.
+- Thành công cập nhật **đồng bộ trong một transaction**, tất cả ACTIVE → `COMPLETED` có chung `completed_at`, không đặt `revoked_at`, ghi lại bundle teaching/activity/result/resource cùng revision; không đòi gói thuê bao còn hạn để hoàn tất. `COMPLETED` không tham gia group học tập ACTIVE, không được submit mới, không ghi danh lại cùng khóa bằng gia hạn gói; vẫn cho **chính học sinh** đọc `result.read.published` đã công bố trên đúng môn cũ, với điều kiện membership/eligibility hợp lệ. Thu hồi truy cập chủ đích (chuyển COMPLETED → REVOKED) chặn đọc dù dữ liệu còn lưu; không lan sang lớp/khóa khác.
+- Trong DB, `completed_at` không được sửa và COMPLETED không thể bị hồi sinh qua UPDATE, ngay cả khi bỏ qua service; migration mới `V006` system / `V004` tenant không sửa baseline đã áp dụng.

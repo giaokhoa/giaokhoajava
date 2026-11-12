@@ -5,6 +5,8 @@ import { isRecord, listItems, requestAllPages } from "@/lib/api-client";
 import { SessionGate } from "@/features/identity/session-gate";
 import { useSession } from "@/features/identity/session-provider";
 
+// Đường đọc kết quả đã công bố giữ quyền lịch sử COMPLETED (không cấp quyền submit);
+// quyền bị thu hồi có chủ đích hoặc account bị khóa vẫn bị PDP từ chối.
 // Hình hiển thị duy nhất của đường đọc kết quả: đúng các trường của
 // PublishedResultView. Bài làm, đáp án và dữ liệu chấm nội bộ không có trong DTO
 // này nên không có đường nào để trang hiển thị chúng.

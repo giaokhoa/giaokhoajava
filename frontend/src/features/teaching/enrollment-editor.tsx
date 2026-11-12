@@ -65,9 +65,30 @@ export function enrollmentBatchBody(
   };
 }
 
+export type CompletionBody = { enrollments: { id: string; expectedVersion: number }[] };
+
+// Chỉ tạo snapshot khi đã nhận đủ enrollment của TẤT CẢ các môn trong khóa.
+// Backend so khớp tập này trong transaction workspace, không tin client đã đủ.
+export function courseCompletionBody(
+  items: readonly Enrollment[], studentUserId: string,
+): CompletionBody | null {
+  const relevant = items.filter((item) => item.studentUserId === studentUserId
+    && (item.state === "ACTIVE" || item.state === "PENDING"));
+  if (!relevant.length || relevant.some((item) => item.state !== "ACTIVE")) return null;
+  const ids = new Set<string>();
+  for (const item of relevant) {
+    if (!item.id || ids.has(item.id) || !isVersion(item.version)) return null;
+    ids.add(item.id);
+  }
+  return { enrollments: relevant
+    .map((item) => ({ id: item.id, expectedVersion: item.version }))
+    .sort((a, b) => a.id.localeCompare(b.id)) };
+}
+
 export function EnrollmentEditor({
   workspaceId,
   classId,
+  courseId,
   courseSubjects,
   focusCourseSubjectId,
   roster,
@@ -80,6 +101,7 @@ export function EnrollmentEditor({
 }: {
   workspaceId: string;
   classId: string;
+  courseId: string;
   courseSubjects: CourseSubjectEntry[];
   focusCourseSubjectId: string;
   roster: RosterEntry[];
@@ -159,6 +181,31 @@ export function EnrollmentEditor({
     }
   }
 
+  async function completeCourse(studentUserId: string) {
+    setFormError(null);
+    try {
+      const snapshots = await Promise.all(courseSubjects.map(async (subject) => {
+        const path = `/api/workspaces/${wid}/course-subjects/${encodeURIComponent(subject.id)}/enrollments`;
+        return parseEnrollments(await requestAllPages(path));
+      }));
+      const body = courseCompletionBody(snapshots.flat(), studentUserId);
+      if (!body) {
+        setFormError("Chưa có đủ ghi danh ACTIVE để hoàn thành. Hãy tải lại toàn khóa.");
+        return;
+      }
+      const data = await mutate(
+        `complete-course:${courseId}:${studentUserId}`,
+        JSON.stringify([userId, workspaceId, courseId, studentUserId, body]),
+        `/api/workspaces/${wid}/courses/${encodeURIComponent(courseId)}`
+          + `/students/${encodeURIComponent(studentUserId)}/complete`,
+        { method: "POST", body: JSON.stringify(body) },
+      );
+      if (operationSucceeded(data)) await loadEnrollments();
+    } catch (error) {
+      setFormError(teachingErrorMessage(error, "Không hoàn thành được khóa. Hãy tải lại."));
+    }
+  }
+
   async function revokeEnrollment(enrollment: Enrollment) {
     const data = await mutate(
       `revoke-enrollment:${enrollment.id}`,
@@ -202,6 +249,28 @@ export function EnrollmentEditor({
         </ul>
       ) : null}
 
+      {canManage && currentEnrollments.length > 0 ? (
+        <div className="section">
+          <h5>Hoàn thành khóa (mọi môn)</h5>
+          <p>
+            Hoàn thành sẽ đóng toàn bộ ghi danh ACTIVE của một học sinh trong khóa,
+            không phải thu hồi. Học sinh giữ quyền xem kết quả đã công bố khi còn
+            quyền tài khoản/quan hệ hợp lệ, nhưng không nộp bài mới.
+          </p>
+          {[...new Set(currentEnrollments.map((item) => item.studentUserId))].map((studentId) => (
+            <button
+              key={studentId}
+              className="secondary-button"
+              type="button"
+              disabled={busy}
+              onClick={() => void completeCourse(studentId)}
+            >
+              Hoàn thành khóa cho {usernameOf.get(currentEnrollments.find(
+                (item) => item.studentUserId === studentId)?.classStudentId ?? "") ?? studentId}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {canManage ? (
         <form onSubmit={enroll}>
           <fieldset>
