@@ -211,8 +211,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Các ca resource action nặng chạy riêng, vẫn giữ globalTimeout 20 phút.
-        project: [chromium-core, chromium-teaching-guardians, chromium-resources]
+# E2E resource permissions và expiry dùng các môi trường project riêng, giữ globalTimeout 20 phút cho mỗi nhóm.
+        project: [chromium-core, chromium-teaching-guardians, chromium-resources, chromium-expiry]
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
