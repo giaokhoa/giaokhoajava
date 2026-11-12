@@ -117,7 +117,7 @@ class GuardianPolicyProjectorTest {
 
     private static GuardianLink approvedLink(UUID parent, UUID student) {
         GuardianLink link = new GuardianLink(UUID.randomUUID(), WORKSPACE, parent, student, parent);
-        link.approve(parent, Instant.now());
+        link.approve(parent, Instant.now(), "offline-evidence-1");
         return link;
     }
 

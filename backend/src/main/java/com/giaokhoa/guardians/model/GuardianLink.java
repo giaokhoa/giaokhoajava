@@ -52,6 +52,10 @@ public class GuardianLink {
     @Column(name = "approved_at")
     private @Nullable Instant approvedAt;
 
+    // Tham chiếu tới xác minh NGOÀI hệ thống, không chứa ảnh/giấy tờ cá nhân và không ở DTO.
+    @Column(name = "verification_ref", length = 160)
+    private @Nullable String verificationRef;
+
     @Column(name = "revoked_at")
     private @Nullable Instant revokedAt;
 
@@ -81,10 +85,11 @@ public class GuardianLink {
     }
 
     /** Duyệt một request đang chờ: ghi người duyệt và thời điểm duyệt theo CHECK của bảng. */
-    public void approve(UUID approverUserId, Instant approvedAt) {
+    public void approve(UUID approverUserId, Instant approvedAt, String verificationRef) {
         this.state = APPROVED;
         this.approvedBy = approverUserId;
         this.approvedAt = approvedAt;
+        this.verificationRef = verificationRef;
     }
 
     /** Từ chối một request đang chờ: trạng thái kết thúc, không ghi người quyết lên hàng. */
@@ -128,6 +133,10 @@ public class GuardianLink {
 
     public @Nullable Instant getApprovedAt() {
         return approvedAt;
+    }
+
+    public @Nullable String getVerificationRef() {
+        return verificationRef;
     }
 
     public @Nullable Instant getRevokedAt() {

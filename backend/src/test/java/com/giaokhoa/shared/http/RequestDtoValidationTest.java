@@ -57,7 +57,7 @@ class RequestDtoValidationTest {
     void guardianDecisionRequiresBothFields() {
         assertEquals(
                 Set.of("decision:NotNull", "expectedVersion:NotNull"),
-                violationsOf(new GuardianLinkController.GuardianDecision(null, null)));
+                violationsOf(new GuardianLinkController.GuardianDecision(null, null, null)));
     }
 
     @Test

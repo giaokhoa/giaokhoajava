@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -153,6 +154,7 @@ public class GuardianLinkService {
             UUID linkId,
             String decision,
             long expectedVersion,
+            @Nullable String verificationRef,
             String idempotencyKey,
             String payloadHash) {
         Objects.requireNonNull(actorUserId, "actorUserId");
@@ -189,9 +191,18 @@ public class GuardianLinkService {
                     "Phiên bản dữ liệu đã thay đổi.");
         }
         if (approve) {
+            // Không nhận/tải giấy tờ trong ứng dụng; chỉ lưu mã tham chiếu xác minh bên ngoài.
+            if (verificationRef == null
+                    || verificationRef.isBlank()
+                    || verificationRef.trim().length() > 160) {
+                throw new HttpProblemException(
+                        HttpStatus.BAD_REQUEST,
+                        "GUARDIAN_VERIFICATION_REQUIRED",
+                        "Duyệt liên kết cần mã tham chiếu xác minh người đại diện hợp lệ.");
+            }
             requirePrerequisitesCurrent(workspaceId, link);
             requireSubscriptionCurrent(workspaceId);
-            link.approve(actorUserId, Instant.now());
+            link.approve(actorUserId, Instant.now(), verificationRef.trim());
         } else {
             link.reject();
         }

@@ -40,7 +40,7 @@ Lỗi thống nhất dạng `application/problem+json`: `type`, `title`, `status
 | `TeacherAssignment` | `teacherUserIds[]`; courseSubject lấy từ route |
 | `HomeroomAssignment` | `teacherUserId`; class lấy từ route |
 | `GuardianRequest` | `studentUserId`; requester là actor hiện hành; field lạ (ví dụ `parentUserId` của người khác) bị bỏ qua, không tạo link cho phụ huynh khác |
-| `GuardianDecision` | `decision:APPROVE/REJECT`, `expectedVersion`; approver do server ghi. **Bổ sung FR-056 chưa triển khai**: `verificationRef` bắt buộc, không rỗng khi APPROVE; không bắt buộc khi REJECT |
+| `GuardianDecision` | `decision:APPROVE/REJECT`, `expectedVersion`; approver do server ghi. **Theo FR-056**: `verificationRef` (1–160 ký tự) bắt buộc khi APPROVE, chỉ giữ tham chiếu xác minh ngoài hệ thống; không trả trong GuardianLinkView; không bắt buộc khi REJECT |
 | `GuardianLinkView` | `id`, `workspaceId`, `parentUserId`, `studentUserId`, `state`, `version`; danh sách trả dạng `{items}`, không `totalCount` |
 | `PublishedResultView` | `id`, `student:{id,displayName}`, `className`, `courseName`, `subjectName`, `score?`, `comment?`, `publishedAt`; không chứa submission/body/answer/draft fields |
 | `CapabilitiesRequest` | `targets:[{type,id,versionId?,scopes[]}]`; chỉ đối tượng trong route workspace và actor hiện hành |
@@ -177,7 +177,7 @@ Không có action tự đặt actor, tự gán role hoặc duyệt học liệu 
 
 **Bổ sung FR-055, chưa có route trong code**: `POST /api/workspaces/{wid}/courses/{kid}/students/{sid}/complete` hoàn thành **đợt của một học sinh tại một khóa**, không phải từng enrollment. Body `{expectedEnrollments:[{id,version}]}` là danh sách đầy đủ ID/row version của mọi ghi danh ACTIVE của học sinh tại các môn trong khóa, lấy từ roster được phép đọc; bắt buộc `Idempotency-Key`. Đây là ngoại lệ precondition theo tập thay vì `If-Match` của một row. Backend so sánh tập và version trong cùng transaction với khóa bảo vệ khỏi ghi danh mới đồng thời; thiếu danh sách/key trả 428, lệch tập/version trả 409 (không thay đổi phần nào), sai khóa/học sinh/workspace trả 404. Mọi enrollment ACTIVE phù hợp cùng chuyển COMPLETED trong một mutation/operation/revision, không đụng ghi danh REVOKED hoặc khóa khác; `OperationReceipt` chỉ hoàn tất sau SUCCEEDED. GET kết quả hiện có giữ DTO published-only và thêm nguồn lịch sử của chính học sinh theo authorization contract mục 14. Scope completion riêng phải được review trước triển khai, không tái dùng quyền thu hồi để tăng quyền. Schema/service/UI/test ở T104/T105.
 
-**Bổ sung FR-056, chưa triển khai**: APPROVE thiếu `verificationRef` hợp lệ trả 400 và không đổi link/audit nguồn quyền; người/thời điểm xác nhận lấy từ server. Tham chiếu không chứa giấy tờ nhạy cảm và chỉ phục vụ người có thẩm quyền duyệt.
+**Theo FR-056 (PR #323, phải kiểm native trước merge)**: APPROVE thiếu `verificationRef` hợp lệ trả 400 `GUARDIAN_VERIFICATION_REQUIRED` và không đổi link/audit nguồn quyền; người/thời điểm xác nhận lấy từ server. Tham chiếu không chứa giấy tờ nhạy cảm và chỉ phục vụ người có thẩm quyền duyệt.
 
 Thông báo đính chính cho bên nhận (FR-034) hiện mới có receipt lưu trong DB và payload `CORRECT_SOURCE` cho người phát hành. Chưa có đường đọc notification của workspace nhận trong HTTP/UI; cần contract đọc metadata sau authorization và UI nhận cập nhật. Không coi việc tồn tại receipt là đã thông báo được cho người nhận.
 
