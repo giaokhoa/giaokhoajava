@@ -321,11 +321,12 @@ public class TeachingRouteSupport {
             @Nullable UUID parent,
             @Nullable Integer limit,
             TeachingPageRepository.Page<T> page) {
+        String rawNextCursor = page.nextCursor();
         String next =
-                page.nextCursor() == null
+                rawNextCursor == null
                         ? null
                         : pageTokens.encode(
-                                UUID.fromString(page.nextCursor()),
+                                UUID.fromString(rawNextCursor),
                                 cursorBinding(actor, workspace, query, parent, limit));
         return ok(new Page<>(page.items(), next));
     }

@@ -8,6 +8,7 @@ import java.util.Base64;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -18,10 +19,12 @@ import org.springframework.http.HttpStatus;
  */
 public final class ScopedPageCursor {
     private static final int MAX_LENGTH = 256;
+    private static final int CURSOR_PART_COUNT = 2;
+    private static final SecureRandom KEY_RANDOM = new SecureRandom();
     private final byte[] key = new byte[32];
 
     public ScopedPageCursor() {
-        new SecureRandom().nextBytes(key);
+        KEY_RANDOM.nextBytes(key);
     }
 
     public String encode(UUID anchor, String binding) {
@@ -33,7 +36,7 @@ public final class ScopedPageCursor {
     public UUID decode(String cursor, String binding) {
         if (cursor.length() > MAX_LENGTH) throw invalid();
         String[] parts = cursor.split("\\.", -1);
-        if (parts.length != 2) throw invalid();
+        if (parts.length != CURSOR_PART_COUNT) throw invalid();
         try {
             UUID anchor = UUID.fromString(parts[0]);
             if (!anchor.toString().equals(parts[0])) throw invalid();
@@ -42,7 +45,7 @@ public final class ScopedPageCursor {
             if (!MessageDigest.isEqual(expected, supplied)) throw invalid();
             return anchor;
         } catch (IllegalArgumentException ex) {
-            throw invalid();
+            throw invalid(ex);
         }
     }
 
@@ -57,9 +60,14 @@ public final class ScopedPageCursor {
     }
 
     private static HttpProblemException invalid() {
+        return invalid(null);
+    }
+
+    private static HttpProblemException invalid(@Nullable Throwable cause) {
         return new HttpProblemException(
                 HttpStatus.BAD_REQUEST,
                 ErrorCodes.INVALID_CURSOR,
-                "Cursor danh sách không hợp lệ.");
+                "Cursor danh sách không hợp lệ.",
+                cause);
     }
 }
