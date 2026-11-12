@@ -17,6 +17,7 @@ import {
   parsePersonalWorkspace,
 } from "@/features/subscriptions/personal-entitlements";
 import type { WorkspaceView } from "@/features/identity/workspace-switcher";
+import { isExpansionBlocked } from "@/features/subscriptions/subscription-state";
 import {
   nameBody,
   operationSucceeded,
@@ -61,7 +62,7 @@ export function PersonalClassesContent() {
   const wid = personalId ? encodeURIComponent(personalId) : "";
   const classesPath = personalId ? `/api/workspaces/${wid}/classes` : "";
   const canManage = canManagePersonalClasses(workspace);
-  const planExpired = workspaceLoaded && workspace !== null && !workspace.subscription.effective;
+  const planExpired = workspaceLoaded && workspace !== null && isExpansionBlocked(workspace);
   const selectedClass = (classes ?? []).find((item) => item.id === selectedClassId) ?? null;
   const busy = pendingAction !== null
     || (operation !== null && operationStatus(operation).kind === "pending");
@@ -369,12 +370,12 @@ export function PersonalClassesContent() {
                     <input
                       id="personal-class-name"
                       value={createName}
-                      disabled={busy}
+                      disabled={busy || planExpired}
                       onChange={(event) => setCreateName(event.target.value)}
                     />
                   </div>
                   {createError ? <p role="alert">{createError}</p> : null}
-                  <button className="action-button" type="submit" disabled={busy}>
+                  <button className="action-button" type="submit" disabled={busy || planExpired}>
                     Tạo lớp
                   </button>
                 </form>
@@ -422,7 +423,7 @@ export function PersonalClassesContent() {
                         <input
                           id="personal-student-id"
                           value={studentUserId}
-                          disabled={busy}
+                          disabled={busy || planExpired}
                           onChange={(event) => setStudentUserId(event.target.value)}
                         />
                       </div>
@@ -434,7 +435,7 @@ export function PersonalClassesContent() {
                       <button
                         className="action-button"
                         type="submit"
-                        disabled={busy}
+                        disabled={busy || planExpired}
                       >
                         Thêm học sinh
                       </button>
