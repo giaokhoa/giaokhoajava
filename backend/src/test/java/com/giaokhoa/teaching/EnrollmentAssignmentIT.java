@@ -540,6 +540,8 @@ class EnrollmentAssignmentIT extends IntegrationEnvironment {
                                     runtimePreconditions,
                                     runtimeWorkspaceTx,
                                     runtime.transactionManager),
+                            org.mockito.Mockito.mock(
+                                    com.giaokhoa.verification.ActivityPolicyProjector.class),
                             new ResultPolicyProjector(
                                     runtime.sampleResults,
                                     runtime.verificationPartitions,
