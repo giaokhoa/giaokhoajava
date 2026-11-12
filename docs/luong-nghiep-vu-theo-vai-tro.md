@@ -29,7 +29,7 @@ Một tài khoản có thể mang nhiều vai trò nhưng từng hướng dẫn 
 5. Phụ huynh được mời vào trung tâm rồi đề nghị liên kết. Quản lý xác minh ngoài hệ thống, lưu tham chiếu xác nhận và duyệt; phụ huynh chỉ thấy kết quả đã công bố của con.
 6. Kết thúc đợt học của từng học sinh trong một khóa dùng thao tác hoàn thành toàn bộ các môn cùng lúc; ngừng truy cập có chủ đích dùng thu hồi. Khi hết gói, vẫn đọc/hoàn tất bài cũ nếu còn quyền và đúng lịch, vẫn thu hồi được; muốn thay giáo viên phải gia hạn trước.
 
-Các phần bổ sung ở bước 5–6 chưa được triển khai đầy đủ; không dùng mô tả đích này như hướng dẫn tính năng đã phát hành.
+Các phần bổ sung ở bước 5–6 mới có code trên PR #323 đang Draft; chưa đủ native gate và chưa merge. Không dùng mô tả đích làm bằng chứng tính năng đã phát hành.
 
 ## Danh mục luồng để viết hướng dẫn
 
@@ -83,14 +83,14 @@ Lệnh có `--list` chỉ liệt kê, không phải kết quả pass. Các lư�
 | Luồng | E2E hiện có | Phần chưa được khóa đủ |
 | --- | --- | --- |
 | TK-01/02 | `identity.spec.ts`, `session-security.spec.ts`, `native-gate.spec.ts` | Hướng dẫn phải tách tài khoản tự đăng ký khỏi tài khoản được cấp, không gọi identity-first là MFA |
-| QT-01/02, CSH-01, QL-01 | `center-administration.spec.ts`; nhánh gói personal ở `personal-entitlements.spec.ts` | QT-03 hiện chỉ có `recovery-ui.spec.ts` dùng API giả ở browser; cần hành trình operator/người yêu cầu thật, backend HTTP không thay browser |
+| QT-01/02/03, CSH-01, QL-01 | `center-administration.spec.ts`; `recovery-ui.spec.ts` có cả lớp API giả và QT-03 Keycloak/browser thật mới trên PR #323 | QT-03 thật chưa có verdict CI xanh trên HEAD cuối; không tính ca `@layer-ui` mock API là native nghiệm thu |
 | QL-02/03, CN-01 | `teaching-administration.spec.ts` | CN-01 mới khóa roster/không tự phân công; còn thiếu giao đề đã duyệt, theo dõi hoàn thành và phủ định chấm/đáp án qua flow chính của chủ nhiệm |
-| QL-04, PH-01/02 | `guardian-results.spec.ts` | Thiếu tham chiếu xác minh FR-056; phải bổ sung ca reject/approve thiếu tham chiếu, sai vai và giữ phiên phụ huynh sau revoke |
+| QL-04, PH-01/02 | `guardian-results.spec.ts`; PR #323 có trường tham chiếu xác minh ngoài hệ thống FR-056 | Chờ native verdict cho approve thiếu tham chiếu/sai vai/revoke; không lưu ảnh hay giấy tờ trong app |
 | QL-05 | `revocation.spec.ts`, guardian unlink, resource revoke | Một số ca đang quan sát roster thay hành động chấm; phải khóa hành động thực tế tại GV-03/HS-02, không suy quyền chấm chỉ vì đọc roster đổi |
-| GV-01/02 | `resource-permissions.spec.ts`, `personal-entitlements.spec.ts` | Thiếu người nhận mở thông báo đính chính rồi chủ động nhận cập nhật; chưa có GUARANTEED/INTERRUPTIBLE |
+| GV-01/02 | `resource-permissions.spec.ts`, `personal-entitlements.spec.ts`; PR #323 có inbox và GUARANTEED/INTERRUPTIBLE | Chưa nghiệm thu fan-out từ hai tenant schema và closure REVOCABLE/giấy phép nhiều mốc |
 | GV-03, HS-02 | `subscription-expiry.spec.ts` có nộp/chấm/công bố bằng các actor thật | Thiếu bộ flow tối thiểu độc lập trạng thái gói: trước/đúng/sau hạn nộp, license revoke giữa làm và sau nộp/trước chấm; giữ hai học sinh, hai môn và teacher sai môn làm đối chứng |
 | HS-01, CNH-01 | `personal-entitlements.spec.ts` | UI chỉ ở mức quản trị/mẫu; không diễn đạt thành công cụ soạn/làm/chấm bài hoàn chỉnh |
-| QL-06, HS-03 | Chưa có | Test-first từ FR-055; sau hoàn thành đọc lịch sử, chặn bài mới, chuyển lớp và revoke bảo mật; kiểm cả center/personal |
+| QL-06, HS-03 | PR #323 có API/UI và native IT 3 môn center/personal | Chưa có verdict native cuối về atomicity, lịch sử đọc published, chống hồi sinh quyền sau revoke/chuyển lớp; chưa là tính năng đã release |
 
 Mỗi flow chỉ hoàn tất khi có đối chứng được phép và bị chặn, trạng thái dữ liệu sau thao tác, điều kiện pending/success, đúng actor/workspace, và trường hợp revoke/expiry liên quan. Giữ assertion riêng của transaction, HTTP/session và browser; không chép toàn bộ ma trận vào mọi tầng.
 
@@ -111,12 +111,12 @@ mới được dùng; phần đang thiếu gắn nhãn “CHƯA TRIỂN KHAI”.
 | Vai dùng thử / hướng dẫn | Bắt đầu tại màn hình | Đường thực hiện có sẵn | Dừng hoặc xử lý từ chối |
 | --- | --- | --- | --- |
 | Người dùng cá nhân | Đăng nhập, không gian cá nhân | TK-01, TK-02, HS-01, CNH-01: xác minh tài khoản, luyện tập đề hệ thống, xem lớp/kho trong giới hạn gói | Nếu không có gói, không thêm/đổi tên; vẫn xem/thu hồi dữ kiện còn quyền. Không tự có quyền trung tâm |
-| Quản trị viên nền tảng | `/platform` | QT-01/QT-02 tạo trung tâm/gói; QT-03 xử lý yêu cầu phục hồi theo quyết định có tham chiếu ngoài hệ thống | Mỗi operation cần SUCCEEDED; không in credential/token vào log; QT-03 browser recovery thật cần T108 |
-| Chủ sở hữu/quản lý trung tâm | Chọn đúng trung tâm, trang lớp/thành viên | CSH-01, QL-01–03, QL-05: bổ nhiệm, mời/cấp tài khoản, tạo lớp–khóa–môn, ghi danh và phân công, thu hồi | Quản lý không tự cấp OWNER; phải chờ projection xong. QL-04 tham chiếu xác minh FR-056 **CHƯA TRIỂN KHAI** |
+| Quản trị viên nền tảng | `/platform` | QT-01/QT-02 tạo trung tâm/gói; QT-03 quản lý yêu cầu phục hồi và bàn giao credential ngoài app | Khôi phục có thể PENDING qua bước gửi/xác minh; chỉ COMPLETE sau bàn giao mới SUCCEEDED. QT-03 browser thật trên PR #323 vẫn chờ CI |
+| Chủ sở hữu/quản lý trung tâm | Chọn đúng trung tâm, trang lớp/thành viên | CSH-01, QL-01–03, QL-05: bổ nhiệm, mời/cấp tài khoản, tạo lớp–khóa–môn, ghi danh và phân công, thu hồi | Quản lý không tự cấp OWNER; phải chờ projection xong. QL-04 tham chiếu xác minh FR-056 **MỚI CÓ CODE TRÊN PR #323, CHƯA NGHIỆM THU** |
 | Chủ nhiệm | Lớp được phân công | CN-01: xem roster lớp và điều phối việc đã được phép | Không tự chấm, xem đáp án hoặc duyệt liên kết phụ huynh; giao đề duyệt theo flow chủ nhiệm cần T108 |
-| Giáo viên bộ môn | Khóa/môn mình được phân công | GV-01–03: xem kho theo license, giao mẫu và chấm/công bố bài mẫu trên đúng môn | Không được dùng nguồn chưa cấp; GUARANTEED/INTERRUPTIBLE FR-057 **CHƯA TRIỂN KHAI**, theo T107 |
-| Học sinh | Lớp và kết quả đúng học sinh | HS-02 đọc/nộp bài đúng lịch/lượt; đọc kết quả sau công bố | Sau `due_at` bị chặn; khóa/revoke nguồn vẫn ưu tiên. HS-03 (COMPLETED) **CHƯA TRIỂN KHAI**, theo T104–T105 |
-| Phụ huynh | Liên kết con trong trung tâm đúng | PH-01/PH-02 gửi yêu cầu và đọc kết quả đã công bố khi được duyệt | Không đọc con khác, kết quả nháp, bài làm hoặc đáp án; tham chiếu xác minh khi APPROVE đang chờ T106 |
+| Giáo viên bộ môn | Khóa/môn mình được phân công | GV-01–03: xem kho theo license, giao mẫu và chấm/công bố bài mẫu trên đúng môn | Không dùng nguồn chưa cấp; GUARANTEED/INTERRUPTIBLE FR-057 **MỚI CÓ CODE TRÊN PR #323, CHƯA NGHIỆM THU** |
+| Học sinh | Lớp và kết quả đúng học sinh | HS-02 đọc/nộp bài đúng lịch/lượt; đọc kết quả sau công bố | Sau `due_at` bị chặn; khóa/revoke nguồn vẫn ưu tiên. HS-03 (COMPLETED) **MỚI CÓ CODE TRÊN PR #323, CHƯA NGHIỆM THU** |
+| Phụ huynh | Liên kết con trong trung tâm đúng | PH-01/PH-02 gửi yêu cầu và đọc kết quả đã công bố khi được duyệt | Không đọc con khác, kết quả nháp, bài làm hoặc đáp án; tham chiếu xác minh APPROVE có code PR #323, chờ native gate |
 
 ### Quyết định vận hành còn phải chốt trước khi chứa dữ liệu học sinh thật
 

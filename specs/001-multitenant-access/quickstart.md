@@ -305,3 +305,12 @@ phải xác minh/ghi lại chủ thể xử lý, loại hình hoạt động, th
 trình người đại diện và đầu mối yêu cầu/tranh chấp theo AS-013. Nếu chưa có các
 quyết định này, giữ môi trường test với tài khoản/dữ liệu giả, không tự mặc định
 việc triển khai phần mềm đã đáp ứng mọi điều kiện vận hành.
+
+**Phiếu go/no-go dữ liệu học sinh thật (AS-013, chỉ do đơn vị vận hành xác nhận):**
+trước khi sử dụng, ghi vào hồ sơ vận hành *ngoài repo* người chịu trách nhiệm xử lý,
+loại hình lớp/điều kiện tổ chức, căn cứ xử lý dữ liệu, nơi và thời hạn lưu/xóa dữ liệu,
+người xác minh người đại diện và nơi giữ bằng chứng ngoài hệ thống, kênh/đầu mối xử lý
+yêu cầu hoặc tranh chấp. Chưa đủ bất kỳ mục nào → **NO-GO cho dữ liệu học sinh thật**;
+chỉ sử dụng tài khoản/dữ kiện TEST, không gắn giấy tờ hoặc bí mật người học vào issue/log.
+Mục này cũng áp dụng khi workspace là PERSONAL có trẻ em, không suy quyền PH-01/02 vào
+workspace cá nhân. Đối chiếu [phiếu quyết định T114](../../docs/luong-nghiep-vu-theo-vai-tro.md#quyết-định-vận-hành-còn-phải-chốt-trước-khi-chứa-dữ-liệu-học-sinh-thật).
