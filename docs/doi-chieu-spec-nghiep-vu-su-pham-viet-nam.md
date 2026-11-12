@@ -2,6 +2,8 @@
 
 Ngày rà soát: 10/11/2026.
 
+**Cập nhật 12/11/2026**: Đã xử lý phần làm rõ bằng Spec Kit tại [spec](../specs/001-multitenant-access/spec.md), gồm 5 câu trả lời trực tiếp của chủ spec: NV-01 tách hoàn thành/thu hồi và giữ lịch sử theo thời gian hồ sơ được lưu hợp lệ; NV-02 xác minh ngoài hệ thống, ứng dụng lưu tham chiếu tối thiểu; NV-04 bài cần bảo đảm hoàn tất dùng nguồn sở hữu/LONG_TERM; NV-05 gia hạn trước khi phân công giáo viên thay. FR-055–057 và 5 scenario bổ sung còn cần triển khai/kiểm chứng. NV-03 giữ phạm vi điều phối trung tâm; NV-06 để đặc tả chấm bài thật; NV-07 giữ là tiền đề vận hành chưa chốt cho đơn vị cụ thể. Xem [kết quả spec → code và task hội tụ](doi-chieu-spec-code-20261112.md), [luồng theo vai trò để viết hướng dẫn/E2E](luong-nghiep-vu-theo-vai-tro.md). Phần dưới giữ nguyên báo cáo ngày 10/11, gồm căn cứ pháp luật tại thời điểm đó; đợt cập nhật này không xác nhận lại các văn bản hoặc chứng nhận tuân thủ.
+
 Nền đối chiếu: `origin/main` tại `efcb781cd4f4964bca7cf436d4aef002205ca74a`; đã fetch lại và xác nhận spec, data-model, contracts trong workspace khớp nền này. Đã đọc parent issue [#2](https://github.com/giaokhoa/giaokhoa/issues/2), bao gồm hướng dẫn điều phối liên kết commit `bf99c20efa1aad2740f772bcc958205c7868004e`. Đây là rà soát nghiệp vụ, không triển khai story hoặc xác nhận gate kỹ thuật.
 
 ## Kết luận và phạm vi

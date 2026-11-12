@@ -1,6 +1,6 @@
 # Hợp đồng HTTP và giao diện quản trị
 
-**Ứng dụng**: Spring Boot cung cấp API/BFF; Next.js App Router tiêu thụ hợp đồng. **Prefix**: `/api`. Hợp đồng này là tài liệu thiết kế, chưa là endpoint đã triển khai.
+**Ứng dụng**: Spring Boot cung cấp API/BFF; Next.js App Router tiêu thụ hợp đồng. **Prefix**: `/api`. Đối chiếu với code `f3d2e618` ngày 12/11/2026; các mục đánh dấu bổ sung là thiết kế chưa triển khai, không là endpoint đã nghiệm thu.
 
 ## Quy tắc chung
 
@@ -8,11 +8,13 @@
 - JSON dùng camelCase, UUID dạng chuỗi, thời gian ISO-8601 UTC. Không nhận actorId, owner override, effective permissions, accountOrigin hoặc Keycloak role/group claims trong body nghiệp vụ.
 - `workspaceId` trên route là nơi người dùng yêu cầu hoạt động, không là bằng chứng quyền. Backend resolve dữ kiện/permission và không tin active-workspace cookie. Không cho `X-Tenant-Id` ghi đè route.
 - Response bảo vệ có `Cache-Control: private, no-store`; Next fetch `cache: no-store`, không static generation/cache cho dữ liệu theo tài khoản. Không trả secret trong SSR payload.
-- Mutation có `Idempotency-Key`; cập nhật quan hệ/đối tượng hiện có có `If-Match` chứa row version. Thiếu precondition trả 428; version cũ hoặc cùng idempotency key khác payload trả 409.
+- Mutation có `Idempotency-Key`; PATCH đổi tên lớp/khóa, PUT role và resolve recovery dùng `If-Match` chứa row version. Guardian decision dùng `expectedVersion` trong body. POST cộng hợp tập và DELETE thu hồi hiện không đòi `If-Match`; không suy yêu cầu header chỉ từ việc target đã tồn tại (B49). Thiếu precondition bắt buộc trả 428; version cũ hoặc cùng idempotency key khác payload trả 409.
 - Tạo/cập nhật quyền thường trả 202 `{operationId, state, completed:false, statusUrl}`. Chỉ operation SUCCEEDED/`completed:true` mới là hoàn tất nghiệp vụ; resource mới chưa READY không được sử dụng. Endpoint có thể trả 200/201 khi đã đồng bộ xong, với `completed:true`.
 - Khi PDP unavailable hoặc projection PENDING/FAILED, trả 503 với mã cụ thể, không dùng allow cũ. Deny quyền hiện hành trả 403; object không tồn tại hoặc không được phép tiết lộ sự tồn tại trả 404. Không trả nội dung riêng trong message lỗi.
 - Query danh sách: `cursor?`, `limit=20`, tối đa 100; kết quả `{items, nextCursor?}` sau lọc quyền từng row. Không trả totalCount chưa được authorize; cursor bound với actor/workspace/query.
 - Hành động cần nhiều cặp permission phải kiểm tra đủ từng cặp, theo [authorization.md](authorization.md).
+
+Biên nhận mutation quản trị là `OperationReceipt` (`operationId`), GET status là `OperationView` (`id`); không ép hai DTO thành một. Cấp học sinh bọc trạng thái ngắn trong `operation`; action mẫu trả đồng bộ `SampleActionResult`. Phải đọc đúng loại response của endpoint, không giả mọi response đều có `operationId` hoặc `statusUrl`.
 
 Lỗi thống nhất dạng `application/problem+json`: `type`, `title`, `status`, `code`, `detail` an toàn, `instance`, `traceId`; lỗi field thêm `violations:[{field,code,message}]`. Không lộ stacktrace, policy JSON, credential, email của người ngoài thẩm quyền.
 
@@ -23,11 +25,13 @@ Lỗi thống nhất dạng `application/problem+json`: `type`, `title`, `status
 | `SessionView` | `authenticated`, `csrf:{headerName,token}`; khi đã login có `user:{id,username,email?,emailVerified,identityState}`, không có tokens |
 | `WorkspaceView` | `id`, `kind:PERSONAL/CENTER/SYSTEM`, `name`, `subscription:{effective,expiresAt?}`, `roles[]`, `syncState` |
 | `OperationView` | `id`, `state:PENDING/APPLYING/SUCCEEDED/RETRYABLE_FAILURE/FAILED`, `completed`, `targetType`, `targetId?`, `errorCode?`; không có payload nội bộ |
+| `OperationReceipt` | `operationId`, `state`, `completed`, `statusUrl`; dùng cho mutation quản trị có durable operation |
+| `SampleActionResult` | `id`, `state`, `completed`, `targetType`, `targetId`, `correctionNotice?`; action đồng bộ trả 201 sau hoàn tất, không là URL poll authorization operation |
 | `CenterCreate` | `name`, `ownerUserId`; owner đã có danh tính; kích hoạt gói là thao tác riêng |
 | `SubscriptionConfirm` | `workspaceId`, `validFrom`, `expiresAt`, `confirmationRef`; actor/thời điểm xác nhận do server ghi |
 | `InvitationCreate` | đúng một `email` hoặc `userId`, `roles[]`; không có OWNER; MANAGER chỉ owner được cấp |
 | `StudentIssue` | `username`, `displayName`; email tùy chọn, không có origin/globalRole/password do client chọn |
-| `StudentIssueView` | `operation:OperationView`, `handoff?:{username,temporaryPassword}`; handoff chỉ ở response CREATE đầu tiên sau tạo identity thành công, không trong status poll/retry/list/SSR |
+| `StudentIssueView` | `operation:{id,state,completed}`, `handoff?:{username,temporaryPassword}`; handoff chỉ ở response CREATE đầu tiên sau tạo identity thành công, không trong status poll/retry/list/SSR |
 | `MembershipView` | `id`, `user:{id,username,displayName}`, `roles[]`, `state`, `version`; thông tin tối thiểu của thành viên đúng center |
 | `ClassCreate` | `name`; workspace lấy từ route |
 | `CourseCreate` | `name`, `subjectIds[]` không rỗng; class lấy từ route |
@@ -36,7 +40,7 @@ Lỗi thống nhất dạng `application/problem+json`: `type`, `title`, `status
 | `TeacherAssignment` | `teacherUserIds[]`; courseSubject lấy từ route |
 | `HomeroomAssignment` | `teacherUserId`; class lấy từ route |
 | `GuardianRequest` | `studentUserId`; requester là actor hiện hành; field lạ (ví dụ `parentUserId` của người khác) bị bỏ qua, không tạo link cho phụ huynh khác |
-| `GuardianDecision` | `decision:APPROVE/REJECT`, `expectedVersion`; approver do server ghi |
+| `GuardianDecision` | `decision:APPROVE/REJECT`, `expectedVersion`; approver do server ghi. **Bổ sung FR-056 chưa triển khai**: `verificationRef` bắt buộc, không rỗng khi APPROVE; không bắt buộc khi REJECT |
 | `GuardianLinkView` | `id`, `workspaceId`, `parentUserId`, `studentUserId`, `state`, `version`; danh sách trả dạng `{items}`, không `totalCount` |
 | `PublishedResultView` | `id`, `student:{id,displayName}`, `className`, `courseName`, `subjectName`, `score?`, `comment?`, `publishedAt`; không chứa submission/body/answer/draft fields |
 | `CapabilitiesRequest` | `targets:[{type,id,versionId?,scopes[]}]`; chỉ đối tượng trong route workspace và actor hiện hành |
@@ -56,7 +60,7 @@ Trong contract, các scope `read`, `update`, `revoke` luôn đi kèm loại đ�
 | `POST /api/identity/verification` | Yêu cầu luồng thêm/xác minh email của chính actor | Cho onboarding chưa eligible; gửi tới email/profile Keycloak, không nhận emailVerified/actor override |
 | `GET /api/me/workspaces` | WorkspaceView[] được phép | account `workspace.list`; chưa eligible chỉ trả onboarding, không lộ membership payload |
 | `GET /api/me/practice-history` | Lịch sử practice mẫu của chính user | account `history.read`, không cần gói soạn học liệu; không chứa kết quả của người khác |
-| `POST /api/me/recovery-requests` | `{targetUserId,workspaceId?,reason}` → OperationView/requestId | Chỉ tự yêu cầu hoặc quản lý center gửi đề nghị hợp lệ; không đổi password ở đây, không tiết lộ tài khoản ngoài phạm vi |
+| `POST /api/me/recovery-requests` | `{targetUserId,workspaceId?,reason}` → OperationReceipt/requestId | Chỉ tự yêu cầu hoặc quản lý center gửi đề nghị hợp lệ; không đổi password ở đây, không tiết lộ tài khoản ngoài phạm vi |
 | `GET /api/me/operations/{operationId}` | OperationView | Chỉ operation của initiator; control metadata, không trả payload nghiệp vụ đang fenced |
 
 Đăng ký và quên mật khẩu có email đi qua màn hình/required actions của Keycloak; không xây kho mật khẩu trong Next hoặc Spring. Người self-register không email có thể có danh tính nhưng chỉ dùng onboarding/khôi phục đến khi email verified. Center-issued có exception từ record nguồn do server tạo, không từ form đăng ký.
@@ -68,10 +72,10 @@ Cấp học sinh mới tạo identity/temporary credential đồng bộ trước
 | Method / path | Body / response | Scope |
 | --- | --- | --- |
 | `GET /api/platform/centers?cursor&limit` | `{items:CenterView[],nextCursor?}`; `limit=20`, tối đa 100, keyset theo `(created_at,id)` | platform `center.list`; chỉ metadata, không kèm kết quả/học liệu |
-| `POST /api/platform/centers` | CenterCreate → OperationView | platform `center.create`; tạo Organization, workspace, owner membership và projection |
-| `POST /api/platform/subscriptions` | SubscriptionConfirm → OperationView | platform `subscription.confirm`; không gọi payment gateway |
+| `POST /api/platform/centers` | CenterCreate → OperationReceipt | platform `center.create`; tạo Organization, workspace, owner membership và projection |
+| `POST /api/platform/subscriptions` | SubscriptionConfirm → OperationReceipt | platform `subscription.confirm`; không gọi payment gateway |
 | `GET /api/platform/recovery-requests` | Danh sách yêu cầu hỗ trợ tối thiểu | platform `account.recover` |
-| `POST /api/platform/recovery-requests/{id}/resolve` | `{decision:APPROVE/COMPLETE/REJECT,verificationNote?}` → OperationView | platform `account.recover`; APPROVE chỉ xác minh, COMPLETE xác nhận đã khôi phục/bàn giao, REJECT từ chối; không gửi password cho center |
+| `POST /api/platform/recovery-requests/{id}/resolve` | `{decision:APPROVE/COMPLETE/REJECT,verificationNote?}` → OperationReceipt | platform `account.recover`; APPROVE chỉ xác minh, COMPLETE xác nhận đã khôi phục/bàn giao, REJECT từ chối; không gửi password cho center |
 
 Recovery list trả thêm `version` cho từng yêu cầu. Resolve bắt buộc `Idempotency-Key` và `If-Match: "<version>"`; cùng key/body/version replay biên nhận, payload khác trả 409. APPROVE cần ghi chú xác minh và trả 202/PENDING, yêu cầu giữ VERIFIED. Operator khôi phục bằng Keycloak và bàn giao qua kênh riêng cho đúng người dùng; sau đó COMPLETE kèm ghi chú xác nhận mới ghi RESOLVED và trả completed=true. Chưa thực hiện xong thì giữ VERIFIED. Operator đã gửi mutation có thể poll biên nhận của mình qua operations; không trả credential trong list/poll/SSR.
 
@@ -82,11 +86,11 @@ Các route này chỉ dùng workspace kind CENTER.
 | Method / path | Body / response | Scope / lưu ý |
 | --- | --- | --- |
 | `GET /api/workspaces/{wid}/memberships` | MembershipView page | workspace `membership.list` |
-| `POST /api/workspaces/{wid}/invitations` | InvitationCreate → OperationView | `membership.invite`; nếu cấp manager cần thêm `manager.assign` |
-| `POST /api/invitations/{token}/accept` | Không actorId → OperationView | Actor login đúng sub/email xác minh; token một lần; không đổi origin account |
+| `POST /api/workspaces/{wid}/invitations` | InvitationCreate → OperationReceipt | `membership.invite`; nếu cấp manager cần thêm `manager.assign` |
+| `POST /api/invitations/{token}/accept` | Không actorId → OperationReceipt | Actor login đúng sub/email xác minh; token một lần; không đổi origin account |
 | `POST /api/workspaces/{wid}/students` | StudentIssue → StudentIssueView | `student.issue`; chỉ create user mới; username trùng không reset/chiếm user đã có |
-| `PUT /api/workspaces/{wid}/memberships/{id}/roles` | `{roles[]}` → OperationView | Phần thêm cần `membership.role.assign`/`manager.assign`; phần gỡ cần `membership.role.revoke`/`manager.revoke` |
-| `DELETE /api/workspaces/{wid}/memberships/{id}` | OperationView | `membership.revoke`; không xóa Keycloak account; không gỡ owner cuối cùng |
+| `PUT /api/workspaces/{wid}/memberships/{id}/roles` | `{roles[]}` → OperationReceipt | Phần thêm cần `membership.role.assign`/`manager.assign`; phần gỡ cần `membership.role.revoke`/`manager.revoke` |
+| `DELETE /api/workspaces/{wid}/memberships/{id}` | OperationReceipt | `membership.revoke`; không xóa Keycloak account; không gỡ owner cuối cùng |
 
 Gói hết hạn chặn invite/cấp account/thêm role; các scope thu hồi còn dùng được theo thẩm quyền. Membership có nhiều role không được cho phép một source bị gỡ làm mất mọi quyền độc lập còn lại.
 
@@ -95,30 +99,30 @@ Gói hết hạn chặn invite/cấp account/thêm role; các scope thu hồi c�
 | Method / path | Body / response | Scope / invariant |
 | --- | --- | --- |
 | `GET /api/workspaces/{wid}/classes` | Class page | workspace `class.list` + từng class `read` |
-| `POST /api/workspaces/{wid}/classes` | ClassCreate → OperationView | workspace `class.create`; center owner/manager, personal owner+gói |
+| `POST /api/workspaces/{wid}/classes` | ClassCreate → OperationReceipt | workspace `class.create`; center owner/manager, personal owner+gói |
 | `GET /api/workspaces/{wid}/classes/{cid}` | Class metadata | class `read`; không kèm toàn roster |
-| `PATCH /api/workspaces/{wid}/classes/{cid}` | `{name}` → OperationView | class `update`; cần gói active |
-| `DELETE /api/workspaces/{wid}/classes/{cid}` | OperationView | Thu hồi lớp: chuyển REVOKED, giữ lịch sử, đóng quan hệ phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
+| `PATCH /api/workspaces/{wid}/classes/{cid}` | `{name}` → OperationReceipt | class `update`; cần gói active |
+| `DELETE /api/workspaces/{wid}/classes/{cid}` | OperationReceipt | Thu hồi lớp: chuyển REVOKED, giữ lịch sử, đóng quan hệ phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
 | `GET /api/workspaces/{wid}/classes/{cid}/students` | Class-student page | class `roster.read`; manager/owner/homeroom theo source; teacher không mặc định thấy mọi học sinh lớp |
-| `POST /api/workspaces/{wid}/classes/{cid}/students` | `{studentUserIds[]}` → OperationView | class `roster.add`; CENTER cần membership, PERSONAL cần owner tổ chức và danh tính người học hợp lệ |
-| `DELETE /api/workspaces/{wid}/classes/{cid}/students/{id}` | OperationView | class `roster.revoke`; revoke enrollment phụ thuộc, giữ lịch sử |
+| `POST /api/workspaces/{wid}/classes/{cid}/students` | `{studentUserIds[]}` → OperationReceipt | class `roster.add`; CENTER cần membership, PERSONAL cần owner tổ chức và danh tính người học hợp lệ |
+| `DELETE /api/workspaces/{wid}/classes/{cid}/students/{id}` | OperationReceipt | class `roster.revoke`; revoke enrollment phụ thuộc, giữ lịch sử |
 | `GET /api/workspaces/{wid}/classes/{cid}/homeroom-assignments` | Homeroom assignment page | class `roster.read`; quản trị hoặc chủ nhiệm hiện hành của lớp; chỉ phân công hiện hành, kèm id cho route thu hồi |
-| `POST /api/workspaces/{wid}/classes/{cid}/homeroom-assignments` | HomeroomAssignment → OperationView | class `homeroom.assign` |
-| `DELETE /api/workspaces/{wid}/classes/{cid}/homeroom-assignments/{id}` | OperationView | class `homeroom.revoke` |
+| `POST /api/workspaces/{wid}/classes/{cid}/homeroom-assignments` | HomeroomAssignment → OperationReceipt | class `homeroom.assign` |
+| `DELETE /api/workspaces/{wid}/classes/{cid}/homeroom-assignments/{id}` | OperationReceipt | class `homeroom.revoke` |
 | `GET /api/workspaces/{wid}/classes/{cid}/courses` | Course page | class `course.list` + từng course `read` |
-| `POST /api/workspaces/{wid}/classes/{cid}/courses` | CourseCreate → OperationView | class `course.create`; ít nhất một môn, đúng lớp/workspace |
+| `POST /api/workspaces/{wid}/classes/{cid}/courses` | CourseCreate → OperationReceipt | class `course.create`; ít nhất một môn, đúng lớp/workspace |
 | `GET /api/workspaces/{wid}/courses/{kid}` | CourseView | course `read` |
-| `PATCH /api/workspaces/{wid}/courses/{kid}` | `{name}` → OperationView | course `update` |
-| `DELETE /api/workspaces/{wid}/courses/{kid}` | OperationView | Thu hồi khóa: chuyển REVOKED, giữ lịch sử, đóng ghi danh/phân công phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
-| `POST /api/workspaces/{wid}/courses/{kid}/subjects` | `{subjectIds[]}` → OperationView | course `subject.add`; không tự ghi danh/phân công |
-| `DELETE /api/workspaces/{wid}/courses/{kid}/subjects/{csid}` | OperationView | Gỡ môn khỏi khóa: chuyển REVOKED, giữ lịch sử, đóng ghi danh/phân công phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
+| `PATCH /api/workspaces/{wid}/courses/{kid}` | `{name}` → OperationReceipt | course `update` |
+| `DELETE /api/workspaces/{wid}/courses/{kid}` | OperationReceipt | Thu hồi khóa: chuyển REVOKED, giữ lịch sử, đóng ghi danh/phân công phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
+| `POST /api/workspaces/{wid}/courses/{kid}/subjects` | `{subjectIds[]}` → OperationReceipt | course `subject.add`; không tự ghi danh/phân công |
+| `DELETE /api/workspaces/{wid}/courses/{kid}/subjects/{csid}` | OperationReceipt | Gỡ môn khỏi khóa: chuyển REVOKED, giữ lịch sử, đóng ghi danh/phân công phụ thuộc; chưa có scope revoke riêng trong catalog — quyết quyền quản trị theo ngoại lệ ở authorization.md mục 11 |
 | `GET /api/subjects` | Danh mục tham chiếu tối thiểu | Danh mục không chứa dữ liệu riêng; không tạo taxonomy chương trình |
 | `GET /api/workspaces/{wid}/course-subjects/{csid}/enrollments` | Enrollment page | course-subject `roster.read`; chỉ roster môn đó |
-| `POST /api/workspaces/{wid}/enrollments` | EnrollmentBatch → OperationView | Mỗi course-subject `enrollment.add`; tất cả cùng lớp, kiểm tra đủ cặp |
-| `DELETE /api/workspaces/{wid}/enrollments/{id}` | OperationView | course-subject `enrollment.revoke` |
+| `POST /api/workspaces/{wid}/enrollments` | EnrollmentBatch → OperationReceipt | Mỗi course-subject `enrollment.add`; tất cả cùng lớp, kiểm tra đủ cặp |
+| `DELETE /api/workspaces/{wid}/enrollments/{id}` | OperationReceipt | course-subject `enrollment.revoke` |
 | `GET /api/workspaces/{wid}/course-subjects/{csid}/teachers` | Teacher assignment page | course-subject `roster.read`; chỉ phân công hiện hành, kèm id cho route thu hồi |
-| `POST /api/workspaces/{wid}/course-subjects/{csid}/teachers` | TeacherAssignment → OperationView | course-subject `teacher.assign`; hỗ trợ nhiều giáo viên |
-| `DELETE /api/workspaces/{wid}/course-subjects/{csid}/teachers/{id}` | OperationView | course-subject `teacher.revoke` |
+| `POST /api/workspaces/{wid}/course-subjects/{csid}/teachers` | TeacherAssignment → OperationReceipt | course-subject `teacher.assign`; hỗ trợ nhiều giáo viên |
+| `DELETE /api/workspaces/{wid}/course-subjects/{csid}/teachers/{id}` | OperationReceipt | course-subject `teacher.revoke` |
 
 Batch có cùng idempotency key, kiểm tra invariant trước khi tạo desired changes. Không trả hoàn tất một phần như toàn bộ thành công; tất cả projection liên quan READY mới operation SUCCEEDED. Không mở DELETE vật lý class/course/subject làm mất lịch sử.
 
@@ -128,10 +132,10 @@ Trong PERSONAL workspace, owner thực hiện class/course/roster/ghi danh và g
 
 | Method / path | Body / response | Scope / invariant |
 | --- | --- | --- |
-| `POST /api/workspaces/{wid}/guardian-links` | GuardianRequest → OperationView | workspace `guardian.request`; parent là actor, không nhận parentId khác; lỗi nghiệp vụ: `GUARDIAN_PARENT_NOT_CURRENT` 403, `GUARDIAN_STUDENT_NOT_FOUND` 404, `GUARDIAN_LINK_ALREADY_CURRENT` 409, `GUARDIAN_PREREQUISITE_NOT_CURRENT` 409 |
+| `POST /api/workspaces/{wid}/guardian-links` | GuardianRequest → OperationReceipt | workspace `guardian.request`; parent là actor, không nhận parentId khác; lỗi nghiệp vụ: `GUARDIAN_PARENT_NOT_CURRENT` 403, `GUARDIAN_STUDENT_NOT_FOUND` 404, `GUARDIAN_LINK_ALREADY_CURRENT` 409, `GUARDIAN_PREREQUISITE_NOT_CURRENT` 409 |
 | `GET /api/workspaces/{wid}/guardian-links` | Danh sách theo quyền | Parent chỉ các request của mình; owner/manager được danh sách cần duyệt; không lộ kết quả qua route này; không có quyền xem → 403 `PERMISSION_DENIED` |
-| `POST /api/workspaces/{wid}/guardian-links/{id}/decision` | GuardianDecision → OperationView | workspace `guardian.approve`; teacher/homeroom đứng riêng bị từ chối; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_DECISION_INVALID` 400, `GUARDIAN_LINK_ALREADY_DECIDED` 409, `VERSION_CONFLICT` 409 khi `expectedVersion` lệch, `GUARDIAN_PREREQUISITE_NOT_CURRENT` 409, `SUBSCRIPTION_INACTIVE` 403 chỉ khi APPROVE |
-| `DELETE /api/workspaces/{wid}/guardian-links/{id}` | OperationView | workspace `guardian.revoke`; vẫn cho revoke khi gói hết hạn; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_LINK_NOT_APPROVED` 409, `GUARDIAN_LINK_ALREADY_CLOSED` 409, `GUARDIAN_LINK_ALREADY_REVOKED` 409 |
+| `POST /api/workspaces/{wid}/guardian-links/{id}/decision` | GuardianDecision → OperationReceipt | workspace `guardian.approve`; teacher/homeroom đứng riêng bị từ chối; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_DECISION_INVALID` 400, `GUARDIAN_LINK_ALREADY_DECIDED` 409, `VERSION_CONFLICT` 409 khi `expectedVersion` lệch, `GUARDIAN_PREREQUISITE_NOT_CURRENT` 409, `SUBSCRIPTION_INACTIVE` 403 chỉ khi APPROVE |
+| `DELETE /api/workspaces/{wid}/guardian-links/{id}` | OperationReceipt | workspace `guardian.revoke`; vẫn cho revoke khi gói hết hạn; lỗi nghiệp vụ: `GUARDIAN_LINK_NOT_FOUND` 404, `GUARDIAN_LINK_NOT_APPROVED` 409, `GUARDIAN_LINK_ALREADY_CLOSED` 409, `GUARDIAN_LINK_ALREADY_REVOKED` 409 |
 | `GET /api/workspaces/{wid}/students/{sid}/results?cursor&limit` | `{items:PublishedResultView[],nextCursor?}`, `limit=20`, tối đa 100; không `totalCount` | Từng result `read.published`; parent đúng child/center/link và published; tập được phép rỗng vẫn kiểm tra ACCOUNT eligibility/fence: học sinh tự đọc 200 rỗng, actor khác 403 `PERMISSION_DENIED` |
 
 Kết quả bản đầu là sample_result cùng policy path sẽ dùng cho nghiệp vụ sau. Không xây sổ điểm, không có endpoint parent lấy bài làm/đáp án. Parent không được thay sid để đọc người khác hoặc thay wid để dùng liên kết A tại B.
@@ -146,7 +150,7 @@ Luồng parent bản đầu bắt đầu sau khi trung tâm mời/cấp vai trò
 | `POST /api/verification/fixtures` | `{scenarioSet}` → fixture IDs | Chỉ profile test/review và platform `fixture.manage`; production không đăng ký route |
 | `GET /api/workspaces/{wid}/samples/resources/{rid}/versions/{vid}` | Stub body | Resource-context `content.read`; answer không có trong DTO |
 | `GET /api/workspaces/{wid}/samples/resources/{rid}/versions/{vid}/answer` | Stub answer | Resource-context `answer.read` riêng |
-| `POST /api/workspaces/{wid}/samples/actions` | SampleAction → OperationView hoặc kết quả stub | Mọi action đi cùng domain/PDP; không nhận actor thay thế |
+| `POST /api/workspaces/{wid}/samples/actions` | SampleAction → SampleActionResult | Mọi action đi cùng domain/PDP; không nhận actor thay thế |
 
 `SampleAction` có discriminator `action` thuộc danh mục cố định và các field cần thiết:
 
@@ -160,16 +164,22 @@ Luồng parent bản đầu bắt đầu sau khi trung tâm mời/cấp vai trò
 | `ACCEPT_SHARE` | `grantId` | grant `accept` trong workspace nhận |
 | `REVOKE_SHARE` | `grantId` | grant `revoke`, chỉ REVOCABLE; LONG_TERM từ chối |
 | `RECEIVE_UPDATE` | `libraryItemId`, `replacementVersionId` | `library.save` + nguồn cập nhật; không đổi hoạt động/lịch sử đã giao |
-| `CORRECT_SOURCE` | `resourceId`, `affectedVersionId`, `replacementVersionId`, `reason` | nguồn `version.create`/thẩm quyền nguồn; tạo correction_notice, không sửa V1 |
-| `ASSIGN_ACTIVITY` | `courseSubjectId`, `resourceId`, `versionId`, `dueAt`, `attemptLimit` | target `activity.assign` + từng source/version `use`; đúng môn và trạng thái duyệt cho homeroom |
-| `SUBMIT_ACTIVITY` | `activityId`, `contentStub` | activity `submit`, actor đang ghi danh đúng center/personal; attempt server xác lập; system practice dùng action riêng |
-| `GRADE_RESULT` | `resultId`, `scoreStub`, `commentStub?` | result `grade` |
-| `PUBLISH_RESULT` | `resultId` | result `publish`; parent branch chỉ có hiệu lực khi chuyển PUBLISHED và sync hoàn tất |
+| `CORRECT_SOURCE` | `resourceId`, `affectedVersionId`, `replacementVersionId`, `reason` | Bản mẫu B87 dùng version `review` tại đúng workspace sở hữu; chưa có projector resource `version.create`. Tạo correction_notice, không sửa V1; không tự mở quyền điều chỉnh điểm đã công bố |
+| `ASSIGN_ACTIVITY` | `courseSubjectId`, `resourceId`, `versionId`, `dueAt`, `attemptLimit`; **bổ sung chưa triển khai** `completionPolicy:INTERRUPTIBLE/GUARANTEED` | target `activity.assign` + từng source/version `use`; đúng môn; code mẫu hiện đòi APPROVED cho mọi người giao. FR-057 bổ sung GUARANTEED từ chối mọi nguồn REVOCABLE và LONG_TERM có `expiresAt` hữu hạn trong closure khi chưa định hạn chấm/công bố; `dueAt` chỉ là hạn nộp |
+| `SUBMIT_ACTIVITY` | `activityId`, `contentStub` | activity `submit`, actor đang ghi danh đúng center/personal; attempt server xác lập; system practice dùng action riêng. FR-044/045 còn phải bổ sung kiểm hạn nộp và nguồn học liệu cần dùng; code hiện chưa đủ |
+| `GRADE_RESULT` | `resultId`, `scoreStub`, `commentStub?` | result `grade`; FR-045 còn phải bổ sung gate license/thành phần áp dụng cho chấm, không đòi gói còn hạn |
+| `PUBLISH_RESULT` | `resultId` | result `publish`; parent branch chỉ có hiệu lực khi chuyển PUBLISHED và sync hoàn tất; FR-045 còn phải bổ sung gate license cần thiết |
 | `EXTEND_DEADLINE` | `activityId`, `dueAt` | activity `schedule.extend`, gói active |
 | `OPEN_ATTEMPT` | `activityId`, `studentUserId` | activity `attempt.open`, gói active |
 | `REASSIGN_ACTIVITY` | `activityId`, `dueAt` | activity `reassign` + target/source permissions, gói active |
 
 Không có action tự đặt actor, tự gán role hoặc duyệt học liệu nhiều bước. Fixture có trạng thái APPROVED để kiểm chứng chủ nhiệm. API kiểm chứng không chứa engine quyết định riêng, không dùng sample flag để bỏ gate.
+
+**Bổ sung FR-055, chưa có route trong code**: `POST /api/workspaces/{wid}/courses/{kid}/students/{sid}/complete` hoàn thành **đợt của một học sinh tại một khóa**, không phải từng enrollment. Body `{expectedEnrollments:[{id,version}]}` là danh sách đầy đủ ID/row version của mọi ghi danh ACTIVE của học sinh tại các môn trong khóa, lấy từ roster được phép đọc; bắt buộc `Idempotency-Key`. Đây là ngoại lệ precondition theo tập thay vì `If-Match` của một row. Backend so sánh tập và version trong cùng transaction với khóa bảo vệ khỏi ghi danh mới đồng thời; thiếu danh sách/key trả 428, lệch tập/version trả 409 (không thay đổi phần nào), sai khóa/học sinh/workspace trả 404. Mọi enrollment ACTIVE phù hợp cùng chuyển COMPLETED trong một mutation/operation/revision, không đụng ghi danh REVOKED hoặc khóa khác; `OperationReceipt` chỉ hoàn tất sau SUCCEEDED. GET kết quả hiện có giữ DTO published-only và thêm nguồn lịch sử của chính học sinh theo authorization contract mục 14. Scope completion riêng phải được review trước triển khai, không tái dùng quyền thu hồi để tăng quyền. Schema/service/UI/test ở T104/T105.
+
+**Bổ sung FR-056, chưa triển khai**: APPROVE thiếu `verificationRef` hợp lệ trả 400 và không đổi link/audit nguồn quyền; người/thời điểm xác nhận lấy từ server. Tham chiếu không chứa giấy tờ nhạy cảm và chỉ phục vụ người có thẩm quyền duyệt.
+
+Thông báo đính chính cho bên nhận (FR-034) hiện mới có receipt lưu trong DB và payload `CORRECT_SOURCE` cho người phát hành. Chưa có đường đọc notification của workspace nhận trong HTTP/UI; cần contract đọc metadata sau authorization và UI nhận cập nhật. Không coi việc tồn tại receipt là đã thông báo được cho người nhận.
 
 ## Màn hình Next.js
 

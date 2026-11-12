@@ -8,9 +8,25 @@
 
 **Input**: Xây dựng bộ khung Authentication & Authorization cho Giáo Khoa: đăng nhập chung bằng Keycloak, bộ quyền cố định cho các trung tâm, phân quyền theo tài nguyên và phân công lớp–khóa–môn, ghi danh từng môn, liên kết phụ huynh–học sinh và quyền sử dụng theo gói. Bản đầu vận hành phần quản trị; nghiệp vụ học liệu, bài làm và kết quả được kiểm chứng bằng dữ liệu mẫu.
 
+## Clarifications
+
+### Session 2026-11-12
+
+- Q: Sau khi học sinh hoàn thành một đợt học bình thường, em có được xem lại kết quả đã công bố của mình không? → A: Có; tách trạng thái hoàn thành khỏi thu hồi, giữ quyền xem lịch sử trong phạm vi/thời hạn được chốt và chặn bài mới. Khóa tài khoản hoặc thu hồi bảo mật vẫn chặn truy cập (NV-01).
+- Q: Quyền xem kết quả sau hoàn thành đợt học kéo dài đến khi nào? → A: Trong thời gian hồ sơ còn được lưu hợp lệ theo chính sách dữ liệu, không tự mất khi hết gói; khóa tài khoản hoặc thu hồi bảo mật vẫn chặn ngay (NV-01).
+- Q: Trong bản đầu, việc xác minh người đại diện và căn cứ cho phụ huynh xem dữ liệu học sinh được thực hiện ở đâu? → A: Đơn vị vận hành xác minh ngoài hệ thống; ứng dụng lưu tham chiếu xác nhận tối thiểu, không yêu cầu tải giấy tờ nhạy cảm. Vai trò PARENT hoặc mã học sinh không thay bước xác minh (NV-02).
+- Q: Với bài kiểm tra cần bảo đảm học sinh hoàn tất, sản phẩm cho phép dùng nguồn học liệu nào? → A: Chỉ nguồn sở hữu hoặc LONG_TERM; REVOCABLE chỉ dùng cho luyện tập có thể gián đoạn và bị chặn ngay khi thu hồi (NV-04).
+- Q: Khi gói trung tâm đã hết hạn và giáo viên duy nhất nghỉ, trung tâm xử lý bài còn chờ chấm theo cách nào? → A: Gia hạn gói trước khi phân công người thay; người cũ mất quyền ngay. Không cấp thêm quyền khi hết hạn và phải nêu giới hạn này trong cam kết hoàn tất bài (NV-05).
+
 ## User Scenarios & Testing *(mandatory)*
 
 Các tình huống học liệu, bài làm, chấm bài và kết quả kiểm chứng quyết định quyền bằng dữ liệu mẫu và các thao tác kiểm chứng tối thiểu; không yêu cầu xây dựng công cụ biên soạn, làm bài hoặc sổ điểm hoàn chỉnh. Quản trị tài khoản, trung tâm, thành viên, lớp, khóa, môn, ghi danh và phân công phải chạy được với dữ liệu thực tế. Mỗi câu chuyện có thể được nghiệm thu riêng với dữ kiện tiền đề chuẩn bị sẵn.
+
+### Luồng sử dụng theo vai trò
+
+[Bản đồ luồng theo vai trò](../../docs/luong-nghiep-vu-theo-vai-tro.md) xác định 22 luồng có mã ổn định: ai thực hiện, điều kiện bắt đầu, các bước, kết quả và trường hợp bị chặn. Đây là khung chung cho hướng dẫn sử dụng và E2E, không coi vai trò chỉ là danh sách permission. Hành trình bàn giao giữa quản lý, giáo viên, học sinh và phụ huynh phải giữ đúng danh tính/phạm vi ở từng bước; test dùng tài khoản kiêm mọi vai trò không thay kiểm chứng quyền tối thiểu.
+
+E2E cần nối mã luồng với vai trò và đúng hành vi người dùng. Test UI có API giả, test giao thức và fixture không thay E2E nghiệp vụ với backend/Keycloak thật. Nhánh giao/chấm bài của chủ nhiệm, khôi phục bằng operator và các luồng bổ sung chưa được khóa đủ được ghi rõ trong bản đồ, không suy từ số test đang có.
 
 ### User Story 1 - Một tài khoản dùng ở nhiều không gian (Priority: P1)
 
@@ -68,6 +84,7 @@ Quản lý tạo lớp, khóa đa môn, phân giáo viên từng môn và ghi da
 6. **Given** chủ nhiệm L không có phân công chuyên môn M, **When** giao đề M đã duyệt và được phép sử dụng, **Then** được phép cho người học M trong L; sửa đề, xem đáp án, chấm M cần quyền riêng.
 7. **Given** chủ nhiệm L1, **When** thao tác với khóa thuộc L2 mà không có phân công khác, **Then** bị từ chối dù hai lớp cùng trung tâm.
 8. **Given** quản lý chọn ghi danh toàn bộ môn hiện có, **When** hoàn tất thao tác, **Then** từng ghi danh được tạo; môn được thêm sau đó không tự có ghi danh hoặc phân công.
+9. **Given** học sinh X ghi danh nhiều môn trong cùng khóa K, **When** quản lý hoàn thành đợt học K của X, **Then** mọi ghi danh đang ACTIVE của X thuộc K cùng chuyển COMPLETED (không hoàn thành khóa/lớp khác), X vẫn đọc kết quả PUBLISHED của đợt K khi hồ sơ còn được lưu hợp lệ kể cả khi hết gói, nhưng không nhận/nộp bài mới ở bất kỳ môn nào của K; thu hồi bảo mật hoặc khóa tài khoản vẫn chặn đọc.
 
 ### User Story 4 - Phụ huynh xem kết quả của đúng con (Priority: P1)
 
@@ -84,6 +101,7 @@ Phụ huynh đề nghị liên kết và xem kết quả đã công bố sau khi
 3. **Given** liên kết P–X tại A đã duyệt, **When** xem kết quả X tại B, **Then** liên kết A không tự cấp quyền tại B.
 4. **Given** giáo viên chủ nhiệm không có vai trò quản lý/chủ sở hữu, **When** duyệt liên kết, **Then** bị từ chối.
 5. **Given** liên kết đã gỡ, **When** P gửi yêu cầu tiếp theo bằng phiên cũ, **Then** không còn quyền xem qua liên kết đó; dữ liệu vẫn được giữ cho người còn thẩm quyền.
+6. **Given** yêu cầu liên kết chưa có tham chiếu xác minh người đại diện và căn cứ cho xem dữ liệu, **When** quản lý duyệt, **Then** bị từ chối; duyệt hợp lệ lưu tham chiếu, người xác nhận và thời điểm, không yêu cầu tải giấy tờ nhạy cảm.
 
 ### User Story 5 - Thu hồi quyền và ngăn truy cập vượt phạm vi (Priority: P1)
 
@@ -128,7 +146,7 @@ Cá nhân và trung tâm lưu học liệu được phép, nhận cập nhật c
 
 **Acceptance Scenarios**:
 
-1. **Given** Q/V1 của hệ thống được phép lưu, **When** cá nhân có gói hoặc trung tâm lưu vào kho, **Then** giữ định danh Q và V1; không đổi chủ sở hữu nguồn.
+1. **Given** Q/V1 của hệ thống được phép lưu, **When** cá nhân có gói hoặc trung tâm lưu vào kho, **Then** giữ định danh Q và V1; không đổi chủ sở hữu nguồn. Với nguồn chia sẻ giữa hai trung tâm/cá nhân, bản nhận có thể có định danh cục bộ riêng theo AS-012 nhưng phải giữ truy vết Q/V1 và toàn bộ giới hạn nguồn.
 2. **Given** bản đã lưu Q/V1, **When** nguồn phát hành V2, **Then** bản đã lưu/bài đã giao vẫn dùng V1; bên nhận chủ động chọn phiên bản mới cho lần dùng sau, được thông báo nếu nguồn đính chính do lỗi.
 3. **Given** người có quyền chỉnh sửa Q/V1, **When** tạo bản chỉnh sửa, **Then** có định danh mới, truy vết Q/V1 và giữ giới hạn nguồn; người chỉ có quyền dùng không được sửa.
 4. **Given** giáo viên chia sẻ một phiên bản cho A, **When** A nhận vào kho, **Then** giáo viên khác có quyền tại A được lưu/dùng theo điều kiện nguồn; thành viên B không tự có quyền.
@@ -137,6 +155,8 @@ Cá nhân và trung tâm lưu học liệu được phép, nhận cập nhật c
 7. **Given** chia sẻ sử dụng lâu dài cho A, **When** người chia sẻ rời A, **Then** A tiếp tục dùng phiên bản đã nhận theo điều kiện; người đã rời không giữ quyền trung tâm vì từng chia sẻ và không được đơn phương thu hồi chia sẻ lâu dài.
 8. **Given** giáo viên chưa có gói cá nhân, **When** lưu học liệu để làm việc hợp lệ trong A, **Then** không phải mua gói cá nhân và cũng không được mở kho soạn cá nhân từ thao tác đó.
 9. **Given** một đề mẫu gồm hai câu hỏi có điều kiện nguồn khác nhau, **When** người dùng chia sẻ đề ra ngoài phạm vi được một câu hỏi cho phép, **Then** thao tác bị từ chối; đóng gói thành đề không mở rộng quyền nguồn.
+10. **Given** một hoạt động cần bảo đảm hoàn tất có thành phần REVOCABLE hoặc LONG_TERM hết hạn trước khi hoàn tất, **When** giao bài, **Then** bị từ chối dù lúc giao vẫn có quyền; chỉ nguồn sở hữu hoặc LONG_TERM bao phủ toàn bộ thời gian cần dùng mới đủ. Với mẫu chưa có hạn chấm/công bố, LONG_TERM phải không có `expiresAt`; không coi chỉ vượt `dueAt` là bảo đảm chấm/công bố.
+11. **Given** luyện tập có thể gián đoạn dùng nguồn REVOCABLE, **When** nguồn bị thu hồi giữa lúc làm hoặc sau nộp/trước chấm, **Then** thao tác tiếp theo cần nguồn bị chặn với lý do rõ ràng, bài nộp/kết quả đã có được giữ; không tự chuyển thành quyền hoàn tất lâu dài.
 
 ### User Story 8 - Bảo lưu dữ liệu khi gói hết hạn (Priority: P2)
 
@@ -155,6 +175,7 @@ Cá nhân/trung tâm hết hạn gói vẫn giữ dữ liệu và hoàn tất b�
 5. **Given** gói A hết hạn, **When** chủ sở hữu/quản lý gỡ thành viên, phân công hoặc liên kết, **Then** vẫn được phép, thu hồi có hiệu lực từ yêu cầu tiếp theo.
 6. **Given** gói cá nhân hết hạn nhưng A còn hiệu lực hoặc ngược lại, **When** xét quyền từng nơi, **Then** trạng thái gói này không thay đổi quyền hợp lệ ở nơi kia.
 7. **Given** gói được kích hoạt lại, **When** người có phân công còn hiệu lực thao tác, **Then** quyền theo gói được mở lại; phân công/liên kết/chia sẻ đã thu hồi không tự phục hồi.
+8. **Given** gói trung tâm hết hạn và giáo viên duy nhất bị thu hồi phân công, **When** trung tâm cần người khác chấm bài tồn, **Then** người cũ bị chặn ngay và phải gia hạn trước khi phân công người thay; hết hạn không cấp đường bàn giao tăng quyền riêng.
 
 ### Edge Cases
 
@@ -205,7 +226,7 @@ Cá nhân/trung tâm hết hạn gói vẫn giữ dữ liệu và hoàn tất b�
 - **FR-018**: Giao đề PHẢI đồng thời đúng phân công, môn và quyền dùng tài nguyên; quyền giao không tự gồm quyền sửa/chia sẻ tiếp.
 - **FR-019**: Chủ nhiệm PHẢI được phân công theo lớp, được giao đề nhiều môn đã duyệt và được phép sử dụng, theo dõi hoàn thành; chỉ học sinh ghi danh môn tương ứng mới nhận bài.
 - **FR-020**: Chủ nhiệm KHÔNG tự có quyền sửa đề, xem đáp án hoặc chấm mọi môn; các hành động đó PHẢI có nguồn quyền riêng.
-- **FR-021**: Học sinh PHẢI chỉ nhận/nộp bài và xem kết quả của mình theo ghi danh còn hiệu lực cùng điều kiện công bố; không truy cập dữ liệu học sinh khác.
+- **FR-021**: Học sinh PHẢI chỉ nhận/nộp bài theo ghi danh học tập còn hiệu lực; chỉ xem kết quả đã công bố của mình theo ghi danh hiện hành hoặc quyền đọc lịch sử sau hoàn thành tại FR-055; không truy cập dữ liệu học sinh khác.
 
 #### Phụ huynh
 
@@ -224,7 +245,7 @@ Cá nhân/trung tâm hết hạn gói vẫn giữ dữ liệu và hoàn tất b�
 
 - **FR-029**: Hệ thống PHẢI phân biệt không gian tài nguyên cá nhân, từng trung tâm và hệ thống; phân biệt tài nguyên sở hữu với tài nguyên được cấp quyền dùng trong kho.
 - **FR-030**: Tự soạn trong không gian cá nhân PHẢI thuộc cá nhân; tạo theo phân công trung tâm PHẢI thuộc trung tâm và ghi nhận người soạn. Tạo tài nguyên trung tâm cần phân công biên soạn phù hợp, không chỉ tư cách thành viên.
-- **FR-031**: Lưu tài nguyên nguyên bản PHẢI giữ định danh và phiên bản nguồn; thêm vào kho KHÔNG đổi chủ sở hữu hoặc tự cấp quyền sửa/chia sẻ tiếp/dùng ngoài phạm vi nguồn.
+- **FR-031**: Lưu tài nguyên nguyên bản PHẢI giữ định danh và phiên bản nguồn trực tiếp hoặc qua truy vết bất biến của bản nhận có định danh cục bộ riêng theo AS-012; thêm vào kho KHÔNG đổi chủ sở hữu nguồn hoặc tự cấp quyền sửa/chia sẻ tiếp/dùng ngoài phạm vi nguồn. Định danh bản nhận KHÔNG được coi là căn cứ sở hữu độc lập để vượt license.
 - **FR-032**: Chỉnh sửa tài nguyên lấy từ nguồn khác PHẢI có quyền sửa và tạo tài nguyên định danh riêng, truy vết nguồn/phiên bản và giữ giới hạn nguồn áp dụng.
 - **FR-033**: Phiên bản đã lưu hoặc gắn bài đã giao PHẢI giữ ổn định; nguồn có phiên bản mới KHÔNG thay nội dung bản đã lưu/đề đã soạn/bài đã giao. Nhận cập nhật áp dụng lần dùng sau, không ghi đè lịch sử.
 - **FR-034**: Hệ thống PHẢI thông báo đính chính do lỗi cho cá nhân/trung tâm đã nhận phiên bản bị ảnh hưởng; bên nhận chủ động nhận cập nhật khi còn quyền.
@@ -240,7 +261,7 @@ Cá nhân/trung tâm hết hạn gói vẫn giữ dữ liệu và hoàn tất b�
 
 - **FR-042**: Gói cá nhân hết hạn PHẢI bảo lưu kho, cho đọc tài nguyên còn quyền; PHẢI từ chối tạo/sửa học liệu, tạo lớp, giao bài cá nhân mới.
 - **FR-043**: Gói trung tâm hết hạn PHẢI bảo lưu dữ liệu/quyền xem hiện hành, gồm kết quả công bố của con cho phụ huynh còn liên kết; PHẢI từ chối tạo lớp/khóa, thêm môn/ghi danh/phân công, tạo/sửa học liệu, giao bài mới.
-- **FR-044**: Bài đã giao trước hết hạn PHẢI được nộp theo lịch cũ; người còn thẩm quyền được chấm, nhận xét, công bố. Ngoại lệ KHÔNG gồm gia hạn hạn nộp, mở lượt mới hoặc giao lại bài.
+- **FR-044**: Bài đã giao trước hết hạn PHẢI được nộp theo lịch cũ; người còn thẩm quyền được chấm, nhận xét, công bố. Ngoại lệ KHÔNG gồm gia hạn hạn nộp, mở lượt mới hoặc giao lại bài. Nếu không còn giáo viên có phân công hợp lệ, trung tâm phải gia hạn trước khi phân công người thay; không giữ quyền của người đã nghỉ hoặc cấp thêm quyền bằng ngoại lệ hoàn tất (NV-05).
 - **FR-045**: Ngoại lệ hoàn tất bài PHẢI còn các nguồn quyền cần thiết; KHÔNG vượt thu hồi membership, phân công, ghi danh, liên kết hoặc quyền tài nguyên.
 - **FR-046**: Trung tâm hết hạn gói PHẢI vẫn cho chủ sở hữu/quản lý gỡ thành viên, phân công, ghi danh, liên kết và quyền trong thẩm quyền; KHÔNG dùng quyền bảo vệ dữ liệu để cấp thêm quyền.
 - **FR-047**: Bảo lưu PHẢI giữ nội dung/phiên bản và kết quả lịch sử; người bị gỡ quyền KHÔNG được đọc chỉ vì dữ liệu vẫn tồn tại. Xóa đối tượng không được làm mất lịch sử phụ thuộc.
@@ -254,6 +275,9 @@ Cá nhân/trung tâm hết hạn gói vẫn giữ dữ liệu và hoàn tất b�
 - **FR-052**: Chỉ được ghi nhận hoàn tất cấp/thu hồi quyền khi thay đổi có hiệu lực; nếu chưa hoàn tất PHẢI báo chưa thành công và không cấp theo quyền mới chưa xác lập.
 - **FR-053**: Bản đầu PHẢI kiểm chứng cho phép/từ chối bằng cùng cơ chế quyền dùng trong vận hành; KHÔNG có cơ chế cấp quyền riêng chỉ cho dữ liệu mẫu.
 - **FR-054**: Bản đầu PHẢI có luồng quản trị sử dụng được cho tài khoản, tenant, gói thủ công, thành viên, lớp, khóa, môn, ghi danh, phân công, liên kết phụ huynh; học liệu/bài làm/kết quả PHẢI nghiệm thu ở mức dữ liệu và thao tác kiểm chứng tối thiểu.
+- **FR-055**: Phạm vi hoàn thành một đợt học của bản đầu là **một học sinh trong một khóa** (không phải một ghi danh môn đơn lẻ). Thao tác hoàn thành PHẢI chuyển đồng bộ toàn bộ ghi danh ACTIVE của học sinh trong khóa sang COMPLETED; không cho hoàn thành một phần hoặc làm sống lại ghi danh đã thu hồi. Hoàn thành bình thường PHẢI được phân biệt với thu hồi truy cập. Sau hoàn thành, học sinh chỉ giữ quyền đọc kết quả đã công bố của chính mình trong đúng đợt học, trong thời gian hồ sơ còn được lưu hợp lệ theo chính sách dữ liệu, kể cả khi hết gói; không nhận/nộp bài mới hoặc nhận quyền ở đợt/lớp khác. Quyền lịch sử KHÔNG vượt khóa tài khoản hoặc thu hồi truy cập có chủ đích; dữ liệu vẫn được bảo lưu cho người còn thẩm quyền. Đây là yêu cầu bổ sung NV-01, chưa được coi là đã triển khai.
+- **FR-056**: Trước khi duyệt liên kết phụ huynh, đơn vị vận hành PHẢI xác minh ngoài hệ thống người đại diện và căn cứ cho phép xem dữ liệu. Ứng dụng PHẢI yêu cầu tham chiếu xác nhận tối thiểu khi duyệt, lưu người xác nhận và thời điểm; chỉ có vai trò PARENT hoặc mã học sinh KHÔNG đủ. KHÔNG yêu cầu tải giấy tờ nhạy cảm. Khi cần ngừng chia sẻ do tranh chấp, dùng thu hồi hiện có; xác minh lại ngoài hệ thống trước khi cấp lại. Đây là yêu cầu bổ sung NV-02, chưa được coi là đã triển khai.
+- **FR-057**: Khi giao bài, PHẢI phân biệt hoạt động cần bảo đảm hoàn tất với luyện tập có thể gián đoạn. Loại cần bảo đảm chỉ dùng nguồn sở hữu hoặc LONG_TERM trên toàn bộ thành phần cần dùng, với điều kiện/thời hạn nguồn bao phủ cả nộp, chấm và công bố. Vì mẫu hiện chỉ có hạn nộp `dueAt` mà không có hạn chấm/công bố, LONG_TERM có `expiresAt` hữu hạn không đủ điều kiện GUARANTEED (kể cả `expiresAt > dueAt`); chỉ nguồn sở hữu hoặc LONG_TERM không có mốc hết hạn được dùng đến khi có hợp đồng xác định toàn bộ thời hạn hoàn tất. Có nguồn REVOCABLE thì từ chối giao loại này. Luyện tập dùng REVOCABLE PHẢI báo rõ khi thu hồi làm gián đoạn nộp/chấm/công bố và giữ lịch sử đã có. Bảo đảm về nguồn học liệu KHÔNG vượt khóa tài khoản, thu hồi quan hệ học tập hoặc điều kiện lịch/lượt làm. Đây là yêu cầu bổ sung NV-04, chưa được coi là đã triển khai.
 
 ### Ma trận quyền cố định
 
@@ -277,7 +301,7 @@ Mọi quyền chịu giới hạn không gian, gói, đối tượng và quyền
 
 **Dữ liệu mẫu để nghiệm thu**: Tài nguyên ba không gian, sở hữu/quyền dùng, hành động học liệu, phiên bản, nhận cập nhật/thông báo đính chính, hai hình thức chia sẻ, bài giao/bài nộp/kết quả, công bố và ngoại lệ hoàn tất khi hết hạn. Mẫu phải thể hiện đúng quy tắc, không cần nội dung sư phạm hoàn chỉnh.
 
-**Chưa triển khai**: Công cụ soạn câu hỏi/đề/ma trận, làm bài/chấm bài/sổ điểm hoàn chỉnh; luồng duyệt học liệu nhiều bước; thanh toán tự động; trung tâm tự tạo tenant; vai trò tùy chỉnh; khóa gom nhiều lớp; giá/học phí chi tiết; quy trình bàn giao sở hữu riêng và ngoại lệ thu hồi chia sẻ lâu dài. Không đặt yêu cầu MFA hoặc ép hai bước theo vai trò; vận hành có thể cấu hình khi cần.
+**Chưa triển khai**: Công cụ soạn câu hỏi/đề/ma trận, làm bài/chấm bài/sổ điểm hoàn chỉnh; luồng duyệt học liệu nhiều bước; thanh toán tự động; trung tâm tự tạo tenant; vai trò tùy chỉnh; khóa gom nhiều lớp; giá/học phí chi tiết; quy trình bàn giao sở hữu riêng và ngoại lệ thu hồi chia sẻ lâu dài. Không đặt yêu cầu MFA hoặc ép hai bước theo vai trò; vận hành có thể cấu hình khi cần. Chủ nhiệm trong bản này là người điều phối lớp trung tâm theo FR-019–020, chưa là vai trò tổng hợp học bạ/rèn luyện của trường phổ thông (NV-03). Đính chính nguồn chưa bao gồm điều chỉnh kết quả đã công bố; cần đặc tả riêng trước chức năng chấm bài thật (NV-06).
 
 ### Ràng buộc tích hợp do sản phẩm yêu cầu
 
@@ -331,6 +355,9 @@ Mọi quyền chịu giới hạn không gian, gói, đối tượng và quyền
 - **AS-008 — Nguồn hệ thống**: Quyền nền chỉ làm đề hệ thống được phát hành cho nhóm người dùng tương ứng; không mặc định xem mọi đáp án hoặc nội dung chưa phát hành. Lưu vào kho cá nhân cần gói; lưu vào kho trung tâm cần quyền trung tâm và điều kiện nguồn.
 - **AS-009 — Bảo vệ quyền**: Khi gói trung tâm hết hạn, giữ quyền thu hồi và gửi yêu cầu hỗ trợ khôi phục danh tính, không cấp thêm membership/phân công/ghi danh. Khôi phục danh tính toàn hệ thống do Giáo Khoa xử lý độc lập gói trung tâm.
 - **AS-010 — Chỉ tiêu nghiệm thu**: SC-001, SC-002, SC-009 là mục tiêu mặc định đề xuất về tính sử dụng được, không mở rộng nghiệp vụ hoặc cam kết quy mô tải chưa xác định.
+- **AS-011 — Đợt học và chuyển lớp**: Một học sinh × một khóa trong đúng lớp là phạm vi hoàn thành đợt học của bản đầu. Nếu khóa có nhiều môn thì hoàn thành là thao tác nguyên tử trên mọi ghi danh ACTIVE của học sinh tại khóa, không chỉ môn đầu tiên. Đợt mới tạo khóa/phạm vi mới; chuyển lớp không đổi lớp của khóa cũ hoặc mang theo nguồn quyền học tập cũ. Hoàn thành và thu hồi là hai thao tác khác nhau; không dùng REVOKED để ghi nhận tốt nghiệp bình thường. Quyền lịch sử của FR-055 chỉ cho chính học sinh; không tự tạo liên kết phụ huynh ở personal workspace.
+- **AS-012 — Bản nhận từ nguồn chia sẻ**: Theo quyết định đã có ở issue #261 và Sổ B101, chia sẻ giữa các workspace cá nhân/trung tâm tạo bản nhận có định danh cục bộ, giữ truy vết và điều kiện nguồn; lưu từ nguồn hệ thống giữ định danh nguồn. Đây là cách lưu bản nhận, không chuyển sở hữu nguồn và không mở quyền sửa/chia sẻ rộng hơn.
+- **AS-013 — Dữ liệu học sinh và loại hình hoạt động**: Trước khi dùng dữ liệu học sinh thật, đơn vị vận hành phải chốt chính sách lưu trữ/xóa, căn cứ xử lý và xác minh người đại diện ngoài hệ thống; tiền đề này áp dụng cả center và personal workspace có học sinh trẻ em. Loại hình lớp và điều kiện tổ chức do đơn vị vận hành xác nhận, mua gói phần mềm không thay xác nhận đó (NV-02/NV-07). Bản này không xây hệ thống thẩm định pháp lý, quản lý giấy tờ hoặc sổ điểm chính thức; chưa xác nhận điều kiện vận hành thực tế đã đạt.
 - **DEP-001 — Danh tính và quyền**: Cần Keycloak và Authorization Services, tên miền đăng nhập, kênh email xác minh/khôi phục. Lập kế hoạch phải xác định cấu hình và kiểm chứng khả thi; không thay yêu cầu thu hồi từ thao tác tiếp theo bằng việc chờ hết phiên.
 - **DEP-002 — Vận hành**: Cần người có thẩm quyền xác nhận thanh toán, tạo trung tâm, xác minh khôi phục danh tính không email; không cần thanh toán tự động.
 - **DEP-003 — Quản trị dự án**: Tài liệu nguyên tắc dự án hiện chưa được điền; spec không suy diễn nguyên tắc từ chỗ trống hoặc sửa tài liệu quản trị đó.

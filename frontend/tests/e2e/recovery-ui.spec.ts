@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 // Kiểm tra hợp đồng UI bằng API giả; quyền thật được kiểm tra riêng trong IdentityFlowIT.
-test("recovery giữ key khi retry, gửi If-Match và chỉ hoàn tất sau xác nhận bàn giao", async ({ page }) => {
+test("recovery giữ key khi retry, gửi If-Match và chỉ hoàn tất sau xác nhận bàn giao", { tag: ["@layer-ui", "@flow-QT-03", "@role-platform-operator"] }, async ({ page }) => {
   const requestId = randomUUID();
   let state = "REQUESTED";
   let version = 0;

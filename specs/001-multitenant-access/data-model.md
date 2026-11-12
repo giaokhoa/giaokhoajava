@@ -1,6 +1,6 @@
 # Mô hình dữ liệu: danh tính, trung tâm và quyền theo đối tượng
 
-**Căn cứ**: [spec.md](spec.md), [research.md](research.md). Đây là thiết kế dữ liệu, chưa phải migration hoặc entity triển khai.
+**Căn cứ**: [spec.md](spec.md), [research.md](research.md). Đối chiếu code tại `f3d2e618` ngày 12/11/2026. Những mục ghi **thiết kế bổ sung** là yêu cầu chưa triển khai, không là bằng chứng migration đã có.
 
 ## Quy ước chung
 
@@ -24,7 +24,9 @@
 | `subscription_period` | `id`, `workspace_id`, `valid_from`, `expires_at`, `confirmation_ref`, `confirmed_by`, `confirmed_at` | Chỉ gói personal/center; thời gian kết thúc lớn hơn bắt đầu; xác nhận thủ công bởi platform operator; không có payment gateway hoặc giá gói trong bản đầu |
 | `recovery_request` | `id`, `requester_user_id`, `workspace_id?`, `target_user_id`, `state`, `verified_by?`, `resolved_at?`, `verification_note?` | Chỉ platform operator xử lý tài khoản không email; ghi chú tối thiểu, không đính kèm tài liệu cá nhân trong tính năng này; không trả mật khẩu cho quản lý trung tâm |
 
-Membership/role trong app là dữ kiện nguồn để điều phối directory và projection. Keycloak Organization membership và các policy sources chỉ được báo ACTIVE khi cập nhật đã hoàn tất. Không coi một role trong database hoặc token là một quyết định allow.
+Membership/role trong app là dữ kiện nguồn để điều phối directory và projection. Domain có thể ghi ACTIVE trong transaction tạo quan hệ; hiệu lực quyền và biên nhận hoàn tất vẫn phải chờ operation SUCCEEDED, partition READY đúng revision. Không đồng nhất state của domain với trạng thái đồng bộ hoặc coi role trong database/token là quyết định allow. Các ngoại lệ route quản trị đang tồn tại được giới hạn tại authorization contract mục 10–13 và còn phải review trước đóng parent.
+
+`user_account`, `workspace`, `center`, session/OIDC correlation và control metadata authorization thuộc mặt phẳng hệ thống. Membership/role, invitation, subscription và dữ liệu giảng dạy thuộc schema workspace khi kích hoạt. `workspace_membership_index` ở mặt phẳng hệ thống chỉ là chỉ mục khám phá không gian, không cấp quyền. Tham chiếu qua hai mặt phẳng dùng ID và phân giải ở tầng ứng dụng, không FK/join xuyên schema (#261, Sổ B96–B103).
 
 Role là tiền đề của quan hệ center tương ứng: cấp phân công giảng dạy/chủ nhiệm cần TEACHER, roster/ghi danh center cần STUDENT, liên kết phụ huynh cần PARENT. Khi gỡ role, cùng mutation phải thu hồi các quan hệ phụ thuộc role đó hoặc đóng gate tiền đề tương ứng; không để phân công mồ côi tiếp tục cấp quyền. Những role/quan hệ độc lập khác của cùng người được giữ. PERSONAL dùng owner và enrollment riêng, không đòi các role center.
 
@@ -53,13 +55,13 @@ Bản đầu lớp cá nhân dùng cùng cấu trúc lớp/khóa/môn/ghi danh. 
 | `resource` | `id`, `owner_workspace_id`, `created_by_user_id`, `kind`, `subject_id`, `state` | Owner bất biến trong thao tác thường; kind mẫu tương ứng câu hỏi/đề/ma trận; created_by không tự là nguồn quyền của tài nguyên center |
 | `resource_version` | `id`, `resource_id`, `version_no`, `label`, `body_stub`, `answer_stub?`, `review_state`, `locked_at?` | Unique resource/version_no; V1 đã lưu/giao không bị sửa tại chỗ; body/answer chỉ dữ liệu giả để xét quyền; câu trả lời có scope riêng |
 | `resource_dependency` | `id`, `derived_resource_id`, `derived_version_id`, `source_resource_id`, `source_version_id`, `share_grant_id?`, `usage_constraints` | Đúng version/resource hai phía; graph không vòng; provenance bất biến, không xóa giới hạn nguồn khi tạo bản chỉnh sửa |
-| `library_item` | `id`, `workspace_id`, `resource_id`, `version_id`, `share_grant_id?`, `custody` | Cặp resource/version tham chiếu cùng nguồn; custody `OWNED` hoặc `LICENSED`; mục lưu có ID riêng nhưng resource ID/phiên bản nguồn không đổi; LICENSED không đổi owner canonical |
+| `library_item` | `id`, `workspace_id`, `resource_id`, `version_id`, `share_grant_id?`, `custody` | Custody `OWNED` hoặc `LICENSED`; nguồn hệ thống giữ resource/version nguồn. Copy-on-share trỏ resource/version cục bộ, giữ LICENSED và cạnh provenance bất biến về nguồn/grant; không cấp nhánh owner độc lập |
 | `resource_assignment` | `id`, `workspace_id`, `user_id`, `resource_id?`, `subject_id?`, `actions`, `state` | Nguồn quyền biên soạn/duyệt/xem đáp án/chia sẻ tường minh thuộc danh mục hành động cố định; bản đầu chuẩn bị nguồn này bằng fixture/luồng kiểm chứng, chưa mở trình cấu hình quyền tùy ý |
 | `share_grant` | `id`, `source_resource_id`, `source_version_id`, `grantor_user_id`, `recipient_workspace_id`, `mode`, `actions`, `allowed_workspace_ids`, `valid_from`, `expires_at?`, `revoked_at?`, `accepted_at?` | Mode `REVOCABLE` hoặc `LONG_TERM`; cấp đúng version; không cấp rộng hơn nguồn; LONG_TERM không phụ thuộc membership/gói của grantor, không có thao tác đơn phương revoke |
 | `correction_notice` | `id`, `resource_id`, `affected_version_id`, `replacement_version_id`, `reason`, `created_at` | Replacement thuộc cùng resource, không thay payload lịch sử; thông báo chỉ chứa metadata cần thiết |
 | `notification_receipt` | `notice_id`, `recipient_workspace_id`, `acknowledged_at?` | Một thông báo mỗi nơi từng nhận version bị lỗi; thông báo không tự cấp quyền xem version không còn được cấp |
 
-Canonical resource/version không bị nhân bản thành resource mới khi lưu về kho khác. Authorization projection được định danh thêm workspace; không đưa workspace nhận vào business owner của nguồn. Chỉnh sửa từ nguồn khác tạo resource mới và dependency vào version/gate nguồn còn áp dụng.
+Lưu nguồn hệ thống không tạo resource/version mới. Chia sẻ tenant → tenant theo #261 tạo resource/version cục bộ trong schema nhận bằng `ResourceCopies`, cạnh `resource_dependency` mang `origin=SHARE`, đúng định danh nguồn/version/grant và closure nguồn. `owner_workspace_id` của bản cục bộ biểu thị nơi giữ bản sao; chủ sở hữu nguồn không đổi. `ResourcePolicyProjector` xét license phái sinh trước nhánh owner/tác giả, nên bản sao không tự thành quyền độc lập sau revoke. Fork có định danh mới và `origin=FORK`; cả hai đều giữ giới hạn nguồn. Nhận cập nhật tạo version/mục lưu mới, không sửa version đã giao. Đây là diễn giải hiện hành của FR-031–033, thay mô tả lưu tham chiếu xuyên mọi tenant trước #261.
 
 Mục `library_item` thuộc về workspace nhận (cột `workspace_id`); cách ly do schema tenant khi đã kích hoạt, lọc theo `workspace_id` ở truy vấn ứng dụng khi chưa kích hoạt. Canonical resource/version/dependency dùng repository riêng: resolve metadata đích tối thiểu để lấy authorization key; chỉ đọc body/answer sau quyết định tương ứng. Không có endpoint/repository generic trả tất cả nội dung canonical cho actor hoặc cho frontend.
 
@@ -73,6 +75,13 @@ Mục `library_item` thuộc về workspace nhận (cột `workspace_id`); cách
 | `system_practice_attempt_sample` | `id`, `personal_workspace_id`, `user_id`, `system_resource_id`, `version_id`, `attempted_at`, `content_stub`, `outcome_stub?` | Quyền nền cho user eligible, không cần enrollment hoặc gói author; chỉ resource hệ thống phát hành để practice; lịch sử thuộc người làm, không tạo role học sinh toàn cục và không trộn vào kết quả center |
 
 Dữ liệu mẫu đi qua cùng domain services, projection và PEP. Fixture tạo trạng thái nguồn và dữ liệu giả, không tạo đường bypass để một actor tự xưng là người khác. Không đưa mẫu bài thật/nội dung thực lên production.
+
+**Thiết kế bổ sung sau làm rõ 12/11/2026**:
+
+- `enrollment` thêm trạng thái COMPLETED và `completed_at`. Phạm vi hoàn thành là một học sinh × một khóa: quản lý hoặc owner personal chuyển **tất cả** ghi danh ACTIVE của học sinh tại các `course_subject` trong khóa sang COMPLETED trong **một transaction/operation/revision**, không để môn còn ACTIVE và không đổi ghi danh REVOKED hoặc ở khóa khác. Xác nhận đúng tập ID/version ghi danh trước mutation, khóa cùng phạm vi để thêm ghi danh đồng thời không lọt qua; sai/stale trả 409, không được ghi một phần. ACTIVE → COMPLETED giữ nguồn đọc lịch sử riêng cho kết quả PUBLISHED của chính học sinh, không giữ nguồn nhận/nộp bài; COMPLETED → REVOKED đóng nguồn lịch sử. Khóa tài khoản hoặc thu hồi membership/truy cập có chủ đích vẫn chặn. Đợt mới có identity phạm vi mới, không tái sử dụng ghi danh COMPLETED. Thời hạn đọc theo thời gian hồ sơ còn được lưu hợp lệ, không theo kỳ gói (FR-055, AS-011).
+- Khi APPROVE guardian link, thêm `verification_ref` không rỗng; `approved_by`/`approved_at` là người/thời điểm xác nhận. Tham chiếu chỉ dẫn tới kết quả xác minh ngoài hệ thống, không lưu bản sao giấy tờ; chỉ người có quyền duyệt được đọc tham chiếu, không đưa vào DTO kết quả của học sinh/phụ huynh. REJECT/REVOKE không bắt cung cấp tham chiếu mới (FR-056).
+- `sample_activity` thêm `completion_policy` cố định `INTERRUPTIBLE` hoặc `GUARANTEED`, ghi lúc giao. GUARANTEED từ chối khi bất kỳ nguồn/thành phần cần dùng dựa vào REVOCABLE hoặc LONG_TERM có `expires_at` hữu hạn khi chưa có mốc hoàn tất chấm/công bố. Không dùng `expires_at > due_at` làm bằng chứng đủ vì `due_at` chỉ là hạn nộp; chỉ nguồn sở hữu hoặc LONG_TERM không hết hạn đáp ứng loại này ở bản mẫu, không bỏ gate membership/enrollment/license hoặc hạn/lượt. Dữ liệu mẫu cũ có thể coi là INTERRUPTIBLE khi migrate, không tự đổi thành GUARANTEED (FR-057).
+- Deadline là hạn nộp hiện hành của hoạt động (`due_at`), có thể gia hạn chỉ khi gói còn hiệu lực; hết gói không cho đổi hạn. Nộp sau hạn phải bị chặn cả trước và sau expiry. Code hiện tại mới khóa lượt, chưa ép deadline; cần task hội tụ, không bỏ ràng buộc vì dữ liệu là mẫu (FR-044).
 
 ## Đồng bộ quyền và kiểm toán
 
@@ -90,8 +99,9 @@ Không phân phối revision qua cookie hoặc tin revision frontend gửi. Mọ
 | Đối tượng | Chuyển trạng thái | Điều kiện/kết quả |
 | --- | --- | --- |
 | Invitation | `PENDING → ACCEPTED / EXPIRED / REVOKED` | Một lần, đúng danh tính/email; không tạo membership trùng |
-| Membership/assignment/enrollment | `PENDING → ACTIVE → REVOKED` | ACTIVE sau sync; revoke fence trước sync; cấp lại là thao tác mới, không phục hồi ngầm từ gia hạn gói |
-| Guardian link | `REQUESTED → APPROVED / REJECTED → REVOKED` | APPROVED chỉ sau owner/manager; một request bị từ chối cần yêu cầu mới |
+| Membership/assignment/enrollment hiện hành | `PENDING / ACTIVE → REVOKED`; service có thể tạo thẳng ACTIVE | State domain không đồng nghĩa READY; operation/fence giữ hiệu lực đồng bộ. Cấp lại là quan hệ mới, không hồi sinh do gia hạn |
+| Enrollment bổ sung FR-055 | `ACTIVE → COMPLETED → REVOKED`, hoặc `ACTIVE → REVOKED` | **Chưa triển khai**; complete theo học sinh × khóa chuyển đồng bộ toàn bộ ghi danh ACTIVE trong khóa, không bỏ sót môn hoặc mở lại REVOKED; chỉ giữ lịch sử của chính học sinh, thu hồi có chủ đích đóng quyền; không chuyển ngược COMPLETED về ACTIVE |
+| Guardian link | `REQUESTED → APPROVED / REJECTED`; `APPROVED → REVOKED` | APPROVED chỉ sau owner/manager; REJECTED/REVOKED kết thúc, yêu cầu lại tạo hàng mới; không cho REQUESTED → REVOKED |
 | Resource version | `DRAFT → APPROVED → LOCKED` | Lưu/chia sẻ/giao khóa version; cập nhật nguồn bằng version mới; bản chỉnh sửa của người nhận là resource mới |
 | Share | `OFFERED → ACCEPTED → REVOKED / EXPIRED` | Chỉ REVOCABLE có revoke; LONG_TERM giữ điều kiện nguồn, không có revoke một phía |
 | Recovery | `REQUESTED → VERIFIED → RESOLVED / REJECTED` | Chỉ platform operator; không xác minh bằng role manager đơn lẻ |
@@ -100,8 +110,10 @@ Không phân phối revision qua cookie hoặc tin revision frontend gửi. Mọ
 ## Cách ly, khóa và chỉ mục
 
 1. Cách ly tenant theo schema: mỗi workspace một schema riêng chứa trọn dữ liệu của tenant đó; connection đặt `search_path` = schema tenant + schema hệ thống và khôi phục bắt buộc khi trả về pool. Runtime role không owner/BYPASSRLS và chỉ có quyền theo mô hình grant theo schema (USAGE trên schema, DML trên bảng của schema đó). Không còn RLS hay `SET LOCAL app.workspace_id` ở cả hai schema (đã tháo ở bước chốt của #261, Sổ B103); workspace chưa kích hoạt schema riêng còn ở schema hệ thống và được lọc bằng `workspace_id` trong truy vấn ứng dụng. Session JDBC/OIDC correlation và control directory không dùng cách ly tenant; có repository/service chuyên biệt.
-2. Mọi unique/FK dạy học bao gồm workspace và parent keys; không thể gắn enrollment của lớp A vào course_subject lớp B. Môn dùng FK danh mục nhưng course_subject có ID phạm vi riêng.
+2. Unique/FK dạy học trong cùng schema giữ workspace và parent keys; kiểm tra cùng lớp của enrollment còn có trigger/service. `subject` và `user_account` ở hệ thống chỉ được tham chiếu bằng ID từ schema tenant, không FK xuyên schema. `course_subject` có ID phạm vi riêng. Constraint của baseline hệ thống không được dùng làm bằng chứng tenant có cùng FK xuyên mặt phẳng.
 3. Đọc danh sách học sinh/kết quả không chỉ dựa vào cách ly ở tầng dữ liệu: xét quyền từng row hoặc tập cặp đầy đủ với Keycloak trước khi trả DTO. Phụ huynh không nhận entity JPA, hidden fields hoặc tổng số hàng của học sinh khác.
 4. Mutation dùng expected row version; stale version trả 409. Nguồn thu hồi serialize với protected action qua authz partitions; lock nhiều partition theo thứ tự ổn định, không giữ transaction khi chờ worker provision mạng.
 5. Chỉ mục theo `(workspace_id, state)`, các FK parent, `(course_subject_id, student/teacher)`, `(resource_id, version_no)`, `(source_version_id, share_grant_id)`, `(recipient_workspace_id, state)`, `(state, next_attempt_at)` và target_key của projection.
 6. ID/password/token chỉ dùng đúng chức năng; migration role, runtime role, Keycloak provisioning client và confidential web client có credential riêng, không chia sẻ quyền quản trị realm cho người dùng trung tâm.
+
+`prepareSchema` chỉ tạo/migrate schema; `schema_name` còn NULL thì dữ kiện vẫn ở mặt phẳng hệ thống. `provisionSchema`/`migrateAllTenants` kích hoạt registry nhưng chưa di chuyển dữ kiện cũ. Không chạy runner như bước nâng cấp an toàn cho workspace đã có dữ kiện; phải hoàn tất chuyển dữ kiện và kiểm chứng nghiệp vụ trên schema đã kích hoạt trước cutover. Hai baseline hiện hành là `db/migration/V001__system_baseline.sql` và `db/migration-tenant/V001__tenant_baseline.sql`; không dựng lại chuỗi migration lịch sử V009–V035 hoặc sửa checksum đã áp.

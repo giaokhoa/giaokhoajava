@@ -43,7 +43,7 @@ async function laySessionView(page: Page, origin: string): Promise<SessionView> 
   return (await response.json()) as SessionView;
 }
 
-test("đăng nhập Code qua ứng dụng: phiên được lập, session view khớp danh tính và không mang token", async ({
+test("đăng nhập Code qua ứng dụng: phiên được lập, session view khớp danh tính và không mang token", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -71,7 +71,7 @@ test("đăng nhập Code qua ứng dụng: phiên được lập, session view k
   }
 });
 
-test("email chưa xác minh: đăng nhập bị chặn ở bước verify email của Keycloak và không lập phiên ứng dụng", async ({
+test("email chưa xác minh: đăng nhập bị chặn ở bước verify email của Keycloak và không lập phiên ứng dụng", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -92,7 +92,7 @@ test("email chưa xác minh: đăng nhập bị chặn ở bước verify email 
   }
 });
 
-test("bấm link xác minh trong email (Mailpit) thì đăng nhập được và session báo email đã xác minh", async ({
+test("bấm link xác minh trong email (Mailpit) thì đăng nhập được và session báo email đã xác minh", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -121,7 +121,7 @@ test("bấm link xác minh trong email (Mailpit) thì đăng nhập được và
   }
 });
 
-test("mật khẩu tạm: lần đăng nhập đầu bị ép đổi mật khẩu, mật khẩu cũ không dùng lại được", async ({
+test("mật khẩu tạm: lần đăng nhập đầu bị ép đổi mật khẩu, mật khẩu cũ không dùng lại được", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -159,7 +159,7 @@ test("mật khẩu tạm: lần đăng nhập đầu bị ép đổi mật khẩ
   }
 });
 
-test("workspace switch: danh sách theo hợp đồng, workspace lạ bị từ chối và cookie active-workspace giả không đổi được danh sách", async ({
+test("workspace switch: danh sách theo hợp đồng, workspace lạ bị từ chối và cookie active-workspace giả không đổi được danh sách", { tag: ["@layer-e2e", "@flow-TK-02", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -205,7 +205,7 @@ test("workspace switch: danh sách theo hợp đồng, workspace lạ bị từ 
   }
 });
 
-test("logout: hủy phiên ứng dụng và cả phiên SSO Keycloak", async ({ page }) => {
+test("logout: hủy phiên ứng dụng và cả phiên SSO Keycloak", { tag: ["@layer-e2e", "@flow-TK-02", "@role-user"] }, async ({ page }) => {
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const user = await env.createUser();
@@ -235,7 +235,7 @@ test("logout: hủy phiên ứng dụng và cả phiên SSO Keycloak", async ({ 
 // (theo tài liệu Keycloak về Back-Channel Logout) thì Keycloak mới gửi logout_token khi
 // phiên SSO bị kết thúc từ bên ngoài; verify-oidc-logout.mjs cấu hình tương tự cho client
 // tạm của nó. Môi trường gate/review cấu hình client trước khi chạy spec này.
-test("back-channel: admin kết thúc phiên SSO thì phiên ứng dụng cũng bị hủy", async ({ page }) => {
+test("back-channel: admin kết thúc phiên SSO thì phiên ứng dụng cũng bị hủy", { tag: ["@layer-e2e", "@flow-TK-02", "@role-user"] }, async ({ page }) => {
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const user = await env.createUser();

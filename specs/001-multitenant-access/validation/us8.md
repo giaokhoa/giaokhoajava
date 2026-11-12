@@ -1,8 +1,10 @@
 # Nghiệm thu US8 — Hết hạn gói và bảo lưu dữ liệu (T093, issue #95)
 
-## Kết luận nghiệm thu hiện hành — 2026-11-12 — ĐẠT 7/7 (T093/#95)
+> **Cập nhật sau PR #306 (`1e294d1`, 12/11/2026): #95 vẫn OPEN, CHƯA ĐẠT gate toàn phần.** Bảng bên dưới ghi nhận CI thật từ PR #288/#302 và 7 scenario *đã từng* kiểm chứng về gói. Đợt hội tụ spec nhận diện hai lỗ hổng chưa được các test đó phát hiện: nộp quá `due_at` (F01/T100) và thiếu nguồn license khi submit/grade/publish (F02/T101); thêm US8.8/T113. Không diễn giải các dòng “ĐẠT” trong bảng làm quyết định đóng #95 khi các thiếu sót HIGH chưa sửa. Xem [ma trận sau hội tụ](acceptance-matrix.md) và [F01–F14](../../../docs/doi-chieu-spec-code-20261112.md).
 
-**Cây code được nghiệm thu:** `main` tại **`6be8371b2f56d44ebe280f4b6df2f8d40a325e64`**, sau khi PR #288 (native/browser US8, squash `f3d2e618be74f574c03d8301a04d9a0427bdbc98`) và PR #302 (khóa thao tác mở rộng UI nhưng giữ thu hồi, squash `6be8371b2f56d44ebe280f4b6df2f8d40a325e64`) đã merge. Các bản vá #295 (`SUBSCRIPTION_INACTIVE`, `CourseScope.UPDATE`) và #298 (renewal reprojection của activity/result) cũng đã có trong `main`. Tiền đề T091/#93 và T092/#94 **đều CLOSED** (biên bản riêng ở từng issue).
+## Bằng chứng kiểm thử US8.1–US8.7 — 2026-11-12 (gate T093/#95 CHƯA ĐẠT)
+
+**Cây code của lượt kiểm chứng hết hạn/gói:** `main` tại **`6be8371b2f56d44ebe280f4b6df2f8d40a325e64`**, sau khi PR #288 (native/browser US8, squash `f3d2e618be74f574c03d8301a04d9a0427bdbc98`) và PR #302 (khóa thao tác mở rộng UI nhưng giữ thu hồi, squash `6be8371b2f56d44ebe280f4b6df2f8d40a325e64`) đã merge. Các bản vá #295 (`SUBSCRIPTION_INACTIVE`, `CourseScope.UPDATE`) và #298 (renewal reprojection của activity/result) cũng đã có trong `main`. Tiền đề T091/#93 và T092/#94 **đều CLOSED** (biên bản riêng ở từng issue).
 
 **Bằng chứng test thực tế, dùng đồng hồ và dịch vụ thật, không mock PDP:**
 
@@ -14,9 +16,9 @@
 | Scenario của `spec.md` | Đánh giá trên cây hiện hành | Bằng chứng kiểm thử/guard đã đối chiếu |
 | --- | --- | --- |
 | **US8.1** — Personal hết hạn: đọc vẫn theo nguồn, không tạo mới | **ĐẠT** | `SubscriptionExpiryIT.expiredKeepsReadsLosesCreates`; browser expiry personal; PR #302 khóa UI create/enroll trong khi vẫn hiển thị dữ liệu cũ |
-| **US8.2** — Bài personal trước cutoff: nộp/chấm/công bố theo lịch cũ, không được extend/open/reassign | **ĐẠT** | `CompletionAfterExpiryIT.completionSurvivesExpiry` (personal); `ActivityPolicyProjector` không time-gate `submit` nhưng vẫn kiểm tra enrollment/role; các scope tăng quyền time-gated; PR #295 chuẩn hóa mã `SUBSCRIPTION_INACTIVE` |
+| **US8.2** — Bài personal trước cutoff: nộp/chấm/công bố theo lịch cũ, không được extend/open/reassign | **CHƯA ĐẠT đủ FR-044**: chưa chặn nộp sau `due_at` | `CompletionAfterExpiryIT.completionSurvivesExpiry` (personal); `ActivityPolicyProjector` không time-gate `submit` nhưng vẫn kiểm tra enrollment/role; các scope tăng quyền time-gated; PR #295 chuẩn hóa mã `SUBSCRIPTION_INACTIVE` |
 | **US8.3** — Center hết hạn: được đọc theo quyền, không tạo/thêm/giao mới | **ĐẠT** | `SubscriptionExpiryIT.expiredKeepsReadsLosesIncreases`; browser expiry center kiểm tra UI read-only/nút `Tạo lớp` disabled; `CourseScope.UPDATE` gated sau #295; phụ huynh chỉ đọc kết quả công bố theo nguồn hiện hành |
-| **US8.4** — Bài center giao trước cutoff còn được hoàn tất | **ĐẠT** | `CompletionAfterExpiryIT.completionSurvivesExpiry` (center), browser expiry center giữ cookie actor cũ qua mốc thật, các đường submit/grade/publish theo source còn hiệu lực |
+| **US8.4** — Bài center giao trước cutoff còn được hoàn tất | **CHƯA ĐẠT đủ FR-044/045**: chưa gate `due_at` và nguồn license | `CompletionAfterExpiryIT.completionSurvivesExpiry` (center), browser expiry center giữ cookie actor cũ qua mốc thật, các đường submit/grade/publish theo source còn hiệu lực |
 | **US8.5** — Vẫn thu hồi sau hạn, không xóa lịch sử | **ĐẠT** | `SubscriptionExpiryIT.revokeAfterExpiryStillWorks`; `HistoricalDataGuard` và `ResourceHistoryGuard` theo B106; PR #302 UI render xác nhận thao tác revoke còn enabled; source/revision được check sau mutation |
 | **US8.6** — Gói personal và center độc lập | **ĐẠT** | `SubscriptionExpiryIT.personalAndCenterIndependent`; `PersonalEntitlementIT` + browser E2E personal/center; không dùng role/gói ở workspace này để cấp quyền workspace khác |
 | **US8.7** — Gia hạn không hồi sinh nguồn bị thu hồi | **ĐẠT** | `SubscriptionExpiryIT.renewalDoesNotResurrectRevoked`; `CompletionAfterExpiryIT.enrollmentRevokeBlocksCompletion`; source share của grantor chỉ phụ thuộc grant/revocation riêng; PR #298 sửa desired activity/result khi gia hạn |
@@ -28,7 +30,7 @@
 - **Không hard-delete** lớp/khóa/học liệu có lịch sử; guard về hard-delete và các đường thu hồi là hai hành vi khác nhau. Resource/version hiện không có API hard-delete đang vận hành; không coi một guard chưa có callsite là route đã được bảo vệ.
 - Hai lỗi `extend/open/reassign` mã `PERMISSION_DENIED` và `CourseScope.UPDATE` chưa time-gate, cùng vấn đề `DESIRED_SOURCE_MISMATCH` sau renewal, chỉ là **finding lịch sử của `main` `da8ba071`** bên dưới, đã được sửa qua #295/#298. Không tái kết luận chúng còn lỗi trên cây đã nghiệm thu.
 
-**Phán quyết gate:** **7/7 US8.1–US8.7 ĐẠT** trong ranh giới bản đầu ở trên, trên code đã merge, sau review diff và backend policy/UI liên quan; không còn Must fix của US8 trong phạm vi bằng chứng này. Task T093/#95 có đủ điều kiện đóng **sau khi PR tài liệu này được review/merge**. Phán quyết không có nghĩa là đã chạy đủ 56 acceptance case T094/#96, security 7/7 T095/#97 hay usability người dùng thật T096/#98; các gate đó độc lập, không được tự tích.
+**Phán quyết gate 2026-11-12 sau PR #306: CHƯA ĐẠT.** Các bài test expiry/native trên SHA nêu trên đã xanh (không phủ nhận hoặc viết lại log), nhưng **F01/T100** (đường nộp chưa ép `due_at`) và **F02/T101** (submit/grade/publish chưa xét license/thành phần cần dùng) là lỗi HIGH chạm trực tiếp US8.2/4. Đợt hội tụ còn bổ sung **US8.8/T113** (gia hạn rồi mới phân công người thay). Đây không phải lỗi CI, mà là khoảng trống nghiệp vụ chưa có ca phủ. **Không đóng #95 dựa trên số đếm 7/7 lịch sử**. Sau implementation, cần regression với session thật, deadline trước/đúng/sau, revoke nguồn giữa nộp/chấm, và review lại các kịch bản liên quan trên tree đã merge. #96 (61 scenarios sau PR #306), #97 security và #98 người dùng thật vẫn là các gate riêng.
 
 ## Hồ sơ nghiệm thu lịch sử tại main `da8ba071` — 2026-11-11 (chỉ để đối chiếu)
 
@@ -53,7 +55,7 @@ Phần kiểm chứng dưới đây mô tả **lịch sử nghiệm thu trên `d
 - PR #216 đã merge vào main (`2b34f880`) và mang theo `chromium-resources`. Khi ghép `main` mới vào PR #288, ba xung đột cấu hình đã được giải quyết theo hướng giữ **cả bốn project**: 43 core, 13 teaching/guardians, 6 resources, 2 expiry (64 ca), không vô hiệu hóa test nào.
 - Rà lại T088/#90: **personal chưa có kỳ gói** phải bị từ chối tạo lớp (403), còn **center chưa từng có kỳ gói** được phép tạo lớp (202 và operation SUCCEEDED) theo ngoại lệ có chủ đích tại `contracts/authorization.md` mục 10 và `TeachingServiceIT.subscriptionPolicyMatchesRealPostgresLifecycle`. Sau khi center **đã xác nhận rồi hết hạn**, thao tác mở rộng phải bị 403 và UI center phải báo read-only, nút `Tạo lớp` không bấm được. Đã bổ sung các assertion cùng actor/session thật trong `subscription-expiry.spec.ts`; chưa coi assertion mới là pass trước khi CI head mới xanh.
 - CI ở head `d0465fc`, run `43134096141` xác nhận chính ngoại lệ: center chưa có kỳ gói trả **202**, trong khi assertion mới lầm yêu cầu 403; ca personal chưa kích hoạt pass. Đây là **test sai với quyết định đã chốt**, không phải defect cần đổi backend. Sửa test theo hợp đồng để khóa hai trường hợp khác nhau, không nới quy tắc sau khi hết hạn.
-- Ghi nhận cho T092/#94: trang personal/classes đang hiển thị cảnh báo hết hạn nhưng nút `Tạo lớp` còn chỉ `disabled={busy}` (không theo `planExpired`), dù backend từ chối; phải kiểm tra/sửa và nghiệm thu riêng ở #94, không tính UI cá nhân đã đạt theo bằng chứng T088.
+- Ghi nhận lịch sử trước khi PR #302 merge cho T092/#94: trang personal/classes từng chỉ có `disabled={busy}`, không theo `planExpired`. PR #302 (`6be8371`) đã sửa UI và #94 đã CLOSED; gate #95 vẫn phải kiểm chứng lại trên revision tích hợp, không dùng bằng chứng T088 cũ để kết luận.
 
 ## Kết quả theo scenario (spec.md User Story 8)
 

@@ -32,14 +32,14 @@
 ## Notes
 
 - Kết quả rà soát: **16/16 mục đạt**; đây là kiểm tra chất lượng tài liệu, không phải kết quả kiểm thử sản phẩm.
-- Tài liệu có 8 câu chuyện được sắp P1 trước P2, 54 yêu cầu chức năng và 9 tiêu chí thành công; định danh không trùng, không đứt đoạn.
+- Đối chiếu lại ngày 12/11/2026: 8 câu chuyện, 57 yêu cầu chức năng và 9 tiêu chí thành công; 61 acceptance scenarios (56 gốc + 5 bổ sung), định danh không trùng. 5 câu làm rõ đã được trả lời và ghi ở spec; checklist vẫn 16/16 về chất lượng tài liệu, không chứng nhận triển khai FR-055–057.
 - Keycloak, Authorization Services và `auth.giaokhoa.com` là ràng buộc sản phẩm người dùng yêu cầu, được tách riêng; spec không chọn cách tổ chức chính sách hoặc cơ chế đồng bộ. Đây không phải thiết kế kỹ thuật tự bổ sung.
 - Đã đối chiếu thay đổi cuối: khóa đa môn, nhiều giáo viên cùng môn, ghi danh theo từng môn, không mở vai trò tùy chỉnh và không bắt buộc MFA.
 - Đã tách rõ bảo lưu lịch sử với quyền được đọc; ngoại lệ hết hạn gói không vượt quyền đã thu hồi. Chia sẻ lâu dài không bị xử lý như chia sẻ có thể thu hồi.
 - Các mốc thời gian/tỷ lệ nghiệm thu là mục tiêu mặc định có ghi trong AS-010; không phải số liệu đã đo hoặc cam kết tải.
 - Phụ thuộc môi trường và vận hành ở DEP-001–DEP-003. Tài liệu nguyên tắc dự án hiện còn chỗ trống; không được suy diễn thành quy định đã ban hành.
 - Không có extension hooks được đăng ký tại thời điểm thực hiện.
-- Sẵn sàng chuyển sang `$speckit-plan`; bước đó phải kiểm chứng khả năng hiện thực hóa cách ly và thu hồi quyền bằng dịch vụ quyền đã chọn trước khi triển khai.
+- Đã có plan/tasks/code. Tiếp tục các task hội tụ và gate hiện hành; không tạo lại feature hoặc bỏ qua kiểm chứng cách ly/thu hồi. Bản đồ luồng theo vai trò liên kết trong spec là khung hướng dẫn sử dụng và nghiệm thu E2E; những phần chưa có code/test được ghi rõ.
 
 ### Đối chiếu phạm vi yêu cầu và căn cứ nghiệm thu
 

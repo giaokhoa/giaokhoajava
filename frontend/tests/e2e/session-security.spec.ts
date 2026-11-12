@@ -43,7 +43,7 @@ async function layCsrf(page: Page, origin: string): Promise<{ headerName: string
   return session.csrf!;
 }
 
-test("không token trong DOM/network/SSR: trình duyệt không gửi Authorization và storage không giữ token", async ({
+test("không token trong DOM/network/SSR: trình duyệt không gửi Authorization và storage không giữ token", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -95,7 +95,7 @@ test("không token trong DOM/network/SSR: trình duyệt không gửi Authorizat
   }
 });
 
-test("no-store: session view mang Cache-Control private, no-store cả khi ẩn danh và đã đăng nhập", async ({
+test("no-store: session view mang Cache-Control private, no-store cả khi ẩn danh và đã đăng nhập", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -117,7 +117,7 @@ test("no-store: session view mang Cache-Control private, no-store cả khi ẩn 
   }
 });
 
-test("CSRF: mutation thiếu token bị 403; back-channel là ngoại lệ duy nhất và token sai hình dạng vẫn bị 400", async ({
+test("CSRF: mutation thiếu token bị 403; back-channel là ngoại lệ duy nhất và token sai hình dạng vẫn bị 400", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -159,7 +159,7 @@ test("CSRF: mutation thiếu token bị 403; back-channel là ngoại lệ duy n
   }
 });
 
-test("phiên cũ mất eligibility không tạo được action dù CSRF còn hợp lệ", async ({
+test("phiên cũ mất eligibility không tạo được action dù CSRF còn hợp lệ", { tag: ["@layer-e2e", "@flow-TK-01", "@role-user"] }, async ({
   page,
 }) => {
   const origin = gateOrigin();
@@ -198,7 +198,7 @@ test("phiên cũ mất eligibility không tạo được action dù CSRF còn h�
 // context mới từ state đã lưu mô phỏng khởi động lại trình duyệt. Tính bền qua khởi động
 // lại ỨNG DỤNG (session JDBC phía server) do OidcSessionPersistenceIT và
 // infra/keycloak/verify-oidc-logout.mjs kiểm chứng ở tầng của chúng.
-test("khởi động lại trình duyệt: context mới từ storage state đã lưu vẫn giữ phiên", async ({
+test("khởi động lại trình duyệt: context mới từ storage state đã lưu vẫn giữ phiên", { tag: ["@layer-e2e", "@flow-TK-02", "@role-user"] }, async ({
   page,
   browser,
 }) => {
@@ -229,7 +229,7 @@ test("khởi động lại trình duyệt: context mới từ storage state đã
   }
 });
 
-test("sau logout, storage state cũ không hồi sinh được phiên", async ({ page, browser }) => {
+test("sau logout, storage state cũ không hồi sinh được phiên", { tag: ["@layer-e2e", "@flow-TK-02", "@role-user"] }, async ({ page, browser }) => {
   const origin = gateOrigin();
   const env = new TestEnvironment();
   const user = await env.createUser();
