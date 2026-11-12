@@ -15,10 +15,11 @@ export function parsePersonalWorkspace(data: unknown): WorkspaceView | null {
   return parseWorkspaces(data).find((item) => item.kind === "PERSONAL") ?? null;
 }
 
-// Personal không copy role center: owner chỉ quản lý lớp/khóa của mình khi gói còn
-// hiệu lực; backend vẫn là nơi chặn cuối cùng, giao diện chỉ ẩn thao tác.
+// Personal không copy role center: người sở hữu vẫn được xem/thu hồi lớp khi hết gói.
+// Quyền mở rộng (tạo lớp, thêm học sinh, khóa/môn) bị chặn riêng theo kỳ gói tại UI
+// và backend; không dùng trạng thái gói để ẩn luôn quyền thu hồi.
 export function canManagePersonalClasses(workspace: WorkspaceView | null): boolean {
-  return workspace !== null && workspace.subscription.effective;
+  return workspace?.kind === "PERSONAL";
 }
 
 export function PersonalEntitlements() {

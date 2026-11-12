@@ -733,6 +733,14 @@ test("US6.1 chưa có gói cá nhân: tạo lớp và học liệu cá nhân b�
     expect(taoHocLieu.status()).toBe(403);
     expect(((await taoHocLieu.json()) as { code?: string }).code).toBe("SUBSCRIPTION_INACTIVE");
 
+    // API từ chối là chưa đủ: giao diện cá nhân phải khóa luôn ô/nút tạo mới
+    // khi không có gói, để người dùng không bấm một hành động chắc chắn thất bại.
+    await page.goto(`${frontendOrigin}/personal/classes`);
+    await expect(page.getByRole("alert").filter({ hasText: /chưa có gói cá nhân hiệu lực/i }))
+      .toBeVisible();
+    await expect(page.getByLabel("Tên lớp")).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Tạo lớp", exact: true })).toBeDisabled();
+
     // Sau hai lần bị từ chối, lịch sử luyện tập vẫn đọc được nguyên vẹn.
     const lichSuSau = await docLichSuLuyenTap(page, origin);
     expect(lichSuSau.some((item) => item.systemResourceId === seed.resourceId)).toBe(true);
